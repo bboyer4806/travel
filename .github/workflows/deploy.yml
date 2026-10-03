@@ -1,0 +1,86 @@
+name: Deploy
+
+# Builds on GitHub's runners, pushes the image to GHCR, then has Dokku on the
+# server run it. The Dokku app, its domain and its HTTPS certificate are set up
+# here too, so a new project needs no SSH session on the server: copy this
+# file, change APP and DOMAIN, add the two secrets, push.
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+# One deploy at a time. A running deploy is never cancelled; a newer push
+# replaces one still waiting to start, so the latest commit is what goes live.
+concurrency:
+  group: deploy
+  cancel-in-progress: false
+
+env:
+  APP: travel
+  DOMAIN: travel.dev.boyersoftware.com
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: docker/setup-buildx-action@v3
+
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: true
+          # Tagged by commit so a rollback is naming an older tag, not a rebuild.
+          tags: |
+            ghcr.io/${{ github.repository }}:${{ github.sha }}
+            ghcr.io/${{ github.repository }}:latest
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Deploy to Dokku
+        env:
+          SSH_KEY: ${{ secrets.DOKKU_SSH_KEY }}
+          HOST: ${{ secrets.DOKKU_HOST }}
+          IMAGE: ghcr.io/${{ github.repository }}:${{ github.sha }}
+        run: |
+          set -euo pipefail
+          : "${SSH_KEY:?Add the DOKKU_SSH_KEY secret under Settings > Secrets and variables > Actions}"
+          : "${HOST:?Add the DOKKU_HOST secret under Settings > Secrets and variables > Actions}"
+          mkdir -p ~/.ssh
+          printf '%s\n' "$SSH_KEY" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          # The runner starts with no known hosts, so trust the key the
+          # server presents now.
+          ssh-keyscan -t ed25519 "$HOST" >> ~/.ssh/known_hosts 2>/dev/null
+
+          # Dokku runs exactly one command per SSH call.
+          dokku() { ssh -i ~/.ssh/id_ed25519 "dokku@$HOST" "$@"; }
+
+          dokku apps:exists "$APP" || dokku apps:create "$APP"
+          # Before the first deploy, so Dokku proxies to the port the image
+          # exposes rather than its default of 5000.
+          dokku domains:set "$APP" "$DOMAIN"
+
+          # Re-running a workflow deploys the same image again, which Dokku
+          # reports as "No changes detected" with a non-zero exit. Nothing
+          # failed, and the certificate step below still needs to run.
+          dokku git:from-image "$APP" "$IMAGE" 2>&1 | tee deploy.log \
+            || grep -q "No changes detected" deploy.log
+
+          # Needs the DNS record in place. Checked first so a deploy never
+          # requests a certificate the app already has.
+          if [ "$(dokku letsencrypt:active "$APP")" != "true" ]; then
+            dokku letsencrypt:enable "$APP"
+          fi

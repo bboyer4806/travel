@@ -13,3 +13,4 @@ backups/
 *.sqlite-*
 *.db
 *.db-*
+next-env.d.ts

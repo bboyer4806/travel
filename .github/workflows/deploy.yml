@@ -2,7 +2,7 @@ name: Deploy
 
 # Builds on GitHub's runners, pushes the image to GHCR, then has Dokku on the
 # server run it. The Dokku app, its domain and its HTTPS certificate are set up
-# here too, so a new project needs no SSH session on the server: copy this
+# here too. Persistent storage must be provisioned first; see docs/DEPLOYMENT.md. Copy this
 # file, change APP and DOMAIN, add the two secrets, push.
 on:
   push:
@@ -20,7 +20,11 @@ env:
   DOMAIN: travel.dev.boyersoftware.com
 
 jobs:
+  checks:
+    uses: ./.github/workflows/check.yml
+
   deploy:
+    needs: checks
     runs-on: ubuntu-latest
     permissions:
       contents: read

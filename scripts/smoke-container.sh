@@ -6,6 +6,7 @@ image="travel-check"
 container="travel-check"
 volume="travel-check-storage"
 cleanup() {
+  if [ "$?" -ne 0 ]; then docker logs "$container" || true; fi
   docker rm -f "$container" >/dev/null 2>&1 || true
   docker volume rm "$volume" >/dev/null 2>&1 || true
 }
@@ -17,7 +18,7 @@ docker run --rm --user 0 --entrypoint sh -v "$volume:/data" "$image" -c 'touch /
 
 start() {
   docker run -d --name "$container" -p 127.0.0.1:3007:80 -v "$volume:/data" "$image" >/dev/null
-  curl --fail --silent --show-error --retry 20 --retry-delay 1 --retry-connrefused http://127.0.0.1:3007/api/health
+  curl --fail --silent --show-error --retry 20 --retry-delay 1 --retry-connrefused --retry-all-errors http://127.0.0.1:3007/api/health
 }
 
 start

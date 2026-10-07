@@ -39,7 +39,7 @@ if (process.argv.length !== 3) {
     console.log(`Backup saved: ${destination}`);
   } finally {
     database.close();
-    if (temporaryFile) rmSync(temporaryFile, { force: true });
+    if (temporaryFile) { for (const suffix of ["", "-wal", "-shm"]) rmSync(temporaryFile + suffix, { force: true }); }
     if (temporaryDirectory) rmdirSync(temporaryDirectory);
   }
 }

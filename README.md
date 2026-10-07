@@ -1,26 +1,40 @@
-# travel.dev.boyersoftware.com
+# Travel
+A shared notebook for travel ideas: trips, ordered destinations, transportation from and back home, hotel alternatives, activities, restaurants, and estimated budgets.
 
-A proof of concept, listed on [dev.boyersoftware.com](https://dev.boyersoftware.com).
-For now it serves a placeholder page.
+## Start locally
+Requires Node 24 and pnpm 10.32.1.
+```sh
+pnpm install --frozen-lockfile
+pnpm dev
+```
+Open http://localhost:3000. No account is required. Anyone with access to the app can view and edit every trip.
+Local data is stored in `data/travel.sqlite`. It is excluded from Git. Set `TRAVEL_DATABASE_PATH` to choose another location.
 
-## Deploying
+## Checks
+```sh
+pnpm lint
+pnpm typecheck
+pnpm test
+pnpm build
+```
+For local production preview, set `TRAVEL_DATABASE_PATH` to an absolute database path before `pnpm start`. The Docker image uses a guarded startup script requiring mounted storage.
 
-Every push to `main` runs `.github/workflows/deploy.yml`, which builds the image
-on GitHub, pushes it to GHCR, and has Dokku on the server run it as the app
-`travel`. The same run creates the app if it is missing, sets its domain, and
-requests its first HTTPS certificate. The server renews it, as described in the
-[dev repo's README](https://github.com/bboyer4806/dev#one-time-server-setup).
+## Budget rules
+Prices are entered in USD for the entire traveling party. Hotel prices cover the whole stay; restaurant prices cover one meal.
+The estimate sums every travel leg, one selected hotel per destination, and activities/restaurants included in the plan.
+Missing prices are unknown rather than zero. Alternatives stay saved without contributing to the budget.
+Changing a destination or home city clears affected travel plans; reordering stops keeps only unchanged connections.
 
-The repo needs two Actions secrets (Settings > Secrets and variables > Actions):
+## Hosting
+The existing GitHub Actions deployment builds a Node container and deploys it to Dokku at travel.dev.boyersoftware.com after checks pass.
+**Provision persistent storage before the first app deployment.** See [deployment and recovery instructions](docs/DEPLOYMENT.md).
+This first version runs one application instance with SQLite; accounts and live collaboration conflict resolution are future work.
 
-| Secret | Value |
-| --- | --- |
-| `DOKKU_SSH_KEY` | the private deploy key whose public half is added to Dokku |
-| `DOKKU_HOST` | `15.204.120.53` |
+## Backups
+```sh
+pnpm backup ./backups/travel-2026-10-07.sqlite
+```
+The backup uses SQLite's online backup API, checks integrity, and refuses to overwrite an existing backup.
+Store backups outside the repository and keep a copy off the server.
 
-## Replacing the placeholder
-
-Swap `index.html` and the `Dockerfile` for the real project. Dokku serves the
-domain from whatever port the image `EXPOSE`s. Port 80 works as is. For any
-other port, run this once on the server after the first deploy:
-`sudo dokku ports:set travel http:80:<port> https:443:<port>`.
+See [PLAN.md](PLAN.md) for the agreed scope and acceptance checks.

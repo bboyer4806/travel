@@ -177,7 +177,7 @@ export default function PlannerApp({ initialData, tripId, destinationId, categor
         <LocationField label="Home city" name="homeCity" defaultValue={editor.item?.homeCity} disabled={busy} hint={editor.item ? "Changing home clears the departure and return travel plans." : "Where will you set off from and return to?"} /><Notes value={editor.item?.notes} />
       </>}
       {editor.kind === "destination" && <>
-        <Field label="City or destination" wide hint={editor.item ? "Changing the city clears travel details for its incoming and outgoing connections." : undefined}><input name="city" defaultValue={editor.item?.city} required maxLength={120} autoFocus placeholder="Where next?" /></Field>
+        <LocationField label="City or destination" name="city" defaultValue={editor.item?.city} required autoFocus disabled={busy} placeholder="Start typing a city, e.g. Vienna" helpText="Choose a suggestion or enter any destination." hint={editor.item ? "Changing the city clears travel details for its incoming and outgoing connections." : undefined} />
         <Field label="Dates or length of stay" wide><input name="stay" defaultValue={editor.item?.stay} maxLength={120} placeholder="3 nights, or May 12–15" /></Field><Notes value={editor.item?.notes} />
       </>}
       {editor.kind === "leg" && <>

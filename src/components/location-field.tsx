@@ -12,9 +12,13 @@ type Props = {
   defaultValue?: string;
   hint?: string;
   disabled?: boolean;
+  required?: boolean;
+  autoFocus?: boolean;
+  placeholder?: string;
+  helpText?: string;
 };
 
-export default function LocationField({ name, label, defaultValue = "", hint, disabled }: Props) {
+export default function LocationField({ name, label, defaultValue = "", hint, disabled, required, autoFocus, placeholder = "Start typing a city, e.g. Wooster, OH", helpText = "Choose a suggestion or keep your own city or airport." }: Props) {
   const id = useId();
   const input = useRef<HTMLInputElement>(null);
   const list = useRef<HTMLUListElement>(null);
@@ -98,8 +102,8 @@ export default function LocationField({ name, label, defaultValue = "", hint, di
   }}>
     <label htmlFor={id}>{label}</label>
     <div className="location-input">
-    <input ref={input} id={id} name={name} value={value} disabled={disabled} maxLength={120}
-      placeholder="Start typing a city, e.g. Wooster, OH" autoComplete="off" spellCheck={false}
+    <input ref={input} id={id} name={name} value={value} disabled={disabled} required={required} autoFocus={autoFocus} maxLength={120}
+      placeholder={placeholder} autoComplete="off" spellCheck={false}
       role="combobox" aria-autocomplete="list" aria-expanded={expanded}
       aria-controls={expanded ? `${id}-suggestions` : undefined}
       aria-activedescendant={expanded && active >= 0 ? `${id}-option-${active}` : undefined}
@@ -122,7 +126,7 @@ export default function LocationField({ name, label, defaultValue = "", hint, di
     </div>}
     </div>
     <span className="sr-only" role="status" aria-live="polite">{status}</span>
-    <small id={`${id}-help`}>Choose a suggestion or keep your own city or airport.</small>
+    <small id={`${id}-help`}>{helpText}</small>
     <p className="location-credit">Locations by <a href="https://open-meteo.com/" target="_blank" rel="noreferrer">Open-Meteo</a> / <a href="https://www.geonames.org/" target="_blank" rel="noreferrer">GeoNames</a></p>
     {hint && <small id={`${id}-hint`}>{hint}</small>}
   </div>;

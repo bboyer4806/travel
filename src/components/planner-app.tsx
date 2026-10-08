@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import LocationField from "@/components/location-field";
 import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState, type FormEvent, type ReactNode } from "react";
 import { ArrowDown, ArrowLeft, ArrowRight, ArrowUp, BedDouble, CalendarDays, Check, CheckCircle2, Compass, ExternalLink, Home, MapPin, MoreHorizontal, Pencil, Plane, Plus, Search, Sparkles, Trash2, Users, Utensils, Wallet, X } from "lucide-react";
@@ -173,7 +174,7 @@ export default function PlannerApp({ initialData, tripId, destinationId, categor
         <Field label="Trip name" wide><input name="name" defaultValue={editor.item?.name} required maxLength={120} placeholder="A long weekend in the mountains" autoFocus /></Field>
         <Field label="General date" hint="Exact dates can wait."><input name="dateLabel" defaultValue={editor.item?.dateLabel} maxLength={120} placeholder="Spring 2027, or sometime soon" /></Field>
         <Field label="Travelers"><input name="travelers" type="number" min="1" max="999" step="1" required defaultValue={editor.item?.travelers ?? 2} /></Field>
-        <Field label="Home city" wide hint={editor.item ? "Changing home clears the departure and return travel plans." : "Where will you set off from and return to?"}><input name="homeCity" defaultValue={editor.item?.homeCity} maxLength={120} placeholder="City or airport" /></Field><Notes value={editor.item?.notes} />
+        <LocationField label="Home city" name="homeCity" defaultValue={editor.item?.homeCity} disabled={busy} hint={editor.item ? "Changing home clears the departure and return travel plans." : "Where will you set off from and return to?"} /><Notes value={editor.item?.notes} />
       </>}
       {editor.kind === "destination" && <>
         <Field label="City or destination" wide hint={editor.item ? "Changing the city clears travel details for its incoming and outgoing connections." : undefined}><input name="city" defaultValue={editor.item?.city} required maxLength={120} autoFocus placeholder="Where next?" /></Field>

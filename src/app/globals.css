@@ -1588,3 +1588,89 @@ button svg,a svg {
 }
 
 }
+
+.location-input {
+  position:relative
+}
+.location-panel {
+  position:absolute;
+  top:calc(100% + 4px);
+  left:0;
+  right:0;
+  z-index:2;
+  box-shadow:0 5px 18px #172c351a;
+  border:1px solid var(--line);
+  border-radius:6px;
+  background:#fffffc;
+  overflow:hidden;
+  font-weight:400
+}
+.location-suggestions {
+  list-style:none;
+  padding:3px;
+  margin:0;
+  max-height:220px;
+  overflow-y:auto;
+  overscroll-behavior:contain
+}
+.location-option {
+  display:flex;
+  align-items:center;
+  gap:10px;
+  width:100%;
+  min-height:50px;
+  padding:9px;
+  text-align:left;
+  border:0;
+  border-radius:4px;
+  background:transparent;
+  color:var(--ink);
+  font-size:13px;
+  cursor:pointer
+}
+.location-option:hover,.location-option[aria-selected="true"] {
+  background:#edf2e7
+}
+.location-option>svg {
+  flex-shrink:0;
+  color:var(--green)
+}
+.location-option>span {
+  min-width:0;
+  overflow-wrap:anywhere
+}
+.location-option strong,.location-option small {
+  display:block
+}
+.location-option strong {
+  font-weight:600
+}
+.location-message,.location-credit {
+  margin:0;
+  padding:10px 12px;
+  line-height:1.5;
+  color:var(--muted)
+}
+.location-message {
+  font-size:12px
+}
+.location-credit {
+  font-size:10px;
+  padding:0;
+  font-weight:400
+}
+.location-credit a {
+  text-decoration:underline;
+  text-underline-offset:2px
+}
+.sr-only {
+  position:absolute;
+  width:1px;
+  height:1px;
+  padding:0;
+  margin:-1px;
+  overflow:hidden;
+  clip:rect(0,0,0,0);
+  white-space:nowrap;
+  border:0
+}

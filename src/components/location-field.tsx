@@ -2,6 +2,7 @@
 
 import { useEffect, useId, useRef, useState, type KeyboardEvent } from "react";
 import { MapPin } from "lucide-react";
+import { formatDestinationLabel, formatSavedDestinationLabel } from "@/lib/destination-label";
 import type { LocationSuggestion } from "@/lib/location-search";
 
 type SearchResult = { query: string; locations: LocationSuggestion[]; failed?: boolean };
@@ -16,13 +17,17 @@ type Props = {
   autoFocus?: boolean;
   placeholder?: string;
   helpText?: string;
+  compactDestination?: boolean;
 };
 
-export default function LocationField({ name, label, defaultValue = "", hint, disabled, required, autoFocus, placeholder = "Start typing a city, e.g. Wooster, OH", helpText = "Choose a suggestion or keep your own city or airport." }: Props) {
+export default function LocationField({ name, label, defaultValue = "", hint, disabled, required, autoFocus, compactDestination = false, placeholder = "Start typing a city, e.g. Wooster, OH", helpText = "Choose a suggestion or keep your own city or airport." }: Props) {
   const id = useId();
   const input = useRef<HTMLInputElement>(null);
   const list = useRef<HTMLUListElement>(null);
-  const [value, setValue] = useState(defaultValue);
+  const [value, setValue] = useState(() => compactDestination ? formatSavedDestinationLabel(defaultValue) : defaultValue);
+  // Keep the full location identity when only its displayed label is shorter.
+  const [storedValue, setStoredValue] = useState(defaultValue);
+  const selectedLocation = useRef({ display: value, full: defaultValue });
   const [open, setOpen] = useState(false);
   const [composing, setComposing] = useState(false);
   const [active, setActive] = useState(-1);
@@ -70,7 +75,10 @@ export default function LocationField({ name, label, defaultValue = "", hint, di
 
   function choose(location: LocationSuggestion) {
     input.current?.focus();
-    setValue(location.label);
+    const display = compactDestination ? formatDestinationLabel(location) : location.label;
+    selectedLocation.current = { display, full: location.label };
+    setValue(display);
+    setStoredValue(location.label);
     setOpen(false);
     setActive(-1);
   }
@@ -102,14 +110,20 @@ export default function LocationField({ name, label, defaultValue = "", hint, di
   }}>
     <label htmlFor={id}>{label}</label>
     <div className="location-input">
-    <input ref={input} id={id} name={name} value={value} disabled={disabled} required={required} autoFocus={autoFocus} maxLength={120}
+    {compactDestination && <input type="hidden" name={name} value={storedValue} disabled={disabled} />}
+    <input ref={input} id={id} name={compactDestination ? undefined : name} value={value} disabled={disabled} required={required} autoFocus={autoFocus} maxLength={120}
       placeholder={placeholder} autoComplete="off" spellCheck={false}
       role="combobox" aria-autocomplete="list" aria-expanded={expanded}
       aria-controls={expanded ? `${id}-suggestions` : undefined}
       aria-activedescendant={expanded && active >= 0 ? `${id}-option-${active}` : undefined}
       aria-describedby={`${id}-help${hint ? ` ${id}-hint` : ""}`}
       onFocus={() => { setOpen(true); setActive(-1); }}
-      onChange={(event) => { setValue(event.target.value); setOpen(true); setActive(-1); }}
+      onChange={(event) => {
+        const nextValue = event.target.value;
+        setValue(nextValue);
+        setStoredValue(compactDestination && nextValue === selectedLocation.current.display ? selectedLocation.current.full : nextValue);
+        setOpen(true); setActive(-1);
+      }}
       onCompositionStart={() => setComposing(true)} onCompositionEnd={() => setComposing(false)}
       onKeyDown={onKeyDown} />
     {searching && <div className="location-panel">

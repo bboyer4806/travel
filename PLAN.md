@@ -59,3 +59,11 @@ Live price search, booking integrations, maps, detailed daily itineraries, curre
 Next.js with TypeScript and a single SQLite database using Node 24's built-in SQLite support.
 SQLite lives outside the application image on a Dokku storage mount.
 Use one application instance for v1. Live deployment remains a separate review step.
+
+## Added scope: October 8, 2026
+- Use location suggestions for departing city, return city, and destinations; allow manual entry.
+- Rename Home city to Departing city. Return there by default; a checkbox enables a separate return city.
+- Each connection can have an ordered itinerary of layovers and points of interest, with place, timing, notes, and controls to add, edit, remove, and reorder stops.
+- Keep one total estimated price per connection, including its itinerary stops.
+- Support multiple research links with short descriptions on travel connections and all destination idea categories; retain existing saved links.
+- Upgrade stored trips without changing their routes or losing details. Clear only the affected connection when an endpoint changes.

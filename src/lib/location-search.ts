@@ -3,6 +3,7 @@ export type LocationSuggestion = {
   name: string;
   region: string;
   country: string;
+  countryCode?: string;
   label: string;
 };
 
@@ -49,8 +50,11 @@ function normalizeResults(data: unknown): LocationSuggestion[] {
     const name = text(result.name);
     const region = text(result.admin1);
     const country = text(result.country) || text(result.country_code);
+    const rawCountryCode = text(result.country_code).toUpperCase();
+    const countryCode = /^[A-Z]{2}$/.test(rawCountryCode) ? rawCountryCode : undefined;
     if (!name || !country) continue;
-    const parts = [name, region, country].filter((part, index, all) => part && all.findIndex((other) => other.toLowerCase() === part.toLowerCase()) === index);
+    const isUnitedStates = countryCode === "US" || ["united states", "united states of america", "us", "usa"].includes(country.toLowerCase());
+    const parts = [name, region, country].filter((part, index, all) => part && (isUnitedStates || all.findIndex((other) => other.toLowerCase() === part.toLowerCase()) === index));
     let label = parts.join(", ");
     // Keep suggestions within the existing city field limit without clipping a place name.
     if (label.length > MAX_QUERY_LENGTH) label = [name, country].join(", ");
@@ -59,7 +63,7 @@ function normalizeResults(data: unknown): LocationSuggestion[] {
     if (ids.has(id) || labels.has(key)) continue;
     ids.add(id);
     labels.add(key);
-    locations.push({ id, name, region, country, label });
+    locations.push({ id, name, region, country, ...(countryCode ? { countryCode } : {}), label });
     if (locations.length === MAX_RESULTS) break;
   }
   return locations;

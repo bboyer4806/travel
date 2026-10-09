@@ -106,3 +106,28 @@ test("distinct concurrent requests have a fixed upper bound", async () => {
   await Promise.all(requests);
   assert.deepEqual(await search("Another city"), []);
 });
+
+test("country code metadata leaves full labels and distinct regions intact", async () => {
+  const search = createLocationSearch({ fetcher: async () => json({ results: [
+    { id: 201, name: "Springfield", admin1: "Illinois", country: "United States", country_code: " us " },
+    { id: 202, name: "Springfield", admin1: "Massachusetts", country: "United States", country_code: "US" },
+    { id: 203, name: "Paris", admin1: "Ile-de-France", country: "France", country_code: "FR" },
+    { id: 204, name: "Paris", admin1: "Texas", country: "United States", country_code: "US" },
+    { id: 205, name: "Missing metadata", admin1: "Region", country: "France" },
+    { id: 206, name: "Invalid metadata", admin1: "Region", country: "France", country_code: "not a country code" },
+    { id: 207, name: "New York", admin1: "New York", country: "United States", country_code: "US" },
+    { id: 208, name: "Washington", admin1: "Washington", country: "United States" },
+  ] }) });
+  const locations = await search("Sample cities");
+  assert.equal(locations.length, 8);
+  assert.equal(locations[0].countryCode, "US");
+  assert.equal(locations[0].label, "Springfield, Illinois, United States");
+  assert.equal(locations[1].label, "Springfield, Massachusetts, United States");
+  assert.equal(locations[2].countryCode, "FR");
+  assert.equal(locations[2].label, "Paris, Ile-de-France, France");
+  assert.equal(locations[3].label, "Paris, Texas, United States");
+  assert.equal(locations[4].countryCode, undefined);
+  assert.equal(locations[5].countryCode, undefined);
+  assert.equal(locations[6].label, "New York, New York, United States");
+  assert.equal(locations[7].label, "Washington, Washington, United States");
+});

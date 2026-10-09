@@ -53,6 +53,8 @@ Never restore over an actively running database. Test recovery before relying on
 
 Keep the persistent mount attached. Deploy the previous known-good image tag using the normal Dokku process. Back up data before any future schema migration; rolling back an image does not reverse database schema changes.
 
+The route and research-link update upgrades the database to schema 3. Older images cannot show or edit the new return-city, itinerary, or multiple-link fields. If a rollback requires restoring the pre-upgrade backup, follow the stopped-app restore procedure above and preserve the current database first; restoring an earlier snapshot also removes later edits. Recheck the schema and saved trip details after any rollback or redeployment.
+
 ## References
 - [Dokku persistent storage](https://dokku.com/docs/advanced-usage/persistent-storage/)
 - [Node SQLite backup API](https://nodejs.org/docs/latest-v24.x/api/sqlite.html)

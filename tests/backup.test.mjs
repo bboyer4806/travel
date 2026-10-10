@@ -6,11 +6,15 @@ import { join, resolve, sep, basename } from "node:path";
 import { spawnSync } from "node:child_process";
 import { DatabaseSync } from "node:sqlite";
 
+const imageBytes = Buffer.from('UklGRh4AAABXRUJQVlA4TBEAAAAvAUAAAAfQtSZVrP+BiOh/AAA=', 'base64');
+const imageVersion = "33333333-3333-4333-8333-333333333333";
+
 function fixture(t) {
   const directory = mkdtempSync(join(tmpdir(), "travel-backup-test-"));
   const source = join(directory, "source.sqlite");
   const db = new DatabaseSync(source);
-  db.exec("PRAGMA journal_mode = WAL; CREATE TABLE notes(value TEXT); INSERT INTO notes VALUES('saved idea');");
+  db.exec("PRAGMA journal_mode = WAL; CREATE TABLE notes(value TEXT); INSERT INTO notes VALUES('saved idea'); CREATE TABLE destination_images(destinationId TEXT PRIMARY KEY, version TEXT NOT NULL, data BLOB NOT NULL) STRICT;");
+  db.prepare("INSERT INTO destination_images(destinationId,version,data) VALUES(?,?,?)").run("22222222-2222-4222-8222-222222222222", imageVersion, imageBytes);
   t.after(() => {
     db.close();
     const target = resolve(directory);
@@ -23,7 +27,7 @@ function fixture(t) {
   return { directory, source, backup };
 }
 
-test("online backup preserves live WAL data and cleans temporary SQLite sidecars", (t) => {
+test("online backup preserves live WAL data and image bytes and cleans temporary SQLite sidecars", (t) => {
   const { directory, backup } = fixture(t);
   const target = join(directory, "backup.sqlite");
   const result = backup(target);
@@ -31,6 +35,9 @@ test("online backup preserves live WAL data and cleans temporary SQLite sidecars
   const snapshot = new DatabaseSync(target, { readOnly: true });
   try {
     assert.equal(snapshot.prepare("SELECT value FROM notes").get().value, "saved idea");
+    const image = snapshot.prepare("SELECT version, data FROM destination_images WHERE destinationId = ?").get("22222222-2222-4222-8222-222222222222");
+    assert.equal(image.version, imageVersion);
+    assert.deepEqual(Buffer.from(image.data), imageBytes);
     assert.equal(snapshot.prepare("PRAGMA integrity_check").get().integrity_check, "ok");
   } finally { snapshot.close(); }
   assert.deepEqual(readdirSync(directory).filter((name) => name.startsWith(".travel-backup-")), []);

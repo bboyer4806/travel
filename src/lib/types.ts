@@ -1,6 +1,7 @@
 export type Category = "hotels" | "activities" | "restaurants";
 export interface Trip { id: string; name: string; dateLabel: string; homeCity: string; returnCity: string | null; travelers: number; notes: string; createdAt: string; }
-export interface Destination { id: string; tripId: string; city: string; stay: string; notes: string; position: number; }
+export interface Destination { id: string; tripId: string; city: string; stay: string; notes: string; position: number; imageVersion: string | null; }
+export interface DestinationImage { version: string; data: Uint8Array; }
 export interface ResearchLink { id: string; url: string; description: string; }
 export interface ItineraryStop { id: string; kind: "layover" | "stop"; place: string; arrival: string; departure: string; notes: string; }
 export interface TravelLeg { id: string; tripId: string; fromId: string | null; toId: string | null; method: string; priceCents: number | null; departure: string; arrival: string; url: string; notes: string; itinerary: ItineraryStop[]; links: ResearchLink[]; }
@@ -9,7 +10,7 @@ export interface Snapshot { trips: Trip[]; destinations: Destination[]; legs: Tr
 export type Mutation =
  | { type: "trip.save"; id?: string; name: string; dateLabel: string; homeCity: string; returnCity?: string | null; travelers: number; notes: string }
  | { type: "trip.delete"; id: string }
- | { type: "destination.save"; id?: string; tripId: string; city: string; stay: string; notes: string }
+ | { type: "destination.save"; id?: string; tripId: string; city: string; stay: string; notes: string; image?: Uint8Array | null }
  | { type: "destination.delete"; id: string }
  | { type: "destination.move"; id: string; direction: "up" | "down" }
  | { type: "leg.save"; id: string; method: string; price: string; departure: string; arrival: string; url: string; notes: string; itinerary?: ItineraryStop[]; links?: ResearchLink[] }

@@ -67,3 +67,8 @@ Use one application instance for v1. Live deployment remains a separate review s
 - Keep one total estimated price per connection, including its itinerary stops.
 - Support multiple research links with short descriptions on travel connections and all destination idea categories; retain existing saved links.
 - Upgrade stored trips without changing their routes or losing details. Clear only the affected connection when an endpoint changes.
+
+## Added scope: destination images, October 9, 2026
+- Add one optional image per destination, displayed on its destination card in the trip.
+- Upload, preview, replace, or remove images in the destination editor; Cancel discards the draft.
+- Keep images in persistent storage and backups; adding or changing an image preserves existing travel plans and prices.

@@ -22,12 +22,52 @@ start() {
 }
 
 start
-docker exec "$container" node --input-type=module -e "import { DatabaseSync } from 'node:sqlite'; const db = new DatabaseSync('/data/travel.sqlite'); db.prepare('INSERT INTO trips(id,name,dateLabel,homeCity,travelers,notes,createdAt) VALUES(?,?,?,?,?,?,?)').run('container-smoke','Persistence test','','',2,'',new Date().toISOString()); db.close();"
+docker exec -i "$container" node --input-type=module <<'JS'
+import { DatabaseSync } from 'node:sqlite';
+const db = new DatabaseSync('/data/travel.sqlite');
+const destinationId = '22222222-2222-4222-8222-222222222222';
+const imageVersion = '33333333-3333-4333-8333-333333333333';
+// A real 2-by-2 lossless WebP, generated with sharp.
+const image = Buffer.from('UklGRh4AAABXRUJQVlA4TBEAAAAvAUAAAAfQtSZVrP+BiOh/AAA=', 'base64');
+db.exec('PRAGMA foreign_keys = ON; BEGIN IMMEDIATE;');
+db.prepare('INSERT INTO trips(id,name,dateLabel,homeCity,travelers,notes,createdAt) VALUES(?,?,?,?,?,?,?)').run('container-smoke','Persistence test','','',2,'',new Date().toISOString());
+db.prepare('INSERT INTO destinations(id,tripId,city,stay,notes,position) VALUES(?,?,?,?,?,?)').run(destinationId, 'container-smoke', 'Vienna', '', '', 0);
+db.prepare('INSERT INTO destination_images(destinationId,version,data) VALUES(?,?,?)').run(destinationId, imageVersion, image);
+db.exec('COMMIT;');
+db.close();
+JS
 
 # Replace the container, keeping the explicitly mounted volume.
 docker rm -f "$container" >/dev/null
 start
-docker exec "$container" node --input-type=module -e "import { DatabaseSync } from 'node:sqlite'; const db = new DatabaseSync('/data/travel.sqlite'); if (!db.prepare('SELECT id FROM trips WHERE id = ?').get('container-smoke')) process.exitCode = 1; db.close();"
+docker exec -i "$container" node --input-type=module <<'JS'
+import assert from 'node:assert/strict';
+import { DatabaseSync } from 'node:sqlite';
+const destinationId = '22222222-2222-4222-8222-222222222222';
+const imageVersion = '33333333-3333-4333-8333-333333333333';
+const expected = Buffer.from('UklGRh4AAABXRUJQVlA4TBEAAAAvAUAAAAfQtSZVrP+BiOh/AAA=', 'base64');
+const db = new DatabaseSync('/data/travel.sqlite');
+try {
+  assert.ok(db.prepare('SELECT id FROM trips WHERE id = ?').get('container-smoke'));
+  assert.ok(db.prepare('SELECT id FROM destinations WHERE id = ?').get(destinationId));
+  const image = db.prepare('SELECT version,data FROM destination_images WHERE destinationId = ?').get(destinationId);
+  assert.equal(image?.version, imageVersion);
+  assert.deepEqual(Buffer.from(image.data), expected);
+} finally {
+  db.close();
+}
+const endpoint = 'http://127.0.0.1:80/api/destination-images/' + destinationId;
+const options = () => ({ signal: AbortSignal.timeout(5000) });
+const response = await fetch(endpoint + '?v=' + imageVersion, options());
+assert.equal(response.status, 200);
+assert.equal(response.headers.get('content-type'), 'image/webp');
+assert.equal(response.headers.get('x-content-type-options'), 'nosniff');
+assert.deepEqual(Buffer.from(await response.arrayBuffer()), expected);
+const missingVersion = await fetch(endpoint + '?v=44444444-4444-4444-8444-444444444444', options());
+assert.equal(missingVersion.status, 404);
+const missingImage = await fetch('http://127.0.0.1:80/api/destination-images/55555555-5555-4555-8555-555555555555?v=' + imageVersion, options());
+assert.equal(missingImage.status, 404);
+JS
 
 # A container without the persistent mount must refuse to start.
 set +e

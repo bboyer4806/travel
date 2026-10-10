@@ -2,11 +2,12 @@ import { randomUUID } from "node:crypto";
 import { mkdirSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { DatabaseSync } from "node:sqlite";
-import type { Candidate, Category, Destination, ItineraryStop, Mutation, ResearchLink, Snapshot, TravelLeg, Trip } from "./types";
+import type { Candidate, Category, Destination, DestinationImage, ItineraryStop, Mutation, ResearchLink, Snapshot, TravelLeg, Trip } from "./types";
 
 type StoredLeg = Omit<TravelLeg, "itinerary" | "links"> & { itineraryJson: string; linksJson: string };
 type StoredCandidate = Omit<Candidate, "links" | "included"> & { linksJson: string; included: number };
 
+const MAX_IMAGE_BYTES = 2 * 1024 * 1024;
 const MAX_PRICE_CENTS = 10_000_000_000;
 const CATEGORIES = ["hotels", "activities", "restaurants"] as const;
 
@@ -121,6 +122,16 @@ function savedLinks(input: { url: string; links?: ResearchLink[] }, before?: { i
   if (links.length) return [{ ...links[0], url: input.url }, ...links.slice(1)];
   return [{ id: randomUUID(), url: input.url, description: "" }];
 }
+function imageField(input: Input): Uint8Array | null | undefined {
+  const value = input.image;
+  if (value === undefined || value === null) return value;
+  if (!(value instanceof Uint8Array)) throw new ValidationError("Choose a valid WebP destination image.");
+  if (value.byteLength > MAX_IMAGE_BYTES) throw new ValidationError("Destination image must be 2 MB or smaller.");
+  if (value.byteLength < 12 || ![82, 73, 70, 70].every((byte, index) => value[index] === byte) || ![87, 69, 66, 80].every((byte, index) => value[index + 8] === byte)) {
+    throw new ValidationError("Choose a valid WebP destination image.");
+  }
+  return new Uint8Array(value);
+}
 function validate(input: unknown): Mutation {
   if (!input || typeof input !== "object" || Array.isArray(input)) throw new ValidationError("The submitted information is invalid.");
   const value = input as Input;
@@ -137,7 +148,7 @@ function validate(input: unknown): Mutation {
     case "leg.clear":
       return { type: value.type, id: idField(value) };
     case "destination.save":
-      return { type: value.type, id: optionalId(value), tripId: idField(value, "tripId"), city: textField(value, "city", 120, true), stay: textField(value, "stay", 120), notes: textField(value, "notes", 8000) };
+      return { type: value.type, id: optionalId(value), tripId: idField(value, "tripId"), city: textField(value, "city", 120, true), stay: textField(value, "stay", 120), notes: textField(value, "notes", 8000), image: imageField(value) };
     case "destination.move":
       if (value.direction !== "up" && value.direction !== "down") throw new ValidationError("Choose a valid direction for this destination.");
       return { type: value.type, id: idField(value), direction: value.direction };
@@ -159,7 +170,7 @@ export function createStore(databasePath: string) {
   db.exec("BEGIN IMMEDIATE");
   try {
     const version = Number(db.prepare("PRAGMA user_version").get()?.user_version ?? 0);
-    if (version > 3) throw new Error("This database was created by a newer version of the travel app.");
+    if (version > 4) throw new Error("This database was created by a newer version of the travel app.");
     db.exec(`
     CREATE TABLE IF NOT EXISTS trips (
       id TEXT PRIMARY KEY, name TEXT NOT NULL, dateLabel TEXT NOT NULL DEFAULT '',
@@ -212,6 +223,15 @@ export function createStore(databasePath: string) {
       }
       db.exec("PRAGMA user_version = 3;");
     }
+    if (version < 4) {
+      db.exec(`
+        CREATE TABLE IF NOT EXISTS destination_images (
+          destinationId TEXT PRIMARY KEY REFERENCES destinations(id) ON DELETE CASCADE,
+          version TEXT NOT NULL, data BLOB NOT NULL
+        ) STRICT;
+        PRAGMA user_version = 4;
+      `);
+    }
     db.exec("COMMIT");
   } catch (error) {
     db.exec("ROLLBACK");
@@ -222,7 +242,7 @@ export function createStore(databasePath: string) {
   function getSnapshot(): Snapshot {
     return {
       trips: db.prepare("SELECT * FROM trips ORDER BY createdAt DESC, id").all().map((row) => ({ ...row })) as unknown as Trip[],
-      destinations: db.prepare("SELECT * FROM destinations ORDER BY tripId, position").all().map((row) => ({ ...row })) as unknown as Destination[],
+      destinations: db.prepare("SELECT destinations.*, destination_images.version AS imageVersion FROM destinations LEFT JOIN destination_images ON destination_images.destinationId = destinations.id ORDER BY destinations.tripId, destinations.position").all().map((row) => ({ ...row })) as unknown as Destination[],
       legs: db.prepare("SELECT legs.* FROM legs LEFT JOIN destinations ON destinations.id = legs.fromId ORDER BY legs.tripId, coalesce(destinations.position, -1)").all().map((row) => {
         const { itineraryJson, linksJson, ...leg } = row as unknown as StoredLeg;
         const links = storedLinks({ ...leg, linksJson });
@@ -234,6 +254,10 @@ export function createStore(databasePath: string) {
         return { ...candidate, url: links[0]?.url ?? "", included: candidate.included === 1, links };
       }),
     };
+  }
+  function getDestinationImage(id: string): DestinationImage | undefined {
+    const row = db.prepare("SELECT version, data FROM destination_images WHERE destinationId = ?").get(id);
+    return row ? { version: row.version as string, data: new Uint8Array(row.data as Uint8Array) } : undefined;
   }
   function existing<T>(table: "trips" | "destinations" | "legs" | "candidates", id: string): T {
     const row = db.prepare(`SELECT * FROM ${table} WHERE id = ?`).get(id);
@@ -303,6 +327,11 @@ export function createStore(databasePath: string) {
         } else {
           const position = orderedDestinations(input.tripId).length;
           db.prepare("INSERT INTO destinations(id,tripId,city,stay,notes,position) VALUES(?,?,?,?,?,?)").run(id, input.tripId, input.city, input.stay, input.notes, position);
+        }
+        if (input.image === null) {
+          db.prepare("DELETE FROM destination_images WHERE destinationId = ?").run(id);
+        } else if (input.image !== undefined) {
+          db.prepare("INSERT INTO destination_images(destinationId, version, data) VALUES(?,?,?) ON CONFLICT(destinationId) DO UPDATE SET version = excluded.version, data = excluded.data").run(id, randomUUID(), input.image);
         }
         reconcileRoute(input.tripId);
         return id;
@@ -378,7 +407,7 @@ export function createStore(databasePath: string) {
       throw error;
     }
   }
-  return { getSnapshot, applyMutation, close: () => db.close() };
+  return { getSnapshot, getDestinationImage, applyMutation, close: () => db.close() };
 }
 
 type Store = ReturnType<typeof createStore>;
@@ -395,6 +424,9 @@ function defaultStore(): Store {
 }
 export function getSnapshot(): Snapshot {
   return defaultStore().getSnapshot();
+}
+export function getDestinationImage(id: string): DestinationImage | undefined {
+  return defaultStore().getDestinationImage(id);
 }
 export function applyMutation(input: unknown): { snapshot: Snapshot; id?: string } {
   return defaultStore().applyMutation(input);

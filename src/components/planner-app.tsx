@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import LocationField from "@/components/location-field";
+import { DestinationImage, DestinationImageEditor } from "@/components/destination-image";
 import TripRouteFields from "@/components/trip-route-fields";
 import { ConnectionItinerary, ConnectionItineraryEditor } from "@/components/connection-itinerary";
 import { ResearchLinks, ResearchLinksEditor } from "@/components/research-links";
@@ -33,6 +34,7 @@ const priceNotes = {
   activities: "Total for the whole party for this activity.",
   restaurants: "Total for one meal for the whole party.",
 };
+function destinationImageUrl(destination: Destination) { return "/api/destination-images/" + destination.id + "?v=" + destination.imageVersion; }
 function displayPrice(cents: number | null) { return cents === null ? "Not estimated" : formatMoney(cents); }
 function priceValue(cents: number | null | undefined) { return cents == null ? "" : (cents / 100).toFixed(2); }
 function BudgetValue({ budget }: { budget: Budget }) {
@@ -61,6 +63,8 @@ export default function PlannerApp({ initialData, tripId, destinationId, categor
   const [busy, setBusy] = useState(false);
   const [itinerary, setItinerary] = useState<ItineraryStop[]>([]);
   const [researchLinks, setResearchLinks] = useState<ResearchLink[]>([]);
+  const [imageFile, setImageFile] = useState<File | null>(null);
+  const [removeImage, setRemoveImage] = useState(false);
   const [error, setError] = useState("");
   const [message, setMessage] = useState("");
   const [search, setSearch] = useState("");
@@ -74,16 +78,17 @@ export default function PlannerApp({ initialData, tripId, destinationId, categor
     if (busy) return;
     if (value.kind === "leg") setItinerary(value.item.itinerary ?? []);
     if (value.kind === "leg" || value.kind === "candidate") setResearchLinks(value.item?.links ?? []);
+    setImageFile(null); setRemoveImage(false);
     setEditor(value); setError(""); setMessage("");
   };
   const close = () => { if (!busy) { setEditor(null); setError(""); } };
-  async function perform(mutation: Mutation, success = "Changes saved.", redirect?: string) {
+  async function perform(mutation: Mutation, success = "Changes saved.", redirect?: string, imageForm?: FormData) {
     if (busy) return;
     setBusy(true); setError(""); setMessage("");
     try {
-      const result = await mutatePlanner(mutation);
+      const result = await mutatePlanner(mutation, imageForm);
       if (!result.ok) { setError(result.error); return; }
-      setData(result.snapshot); setEditor(null); setMessage(success);
+      setData(result.snapshot); setEditor(null); setImageFile(null); setMessage(success);
       if (redirect) router.push(redirect);
       else if (mutation.type === "trip.save" && !mutation.id && result.id) router.push("/trips/" + result.id);
     } catch { setError("We couldn't reach the planner. Your changes haven't been saved. Please try again."); }
@@ -100,9 +105,13 @@ export default function PlannerApp({ initialData, tripId, destinationId, categor
     switch (editor.kind) {
       case "delete": void perform(editor.mutation, "Removed from your notebook.", editor.redirect); break;
       case "trip": void perform({ type: "trip.save", id: editor.item?.id, name: text("name"), dateLabel: text("dateLabel"), homeCity: text("homeCity"), returnCity: fields.has("differentReturn") ? text("returnCity") : null, travelers: Number(text("travelers")), notes: text("notes") }); break;
-      case "destination":
-        if (trip) void perform({ type: "destination.save", id: editor.item?.id, tripId: trip.id, city: text("city"), stay: text("stay"), notes: text("notes") }, "Destination saved. Review any new travel connections.");
+      case "destination": {
+        const imageForm = new FormData();
+        if (imageFile) imageForm.set("image", imageFile);
+        else if (removeImage) imageForm.set("removeImage", "true");
+        if (trip) void perform({ type: "destination.save", id: editor.item?.id, tripId: trip.id, city: text("city"), stay: text("stay"), notes: text("notes") }, "Destination saved. Review any new travel connections.", undefined, imageForm);
         break;
+      }
       case "leg": void perform({ type: "leg.save", id: editor.item.id, method: text("method"), price: text("price"), departure: text("departure"), arrival: text("arrival"), url: researchLinks[0]?.url ?? "", links: researchLinks, notes: text("notes"), itinerary }); break;
       case "candidate":
         if (destination && category) void perform({ type: "candidate.save", id: editor.item?.id, destinationId: destination.id, category, name: text("name"), price: text("price"), address: text("address"), url: researchLinks[0]?.url ?? "", links: researchLinks, notes: text("notes"), included: fields.has("included") });
@@ -152,7 +161,7 @@ export default function PlannerApp({ initialData, tripId, destinationId, categor
         <div className="trip-layout"><div className="trip-main">
           <section><div className="section-heading"><div><p className="eyebrow">ONE STOP AT A TIME</p><h2>The destinations</h2></div><button className="button secondary small" onClick={() => open({ kind: "destination" })}><Plus size={16} />Add destination</button></div>
             {stops.length === 0 ? <div className="empty-state"><MapPin size={29} strokeWidth={1.4} /><h3>Where should this trip take you?</h3><p>Add your first destination. Your departure and return connections will appear automatically.</p><button className="text-button" onClick={() => open({ kind: "destination" })}>Add a destination <ArrowRight size={16} /></button></div>
-              : <div className="destination-list">{stops.map((stop, index) => <article className="destination-card" key={stop.id}><div className="destination-top"><span className="stop-number">{String(index + 1).padStart(2, "0")}</span><div className="destination-name"><h3>{formatSavedDestinationLabel(stop.city)}</h3><p>{stop.stay || "Stay length to be decided"}</p></div><div className="destination-tools"><button className="icon-button" disabled={busy || index === 0} aria-label={"Move " + formatSavedDestinationLabel(stop.city) + " up"} onClick={() => void perform({ type: "destination.move", id: stop.id, direction: "up" }, "Route updated. Review the new travel connections.")}><ArrowUp size={15} /></button><button className="icon-button" disabled={busy || index === stops.length - 1} aria-label={"Move " + formatSavedDestinationLabel(stop.city) + " down"} onClick={() => void perform({ type: "destination.move", id: stop.id, direction: "down" }, "Route updated. Review the new travel connections.")}><ArrowDown size={15} /></button><button className="icon-button" aria-label={"Edit " + formatSavedDestinationLabel(stop.city)} onClick={() => open({ kind: "destination", item: stop })}><Pencil size={15} /></button><button className="icon-button" aria-label={"Delete " + formatSavedDestinationLabel(stop.city)} onClick={() => confirmDelete({ type: "destination.delete", id: stop.id }, "Remove “" + formatSavedDestinationLabel(stop.city) + "”?", "Its hotels, activities, restaurants, and affected travel plans will be removed. The remaining route will reconnect.")}><Trash2 size={15} /></button></div></div>
+              : <div className="destination-list">{stops.map((stop, index) => <article className="destination-card" key={stop.id}>{stop.imageVersion && <DestinationImage src={destinationImageUrl(stop)} name={formatSavedDestinationLabel(stop.city)} />}<div className="destination-top"><span className="stop-number">{String(index + 1).padStart(2, "0")}</span><div className="destination-name"><h3>{formatSavedDestinationLabel(stop.city)}</h3><p>{stop.stay || "Stay length to be decided"}</p></div><div className="destination-tools"><button className="icon-button" disabled={busy || index === 0} aria-label={"Move " + formatSavedDestinationLabel(stop.city) + " up"} onClick={() => void perform({ type: "destination.move", id: stop.id, direction: "up" }, "Route updated. Review the new travel connections.")}><ArrowUp size={15} /></button><button className="icon-button" disabled={busy || index === stops.length - 1} aria-label={"Move " + formatSavedDestinationLabel(stop.city) + " down"} onClick={() => void perform({ type: "destination.move", id: stop.id, direction: "down" }, "Route updated. Review the new travel connections.")}><ArrowDown size={15} /></button><button className="icon-button" aria-label={"Edit " + formatSavedDestinationLabel(stop.city)} onClick={() => open({ kind: "destination", item: stop })}><Pencil size={15} /></button><button className="icon-button" aria-label={"Delete " + formatSavedDestinationLabel(stop.city)} onClick={() => confirmDelete({ type: "destination.delete", id: stop.id }, "Remove “" + formatSavedDestinationLabel(stop.city) + "”?", "Its hotels, activities, restaurants, and affected travel plans will be removed. The remaining route will reconnect.")}><Trash2 size={15} /></button></div></div>
                 {stop.notes && <p className="destination-notes">{stop.notes}</p>}
                 <div className="category-links">{categories.map((kind) => { const Icon = categoryIcons[kind]; const count = data.candidates.filter((item) => item.destinationId === stop.id && item.category === kind).length; return <Link href={"/trips/" + trip.id + "/destinations/" + stop.id + "/" + kind} key={kind}><Icon size={20} strokeWidth={1.5} /><span>{labels[kind]}<small>{count} {count === 1 ? "idea" : "ideas"}</small></span><ArrowRight size={15} /></Link>; })}</div>
               </article>)}</div>}
@@ -189,7 +198,9 @@ export default function PlannerApp({ initialData, tripId, destinationId, categor
       </>}
       {editor.kind === "destination" && <>
         <LocationField compactDestination label="City or destination" name="city" defaultValue={editor.item?.city} required autoFocus disabled={busy} placeholder="Start typing a city, e.g. Vienna" helpText="Choose a suggestion or enter any destination." hint={editor.item ? "Changing the city clears travel details for its incoming and outgoing connections." : undefined} />
-        <Field label="Dates or length of stay" wide><input name="stay" defaultValue={editor.item?.stay} maxLength={120} placeholder="3 nights, or May 12–15" /></Field><Notes value={editor.item?.notes} />
+        <Field label="Dates or length of stay" wide><input name="stay" defaultValue={editor.item?.stay} maxLength={120} placeholder="3 nights, or May 12–15" /></Field>
+        <DestinationImageEditor existingSrc={editor.item?.imageVersion ? destinationImageUrl(editor.item) : null} file={imageFile} removeExisting={removeImage} onChange={(file, remove) => { setImageFile(file); setRemoveImage(remove); }} disabled={busy} />
+        <Notes value={editor.item?.notes} />
       </>}
       {editor.kind === "leg" && <>
         <p className="form-route wide">{legName(editor.item.fromId, "from")} <ArrowRight size={16} /> {legName(editor.item.toId, "to")}</p>

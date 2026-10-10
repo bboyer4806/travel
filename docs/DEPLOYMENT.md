@@ -23,6 +23,7 @@ The startup script requires the marker and writable storage. Without them startu
 - Main pushes run these checks before building/pushing the image and deploying through the existing workflow.
 - Retain the existing DOKKU_SSH_KEY and DOKKU_HOST secrets.
 - The image still exposes port 80, preserving the existing domain/proxy setup.
+- Keep the proxy request-body limit at least 6 MB to allow 5 MB image uploads plus multipart overhead. The travel host currently computes a 20 MB Nginx limit.
 - Keep one web instance: shared SQLite on one server is the v1 deployment model.
 - Confirm /api/health returns HTTP 200. Create a temporary trip, restart the app, and verify the trip remains before considering persistence verified.
 
@@ -54,6 +55,8 @@ Never restore over an actively running database. Test recovery before relying on
 Keep the persistent mount attached. Deploy the previous known-good image tag using the normal Dokku process. Back up data before any future schema migration; rolling back an image does not reverse database schema changes.
 
 The route and research-link update upgrades the database to schema 3. Older images cannot show or edit the new return-city, itinerary, or multiple-link fields. If a rollback requires restoring the pre-upgrade backup, follow the stopped-app restore procedure above and preserve the current database first; restoring an earlier snapshot also removes later edits. Recheck the schema and saved trip details after any rollback or redeployment.
+
+The destination-image update upgrades the database to schema 4 with a separate image BLOB table. The persistent database and online backups contain images; no additional storage mount is needed. Back up schema 3 before deploying. The previous app rejects newer database schemas, so image rollback requires a compatible app build or the documented stopped-app restore procedure; restoring a pre-upgrade backup loses later edits.
 
 ## References
 - [Dokku persistent storage](https://dokku.com/docs/advanced-usage/persistent-storage/)

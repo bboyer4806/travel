@@ -8,7 +8,7 @@ const ALLOWED_FORMATS = new Set(["jpeg", "png", "webp"]);
 export class ImageValidationError extends Error {}
 
 /** Decode untrusted uploads and store only bounded, metadata-free WebP images. */
-export async function prepareDestinationImage(form?: FormData): Promise<Uint8Array | null | undefined> {
+export async function prepareImage(form?: FormData): Promise<Uint8Array | null | undefined> {
   if (form === undefined) return undefined;
   if (!(form instanceof FormData)) throw new ImageValidationError("Choose an image and try again.");
   const file = form.get("image");

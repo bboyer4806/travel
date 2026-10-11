@@ -1,7 +1,7 @@
 "use server";
 import { revalidatePath } from "next/cache";
 import { applyMutation, ValidationError } from "@/lib/store";
-import { ImageValidationError, prepareDestinationImage } from "@/lib/destination-image-upload";
+import { ImageValidationError, prepareImage } from "@/lib/image-upload";
 import type { ActionResult, Mutation } from "@/lib/types";
 
 // Version one is intentionally a shared, publicly editable planner.
@@ -9,8 +9,8 @@ import type { ActionResult, Mutation } from "@/lib/types";
 export async function mutatePlanner(input: Mutation, imageForm?: FormData): Promise<ActionResult> {
   try {
     // Never accept image bytes directly from the client mutation. Decode uploaded files first.
-    const mutation = input.type === "destination.save"
-      ? { ...input, image: await prepareDestinationImage(imageForm) }
+    const mutation = (input.type === "destination.save" || input.type === "candidate.save")
+      ? { ...input, image: await prepareImage(imageForm) }
       : input;
     const result = applyMutation(mutation);
     if (input.type === "trip.delete") revalidatePath("/"); else revalidatePath("/", "layout");

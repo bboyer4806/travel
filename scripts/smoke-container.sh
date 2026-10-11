@@ -27,12 +27,21 @@ import { DatabaseSync } from 'node:sqlite';
 const db = new DatabaseSync('/data/travel.sqlite');
 const destinationId = '22222222-2222-4222-8222-222222222222';
 const imageVersion = '33333333-3333-4333-8333-333333333333';
+const candidates = [
+  { id: '66666666-6666-4666-8666-666666666666', category: 'hotels', version: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb' },
+  { id: '77777777-7777-4777-8777-777777777777', category: 'activities', version: 'cccccccc-cccc-4ccc-8ccc-cccccccccccc' },
+  { id: '88888888-8888-4888-8888-888888888888', category: 'restaurants', version: 'dddddddd-dddd-4ddd-8ddd-dddddddddddd' },
+];
 // A real 2-by-2 lossless WebP, generated with sharp.
 const image = Buffer.from('UklGRh4AAABXRUJQVlA4TBEAAAAvAUAAAAfQtSZVrP+BiOh/AAA=', 'base64');
 db.exec('PRAGMA foreign_keys = ON; BEGIN IMMEDIATE;');
 db.prepare('INSERT INTO trips(id,name,dateLabel,homeCity,travelers,notes,createdAt) VALUES(?,?,?,?,?,?,?)').run('container-smoke','Persistence test','','',2,'',new Date().toISOString());
 db.prepare('INSERT INTO destinations(id,tripId,city,stay,notes,position) VALUES(?,?,?,?,?,?)').run(destinationId, 'container-smoke', 'Vienna', '', '', 0);
 db.prepare('INSERT INTO destination_images(destinationId,version,data) VALUES(?,?,?)').run(destinationId, imageVersion, image);
+for (const candidate of candidates) {
+  db.prepare('INSERT INTO candidates(id,destinationId,category,name) VALUES(?,?,?,?)').run(candidate.id, destinationId, candidate.category, 'Persistence test: ' + candidate.category);
+  db.prepare('INSERT INTO candidate_images(candidateId,version,data) VALUES(?,?,?)').run(candidate.id, candidate.version, image);
+}
 db.exec('COMMIT;');
 db.close();
 JS
@@ -45,6 +54,11 @@ import assert from 'node:assert/strict';
 import { DatabaseSync } from 'node:sqlite';
 const destinationId = '22222222-2222-4222-8222-222222222222';
 const imageVersion = '33333333-3333-4333-8333-333333333333';
+const candidates = [
+  { id: '66666666-6666-4666-8666-666666666666', category: 'hotels', version: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb' },
+  { id: '77777777-7777-4777-8777-777777777777', category: 'activities', version: 'cccccccc-cccc-4ccc-8ccc-cccccccccccc' },
+  { id: '88888888-8888-4888-8888-888888888888', category: 'restaurants', version: 'dddddddd-dddd-4ddd-8ddd-dddddddddddd' },
+];
 const expected = Buffer.from('UklGRh4AAABXRUJQVlA4TBEAAAAvAUAAAAfQtSZVrP+BiOh/AAA=', 'base64');
 const db = new DatabaseSync('/data/travel.sqlite');
 try {
@@ -53,20 +67,42 @@ try {
   const image = db.prepare('SELECT version,data FROM destination_images WHERE destinationId = ?').get(destinationId);
   assert.equal(image?.version, imageVersion);
   assert.deepEqual(Buffer.from(image.data), expected);
+  for (const candidate of candidates) {
+    const saved = db.prepare('SELECT destinationId,category FROM candidates WHERE id = ?').get(candidate.id);
+    assert.equal(saved?.destinationId, destinationId);
+    assert.equal(saved.category, candidate.category);
+    const savedImage = db.prepare('SELECT version,data FROM candidate_images WHERE candidateId = ?').get(candidate.id);
+    assert.equal(savedImage?.version, candidate.version, candidate.category + ' image version must persist');
+    assert.deepEqual(Buffer.from(savedImage.data), expected, candidate.category + ' image bytes must persist');
+  }
+  assert.deepEqual(db.prepare('PRAGMA foreign_key_check').all(), []);
 } finally {
   db.close();
 }
-const endpoint = 'http://127.0.0.1:80/api/destination-images/' + destinationId;
+const base = 'http://127.0.0.1:80/api/';
 const options = () => ({ signal: AbortSignal.timeout(5000) });
-const response = await fetch(endpoint + '?v=' + imageVersion, options());
-assert.equal(response.status, 200);
-assert.equal(response.headers.get('content-type'), 'image/webp');
-assert.equal(response.headers.get('x-content-type-options'), 'nosniff');
-assert.deepEqual(Buffer.from(await response.arrayBuffer()), expected);
-const missingVersion = await fetch(endpoint + '?v=44444444-4444-4444-8444-444444444444', options());
-assert.equal(missingVersion.status, 404);
-const missingImage = await fetch('http://127.0.0.1:80/api/destination-images/55555555-5555-4555-8555-555555555555?v=' + imageVersion, options());
-assert.equal(missingImage.status, 404);
+async function verifyImage(route, id, version) {
+  const endpoint = base + route + '/' + id;
+  const response = await fetch(endpoint + '?v=' + version, options());
+  assert.equal(response.status, 200, endpoint);
+  assert.equal(response.headers.get('content-type'), 'image/webp');
+  assert.equal(response.headers.get('x-content-type-options'), 'nosniff');
+  assert.deepEqual(Buffer.from(await response.arrayBuffer()), expected);
+  const missingVersion = await fetch(endpoint + '?v=44444444-4444-4444-8444-444444444444', options());
+  assert.equal(missingVersion.status, 404, 'Unknown versions must not return the current image');
+}
+await verifyImage('destination-images', destinationId, imageVersion);
+for (const candidate of candidates) {
+  await verifyImage('candidate-images', candidate.id, candidate.version);
+  const wrongRoute = await fetch(base + 'destination-images/' + candidate.id + '?v=' + candidate.version, options());
+  assert.equal(wrongRoute.status, 404, 'Candidate images must not be returned by the destination route');
+}
+const wrongRoute = await fetch(base + 'candidate-images/' + destinationId + '?v=' + imageVersion, options());
+assert.equal(wrongRoute.status, 404, 'Destination images must not be returned by the candidate route');
+for (const route of ['destination-images', 'candidate-images']) {
+  const missingImage = await fetch(base + route + '/55555555-5555-4555-8555-555555555555?v=' + imageVersion, options());
+  assert.equal(missingImage.status, 404);
+}
 JS
 
 # A container without the persistent mount must refuse to start.

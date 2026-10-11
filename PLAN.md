@@ -72,3 +72,8 @@ Use one application instance for v1. Live deployment remains a separate review s
 - Add one optional image per destination, displayed on its destination card in the trip.
 - Upload, preview, replace, or remove images in the destination editor; Cancel discards the draft.
 - Keep images in persistent storage and backups; adding or changing an image preserves existing travel plans and prices.
+
+## Added scope: idea images, October 10, 2026
+- Give each hotel, activity, and restaurant one optional image displayed on its idea card.
+- Reuse destination upload, preview, replacement, removal, and cancellation behavior.
+- Persist these images in the shared database and backups while preserving prices, budget selections, research links, and existing destination images.

@@ -2,12 +2,13 @@ import { randomUUID } from "node:crypto";
 import { mkdirSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { DatabaseSync } from "node:sqlite";
-import type { Candidate, Category, Destination, StoredImage, ItineraryStop, Mutation, ResearchLink, Snapshot, TravelLeg, Trip } from "./types";
+import type { Candidate, CandidateImage, CandidateGalleryUpdate, Category, Destination, StoredImage, ItineraryStop, Mutation, ResearchLink, Snapshot, TravelLeg, Trip } from "./types";
 
 type StoredLeg = Omit<TravelLeg, "itinerary" | "links"> & { itineraryJson: string; linksJson: string };
-type StoredCandidate = Omit<Candidate, "links" | "included"> & { linksJson: string; included: number };
+type StoredCandidate = Omit<Candidate, "links" | "included" | "images"> & { linksJson: string; included: number };
 
 const MAX_IMAGE_BYTES = 2 * 1024 * 1024;
+const MAX_CANDIDATE_IMAGES = 10;
 const MAX_PRICE_CENTS = 10_000_000_000;
 const CATEGORIES = ["hotels", "activities", "restaurants"] as const;
 
@@ -132,6 +133,32 @@ function imageField(input: Input, label = "Destination"): Uint8Array | null | un
   }
   return new Uint8Array(value);
 }
+function galleryField(input: Input): CandidateGalleryUpdate | undefined {
+  if (input.gallery === undefined) return undefined;
+  if (input.image !== undefined) throw new ValidationError("Use either a photo gallery or a single image change.");
+  const value = input.gallery;
+  if (!value || typeof value !== "object" || Array.isArray(value)) throw new ValidationError("These photo changes are invalid.");
+  const gallery = value as Input;
+  if (!Array.isArray(gallery.add) || !Array.isArray(gallery.remove) || gallery.add.length > MAX_CANDIDATE_IMAGES || gallery.remove.length > MAX_CANDIDATE_IMAGES) throw new ValidationError("An idea can have up to 10 photos.");
+  const seen = new Set<string>();
+  const add = gallery.add.map((photo) => {
+    if (!photo || typeof photo !== "object" || Array.isArray(photo)) throw new ValidationError("Choose a valid photo.");
+    const id = idField(photo);
+    if (seen.has(id.toLowerCase())) throw new ValidationError("Each photo must have a unique identifier.");
+    seen.add(id.toLowerCase());
+    const data = imageField({ image: photo.data }, "Idea");
+    if (!data) throw new ValidationError("Choose a valid photo.");
+    return { id, data };
+  });
+  const remove = gallery.remove.map((value) => {
+    const id = idField({ id: value });
+    if (seen.has(id.toLowerCase())) throw new ValidationError("Each photo change must have a unique identifier.");
+    seen.add(id.toLowerCase());
+    return id;
+  });
+  const mainImageId = gallery.mainImageId === undefined || gallery.mainImageId === null ? gallery.mainImageId : idField({ id: gallery.mainImageId });
+  return { add, remove, mainImageId };
+}
 function validate(input: unknown): Mutation {
   if (!input || typeof input !== "object" || Array.isArray(input)) throw new ValidationError("The submitted information is invalid.");
   const value = input as Input;
@@ -155,7 +182,7 @@ function validate(input: unknown): Mutation {
     case "leg.save":
       return { type: value.type, id: idField(value), method: textField(value, "method", 120), price: priceField(value), departure: textField(value, "departure", 120), arrival: textField(value, "arrival", 120), url: urlField(value), notes: textField(value, "notes", 8000), itinerary: itineraryField(value), links: linksField(value) };
     case "candidate.save":
-      return { type: value.type, id: optionalId(value), destinationId: idField(value, "destinationId"), category: categoryField(value), name: textField(value, "name", 160, true), price: priceField(value), address: textField(value, "address", 500), url: urlField(value), notes: textField(value, "notes", 8000), included: booleanField(value, "included"), links: linksField(value), image: imageField(value, "Idea") };
+      return { type: value.type, id: optionalId(value), destinationId: idField(value, "destinationId"), category: categoryField(value), name: textField(value, "name", 160, true), price: priceField(value), address: textField(value, "address", 500), url: urlField(value), notes: textField(value, "notes", 8000), included: booleanField(value, "included"), links: linksField(value), image: imageField(value, "Idea"), gallery: galleryField(value) };
     case "candidate.include":
       return { type: value.type, id: idField(value), included: booleanField(value, "included") };
     default:
@@ -170,7 +197,7 @@ export function createStore(databasePath: string) {
   db.exec("BEGIN IMMEDIATE");
   try {
     const version = Number(db.prepare("PRAGMA user_version").get()?.user_version ?? 0);
-    if (version > 5) throw new Error("This database was created by a newer version of the travel app.");
+    if (version > 6) throw new Error("This database was created by a newer version of the travel app.");
     db.exec(`
     CREATE TABLE IF NOT EXISTS trips (
       id TEXT PRIMARY KEY, name TEXT NOT NULL, dateLabel TEXT NOT NULL DEFAULT '',
@@ -205,7 +232,7 @@ export function createStore(databasePath: string) {
     `);
     // Version 1 reset user_version at startup. Check columns as well so a rollback
     // followed by redeployment cannot repeat ALTER TABLE or replace saved links.
-    const hasColumn = (table: "trips" | "legs" | "candidates", column: string) =>
+    const hasColumn = (table: "trips" | "legs" | "candidates" | "candidate_images", column: string) =>
       db.prepare(`PRAGMA table_info(${table})`).all().some((row) => row.name === column);
     if (version < 2) {
       if (!hasColumn("trips", "returnCity")) db.exec("ALTER TABLE trips ADD COLUMN returnCity TEXT;");
@@ -241,6 +268,26 @@ export function createStore(databasePath: string) {
         PRAGMA user_version = 5;
       `);
     }
+    if (version < 6) {
+      if (!hasColumn("candidate_images", "id")) {
+        db.exec(`
+          ALTER TABLE candidate_images RENAME TO candidate_images_single;
+          CREATE TABLE candidate_images (
+            id TEXT PRIMARY KEY, candidateId TEXT NOT NULL REFERENCES candidates(id) ON DELETE CASCADE,
+            version TEXT NOT NULL, data BLOB NOT NULL,
+            position INTEGER NOT NULL CHECK(position >= 0), isMain INTEGER NOT NULL CHECK(isMain IN (0,1))
+          ) STRICT;
+          INSERT INTO candidate_images(id, candidateId, version, data, position, isMain)
+            SELECT candidateId, candidateId, version, data, 0, 1 FROM candidate_images_single;
+          DROP TABLE candidate_images_single;
+        `);
+      }
+      db.exec(`
+        CREATE UNIQUE INDEX IF NOT EXISTS candidate_main_image ON candidate_images(candidateId) WHERE isMain = 1;
+        CREATE INDEX IF NOT EXISTS candidate_image_order ON candidate_images(candidateId, position);
+        PRAGMA user_version = 6;
+      `);
+    }
     db.exec("COMMIT");
   } catch (error) {
     db.exec("ROLLBACK");
@@ -249,6 +296,13 @@ export function createStore(databasePath: string) {
   }
 
   function getSnapshot(): Snapshot {
+    const photos = new Map<string, CandidateImage[]>();
+    for (const row of db.prepare("SELECT id, candidateId, version FROM candidate_images ORDER BY candidateId, position, id").all()) {
+      const candidateId = row.candidateId as string;
+      const images = photos.get(candidateId) ?? [];
+      images.push({ id: row.id as string, version: row.version as string });
+      photos.set(candidateId, images);
+    }
     return {
       trips: db.prepare("SELECT * FROM trips ORDER BY createdAt DESC, id").all().map((row) => ({ ...row })) as unknown as Trip[],
       destinations: db.prepare("SELECT destinations.*, destination_images.version AS imageVersion FROM destinations LEFT JOIN destination_images ON destination_images.destinationId = destinations.id ORDER BY destinations.tripId, destinations.position").all().map((row) => ({ ...row })) as unknown as Destination[],
@@ -257,10 +311,10 @@ export function createStore(databasePath: string) {
         const links = storedLinks({ ...leg, linksJson });
         return { ...leg, url: links[0]?.url ?? "", itinerary: JSON.parse(itineraryJson) as ItineraryStop[], links };
       }),
-      candidates: db.prepare("SELECT candidates.*, candidate_images.version AS imageVersion FROM candidates LEFT JOIN candidate_images ON candidate_images.candidateId = candidates.id ORDER BY candidates.name COLLATE NOCASE, candidates.id").all().map((row) => {
+      candidates: db.prepare("SELECT candidates.*, candidate_images.version AS imageVersion, candidate_images.id AS mainImageId FROM candidates LEFT JOIN candidate_images ON candidate_images.candidateId = candidates.id AND candidate_images.isMain = 1 ORDER BY candidates.name COLLATE NOCASE, candidates.id").all().map((row) => {
         const { linksJson, ...candidate } = row as unknown as StoredCandidate;
         const links = storedLinks({ ...candidate, linksJson });
-        return { ...candidate, url: links[0]?.url ?? "", included: candidate.included === 1, links };
+        return { ...candidate, url: links[0]?.url ?? "", included: candidate.included === 1, links, images: photos.get(candidate.id) ?? [] };
       }),
     };
   }
@@ -269,8 +323,44 @@ export function createStore(databasePath: string) {
     return row ? { version: row.version as string, data: new Uint8Array(row.data as Uint8Array) } : undefined;
   }
   function getCandidateImage(id: string): StoredImage | undefined {
-    const row = db.prepare("SELECT version, data FROM candidate_images WHERE candidateId = ?").get(id);
+    const row = db.prepare("SELECT version, data FROM candidate_images WHERE candidateId = ? AND isMain = 1").get(id);
     return row ? { version: row.version as string, data: new Uint8Array(row.data as Uint8Array) } : undefined;
+  }
+  function getCandidatePhoto(candidateId: string, imageId: string): StoredImage | undefined {
+    const row = db.prepare("SELECT version, data FROM candidate_images WHERE candidateId = ? AND id = ?").get(candidateId, imageId);
+    return row ? { version: row.version as string, data: new Uint8Array(row.data as Uint8Array) } : undefined;
+  }
+  function saveGallery(candidateId: string, gallery?: CandidateGalleryUpdate, image?: Uint8Array | null) {
+    if (gallery === undefined && image === undefined) return;
+    const current = db.prepare("SELECT id, position, isMain FROM candidate_images WHERE candidateId = ? ORDER BY position, id").all(candidateId) as unknown as { id: string; position: number; isMain: number }[];
+    const currentMain = current.find((photo) => photo.isMain === 1)?.id;
+    if (gallery === undefined) {
+      if (image === null) {
+        gallery = { add: [], remove: currentMain ? [currentMain] : [] };
+      } else if (image !== undefined && currentMain) {
+        // Replacing a legacy single image updates the main photo only.
+        db.prepare("INSERT INTO candidate_images(id,candidateId,version,data,position,isMain) VALUES(?,?,?,?,?,1) ON CONFLICT(id) DO UPDATE SET version = excluded.version, data = excluded.data").run(currentMain, candidateId, randomUUID(), image, current.find((photo) => photo.id === currentMain)!.position);
+        return;
+      } else {
+        gallery = { add: image ? [{ id: randomUUID(), data: image }] : [], remove: [] };
+      }
+    }
+    const existingIds = new Set(current.map((photo) => photo.id));
+    if (gallery.remove.some((id) => !existingIds.has(id))) throw new ValidationError("A photo has changed or no longer exists. Refresh and try again.");
+    for (const photo of gallery.add) {
+      if (db.prepare("SELECT 1 FROM candidate_images WHERE lower(id) = lower(?)").get(photo.id)) throw new ValidationError("This photo already exists. Refresh and try again.");
+    }
+    const removed = new Set(gallery.remove);
+    const retained = current.filter((photo) => !removed.has(photo.id));
+    const finalIds = [...retained.map((photo) => photo.id), ...gallery.add.map((photo) => photo.id)];
+    if (finalIds.length > MAX_CANDIDATE_IMAGES) throw new ValidationError("An idea can have up to 10 photos. Remove a photo before adding more.");
+    const main = gallery.mainImageId === undefined ? (currentMain && !removed.has(currentMain) ? currentMain : finalIds[0] ?? null) : gallery.mainImageId;
+    if ((main === null && finalIds.length > 0) || (main !== null && !finalIds.includes(main))) throw new ValidationError("Choose a main photo from the remaining photos. Refresh if the gallery has changed.");
+    for (const id of gallery.remove) db.prepare("DELETE FROM candidate_images WHERE candidateId = ? AND id = ?").run(candidateId, id);
+    const nextPosition = current.reduce((next, photo) => Math.max(next, photo.position + 1), 0);
+    gallery.add.forEach((photo, index) => db.prepare("INSERT INTO candidate_images(id,candidateId,version,data,position,isMain) VALUES(?,?,?,?,?,0)").run(photo.id, candidateId, randomUUID(), photo.data, nextPosition + index));
+    db.prepare("UPDATE candidate_images SET isMain = 0 WHERE candidateId = ? AND isMain = 1").run(candidateId);
+    if (main) db.prepare("UPDATE candidate_images SET isMain = 1 WHERE candidateId = ? AND id = ?").run(candidateId, main);
   }
   function existing<T>(table: "trips" | "destinations" | "legs" | "candidates", id: string): T {
     const row = db.prepare(`SELECT * FROM ${table} WHERE id = ?`).get(id);
@@ -393,11 +483,7 @@ export function createStore(databasePath: string) {
         } else {
           db.prepare("INSERT INTO candidates(id,destinationId,category,name,priceCents,address,url,notes,included,linksJson) VALUES(?,?,?,?,?,?,?,?,?,?)").run(id, input.destinationId, input.category, input.name, parsePrice(input.price), input.address, url, input.notes, Number(input.included), JSON.stringify(links));
         }
-        if (input.image === null) {
-          db.prepare("DELETE FROM candidate_images WHERE candidateId = ?").run(id);
-        } else if (input.image !== undefined) {
-          db.prepare("INSERT INTO candidate_images(candidateId, version, data) VALUES(?,?,?) ON CONFLICT(candidateId) DO UPDATE SET version = excluded.version, data = excluded.data").run(id, randomUUID(), input.image);
-        }
+        saveGallery(id, input.gallery, input.image);
         return id;
       }
       case "candidate.delete":
@@ -425,7 +511,7 @@ export function createStore(databasePath: string) {
       throw error;
     }
   }
-  return { getSnapshot, getDestinationImage, getCandidateImage, applyMutation, close: () => db.close() };
+  return { getSnapshot, getDestinationImage, getCandidateImage, getCandidatePhoto, applyMutation, close: () => db.close() };
 }
 
 type Store = ReturnType<typeof createStore>;
@@ -448,6 +534,9 @@ export function getDestinationImage(id: string): StoredImage | undefined {
 }
 export function getCandidateImage(id: string): StoredImage | undefined {
   return defaultStore().getCandidateImage(id);
+}
+export function getCandidatePhoto(candidateId: string, imageId: string): StoredImage | undefined {
+  return defaultStore().getCandidatePhoto(candidateId, imageId);
 }
 export function applyMutation(input: unknown): { snapshot: Snapshot; id?: string } {
   return defaultStore().applyMutation(input);

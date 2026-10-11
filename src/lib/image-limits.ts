@@ -1,0 +1,4 @@
+export const MAX_IMAGE_UPLOAD_BYTES = 5 * 1024 * 1024;
+export const MAX_STORED_IMAGE_BYTES = 2 * 1024 * 1024;
+export const MAX_CANDIDATE_IMAGES = 10;
+export const MAX_GALLERY_UPLOAD_BYTES = 15 * 1024 * 1024;

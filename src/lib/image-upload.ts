@@ -1,7 +1,7 @@
 import sharp from "sharp";
 
-const MAX_UPLOAD_BYTES = 5 * 1024 * 1024;
-const MAX_STORED_BYTES = 2 * 1024 * 1024;
+import { MAX_IMAGE_UPLOAD_BYTES, MAX_STORED_IMAGE_BYTES } from "./image-limits.ts";
+
 const ALLOWED_TYPES = new Set(["image/jpeg", "image/png", "image/webp"]);
 const ALLOWED_FORMATS = new Set(["jpeg", "png", "webp"]);
 
@@ -17,7 +17,7 @@ export async function prepareImage(form?: FormData): Promise<Uint8Array | null |
     throw new ImageValidationError("Choose a JPEG, PNG, or WebP image.");
   }
   if (file.size === 0) throw new ImageValidationError("That image is empty. Choose another image.");
-  if (file.size > MAX_UPLOAD_BYTES) throw new ImageValidationError("Choose an image smaller than 5 MB.");
+  if (file.size > MAX_IMAGE_UPLOAD_BYTES) throw new ImageValidationError("Choose an image smaller than 5 MB.");
 
   try {
     const source = sharp(Buffer.from(await file.arrayBuffer()), {
@@ -34,7 +34,7 @@ export async function prepareImage(form?: FormData): Promise<Uint8Array | null |
       .resize({ width: 1600, height: 1200, fit: "inside", withoutEnlargement: true })
       .webp({ quality: 82 })
       .toBuffer();
-    if (image.byteLength > MAX_STORED_BYTES) throw new ImageValidationError("That image is too detailed. Try a smaller image.");
+    if (image.byteLength > MAX_STORED_IMAGE_BYTES) throw new ImageValidationError("That image is too detailed. Try a smaller image.");
     return new Uint8Array(image);
   } catch (error) {
     if (error instanceof ImageValidationError) throw error;

@@ -77,3 +77,11 @@ Use one application instance for v1. Live deployment remains a separate review s
 - Give each hotel, activity, and restaurant one optional image displayed on its idea card.
 - Reuse destination upload, preview, replacement, removal, and cancellation behavior.
 - Persist these images in the shared database and backups while preserving prices, budget selections, research links, and existing destination images.
+
+## Added scope: idea photo galleries, October 11, 2026
+- Allow up to 10 photos for each hotel, activity, and restaurant; keep one optional photo for destinations.
+- Show the selected main photo on the idea card, with thumbnails to view the other photos.
+- Add multiple photos, select a main photo, and remove individual photos in the editor. Removing the main photo selects another remaining photo; Cancel discards the draft.
+- Accept JPEG, PNG, and WebP files up to 5 MiB each, with up to 15 MiB of new files per save. Validate the whole upload batch before saving changes.
+- Retain existing single idea images as the main photo during the schema 6 migration. Persist all photos and their main selections through backups and container replacement.
+- Preserve prices, research links, budget selections, and destination images. Changes to an idea without photo changes preserve its gallery.

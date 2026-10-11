@@ -3,6 +3,7 @@
 import Link from "next/link";
 import LocationField from "@/components/location-field";
 import { PlannerImage, PlannerImageEditor } from "@/components/planner-image";
+import { CandidateGallery, CandidateGalleryEditor, candidateGalleryForm, createCandidateGalleryDraft, type CandidateGalleryDraft } from "@/components/candidate-gallery";
 import TripRouteFields from "@/components/trip-route-fields";
 import { ConnectionItinerary, ConnectionItineraryEditor } from "@/components/connection-itinerary";
 import { ResearchLinks, ResearchLinksEditor } from "@/components/research-links";
@@ -35,7 +36,6 @@ const priceNotes = {
   restaurants: "Total for one meal for the whole party.",
 };
 function destinationImageUrl(destination: Destination) { return "/api/destination-images/" + destination.id + "?v=" + destination.imageVersion; }
-function candidateImageUrl(candidate: Candidate) { return "/api/candidate-images/" + candidate.id + "?v=" + candidate.imageVersion; }
 function displayPrice(cents: number | null) { return cents === null ? "Not estimated" : formatMoney(cents); }
 function priceValue(cents: number | null | undefined) { return cents == null ? "" : (cents / 100).toFixed(2); }
 function BudgetValue({ budget }: { budget: Budget }) {
@@ -66,6 +66,7 @@ export default function PlannerApp({ initialData, tripId, destinationId, categor
   const [researchLinks, setResearchLinks] = useState<ResearchLink[]>([]);
   const [imageFile, setImageFile] = useState<File | null>(null);
   const [removeImage, setRemoveImage] = useState(false);
+  const [candidateGallery, setCandidateGallery] = useState<CandidateGalleryDraft>(() => createCandidateGalleryDraft());
   const [error, setError] = useState("");
   const [message, setMessage] = useState("");
   const [search, setSearch] = useState("");
@@ -80,16 +81,17 @@ export default function PlannerApp({ initialData, tripId, destinationId, categor
     if (value.kind === "leg") setItinerary(value.item.itinerary ?? []);
     if (value.kind === "leg" || value.kind === "candidate") setResearchLinks(value.item?.links ?? []);
     setImageFile(null); setRemoveImage(false);
+    setCandidateGallery(createCandidateGalleryDraft(value.kind === "candidate" ? value.item : undefined));
     setEditor(value); setError(""); setMessage("");
   };
-  const close = () => { if (!busy) { setEditor(null); setError(""); } };
+  const close = () => { if (!busy) { setEditor(null); setImageFile(null); setCandidateGallery(createCandidateGalleryDraft()); setError(""); } };
   async function perform(mutation: Mutation, success = "Changes saved.", redirect?: string, imageForm?: FormData) {
     if (busy) return;
     setBusy(true); setError(""); setMessage("");
     try {
       const result = await mutatePlanner(mutation, imageForm);
       if (!result.ok) { setError(result.error); return; }
-      setData(result.snapshot); setEditor(null); setImageFile(null); setMessage(success);
+      setData(result.snapshot); setEditor(null); setImageFile(null); setCandidateGallery(createCandidateGalleryDraft()); setMessage(success);
       if (redirect) router.push(redirect);
       else if (mutation.type === "trip.save" && !mutation.id && result.id) router.push("/trips/" + result.id);
     } catch { setError("We couldn't reach the planner. Your changes haven't been saved. Please try again."); }
@@ -115,9 +117,7 @@ export default function PlannerApp({ initialData, tripId, destinationId, categor
       }
       case "leg": void perform({ type: "leg.save", id: editor.item.id, method: text("method"), price: text("price"), departure: text("departure"), arrival: text("arrival"), url: researchLinks[0]?.url ?? "", links: researchLinks, notes: text("notes"), itinerary }); break;
       case "candidate": {
-        const imageForm = new FormData();
-        if (imageFile) imageForm.set("image", imageFile);
-        else if (removeImage) imageForm.set("removeImage", "true");
+        const imageForm = candidateGalleryForm(candidateGallery, editor.item);
         if (destination && category) void perform({ type: "candidate.save", id: editor.item?.id, destinationId: destination.id, category, name: text("name"), price: text("price"), address: text("address"), url: researchLinks[0]?.url ?? "", links: researchLinks, notes: text("notes"), included: fields.has("included") }, "Changes saved.", undefined, imageForm);
         break;
       }
@@ -186,7 +186,7 @@ export default function PlannerApp({ initialData, tripId, destinationId, categor
         <nav className="category-tabs" aria-label="Destination ideas">{categories.map((kind) => { const Icon = categoryIcons[kind]; return <Link key={kind} href={"/trips/" + trip.id + "/destinations/" + destination.id + "/" + kind} className={category === kind ? "selected" : ""} aria-current={category === kind ? "page" : undefined}><Icon size={18} />{labels[kind]}<span>{data.candidates.filter((item) => item.destinationId === destination.id && item.category === kind).length}</span></Link>; })}</nav>
         <div className="list-intro"><p>{category === "hotels" ? "Keep your options open. Choose one hotel to include in the budget." : "Save any ideas you like. Include the ones you want in your budget."}</p><span>Prices in USD · whole party</span></div>
         {data.candidates.filter((item) => item.destinationId === destination.id && item.category === category).length === 0 ? <div className="empty-state ideas-empty">{category === "hotels" ? <BedDouble size={34} strokeWidth={1.3} /> : category === "activities" ? <Binoculars size={34} strokeWidth={1.3} /> : <Utensils size={34} strokeWidth={1.3} />}<h3>{category === "hotels" ? "A good night's sleep starts here." : category === "activities" ? "Leave a little room for discovery." : "Something delicious to look forward to."}</h3><p>Save your first {singular[category]} idea for {formatSavedDestinationLabel(destination.city)}.<br />You can add a price now or come back to it later.</p><button className="button secondary" onClick={() => open({ kind: "candidate" })}><Plus size={16} />Add {singular[category]}</button></div>
-          : <div className="ideas-grid">{data.candidates.filter((item) => item.destinationId === destination.id && item.category === category).map((item) => <article className={item.included ? "idea-card included" : "idea-card"} key={item.id}>{item.imageVersion && <PlannerImage src={candidateImageUrl(item)} name={item.name} />}<div className="idea-top"><span className={item.included ? "selection-tag chosen" : "selection-tag"}>{item.included ? <><Check size={13} />{category === "hotels" ? "Chosen stay" : "In the plan"}</> : "A possibility"}</span><div className="idea-tools"><button className="icon-button" aria-label={"Edit " + item.name} onClick={() => open({ kind: "candidate", item })}><Pencil size={16} /></button><button className="icon-button" aria-label={"Delete " + item.name} onClick={() => confirmDelete({ type: "candidate.delete", id: item.id }, "Delete “" + item.name + "”?", "This idea will be removed from " + formatSavedDestinationLabel(destination.city) + " and the trip estimate.")}><Trash2 size={16} /></button></div></div><h2>{item.name}</h2>{item.address && <p className="idea-address"><MapPin size={15} />{item.address}</p>}{item.notes && <p className="idea-notes">{item.notes}</p>}<ResearchLinks links={item.links ?? []} /><div className="idea-bottom"><div><span className={item.priceCents === null ? "idea-price unknown" : "idea-price"}>{displayPrice(item.priceCents)}</span><small>{category === "hotels" ? "entire stay · whole party" : category === "restaurants" ? "one meal · whole party" : "whole party"}</small></div><button className={item.included ? "button selected-button small" : "button secondary small"} disabled={busy} aria-pressed={item.included} onClick={() => void perform({ type: "candidate.include", id: item.id, included: !item.included }, "Trip estimate updated.")}>{item.included ? <><Check size={15} />Included</> : category === "hotels" ? "Choose hotel" : "Include in budget"}</button></div></article>)}</div>}
+          : <div className="ideas-grid">{data.candidates.filter((item) => item.destinationId === destination.id && item.category === category).map((item) => <article className={item.included ? "idea-card included" : "idea-card"} key={item.id}><CandidateGallery candidate={item} /><div className="idea-top"><span className={item.included ? "selection-tag chosen" : "selection-tag"}>{item.included ? <><Check size={13} />{category === "hotels" ? "Chosen stay" : "In the plan"}</> : "A possibility"}</span><div className="idea-tools"><button className="icon-button" aria-label={"Edit " + item.name} onClick={() => open({ kind: "candidate", item })}><Pencil size={16} /></button><button className="icon-button" aria-label={"Delete " + item.name} onClick={() => confirmDelete({ type: "candidate.delete", id: item.id }, "Delete “" + item.name + "”?", "This idea will be removed from " + formatSavedDestinationLabel(destination.city) + " and the trip estimate.")}><Trash2 size={16} /></button></div></div><h2>{item.name}</h2>{item.address && <p className="idea-address"><MapPin size={15} />{item.address}</p>}{item.notes && <p className="idea-notes">{item.notes}</p>}<ResearchLinks links={item.links ?? []} /><div className="idea-bottom"><div><span className={item.priceCents === null ? "idea-price unknown" : "idea-price"}>{displayPrice(item.priceCents)}</span><small>{category === "hotels" ? "entire stay · whole party" : category === "restaurants" ? "one meal · whole party" : "whole party"}</small></div><button className={item.included ? "button selected-button small" : "button secondary small"} disabled={busy} aria-pressed={item.included} onClick={() => void perform({ type: "candidate.include", id: item.id, included: !item.included }, "Trip estimate updated.")}>{item.included ? <><Check size={15} />Included</> : category === "hotels" ? "Choose hotel" : "Include in budget"}</button></div></article>)}</div>}
       </>}
       {!trip && tripId && <div className="empty-state"><h1>This trip is no longer here.</h1><Link href="/">Back to all trips</Link></div>}
       {message && <div className="toast" role="status"><CheckCircle2 size={17} />{message}<button aria-label="Dismiss message" className="icon-button" onClick={() => setMessage("")}><X size={14} /></button></div>}
@@ -220,7 +220,7 @@ export default function PlannerApp({ initialData, tripId, destinationId, categor
         <Field label="Name" wide><input name="name" defaultValue={editor.item?.name} required maxLength={160} autoFocus placeholder={"Name of the " + singular[category]} /></Field>
         <Field label="Estimated price (USD)" wide hint={priceNotes[category] + " Leave blank if unknown."}><input name="price" type="number" min="0" max="100000000" step="0.01" defaultValue={priceValue(editor.item?.priceCents)} placeholder="Not estimated" /></Field>
         <Field label="Address or neighborhood" wide><input name="address" defaultValue={editor.item?.address} maxLength={500} placeholder="Optional" /></Field>
-        <PlannerImageEditor subject={singular[category]} existingSrc={editor.item?.imageVersion ? candidateImageUrl(editor.item) : null} file={imageFile} removeExisting={removeImage} onChange={(file, remove) => { setImageFile(file); setRemoveImage(remove); }} disabled={busy} />
+        <CandidateGalleryEditor candidate={editor.item} subject={singular[category]} draft={candidateGallery} onChange={setCandidateGallery} disabled={busy} />
         <ResearchLinksEditor links={researchLinks} onChange={setResearchLinks} disabled={busy} /><Notes value={editor.item?.notes} />
         <label className="checkbox-field wide"><input name="included" type="checkbox" defaultChecked={editor.item?.included ?? false} /><span>{category === "hotels" ? "Choose this hotel for the budget" : "Include in budget"}<small>{category === "hotels" ? "Replaces any other chosen hotel for this destination." : "You can change this as your plans take shape."}</small></span></label>
       </>}

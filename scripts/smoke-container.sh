@@ -23,6 +23,7 @@ start() {
 
 start
 docker exec -i "$container" node --input-type=module <<'JS'
+import assert from 'node:assert/strict';
 import { DatabaseSync } from 'node:sqlite';
 const db = new DatabaseSync('/data/travel.sqlite');
 const destinationId = '22222222-2222-4222-8222-222222222222';
@@ -32,15 +33,24 @@ const candidates = [
   { id: '77777777-7777-4777-8777-777777777777', category: 'activities', version: 'cccccccc-cccc-4ccc-8ccc-cccccccccccc' },
   { id: '88888888-8888-4888-8888-888888888888', category: 'restaurants', version: 'dddddddd-dddd-4ddd-8ddd-dddddddddddd' },
 ];
-// A real 2-by-2 lossless WebP, generated with sharp.
-const image = Buffer.from('UklGRh4AAABXRUJQVlA4TBEAAAAvAUAAAAfQtSZVrP+BiOh/AAA=', 'base64');
+// Two different real 2-by-2 lossless WebP images, generated with sharp.
+const images = [
+  Buffer.from('UklGRh4AAABXRUJQVlA4TBEAAAAvAUAAAAfQtSZVrP+BiOh/AAA=', 'base64'),
+  Buffer.from('UklGRh4AAABXRUJQVlA4TBEAAAAvAUAAAAdQwjaXpf+BiOh/AAA=', 'base64'),
+];
+assert.equal(db.prepare('PRAGMA user_version').get().user_version, 6);
 db.exec('PRAGMA foreign_keys = ON; BEGIN IMMEDIATE;');
 db.prepare('INSERT INTO trips(id,name,dateLabel,homeCity,travelers,notes,createdAt) VALUES(?,?,?,?,?,?,?)').run('container-smoke','Persistence test','','',2,'',new Date().toISOString());
 db.prepare('INSERT INTO destinations(id,tripId,city,stay,notes,position) VALUES(?,?,?,?,?,?)').run(destinationId, 'container-smoke', 'Vienna', '', '', 0);
-db.prepare('INSERT INTO destination_images(destinationId,version,data) VALUES(?,?,?)').run(destinationId, imageVersion, image);
-for (const candidate of candidates) {
+db.prepare('INSERT INTO destination_images(destinationId,version,data) VALUES(?,?,?)').run(destinationId, imageVersion, images[0]);
+for (const [index, candidate] of candidates.entries()) {
   db.prepare('INSERT INTO candidates(id,destinationId,category,name) VALUES(?,?,?,?)').run(candidate.id, destinationId, candidate.category, 'Persistence test: ' + candidate.category);
-  db.prepare('INSERT INTO candidate_images(candidateId,version,data) VALUES(?,?,?)').run(candidate.id, candidate.version, image);
+  for (const [position, data] of images.entries()) {
+    const photoId = `90000000-0000-4000-8000-${String(index * 2 + position + 1).padStart(12, '0')}`;
+    const version = position === 1 ? candidate.version : 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
+    db.prepare('INSERT INTO candidate_images(id,candidateId,version,data,position,isMain) VALUES(?,?,?,?,?,?)')
+      .run(photoId, candidate.id, version, data, position, position === 1 ? 1 : 0);
+  }
 }
 db.exec('COMMIT;');
 db.close();
@@ -59,21 +69,32 @@ const candidates = [
   { id: '77777777-7777-4777-8777-777777777777', category: 'activities', version: 'cccccccc-cccc-4ccc-8ccc-cccccccccccc' },
   { id: '88888888-8888-4888-8888-888888888888', category: 'restaurants', version: 'dddddddd-dddd-4ddd-8ddd-dddddddddddd' },
 ];
-const expected = Buffer.from('UklGRh4AAABXRUJQVlA4TBEAAAAvAUAAAAfQtSZVrP+BiOh/AAA=', 'base64');
+const images = [
+  Buffer.from('UklGRh4AAABXRUJQVlA4TBEAAAAvAUAAAAfQtSZVrP+BiOh/AAA=', 'base64'),
+  Buffer.from('UklGRh4AAABXRUJQVlA4TBEAAAAvAUAAAAdQwjaXpf+BiOh/AAA=', 'base64'),
+];
 const db = new DatabaseSync('/data/travel.sqlite');
 try {
+  assert.equal(db.prepare('PRAGMA user_version').get().user_version, 6);
   assert.ok(db.prepare('SELECT id FROM trips WHERE id = ?').get('container-smoke'));
   assert.ok(db.prepare('SELECT id FROM destinations WHERE id = ?').get(destinationId));
   const image = db.prepare('SELECT version,data FROM destination_images WHERE destinationId = ?').get(destinationId);
   assert.equal(image?.version, imageVersion);
-  assert.deepEqual(Buffer.from(image.data), expected);
-  for (const candidate of candidates) {
+  assert.deepEqual(Buffer.from(image.data), images[0]);
+  assert.equal(db.prepare('SELECT count(*) AS count FROM candidate_images').get().count, 6);
+  for (const [index, candidate] of candidates.entries()) {
     const saved = db.prepare('SELECT destinationId,category FROM candidates WHERE id = ?').get(candidate.id);
     assert.equal(saved?.destinationId, destinationId);
     assert.equal(saved.category, candidate.category);
-    const savedImage = db.prepare('SELECT version,data FROM candidate_images WHERE candidateId = ?').get(candidate.id);
-    assert.equal(savedImage?.version, candidate.version, candidate.category + ' image version must persist');
-    assert.deepEqual(Buffer.from(savedImage.data), expected, candidate.category + ' image bytes must persist');
+    const savedImages = db.prepare('SELECT id,version,data,position,isMain FROM candidate_images WHERE candidateId = ? ORDER BY position').all(candidate.id);
+    assert.equal(savedImages.length, 2, candidate.category + ' must retain both photos');
+    for (const [position, savedImage] of savedImages.entries()) {
+      assert.equal(savedImage.id, `90000000-0000-4000-8000-${String(index * 2 + position + 1).padStart(12, '0')}`);
+      assert.equal(savedImage.version, position === 1 ? candidate.version : 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa');
+      assert.equal(savedImage.position, position);
+      assert.equal(savedImage.isMain, position === 1 ? 1 : 0, candidate.category + ' main selection must persist');
+      assert.deepEqual(Buffer.from(savedImage.data), images[position], candidate.category + ' photo bytes must persist');
+    }
   }
   assert.deepEqual(db.prepare('PRAGMA foreign_key_check').all(), []);
 } finally {
@@ -81,8 +102,8 @@ try {
 }
 const base = 'http://127.0.0.1:80/api/';
 const options = () => ({ signal: AbortSignal.timeout(5000) });
-async function verifyImage(route, id, version) {
-  const endpoint = base + route + '/' + id;
+async function verifyImage(path, version, expected) {
+  const endpoint = base + path;
   const response = await fetch(endpoint + '?v=' + version, options());
   assert.equal(response.status, 200, endpoint);
   assert.equal(response.headers.get('content-type'), 'image/webp');
@@ -91,18 +112,28 @@ async function verifyImage(route, id, version) {
   const missingVersion = await fetch(endpoint + '?v=44444444-4444-4444-8444-444444444444', options());
   assert.equal(missingVersion.status, 404, 'Unknown versions must not return the current image');
 }
-await verifyImage('destination-images', destinationId, imageVersion);
-for (const candidate of candidates) {
-  await verifyImage('candidate-images', candidate.id, candidate.version);
+await verifyImage('destination-images/' + destinationId, imageVersion, images[0]);
+for (const [index, candidate] of candidates.entries()) {
+  await verifyImage('candidate-images/' + candidate.id, candidate.version, images[1]);
+  for (const [position, expected] of images.entries()) {
+    const photoId = `90000000-0000-4000-8000-${String(index * 2 + position + 1).padStart(12, '0')}`;
+    const version = position === 1 ? candidate.version : 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
+    await verifyImage('candidate-images/' + candidate.id + '/' + photoId, version, expected);
+    const otherCandidate = candidates[(index + 1) % candidates.length];
+    const wrongOwner = await fetch(base + 'candidate-images/' + otherCandidate.id + '/' + photoId + '?v=' + version, options());
+    assert.equal(wrongOwner.status, 404, 'A photo must only be served under its own candidate');
+  }
   const wrongRoute = await fetch(base + 'destination-images/' + candidate.id + '?v=' + candidate.version, options());
-  assert.equal(wrongRoute.status, 404, 'Candidate images must not be returned by the destination route');
+  assert.equal(wrongRoute.status, 404, 'Candidate photos must not be returned by the destination route');
 }
 const wrongRoute = await fetch(base + 'candidate-images/' + destinationId + '?v=' + imageVersion, options());
-assert.equal(wrongRoute.status, 404, 'Destination images must not be returned by the candidate route');
+assert.equal(wrongRoute.status, 404, 'Destination photos must not be returned by the candidate route');
 for (const route of ['destination-images', 'candidate-images']) {
   const missingImage = await fetch(base + route + '/55555555-5555-4555-8555-555555555555?v=' + imageVersion, options());
   assert.equal(missingImage.status, 404);
 }
+const missingPhoto = await fetch(base + 'candidate-images/' + candidates[0].id + '/55555555-5555-4555-8555-555555555555?v=' + imageVersion, options());
+assert.equal(missingPhoto.status, 404);
 JS
 
 # A container without the persistent mount must refuse to start.

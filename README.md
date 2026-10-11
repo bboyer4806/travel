@@ -35,10 +35,10 @@ The provider needs no key for this personal, non-commercial app. Its [free-servi
 ## Routes, itineraries, and research links
 Trips return to their departing city by default. Select **Return to a different city** to enter a separate endpoint. Existing trips retain their departure location and default return behavior.
 Each travel connection supports up to 30 ordered layovers or stops, with a place, arrival/departure details, and notes. The connection's estimated price covers the whole itinerary and is counted once in the trip budget.
-Connections and hotel/activity/restaurant ideas support up to 20 research links with optional short descriptions. Existing single links are retained during the additive database upgrade. Older schema versions upgrade to version 4 automatically inside a transaction; take an online backup before deploying this upgrade.
-## Destination images
-Each destination can have one optional uploaded image, shown on its card in the trip. Add, replace, or remove it while editing the destination; Cancel discards image changes. JPEG, PNG, and WebP uploads up to 5 MB and 20 megapixels are supported. Images are oriented, resized to fit 1600 × 1200, stripped of metadata, and saved as WebP (up to 2 MB).
-Images live in the same persistent SQLite database and are included in online backups. Snapshots carry only an image version; the image route serves separate, versioned responses. Image-only edits preserve travel plans and prices.
+Connections and hotel/activity/restaurant ideas support up to 20 research links with optional short descriptions. Existing single links are retained during the additive database upgrade. Older schema versions upgrade to version 5 automatically inside a transaction; take an online backup before deploying this upgrade.
+## Images
+Each destination, hotel, activity, and restaurant can have one optional uploaded image, shown on its card. Add, replace, or remove it in the corresponding editor; Cancel discards image changes. JPEG, PNG, and WebP uploads up to 5 MB and 20 megapixels are supported. Images are oriented, resized to fit 1600 × 1200, stripped of metadata, and saved as WebP (up to 2 MB).
+Images live in the same persistent SQLite database and are included in online backups. Snapshots carry only an image version; the image route serves separate, versioned responses. Image-only edits preserve travel plans, prices, research links, and budget selections.
 
 ## Hosting
 The existing GitHub Actions deployment builds a Node container and deploys it to Dokku at travel.dev.boyersoftware.com after checks pass.

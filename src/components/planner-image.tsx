@@ -2,12 +2,16 @@
 
 import { useEffect, useId, useRef, useState, type ChangeEvent } from "react";
 import { ImagePlus, RotateCcw, Trash2 } from "lucide-react";
-import styles from "./destination-image.module.css";
+import styles from "./planner-image.module.css";
 
 const MAX_IMAGE_BYTES = 5 * 1024 * 1024;
 const IMAGE_TYPES = new Set(["image/jpeg", "image/png", "image/webp"]);
 
+type ImageSubject = "destination" | "hotel" | "activity" | "restaurant";
+const subjectLabels: Record<ImageSubject, string> = { destination: "Destination", hotel: "Hotel", activity: "Activity", restaurant: "Restaurant" };
+
 type EditorProps = {
+  subject?: ImageSubject;
   existingSrc: string | null;
   file: File | null;
   removeExisting: boolean;
@@ -15,7 +19,7 @@ type EditorProps = {
   disabled?: boolean;
 };
 
-export function DestinationImage({ src, name }: { src: string; name: string }) {
+export function PlannerImage({ src, name }: { src: string; name: string }) {
   return <div className={styles.banner}>
     {/* Stored images are already resized and optimized when uploaded. */}
     {/* eslint-disable-next-line @next/next/no-img-element */}
@@ -23,7 +27,7 @@ export function DestinationImage({ src, name }: { src: string; name: string }) {
   </div>;
 }
 
-function UploadPreview({ file }: { file: File }) {
+function UploadPreview({ file, subject }: { file: File; subject: ImageSubject }) {
   const image = useRef<HTMLImageElement>(null);
 
   useEffect(() => {
@@ -35,12 +39,13 @@ function UploadPreview({ file }: { file: File }) {
   return <div className={styles.banner}>
     {/* Blob previews are local to this browser and cannot use server image optimization. */}
     {/* eslint-disable-next-line @next/next/no-img-element */}
-    <img ref={image} className={styles.image} alt="Selected destination image preview" width={1600} height={700} />
+    <img ref={image} className={styles.image} alt={`Selected ${subject} image preview`} width={1600} height={700} />
   </div>;
 }
 
-export function DestinationImageEditor({ existingSrc, file, removeExisting, onChange, disabled = false }: EditorProps) {
+export function PlannerImageEditor({ existingSrc, file, removeExisting, onChange, disabled = false, subject = "destination" }: EditorProps) {
   const id = useId();
+  const label = `${subjectLabels[subject]} image`;
   const input = useRef<HTMLInputElement>(null);
   const [error, setError] = useState("");
   const hasImage = Boolean(file || (existingSrc && !removeExisting));
@@ -78,12 +83,12 @@ export function DestinationImageEditor({ existingSrc, file, removeExisting, onCh
   }
 
   return <fieldset className={styles.editor} disabled={disabled} aria-describedby={`${id}-hint`}>
-    <legend>Destination image <span className={styles.optional}>(optional)</span></legend>
-    <p id={`${id}-hint`} className={styles.hint}>Add a photo to this destination. JPEG, PNG, or WebP, up to 5 MB.</p>
+    <legend>{label} <span className={styles.optional}>(optional)</span></legend>
+    <p id={`${id}-hint`} className={styles.hint}>Add a photo to this {subject}. JPEG, PNG, or WebP, up to 5 MB.</p>
     <input ref={input} id={id} type="file" accept="image/jpeg,image/png,image/webp" onChange={choose}
-      disabled={disabled} hidden aria-label="Destination image" aria-describedby={`${id}-hint${error ? ` ${id}-error` : ""}`} />
+      disabled={disabled} hidden aria-label={label} aria-describedby={`${id}-hint${error ? ` ${id}-error` : ""}`} />
     {hasImage && <div className={styles.preview}>
-      {file ? <UploadPreview file={file} /> : existingSrc && <DestinationImage src={existingSrc} name="Current destination image" />}
+      {file ? <UploadPreview file={file} subject={subject} /> : existingSrc && <PlannerImage src={existingSrc} name={`Current ${subject} image`} />}
     </div>}
     {file && <p className={styles.filename}>Selected: {file.name}</p>}
     <div className={styles.actions}>
@@ -98,7 +103,7 @@ export function DestinationImageEditor({ existingSrc, file, removeExisting, onCh
       </button>}
     </div>
     {error && <p id={`${id}-error`} className={styles.error} role="alert">{error}</p>}
-    {file && <p className={styles.status} role="status">Your image will be added when you save this destination.</p>}
-    {!file && existingSrc && removeExisting && <p className={styles.status} role="status">The image will be removed when you save this destination.</p>}
+    {file && <p className={styles.status} role="status">Your image will be added when you save this {subject}.</p>}
+    {!file && existingSrc && removeExisting && <p className={styles.status} role="status">The image will be removed when you save this {subject}.</p>}
   </fieldset>;
 }

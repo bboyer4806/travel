@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import sharp from "sharp";
-import { prepareDestinationImage, ImageValidationError } from "../src/lib/destination-image-upload.ts";
+import { prepareImage, ImageValidationError } from "../src/lib/image-upload.ts";
 
 function upload(bytes, type = "image/png") {
   const form = new FormData();
@@ -10,17 +10,17 @@ function upload(bytes, type = "image/png") {
 }
 
 test("image drafts preserve existing images or explicitly remove them", async () => {
-  assert.equal(await prepareDestinationImage(), undefined);
-  assert.equal(await prepareDestinationImage(new FormData()), undefined);
+  assert.equal(await prepareImage(), undefined);
+  assert.equal(await prepareImage(new FormData()), undefined);
   const remove = new FormData();
   remove.set("removeImage", "true");
-  assert.equal(await prepareDestinationImage(remove), null);
+  assert.equal(await prepareImage(remove), null);
 });
 
 test("uploads become bounded WebP images with orientation applied and metadata removed", async () => {
   const source = await sharp({ create: { width: 2400, height: 1200, channels: 3, background: "#496b62" } })
     .withMetadata({ orientation: 6 }).jpeg().toBuffer();
-  const result = await prepareDestinationImage(upload(source, "image/jpeg"));
+  const result = await prepareImage(upload(source, "image/jpeg"));
   const metadata = await sharp(result).metadata();
   assert.equal(metadata.format, "webp");
   assert.equal(metadata.width, 600);
@@ -34,7 +34,7 @@ test("uploads become bounded WebP images with orientation applied and metadata r
 test("small PNG and WebP uploads keep their dimensions", async () => {
   for (const format of ["png", "webp"]) {
     const source = await sharp({ create: { width: 40, height: 20, channels: 4, background: "#79a6a080" } })[format]().toBuffer();
-    const result = await prepareDestinationImage(upload(source, `image/${format}`));
+    const result = await prepareImage(upload(source, `image/${format}`));
     const metadata = await sharp(result).metadata();
     assert.equal(metadata.width, 40);
     assert.equal(metadata.height, 20);
@@ -53,11 +53,11 @@ test("unsupported, empty, oversized, corrupt, and disguised uploads are rejected
   const stringFile = new FormData();
   stringFile.set("image", "not a file");
   cases.push(stringFile);
-  for (const form of cases) await assert.rejects(prepareDestinationImage(form), ImageValidationError);
+  for (const form of cases) await assert.rejects(prepareImage(form), ImageValidationError);
 });
 
 test("compressed uploads cannot exceed the decoded pixel limit", async () => {
   const source = await sharp({ create: { width: 5000, height: 4001, channels: 3, background: "#ffffff" } }).png().toBuffer();
   assert.ok(source.byteLength < 5 * 1024 * 1024);
-  await assert.rejects(prepareDestinationImage(upload(source)), /20 megapixels/);
+  await assert.rejects(prepareImage(upload(source)), /20 megapixels/);
 });

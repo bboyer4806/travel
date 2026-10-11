@@ -8,13 +8,30 @@ import { DatabaseSync } from "node:sqlite";
 
 const imageBytes = Buffer.from('UklGRh4AAABXRUJQVlA4TBEAAAAvAUAAAAfQtSZVrP+BiOh/AAA=', 'base64');
 const imageVersion = "33333333-3333-4333-8333-333333333333";
+const candidates = [
+  { id: "66666666-6666-4666-8666-666666666666", category: "hotels", version: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb" },
+  { id: "77777777-7777-4777-8777-777777777777", category: "activities", version: "cccccccc-cccc-4ccc-8ccc-cccccccccccc" },
+  { id: "88888888-8888-4888-8888-888888888888", category: "restaurants", version: "dddddddd-dddd-4ddd-8ddd-dddddddddddd" },
+];
 
 function fixture(t) {
   const directory = mkdtempSync(join(tmpdir(), "travel-backup-test-"));
   const source = join(directory, "source.sqlite");
   const db = new DatabaseSync(source);
-  db.exec("PRAGMA journal_mode = WAL; CREATE TABLE notes(value TEXT); INSERT INTO notes VALUES('saved idea'); CREATE TABLE destination_images(destinationId TEXT PRIMARY KEY, version TEXT NOT NULL, data BLOB NOT NULL) STRICT;");
+  db.exec(`
+    PRAGMA journal_mode = WAL;
+    PRAGMA foreign_keys = ON;
+    CREATE TABLE notes(value TEXT);
+    INSERT INTO notes VALUES('saved idea');
+    CREATE TABLE destination_images(destinationId TEXT PRIMARY KEY, version TEXT NOT NULL, data BLOB NOT NULL) STRICT;
+    CREATE TABLE candidates(id TEXT PRIMARY KEY, category TEXT NOT NULL) STRICT;
+    CREATE TABLE candidate_images(candidateId TEXT PRIMARY KEY REFERENCES candidates(id) ON DELETE CASCADE, version TEXT NOT NULL, data BLOB NOT NULL) STRICT;
+  `);
   db.prepare("INSERT INTO destination_images(destinationId,version,data) VALUES(?,?,?)").run("22222222-2222-4222-8222-222222222222", imageVersion, imageBytes);
+  for (const candidate of candidates) {
+    db.prepare("INSERT INTO candidates(id,category) VALUES(?,?)").run(candidate.id, candidate.category);
+    db.prepare("INSERT INTO candidate_images(candidateId,version,data) VALUES(?,?,?)").run(candidate.id, candidate.version, imageBytes);
+  }
   t.after(() => {
     db.close();
     const target = resolve(directory);
@@ -27,7 +44,7 @@ function fixture(t) {
   return { directory, source, backup };
 }
 
-test("online backup preserves live WAL data and image bytes and cleans temporary SQLite sidecars", (t) => {
+test("online backup preserves live WAL data, destination and all candidate image bytes, and cleans temporary SQLite sidecars", (t) => {
   const { directory, backup } = fixture(t);
   const target = join(directory, "backup.sqlite");
   const result = backup(target);
@@ -38,6 +55,15 @@ test("online backup preserves live WAL data and image bytes and cleans temporary
     const image = snapshot.prepare("SELECT version, data FROM destination_images WHERE destinationId = ?").get("22222222-2222-4222-8222-222222222222");
     assert.equal(image.version, imageVersion);
     assert.deepEqual(Buffer.from(image.data), imageBytes);
+    assert.equal(snapshot.prepare("SELECT count(*) AS count FROM candidate_images").get().count, candidates.length);
+    for (const candidate of candidates) {
+      const saved = snapshot.prepare("SELECT category FROM candidates WHERE id = ?").get(candidate.id);
+      assert.equal(saved?.category, candidate.category);
+      const savedImage = snapshot.prepare("SELECT version,data FROM candidate_images WHERE candidateId = ?").get(candidate.id);
+      assert.equal(savedImage?.version, candidate.version, candidate.category + " image version must be backed up");
+      assert.deepEqual(Buffer.from(savedImage.data), imageBytes, candidate.category + " image bytes must be backed up");
+    }
+    assert.deepEqual(snapshot.prepare("PRAGMA foreign_key_check").all(), []);
     assert.equal(snapshot.prepare("PRAGMA integrity_check").get().integrity_check, "ok");
   } finally { snapshot.close(); }
   assert.deepEqual(readdirSync(directory).filter((name) => name.startsWith(".travel-backup-")), []);

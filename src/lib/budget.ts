@@ -4,6 +4,7 @@ import type { Budget, Snapshot } from "./types";
 export function calculateBudget(snapshot: Snapshot, tripId: string): Budget {
   const budget: Budget = {
     totalCents: 0,
+    homeCents: 0,
     travelCents: 0,
     hotelsCents: 0,
     activitiesCents: 0,
@@ -20,7 +21,7 @@ export function calculateBudget(snapshot: Snapshot, tripId: string): Budget {
   if (!trip.homeCity.trim()) budget.missingCount += 1;
   if (!destinations.length) budget.missingCount += 1;
 
-  function add(price: number | null, category: "travelCents" | "hotelsCents" | "activitiesCents" | "restaurantsCents") {
+  function add(price: number | null, category: "travelCents" | "hotelsCents" | "activitiesCents" | "restaurantsCents" | "homeCents") {
     if (price === null) {
       budget.missingCount += 1;
     } else {
@@ -43,7 +44,11 @@ export function calculateBudget(snapshot: Snapshot, tripId: string): Budget {
       add(candidate.priceCents, `${candidate.category}Cents`);
     }
   }
-  budget.totalCents = budget.travelCents + budget.hotelsCents + budget.activitiesCents + budget.restaurantsCents;
+  // A blank home-item price is an optional task without a cost, not a missing estimate.
+  for (const item of snapshot.homeItems) {
+    if (item.tripId === tripId && item.priceCents !== null) add(item.priceCents, "homeCents");
+  }
+  budget.totalCents = budget.travelCents + budget.hotelsCents + budget.activitiesCents + budget.restaurantsCents + budget.homeCents;
   budget.complete = budget.missingCount === 0;
   return budget;
 }

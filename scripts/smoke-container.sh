@@ -38,9 +38,11 @@ const images = [
   Buffer.from('UklGRh4AAABXRUJQVlA4TBEAAAAvAUAAAAfQtSZVrP+BiOh/AAA=', 'base64'),
   Buffer.from('UklGRh4AAABXRUJQVlA4TBEAAAAvAUAAAAdQwjaXpf+BiOh/AAA=', 'base64'),
 ];
-assert.equal(db.prepare('PRAGMA user_version').get().user_version, 6);
+assert.equal(db.prepare('PRAGMA user_version').get().user_version, 7);
 db.exec('PRAGMA foreign_keys = ON; BEGIN IMMEDIATE;');
 db.prepare('INSERT INTO trips(id,name,dateLabel,homeCity,travelers,notes,createdAt) VALUES(?,?,?,?,?,?,?)').run('container-smoke','Persistence test','','',2,'',new Date().toISOString());
+db.prepare('INSERT INTO home_items(id,tripId,name,priceCents,notes,completed,createdAt) VALUES(?,?,?,?,?,?,?)').run('a1000000-0000-4000-8000-000000000001','container-smoke','House sitting',23950,'Give sitter a key',1,'2026-10-12T12:00:00.000Z');
+db.prepare('INSERT INTO home_items(id,tripId,name,priceCents,notes,completed,createdAt) VALUES(?,?,?,?,?,?,?)').run('a1000000-0000-4000-8000-000000000002','container-smoke','Pause mail',null,'Arrange before leaving',0,'2026-10-12T12:01:00.000Z');
 db.prepare('INSERT INTO destinations(id,tripId,city,stay,notes,position) VALUES(?,?,?,?,?,?)').run(destinationId, 'container-smoke', 'Vienna', '', '', 0);
 db.prepare('INSERT INTO destination_images(destinationId,version,data) VALUES(?,?,?)').run(destinationId, imageVersion, images[0]);
 for (const [index, candidate] of candidates.entries()) {
@@ -75,8 +77,13 @@ const images = [
 ];
 const db = new DatabaseSync('/data/travel.sqlite');
 try {
-  assert.equal(db.prepare('PRAGMA user_version').get().user_version, 6);
+  assert.equal(db.prepare('PRAGMA user_version').get().user_version, 7);
   assert.ok(db.prepare('SELECT id FROM trips WHERE id = ?').get('container-smoke'));
+  const homeItems = db.prepare('SELECT name,priceCents,notes,completed,createdAt FROM home_items WHERE tripId = ? ORDER BY createdAt').all('container-smoke').map(row => ({...row}));
+  assert.deepEqual(homeItems, [
+    {name:'House sitting',priceCents:23950,notes:'Give sitter a key',completed:1,createdAt:'2026-10-12T12:00:00.000Z'},
+    {name:'Pause mail',priceCents:null,notes:'Arrange before leaving',completed:0,createdAt:'2026-10-12T12:01:00.000Z'},
+  ]);
   assert.ok(db.prepare('SELECT id FROM destinations WHERE id = ?').get(destinationId));
   const image = db.prepare('SELECT version,data FROM destination_images WHERE destinationId = ?').get(destinationId);
   assert.equal(image?.version, imageVersion);

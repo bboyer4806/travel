@@ -85,3 +85,10 @@ Use one application instance for v1. Live deployment remains a separate review s
 - Accept JPEG, PNG, and WebP files up to 5 MiB each, with up to 15 MiB of new files per save. Validate the whole upload batch before saving changes.
 - Retain existing single idea images as the main photo during the schema 6 migration. Persist all photos and their main selections through backups and container replacement.
 - Preserve prices, research links, budget selections, and destination images. Changes to an idea without photo changes preserve its gallery.
+
+## Added scope: at-home planning, October 12, 2026
+- Add an At home section beneath Between the places on each trip, including trips with no destinations.
+- Create, edit, delete, complete, and reopen household arrangements such as house sitting and child care. Store a name, notes, and an optional total price in USD.
+- Include entered prices in an At home budget subtotal and the trip estimate. Blank prices are optional tasks, not missing estimates; completion preserves expenses.
+- Keep these items with their trip, preserve them across restarts and backups, and remove them when the trip is deleted.
+- Upgrade existing data to schema 7 without changing travel plans or photo galleries.

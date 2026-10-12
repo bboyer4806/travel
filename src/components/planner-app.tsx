@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import LocationField from "@/components/location-field";
+import HomeItems from "@/components/home-items";
 import { PlannerImage, PlannerImageEditor } from "@/components/planner-image";
 import { CandidateGallery, CandidateGalleryEditor, candidateGalleryForm, createCandidateGalleryDraft, type CandidateGalleryDraft } from "@/components/candidate-gallery";
 import TripRouteFields from "@/components/trip-route-fields";
@@ -13,13 +14,14 @@ import { ArrowDown, ArrowLeft, ArrowRight, ArrowUp, BedDouble, Binoculars, Calen
 import { mutatePlanner } from "@/app/actions";
 import { formatSavedDestinationLabel } from "@/lib/destination-label";
 import { calculateBudget, formatMoney } from "@/lib/budget";
-import type { Budget, Candidate, Category, Destination, ItineraryStop, Mutation, ResearchLink, Snapshot, TravelLeg, Trip } from "@/lib/types";
+import type { Budget, Candidate, Category, Destination, HomeItem, ItineraryStop, Mutation, ResearchLink, Snapshot, TravelLeg, Trip } from "@/lib/types";
 
 type Editor =
   | { kind: "trip"; item?: Trip }
   | { kind: "destination"; item?: Destination }
   | { kind: "leg"; item: TravelLeg }
   | { kind: "candidate"; item?: Candidate }
+  | { kind: "homeItem"; item?: HomeItem }
   | { kind: "delete"; mutation: Mutation; title: string; description: string; redirect?: string };
 const categories: Category[] = ["hotels", "activities", "restaurants"];
 const labels = { hotels: "Hotels", activities: "Activities", restaurants: "Restaurants" };
@@ -115,6 +117,10 @@ export default function PlannerApp({ initialData, tripId, destinationId, categor
         if (trip) void perform({ type: "destination.save", id: editor.item?.id, tripId: trip.id, city: text("city"), stay: text("stay"), notes: text("notes") }, "Destination saved. Review any new travel connections.", undefined, imageForm);
         break;
       }
+      case "homeItem": {
+        if (trip) void perform({ type: "homeItem.save", id: editor.item?.id, tripId: trip.id, name: text("name"), price: text("price"), notes: text("notes"), completed: fields.has("completed") }, "At home item saved.");
+        break;
+      }
       case "leg": void perform({ type: "leg.save", id: editor.item.id, method: text("method"), price: text("price"), departure: text("departure"), arrival: text("arrival"), url: researchLinks[0]?.url ?? "", links: researchLinks, notes: text("notes"), itinerary }); break;
       case "candidate": {
         const imageForm = candidateGalleryForm(candidateGallery, editor.item);
@@ -126,6 +132,7 @@ export default function PlannerApp({ initialData, tripId, destinationId, categor
   const pageTitle = editor?.kind === "delete" ? editor.title : editor?.kind === "trip" ? (editor.item ? "Edit trip" : "A new adventure")
     : editor?.kind === "destination" ? (editor.item ? "Edit destination" : "Add a destination")
     : editor?.kind === "leg" ? "Plan this connection"
+    : editor?.kind === "homeItem" ? (editor.item ? "Edit home item" : "Add an item at home")
     : editor?.kind === "candidate" && category ? (editor.item ? "Edit " : "Add a ") + singular[category] : "";
   const visibleTrips = data.trips.filter((item) => [item.name, item.dateLabel, ...data.destinations.filter((stop) => stop.tripId === item.id).flatMap((stop) => [stop.city, formatSavedDestinationLabel(stop.city)])].join(" ").toLowerCase().includes(search.toLowerCase()));
 
@@ -152,7 +159,7 @@ export default function PlannerApp({ initialData, tripId, destinationId, categor
                   <h3>{item.name}</h3><p className="city-list"><MapPin size={15} />{cities.length ? cities.map((stop) => formatSavedDestinationLabel(stop.city)).join(" → ") : "Destinations to be decided"}</p>
                   <div className="trip-meta"><span><CalendarDays size={15} />{item.dateLabel || "Whenever the time is right"}</span><span><Users size={15} />{item.travelers} {item.travelers === 1 ? "traveler" : "travelers"}</span></div>
                   <div className="card-budget"><div><span className="small-label">ESTIMATED BUDGET · USD</span><BudgetValue budget={estimate} /></div><span className="round-arrow"><ArrowRight size={19} /></span></div>
-                </Link><div className="card-tools"><button className="text-button" aria-label={"Edit " + item.name} onClick={() => open({ kind: "trip", item })}><Pencil size={14} />Edit</button><button className="icon-button muted" aria-label={"Delete " + item.name} onClick={() => confirmDelete({ type: "trip.delete", id: item.id }, "Delete “" + item.name + "”?", "This removes the trip, its destinations, travel plans, and every saved idea.")}><Trash2 size={15} /></button></div>
+                </Link><div className="card-tools"><button className="text-button" aria-label={"Edit " + item.name} onClick={() => open({ kind: "trip", item })}><Pencil size={14} />Edit</button><button className="icon-button muted" aria-label={"Delete " + item.name} onClick={() => confirmDelete({ type: "trip.delete", id: item.id }, "Delete “" + item.name + "”?", "This removes the trip, its destinations, travel plans, saved ideas, and At home items.")}><Trash2 size={15} /></button></div>
               </article>;
             })}</div>}
         </section>
@@ -161,7 +168,7 @@ export default function PlannerApp({ initialData, tripId, destinationId, categor
       {trip && !category && <>
         <Link href="/" className="breadcrumb"><ArrowLeft size={16} />All trips</Link>
         <section className="trip-heading"><div><p className="eyebrow">AN ADVENTURE IN THE MAKING</p><h1>{trip.name}</h1><div className="trip-meta"><span><CalendarDays size={17} />{trip.dateLabel || "Dates to be decided"}</span><span><Users size={17} />{trip.travelers} {trip.travelers === 1 ? "traveler" : "travelers"}</span><span><MapPin size={17} />{trip.homeCity ? "Departing: " + trip.homeCity : "Add departing city"}</span>{trip.returnCity && <span><MapPin size={17} />Returning: {trip.returnCity}</span>}</div>{trip.notes && <p className="trip-notes">{trip.notes}</p>}</div>
-          <div className="heading-actions"><button className="button secondary" onClick={() => open({ kind: "trip", item: trip })}><Pencil size={15} />Edit trip</button><button className="icon-button" aria-label="Delete trip" onClick={() => confirmDelete({ type: "trip.delete", id: trip.id }, "Delete this trip?", "“" + trip.name + "” and all its destinations and ideas will be removed.", "/")}><Trash2 size={18} /></button></div>
+          <div className="heading-actions"><button className="button secondary" onClick={() => open({ kind: "trip", item: trip })}><Pencil size={15} />Edit trip</button><button className="icon-button" aria-label="Delete trip" onClick={() => confirmDelete({ type: "trip.delete", id: trip.id }, "Delete this trip?", "“" + trip.name + "” and all its destinations, ideas, and At home items will be removed.", "/")}><Trash2 size={18} /></button></div>
         </section>
         <div className="trip-layout"><div className="trip-main">
           <section><div className="section-heading"><div><p className="eyebrow">ONE STOP AT A TIME</p><h2>The destinations</h2></div><button className="button secondary small" onClick={() => open({ kind: "destination" })}><Plus size={16} />Add destination</button></div>
@@ -175,8 +182,13 @@ export default function PlannerApp({ initialData, tripId, destinationId, categor
           <section className="travel-section"><div className="section-heading"><div><p className="eyebrow">GETTING THERE & BACK</p><h2>Between the places</h2></div><Plane size={25} strokeWidth={1.3} /></div>
             {stops.length === 0 ? <p className="section-description">Your travel connections will appear once you add a destination.</p> : <div className="travel-list">{data.legs.filter((leg) => leg.tripId === trip.id).map((leg) => <article className="travel-card" key={leg.id}><span className="route-dot"><Plane size={16} /></span><div className="travel-content"><h3>{legName(leg.fromId, "from")} <ArrowRight size={15} /> {legName(leg.toId, "to")}</h3><p>{leg.method || "Travel details to be decided"}{leg.departure && " · " + leg.departure}{leg.arrival && " → " + leg.arrival}</p>{leg.notes && <p className="preserve-lines">{leg.notes}</p>}<ResearchLinks links={leg.links ?? []} /><ConnectionItinerary stops={leg.itinerary ?? []} /><span className={leg.priceCents === null ? "price unknown" : "price"}>{displayPrice(leg.priceCents)}{leg.priceCents === null && " · Needs estimate"}</span></div><div className="travel-tools"><button className="text-button" aria-label={"Edit travel from " + legName(leg.fromId, "from") + " to " + legName(leg.toId, "to")} onClick={() => open({ kind: "leg", item: leg })}><Pencil size={14} />Edit</button>{(leg.method || leg.priceCents !== null || leg.notes || leg.url || leg.departure || leg.arrival || (leg.itinerary?.length ?? 0) > 0 || (leg.links?.length ?? 0) > 0) && <button className="text-button muted" onClick={() => confirmDelete({ type: "leg.clear", id: leg.id }, "Clear this travel plan?", "The connection will remain in your route, with its price, travel details, links, and itinerary cleared.")}>Clear</button>}</div></article>)}</div>}
           </section>
+          <HomeItems items={data.homeItems.filter((item) => item.tripId === trip.id)} busy={busy}
+            onAdd={() => open({ kind: "homeItem" })}
+            onEdit={(item) => open({ kind: "homeItem", item })}
+            onDelete={(item) => confirmDelete({ type: "homeItem.delete", id: item.id, tripId: trip.id }, "Delete “" + item.name + "”?", "This removes the item and any cost from the trip estimate.")}
+            onComplete={(item) => void perform({ type: "homeItem.complete", id: item.id, tripId: trip.id, completed: !item.completed }, item.completed ? "Item reopened." : "Item marked complete.")} />
         </div>
-        {budget && <aside className="budget-panel"><span className="budget-symbol"><Wallet size={23} strokeWidth={1.4} /></span><p className="eyebrow">ROOM IN THE BUDGET</p><h2>The trip estimate</h2><div className="budget-total"><BudgetValue budget={budget} /></div><p className="budget-caption">USD · total for {trip.travelers === 1 ? "1 traveler" : "all " + trip.travelers + " travelers"}</p><dl className="budget-breakdown"><div><dt>Travel</dt><dd>{formatMoney(budget.travelCents)}</dd></div><div><dt>Hotels</dt><dd>{formatMoney(budget.hotelsCents)}</dd></div><div><dt>Activities</dt><dd>{formatMoney(budget.activitiesCents)}</dd></div><div><dt>Restaurants</dt><dd>{formatMoney(budget.restaurantsCents)}</dd></div></dl><div className="budget-note">{budget.complete ? <CheckCircle2 size={17} /> : <MoreHorizontal size={20} />}<p>{budget.complete ? "Every selected item has an estimate." : budget.missingCount + " " + (budget.missingCount === 1 ? "detail still needs" : "details still need") + " an estimate or a choice."}</p></div><p className="helper">Includes travel, one chosen hotel per stop, and the activities and restaurants you select. Unpriced items are excluded from the subtotal.</p></aside>}
+        {budget && <aside className="budget-panel"><span className="budget-symbol"><Wallet size={23} strokeWidth={1.4} /></span><p className="eyebrow">ROOM IN THE BUDGET</p><h2>The trip estimate</h2><div className="budget-total"><BudgetValue budget={budget} /></div><p className="budget-caption">USD · total for {trip.travelers === 1 ? "1 traveler" : "all " + trip.travelers + " travelers"}</p><dl className="budget-breakdown"><div><dt>Travel</dt><dd>{formatMoney(budget.travelCents)}</dd></div><div><dt>Hotels</dt><dd>{formatMoney(budget.hotelsCents)}</dd></div><div><dt>Activities</dt><dd>{formatMoney(budget.activitiesCents)}</dd></div><div><dt>Restaurants</dt><dd>{formatMoney(budget.restaurantsCents)}</dd></div><div><dt>At home</dt><dd>{formatMoney(budget.homeCents)}</dd></div></dl><div className="budget-note">{budget.complete ? <CheckCircle2 size={17} /> : <MoreHorizontal size={20} />}<p>{budget.complete ? "All required estimates are added." : budget.missingCount + " " + (budget.missingCount === 1 ? "detail still needs" : "details still need") + " an estimate or a choice."}</p></div><p className="helper">Includes travel, one chosen hotel per stop, selected activities and restaurants, and any At home costs. Items without prices are excluded from the subtotal.</p></aside>}
         </div>
       </>}
 
@@ -215,6 +227,12 @@ export default function PlannerApp({ initialData, tripId, destinationId, categor
         <Field label="Arrival"><input name="arrival" defaultValue={editor.item.arrival} maxLength={120} placeholder="Date, time, or general plan" /></Field>
         <ResearchLinksEditor links={researchLinks} onChange={setResearchLinks} disabled={busy} /><Notes value={editor.item.notes} />
         <ConnectionItineraryEditor stops={itinerary} onChange={setItinerary} disabled={busy} />
+      </>}
+      {editor.kind === "homeItem" && <>
+        <Field label="Name" wide><input name="name" defaultValue={editor.item?.name} required maxLength={160} placeholder="House sitting, babysitting, or another task" autoFocus disabled={busy} /></Field>
+        <Field label="Estimated price (USD, optional)" wide hint="Add the total cost for this trip, or leave blank if there is no cost to add. You can add a price later."><input name="price" type="number" min="0" max="100000000" step="0.01" defaultValue={priceValue(editor.item?.priceCents)} placeholder="No price added" disabled={busy} /></Field>
+        <Field label="Notes" wide><textarea name="notes" defaultValue={editor.item?.notes} maxLength={8000} rows={3} placeholder="Contacts, arrangements, or anything to remember" disabled={busy} /></Field>
+        <label className="checkbox-field wide"><input name="completed" type="checkbox" defaultChecked={editor.item?.completed ?? false} disabled={busy} /><span>Completed<small>Any price stays in the trip estimate when this item is complete.</small></span></label>
       </>}
       {editor.kind === "candidate" && category && <>
         <Field label="Name" wide><input name="name" defaultValue={editor.item?.name} required maxLength={160} autoFocus placeholder={"Name of the " + singular[category]} /></Field>

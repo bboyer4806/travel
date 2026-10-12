@@ -62,6 +62,8 @@ Hotel, activity, and restaurant photos upgrade the database to schema 5 with a s
 
 Photo galleries upgrade the database to schema 6. Each hotel, activity, and restaurant can store up to 10 photos with one main selection. The migration retains the bytes and version of each previous single image and makes it the main photo. Destination images remain unchanged. Back up schema 5 before deployment; all gallery photos and main selections are included in the same online backup. Schema 5 app images reject schema 6, so rollback requires a compatible build or the stopped-app restore procedure. Restore loses edits made since the backup; preserve the current database before restoring.
 
+At-home planning upgrades the database to schema 7 with a separate trip-owned item table. Existing trips, travel plans, and photos are retained. At-home notes, prices, and completion states use the same persistent storage and online backups. Back up the current database before deploying (schema 5 deployments upgrade through schemas 6 and 7 in one transaction). Earlier builds reject schema 7; rollback requires a compatible build or the stopped-app restore procedure above.
+
 ## References
 - [Dokku persistent storage](https://dokku.com/docs/advanced-usage/persistent-storage/)
 - [Node SQLite backup API](https://nodejs.org/docs/latest-v24.x/api/sqlite.html)

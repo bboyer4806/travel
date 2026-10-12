@@ -29,7 +29,12 @@ function fixture(t) {
   db.exec(`
     PRAGMA journal_mode = WAL;
     PRAGMA foreign_keys = ON;
-    PRAGMA user_version = 6;
+    PRAGMA user_version = 7;
+    CREATE TABLE trips(id TEXT PRIMARY KEY) STRICT;
+    INSERT INTO trips VALUES('trip-with-home-items');
+    CREATE TABLE home_items(id TEXT PRIMARY KEY, tripId TEXT NOT NULL REFERENCES trips(id) ON DELETE CASCADE, name TEXT NOT NULL, priceCents INTEGER, notes TEXT NOT NULL, completed INTEGER NOT NULL, createdAt TEXT NOT NULL) STRICT;
+    INSERT INTO home_items VALUES('paid-item','trip-with-home-items','House sitting',23950,'Give sitter a key',1,'2026-10-12T12:00:00.000Z');
+    INSERT INTO home_items VALUES('free-item','trip-with-home-items','Pause mail',NULL,'Arrange before leaving',0,'2026-10-12T12:01:00.000Z');
     CREATE TABLE notes(value TEXT);
     INSERT INTO notes VALUES('saved idea');
     CREATE TABLE destination_images(destinationId TEXT PRIMARY KEY, version TEXT NOT NULL, data BLOB NOT NULL) STRICT;
@@ -64,7 +69,7 @@ function fixture(t) {
   return { directory, source, backup };
 }
 
-test("online backup preserves WAL data, destination photos, and complete galleries with their main selections", (t) => {
+test("online backup preserves WAL data, destination photos, complete galleries, and at-home tasks", (t) => {
   const { directory, backup } = fixture(t);
   const target = join(directory, "backup.sqlite");
   const result = backup(target);
@@ -72,7 +77,12 @@ test("online backup preserves WAL data, destination photos, and complete galleri
   const snapshot = new DatabaseSync(target, { readOnly: true });
   try {
     assert.equal(snapshot.prepare("SELECT value FROM notes").get().value, "saved idea");
-    assert.equal(snapshot.prepare("PRAGMA user_version").get().user_version, 6);
+    assert.equal(snapshot.prepare("PRAGMA user_version").get().user_version, 7);
+    const homeItems = snapshot.prepare("SELECT id,name,priceCents,notes,completed,createdAt FROM home_items ORDER BY id").all().map(row => ({...row}));
+    assert.deepEqual(homeItems, [
+      {id:'free-item',name:'Pause mail',priceCents:null,notes:'Arrange before leaving',completed:0,createdAt:'2026-10-12T12:01:00.000Z'},
+      {id:'paid-item',name:'House sitting',priceCents:23950,notes:'Give sitter a key',completed:1,createdAt:'2026-10-12T12:00:00.000Z'},
+    ]);
     const image = snapshot.prepare("SELECT version, data FROM destination_images WHERE destinationId = ?").get("22222222-2222-4222-8222-222222222222");
     assert.equal(image.version, imageVersion);
     assert.deepEqual(Buffer.from(image.data), imageBytes);

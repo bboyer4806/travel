@@ -2,8 +2,9 @@ import { randomUUID } from "node:crypto";
 import { mkdirSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { DatabaseSync } from "node:sqlite";
-import type { Candidate, CandidateImage, CandidateGalleryUpdate, Category, Destination, StoredImage, ItineraryStop, Mutation, ResearchLink, Snapshot, TravelLeg, Trip } from "./types";
+import type { Candidate, CandidateImage, CandidateGalleryUpdate, Category, Destination, HomeItem, StoredImage, ItineraryStop, Mutation, ResearchLink, Snapshot, TravelLeg, Trip } from "./types";
 
+type StoredHomeItem = Omit<HomeItem, "completed"> & { completed: number };
 type StoredLeg = Omit<TravelLeg, "itinerary" | "links"> & { itineraryJson: string; linksJson: string };
 type StoredCandidate = Omit<Candidate, "links" | "included" | "images"> & { linksJson: string; included: number };
 
@@ -174,6 +175,12 @@ function validate(input: unknown): Mutation {
     case "candidate.delete":
     case "leg.clear":
       return { type: value.type, id: idField(value) };
+    case "homeItem.save":
+      return { type: value.type, id: optionalId(value), tripId: idField(value, "tripId"), name: textField(value, "name", 160, true), price: priceField(value), notes: textField(value, "notes", 8000), completed: booleanField(value, "completed") };
+    case "homeItem.delete":
+      return { type: value.type, id: idField(value), tripId: idField(value, "tripId") };
+    case "homeItem.complete":
+      return { type: value.type, id: idField(value), tripId: idField(value, "tripId"), completed: booleanField(value, "completed") };
     case "destination.save":
       return { type: value.type, id: optionalId(value), tripId: idField(value, "tripId"), city: textField(value, "city", 120, true), stay: textField(value, "stay", 120), notes: textField(value, "notes", 8000), image: imageField(value) };
     case "destination.move":
@@ -197,7 +204,7 @@ export function createStore(databasePath: string) {
   db.exec("BEGIN IMMEDIATE");
   try {
     const version = Number(db.prepare("PRAGMA user_version").get()?.user_version ?? 0);
-    if (version > 6) throw new Error("This database was created by a newer version of the travel app.");
+    if (version > 7) throw new Error("This database was created by a newer version of the travel app.");
     db.exec(`
     CREATE TABLE IF NOT EXISTS trips (
       id TEXT PRIMARY KEY, name TEXT NOT NULL, dateLabel TEXT NOT NULL DEFAULT '',
@@ -288,6 +295,18 @@ export function createStore(databasePath: string) {
         PRAGMA user_version = 6;
       `);
     }
+    if (version < 7) {
+      db.exec(`
+        CREATE TABLE IF NOT EXISTS home_items (
+          id TEXT PRIMARY KEY, tripId TEXT NOT NULL REFERENCES trips(id) ON DELETE CASCADE,
+          name TEXT NOT NULL, notes TEXT NOT NULL DEFAULT '',
+          priceCents INTEGER CHECK(priceCents BETWEEN 0 AND ${MAX_PRICE_CENTS}),
+          completed INTEGER NOT NULL DEFAULT 0 CHECK(completed IN (0,1)), createdAt TEXT NOT NULL
+        ) STRICT;
+        CREATE INDEX IF NOT EXISTS home_items_trip ON home_items(tripId, createdAt, id);
+        PRAGMA user_version = 7;
+      `);
+    }
     db.exec("COMMIT");
   } catch (error) {
     db.exec("ROLLBACK");
@@ -305,6 +324,10 @@ export function createStore(databasePath: string) {
     }
     return {
       trips: db.prepare("SELECT * FROM trips ORDER BY createdAt DESC, id").all().map((row) => ({ ...row })) as unknown as Trip[],
+      homeItems: db.prepare("SELECT * FROM home_items ORDER BY createdAt, id").all().map((row) => {
+        const item = row as unknown as StoredHomeItem;
+        return { ...item, completed: item.completed === 1 };
+      }),
       destinations: db.prepare("SELECT destinations.*, destination_images.version AS imageVersion FROM destinations LEFT JOIN destination_images ON destination_images.destinationId = destinations.id ORDER BY destinations.tripId, destinations.position").all().map((row) => ({ ...row })) as unknown as Destination[],
       legs: db.prepare("SELECT legs.* FROM legs LEFT JOIN destinations ON destinations.id = legs.fromId ORDER BY legs.tripId, coalesce(destinations.position, -1)").all().map((row) => {
         const { itineraryJson, linksJson, ...leg } = row as unknown as StoredLeg;
@@ -362,10 +385,15 @@ export function createStore(databasePath: string) {
     db.prepare("UPDATE candidate_images SET isMain = 0 WHERE candidateId = ? AND isMain = 1").run(candidateId);
     if (main) db.prepare("UPDATE candidate_images SET isMain = 1 WHERE candidateId = ? AND id = ?").run(candidateId, main);
   }
-  function existing<T>(table: "trips" | "destinations" | "legs" | "candidates", id: string): T {
+  function existing<T>(table: "trips" | "destinations" | "legs" | "candidates" | "home_items", id: string): T {
     const row = db.prepare(`SELECT * FROM ${table} WHERE id = ?`).get(id);
     if (!row) throw new ValidationError("This item no longer exists. Please refresh and try again.");
     return row as unknown as T;
+  }
+  function homeItemForTrip(id: string, tripId: string): StoredHomeItem {
+    const item = existing<StoredHomeItem>("home_items", id);
+    if (item.tripId !== tripId) throw new ValidationError("This home item belongs to a different trip.");
+    return item;
   }
   function orderedDestinations(tripId: string): Destination[] {
     return db.prepare("SELECT * FROM destinations WHERE tripId = ? ORDER BY position, id").all(tripId) as unknown as Destination[];
@@ -416,6 +444,25 @@ export function createStore(databasePath: string) {
         existing<Trip>("trips", input.id);
         db.prepare("DELETE FROM trips WHERE id = ?").run(input.id);
         return;
+      case "homeItem.save": {
+        existing<Trip>("trips", input.tripId);
+        const id = input.id ?? randomUUID();
+        if (input.id) {
+          homeItemForTrip(id, input.tripId);
+          db.prepare("UPDATE home_items SET name = ?, priceCents = ?, notes = ?, completed = ? WHERE id = ? AND tripId = ?").run(input.name, parsePrice(input.price), input.notes, Number(input.completed), id, input.tripId);
+        } else {
+          db.prepare("INSERT INTO home_items(id,tripId,name,priceCents,notes,completed,createdAt) VALUES(?,?,?,?,?,?,?)").run(id, input.tripId, input.name, parsePrice(input.price), input.notes, Number(input.completed), new Date().toISOString());
+        }
+        return id;
+      }
+      case "homeItem.delete":
+        homeItemForTrip(input.id, input.tripId);
+        db.prepare("DELETE FROM home_items WHERE id = ? AND tripId = ?").run(input.id, input.tripId);
+        return;
+      case "homeItem.complete":
+        homeItemForTrip(input.id, input.tripId);
+        db.prepare("UPDATE home_items SET completed = ? WHERE id = ? AND tripId = ?").run(Number(input.completed), input.id, input.tripId);
+        return input.id;
       case "destination.save": {
         existing<Trip>("trips", input.tripId);
         const id = input.id ?? randomUUID();

@@ -52,7 +52,7 @@ test("complete create, edit, clear, and delete flows preserve the trip relations
   assert.equal(store.getSnapshot().trips[0].name, "Japan 2027");
   assert.equal(store.getSnapshot().destinations[0].stay, "5 nights");
   store.applyMutation({ type: "trip.delete", id: tripId });
-  assert.deepEqual(store.getSnapshot(), { trips: [], destinations: [], legs: [], candidates: [] });
+  assert.deepEqual(store.getSnapshot(), { trips: [], destinations: [], legs: [], candidates: [], homeItems: [] });
 });
 
 test("route changes retain only unchanged connections, and deleting destinations cascades ideas", (t) => {
@@ -113,7 +113,7 @@ test("budget totals use selected ideas, exact cents, and whole-party transport c
   store.applyMutation(candidateInput(destinationId, { category: "restaurants", name: "Lunch", price: "40.01" }));
   store.applyMutation(candidateInput(destinationId, { category: "activities", name: "Maybe later", price: "", included: false }));
   const budget = calculateBudget(store.getSnapshot(), tripId);
-  assert.deepEqual(budget, { totalCents: 36060, travelCents: 12026, hotelsCents: 20033, activitiesCents: 0, restaurantsCents: 4001, knownCount: 5, missingCount: 0, complete: true });
+  assert.deepEqual(budget, { totalCents: 36060, travelCents: 12026, hotelsCents: 20033, activitiesCents: 0, restaurantsCents: 4001, homeCents: 0, knownCount: 5, missingCount: 0, complete: true });
   store.applyMutation({ type: "candidate.include", id: alternativeId, included: true });
   assert.equal(store.getSnapshot().candidates.find((item) => item.id === hotelId).included, false);
   assert.equal(store.getSnapshot().candidates.filter((item) => item.category === "hotels" && item.included).length, 1);

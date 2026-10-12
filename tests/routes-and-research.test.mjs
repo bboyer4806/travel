@@ -66,10 +66,11 @@ function legacyDatabase(path, version) {
   db.prepare("INSERT INTO legs VALUES (?,?,?,?,?,?,?,?,?,?)").run(randomUUID(), tripId, destinationId, null, "Train and flight", null, "October 7", "October 8", "", "Research later");
   db.prepare("INSERT INTO candidates VALUES (?,?,?,?,?,?,?,?,?)").run(randomUUID(), destinationId, "hotels", "Existing hotel", 90000, "Downtown", "https://example.com/hotel", "Breakfast", 1);
   const before = {
+    homeItems: [],
     trips: db.prepare("SELECT * FROM trips").all().map((row) => ({ ...row, returnCity: version === 2 ? "Boston" : null })),
     destinations: db.prepare("SELECT * FROM destinations").all().map((row) => ({ ...row, imageVersion: null })),
     legs: db.prepare("SELECT * FROM legs ORDER BY fromId IS NOT NULL").all().map((row) => ({ ...row, itinerary: [] })),
-    candidates: db.prepare("SELECT * FROM candidates").all().map((row) => ({ ...row, included: row.included === 1, imageVersion: null })),
+    candidates: db.prepare("SELECT * FROM candidates").all().map((row) => ({ ...row, included: row.included === 1, imageVersion: null, mainImageId: null, images: [] })),
   };
   if (version === 2) {
     const itinerary = [stopInput()];
@@ -106,7 +107,7 @@ for (const version of [1, 2]) {
       assert.deepEqual(store.getSnapshot(), after, "reopening preserves migrated link IDs and never duplicates data");
       const observer = new DatabaseSync(path);
       try {
-        assert.equal(observer.prepare("PRAGMA user_version").get().user_version, 5);
+        assert.equal(observer.prepare("PRAGMA user_version").get().user_version, 7);
         assert.deepEqual(observer.prepare("PRAGMA foreign_key_check").all(), []);
       } finally {
         observer.close();
@@ -120,12 +121,12 @@ for (const version of [1, 2]) {
 test("a future database version is rejected without modifying its schema", (t) => {
   const path = fileDatabase(t);
   let db = new DatabaseSync(path);
-  db.exec("PRAGMA user_version = 6");
+  db.exec("PRAGMA user_version = 8");
   db.close();
   assert.throws(() => createStore(path), /newer version/);
   db = new DatabaseSync(path);
   try {
-    assert.equal(db.prepare("PRAGMA user_version").get().user_version, 6);
+    assert.equal(db.prepare("PRAGMA user_version").get().user_version, 8);
     assert.equal(db.prepare("SELECT count(*) AS count FROM sqlite_master WHERE type = 'table'").get().count, 0);
   } finally {
     db.close();
@@ -399,7 +400,7 @@ test("redeployment preserves new fields when an older app reset the schema versi
     assert.deepEqual(store.getSnapshot(), before, "schema recovery retains every stop, description, return city, and stable link ID");
     const observer = new DatabaseSync(path);
     try {
-      assert.equal(observer.prepare("PRAGMA user_version").get().user_version, 5);
+      assert.equal(observer.prepare("PRAGMA user_version").get().user_version, 7);
       assert.deepEqual(observer.prepare("PRAGMA foreign_key_check").all(), []);
     } finally {
       observer.close();

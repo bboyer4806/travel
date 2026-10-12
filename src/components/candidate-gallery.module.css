@@ -1,0 +1,95 @@
+.gallery {
+  min-width: 0;
+  max-width: 100%;
+  margin-bottom: 18px;
+}
+
+.hero,
+.preview {
+  position: relative;
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--wash);
+}
+
+.hero { aspect-ratio: 16 / 7; }
+.preview { aspect-ratio: 3 / 2; }
+.image { display: block; width: 100%; height: 100%; object-fit: cover; }
+
+.mainBadge,
+.count {
+  position: absolute;
+  bottom: 9px;
+  padding: 4px 8px;
+  border-radius: 4px;
+  background: #244c40;
+  color: white;
+  font-size: 10px;
+  line-height: 1.4;
+}
+.mainBadge { left: 9px; }
+.count { right: 9px; }
+
+.thumbnails {
+  display: flex;
+  gap: 8px;
+  max-width: 100%;
+  overflow-x: auto;
+  padding: 6px;
+  margin: 3px -6px -6px;
+}
+
+.thumbnail {
+  position: relative;
+  flex: 0 0 62px;
+  width: 62px;
+  height: 46px;
+  padding: 2px;
+  border: 2px solid transparent;
+  border-radius: 6px;
+  background: var(--wash);
+}
+.thumbnail[aria-pressed="true"] { border-color: var(--green); }
+.thumbnail .image { border-radius: 3px; }
+.thumbnailMain {
+  position: absolute;
+  right: 3px;
+  bottom: 3px;
+  display: grid;
+  place-items: center;
+  width: 15px;
+  height: 15px;
+  border-radius: 50%;
+  color: white;
+  background: var(--green);
+}
+
+.editor { grid-column: 1 / -1; min-width: 0; margin: 0; padding: 0; border: 0; }
+.editor legend { padding: 0; margin-bottom: 6px; font-size: 12px; font-weight: 600; }
+.optional { color: var(--muted); font-weight: 400; }
+.hint { margin: 0 0 12px; color: var(--muted); font-size: 11px; line-height: 1.55; }
+.editGrid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; margin-bottom: 14px; }
+.editPhoto { min-width: 0; padding: 8px; border: 1px solid var(--line); border-radius: 8px; }
+.filename { margin: 8px 0 3px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--muted); font-size: 11px; }
+.photoActions { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 0 8px; }
+.mainChoice { display: inline-flex; align-items: center; gap: 6px; min-height: 36px; color: var(--green); font-size: 11px; cursor: pointer; }
+.mainChoice input { margin: 0; accent-color: var(--green); }
+.actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 14px; }
+.photoCount { font-size: 11px; color: var(--muted); }
+.remove,
+.restore { display: inline-flex; align-items: center; gap: 6px; min-height: 36px; padding: 5px 0; border: 0; background: transparent; font-size: 11px; }
+.remove { color: var(--orange); }
+.restore { color: var(--green); }
+.remove:hover:not(:disabled),
+.restore:hover:not(:disabled) { text-decoration: underline; }
+.error,
+.status { margin: 10px 0 0; font-size: 11px; line-height: 1.55; }
+.error { color: #a33d2d; }
+.status { color: var(--muted); }
+
+@media (max-width: 440px) {
+  .editGrid { gap: 10px; }
+  .editPhoto { padding: 6px; }
+  .mainBadge { bottom: 6px; left: 6px; padding: 3px 6px; }
+}

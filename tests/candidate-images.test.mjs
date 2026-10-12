@@ -33,6 +33,8 @@ function planConnections(store) {
 function withoutImageVersion(candidate) {
   const copy = { ...candidate };
   delete copy.imageVersion;
+  delete copy.images;
+  delete copy.mainImageId;
   return copy;
 }
 
@@ -194,7 +196,7 @@ test("image write or removal failures roll back candidate edits and chosen hotel
   }
 });
 
-test("schema 4 upgrade preserves destination images and every record, and schema 5 reopens unchanged", (t) => {
+test("schema 4 upgrade preserves destination images and every record, and schema 7 reopens unchanged", (t) => {
   const path = fileDatabase(t);
   let store = createStore(path);
   try {
@@ -224,7 +226,7 @@ test("schema 4 upgrade preserves destination images and every record, and schema
     assert.deepEqual(store.getCandidateImage(candidateId), candidateImage);
     const observer = new DatabaseSync(path);
     try {
-      assert.equal(observer.prepare("PRAGMA user_version").get().user_version, 5);
+      assert.equal(observer.prepare("PRAGMA user_version").get().user_version, 7);
       assert.deepEqual(observer.prepare("PRAGMA foreign_key_check").all(), []);
       assert.equal(observer.prepare("PRAGMA table_list").all().find((table) => table.name === "candidate_images").strict, 1);
     } finally {

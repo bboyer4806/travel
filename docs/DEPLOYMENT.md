@@ -67,3 +67,6 @@ At-home planning upgrades the database to schema 7 with a separate trip-owned it
 ## References
 - [Dokku persistent storage](https://dokku.com/docs/advanced-usage/persistent-storage/)
 - [Node SQLite backup API](https://nodejs.org/docs/latest-v24.x/api/sqlite.html)
+
+### Schema 8: destination dates and miscellaneous spending
+Daily miscellaneous spending upgrades the database to schema 8, adding nullable arrival/departure dates, a daily amount in currency minor units, and a currency to destinations. Existing stay notes remain unchanged; their dates and amounts start unknown. All fields live in the existing persistent SQLite database and online backups. Take a backup before deploying. Schema 7 and earlier app builds reject schema 8, so rollback requires a compatible build or the stopped-app restore procedure above. Preserve the current database first; restoring a pre-upgrade backup loses later edits.

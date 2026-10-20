@@ -2,6 +2,8 @@ import { randomUUID } from "node:crypto";
 import { mkdirSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { DatabaseSync } from "node:sqlite";
+import { budgetDays, isValidDate } from "./destination-duration.ts";
+import { parseMinorAmount, SUPPORTED_CURRENCIES } from "./money.ts";
 import type { Candidate, CandidateImage, CandidateGalleryUpdate, Category, Destination, HomeItem, StoredImage, ItineraryStop, Mutation, ResearchLink, Snapshot, TravelLeg, Trip } from "./types";
 
 type StoredHomeItem = Omit<HomeItem, "completed"> & { completed: number };
@@ -72,6 +74,20 @@ function priceField(input: Input): string {
   const value = textField(input, "price", 32);
   parsePrice(value);
   return value;
+}
+function destinationDateField(input: Input, key: "arrivalDate" | "departureDate"): string | null | undefined {
+  if (input[key] === undefined || input[key] === null) return input[key];
+  const value = textField(input, key, 10);
+  if (!value) return null;
+  if (!isValidDate(value)) throw new ValidationError("Enter valid arrival and departure dates in YYYY-MM-DD format.");
+  return value;
+}
+function miscCurrencyField(input: Input): string | null | undefined {
+  if (input.miscCurrency === undefined || input.miscCurrency === null) return input.miscCurrency;
+  const currency = textField(input, "miscCurrency", 3).toUpperCase();
+  if (!currency) return null;
+  if (!SUPPORTED_CURRENCIES.includes(currency)) throw new ValidationError("Choose a supported currency.");
+  return currency;
 }
 function returnCityField(input: Input): string | null | undefined {
   if (input.returnCity === undefined || input.returnCity === null) return input.returnCity;
@@ -182,7 +198,7 @@ function validate(input: unknown): Mutation {
     case "homeItem.complete":
       return { type: value.type, id: idField(value), tripId: idField(value, "tripId"), completed: booleanField(value, "completed") };
     case "destination.save":
-      return { type: value.type, id: optionalId(value), tripId: idField(value, "tripId"), city: textField(value, "city", 120, true), stay: textField(value, "stay", 120), notes: textField(value, "notes", 8000), image: imageField(value) };
+      return { type: value.type, id: optionalId(value), tripId: idField(value, "tripId"), city: textField(value, "city", 120, true), stay: textField(value, "stay", 120), arrivalDate: destinationDateField(value, "arrivalDate"), departureDate: destinationDateField(value, "departureDate"), miscDailyAmount: value.miscDailyAmount === undefined ? undefined : textField(value, "miscDailyAmount", 32), miscCurrency: miscCurrencyField(value), notes: textField(value, "notes", 8000), image: imageField(value) };
     case "destination.move":
       if (value.direction !== "up" && value.direction !== "down") throw new ValidationError("Choose a valid direction for this destination.");
       return { type: value.type, id: idField(value), direction: value.direction };
@@ -204,7 +220,7 @@ export function createStore(databasePath: string) {
   db.exec("BEGIN IMMEDIATE");
   try {
     const version = Number(db.prepare("PRAGMA user_version").get()?.user_version ?? 0);
-    if (version > 7) throw new Error("This database was created by a newer version of the travel app.");
+    if (version > 8) throw new Error("This database was created by a newer version of the travel app.");
     db.exec(`
     CREATE TABLE IF NOT EXISTS trips (
       id TEXT PRIMARY KEY, name TEXT NOT NULL, dateLabel TEXT NOT NULL DEFAULT '',
@@ -239,7 +255,7 @@ export function createStore(databasePath: string) {
     `);
     // Version 1 reset user_version at startup. Check columns as well so a rollback
     // followed by redeployment cannot repeat ALTER TABLE or replace saved links.
-    const hasColumn = (table: "trips" | "legs" | "candidates" | "candidate_images", column: string) =>
+    const hasColumn = (table: "trips" | "destinations" | "legs" | "candidates" | "candidate_images", column: string) =>
       db.prepare(`PRAGMA table_info(${table})`).all().some((row) => row.name === column);
     if (version < 2) {
       if (!hasColumn("trips", "returnCity")) db.exec("ALTER TABLE trips ADD COLUMN returnCity TEXT;");
@@ -306,6 +322,13 @@ export function createStore(databasePath: string) {
         CREATE INDEX IF NOT EXISTS home_items_trip ON home_items(tripId, createdAt, id);
         PRAGMA user_version = 7;
       `);
+    }
+    if (version < 8) {
+      if (!hasColumn("destinations", "arrivalDate")) db.exec("ALTER TABLE destinations ADD COLUMN arrivalDate TEXT;");
+      if (!hasColumn("destinations", "departureDate")) db.exec("ALTER TABLE destinations ADD COLUMN departureDate TEXT;");
+      if (!hasColumn("destinations", "miscDailyMinor")) db.exec("ALTER TABLE destinations ADD COLUMN miscDailyMinor INTEGER CHECK(miscDailyMinor BETWEEN 0 AND 9007199254740991);");
+      if (!hasColumn("destinations", "miscCurrency")) db.exec("ALTER TABLE destinations ADD COLUMN miscCurrency TEXT;");
+      db.exec("PRAGMA user_version = 8;");
     }
     db.exec("COMMIT");
   } catch (error) {
@@ -466,17 +489,36 @@ export function createStore(databasePath: string) {
       case "destination.save": {
         existing<Trip>("trips", input.tripId);
         const id = input.id ?? randomUUID();
-        if (input.id) {
-          const before = existing<Destination>("destinations", id);
-          if (before.tripId !== input.tripId) throw new ValidationError("This destination belongs to a different trip.");
-          db.prepare("UPDATE destinations SET city = ?, stay = ?, notes = ? WHERE id = ?").run(input.city, input.stay, input.notes, id);
+        const before = input.id ? existing<Destination>("destinations", id) : undefined;
+        if (before && before.tripId !== input.tripId) throw new ValidationError("This destination belongs to a different trip.");
+        const arrivalDate = input.arrivalDate === undefined ? before?.arrivalDate ?? null : input.arrivalDate;
+        const departureDate = input.departureDate === undefined ? before?.departureDate ?? null : input.departureDate;
+        if (arrivalDate && departureDate && departureDate < arrivalDate) throw new ValidationError("Departure date must be on or after arrival date.");
+        const miscCurrency = input.miscCurrency === undefined ? before?.miscCurrency ?? null : input.miscCurrency;
+        if (input.miscDailyAmount === undefined && before?.miscDailyMinor != null && miscCurrency !== before.miscCurrency) {
+          throw new ValidationError("Re-enter or clear the daily miscellaneous amount when changing its currency.");
+        }
+        let miscDailyMinor = before?.miscDailyMinor ?? null;
+        if (input.miscDailyAmount !== undefined) {
+          try {
+            miscDailyMinor = parseMinorAmount(input.miscDailyAmount, miscCurrency);
+          } catch (error) {
+            throw new ValidationError(error instanceof Error ? error.message : "Enter a valid daily miscellaneous amount.");
+          }
+        }
+        const days = budgetDays(arrivalDate, departureDate);
+        if (miscDailyMinor !== null && days !== null && !Number.isSafeInteger(Math.round(miscDailyMinor * days))) {
+          throw new ValidationError("The miscellaneous subtotal is too large. Reduce the daily amount or date range.");
+        }
+        if (before) {
+          db.prepare("UPDATE destinations SET city = ?, stay = ?, notes = ?, arrivalDate = ?, departureDate = ?, miscDailyMinor = ?, miscCurrency = ? WHERE id = ?").run(input.city, input.stay, input.notes, arrivalDate, departureDate, miscDailyMinor, miscCurrency, id);
           if (before.city !== input.city) {
             const adjacentLegs = db.prepare("SELECT id FROM legs WHERE fromId = ? OR toId = ?").all(id, id);
             for (const leg of adjacentLegs) clearLeg(leg.id as string);
           }
         } else {
           const position = orderedDestinations(input.tripId).length;
-          db.prepare("INSERT INTO destinations(id,tripId,city,stay,notes,position) VALUES(?,?,?,?,?,?)").run(id, input.tripId, input.city, input.stay, input.notes, position);
+          db.prepare("INSERT INTO destinations(id,tripId,city,stay,notes,position,arrivalDate,departureDate,miscDailyMinor,miscCurrency) VALUES(?,?,?,?,?,?,?,?,?,?)").run(id, input.tripId, input.city, input.stay, input.notes, position, arrivalDate, departureDate, miscDailyMinor, miscCurrency);
         }
         if (input.image === null) {
           db.prepare("DELETE FROM destination_images WHERE destinationId = ?").run(id);

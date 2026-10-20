@@ -92,3 +92,12 @@ Use one application instance for v1. Live deployment remains a separate review s
 - Include entered prices in an At home budget subtotal and the trip estimate. Blank prices are optional tasks, not missing estimates; completion preserves expenses.
 - Keep these items with their trip, preserve them across restarts and backups, and remove them when the trip is deleted.
 - Upgrade existing data to schema 7 without changing travel plans or photo galleries.
+
+## Added scope: daily miscellaneous spending, October 20, 2026 (TRA-25)
+- Add optional explicit arrival and departure dates per destination; preserve existing stay notes without parsing them as dates.
+- Enter, edit, or clear a daily miscellaneous amount and currency for the whole party. Zero is valid; negative amounts are rejected.
+- Count arrival and departure as half days, intervening days as full days, and a same-day visit as half a day total.
+- Preview daily amounts, budget days, and subtotals; include miscellaneous as a separate category in destination and trip estimates.
+- Store integer currency minor units and round half a minor unit up per destination. Group totals by currency; no exchange-rate conversion is introduced.
+- Keep missing amounts or unknown durations visibly incomplete. Changing dates or amounts recalculates totals; changing traveler count does not multiply spending.
+- Upgrade databases to schema 8 with nullable destination fields, preserving previous trips, ideas, travel plans, images, and at-home items.

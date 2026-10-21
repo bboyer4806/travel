@@ -1,8 +1,8 @@
 "use client";
 
 import { useState } from "react";
-import type { Candidate, Destination, Snapshot } from "@/lib/types";
-import { calculateAccommodation, calculateDestinationBudget, calculateHotelEstimate, calculateMiscellaneous } from "@/lib/budget";
+import type { ActivitiesBudgetMode, Candidate, Destination, Snapshot } from "@/lib/types";
+import { calculateActivitiesBudget, calculateAccommodation, calculateDestinationBudget, calculateHotelEstimate, calculateMiscellaneous } from "@/lib/budget";
 import { currencyDigits, formatCurrency, minorAmountValue, parseMinorAmount, SUPPORTED_CURRENCIES } from "@/lib/money";
 
 export function CurrencyTotals({ totals, empty = "Not estimated" }: { totals: Record<string, number>; empty?: string }) {
@@ -42,13 +42,43 @@ export function AccommodationSummary({ snapshot, destination }: { snapshot: Snap
   </div>;
 }
 
+export function ActivitiesSummary({ snapshot, destination }: { snapshot: Snapshot; destination: Destination }) {
+  const activities = calculateActivitiesBudget(snapshot, destination);
+  return <div className="activities-summary">
+    <dl className="misc-breakdown"><div><dt>Saved general activities budget</dt><dd>{destination.activitiesGeneralMinor !== null && destination.activitiesCurrency ? formatCurrency(destination.activitiesGeneralMinor, destination.activitiesCurrency) : "Not estimated"}</dd></div></dl>
+    <div className="destination-budget-total"><span>Activities in budget<small>{activities.mode === "general" ? "General budget" : "Itemized activity costs"} · whole party, entire stay</small></span><strong><CurrencyTotals totals={activities.totalsByCurrency} empty={activities.complete ? "USD 0" : "Not estimated"} /></strong></div>
+    {activities.missingCount > 0 && <p className="helper">{activities.mode === "general" ? "General activities amount not estimated." : activities.missingCount + " included " + (activities.missingCount === 1 ? "activity needs a price." : "activities need prices.")}</p>}
+  </div>;
+}
+
+export function ActivitiesBudgetEditor({ destination, disabled }: { destination?: Destination; disabled: boolean }) {
+  const [mode, setMode] = useState<ActivitiesBudgetMode>(destination?.activitiesBudgetMode ?? "itemized");
+  const [currency, setCurrency] = useState(destination ? destination.activitiesCurrency ?? "" : "USD");
+  const [amount, setAmount] = useState(minorAmountValue(destination?.activitiesGeneralMinor, destination?.activitiesCurrency));
+  let minor: number | null = null;
+  let error = "";
+  try { minor = parseMinorAmount(amount, currency || null, "General activities amount"); }
+  catch (cause) { error = cause instanceof Error ? cause.message : "Enter a valid general activities amount."; }
+  return <fieldset className="destination-budget-editor wide" disabled={disabled}>
+    <legend>Activities budget</legend>
+    <div className="form-grid">
+      <label className="field wide"><span>Activities budgeting method</span><select name="activitiesBudgetMode" value={mode} onChange={(event) => setMode(event.target.value as ActivitiesBudgetMode)}><option value="itemized">Itemized activity costs</option><option value="general">General budget</option></select><small>Switching keeps your general amount and all activity ideas and selections.</small></label>
+      <label className="field"><span>General activities amount</span><input name="activitiesGeneralAmount" type="number" min="0" max="100000000" step={currency ? 10 ** -currencyDigits(currency) : "any"} value={amount} onChange={(event) => setAmount(event.target.value)} placeholder="Not estimated" /><small>Total for the whole party for the entire stay. Zero is accepted; leave blank if unknown.</small></label>
+      <label className="field"><span>Activities budget currency</span><select name="activitiesCurrency" value={currency} onChange={(event) => setCurrency(event.target.value)} required={amount.trim() !== ""}><option value="">No currency selected</option>{SUPPORTED_CURRENCIES.map((code) => <option key={code} value={code}>{code}</option>)}</select><small>Currencies stay separate; no conversion is applied.</small></label>
+    </div>
+    <div aria-live="polite"><p className="helper">{error || (mode === "general" ? "General budget contribution: " + (minor !== null && currency ? formatCurrency(minor, currency) : "Not estimated") + ". Individual activity costs are excluded." : "Included activity costs supply the budget. The general amount stays saved for later.")}</p></div>
+    <p className="helper">Editing activities does not switch methods. Dates and traveler count never multiply the general amount.</p>
+  </fieldset>;
+}
+
 export function DestinationBudget({ snapshot, destination }: { snapshot: Snapshot; destination: Destination }) {
   const estimate = calculateDestinationBudget(snapshot, destination.id);
   return <div className="destination-budget">
     {(destination.arrivalDate || destination.departureDate) && <p className="helper">Arrival: {destination.arrivalDate ?? "To be decided"} · Departure: {destination.departureDate ?? "To be decided"}</p>}
     <AccommodationSummary snapshot={snapshot} destination={destination} />
+    <ActivitiesSummary snapshot={snapshot} destination={destination} />
     <MiscellaneousSummary destination={destination} />
-    <div className="destination-budget-total"><span>Destination {estimate.complete ? "estimate" : "partial estimate"}<small>Chosen stay, included ideas, and miscellaneous · whole party</small></span><strong><CurrencyTotals totals={estimate.totalsByCurrency} /></strong></div>
+    <div className="destination-budget-total"><span>Destination {estimate.complete ? "estimate" : "partial estimate"}<small>Accommodation, activities budget, included restaurants, and miscellaneous · whole party</small></span><strong><CurrencyTotals totals={estimate.totalsByCurrency} /></strong></div>
   </div>;
 }
 
@@ -87,6 +117,7 @@ export function DestinationBudgetEditor({ destination, selectedHotel, disabled }
       {previewError ? <p className="helper">{previewError}</p> : <MiscellaneousSummary destination={{ arrivalDate: arrivalDate || null, departureDate: departureDate || null, miscDailyMinor: dailyMinor, miscCurrency: currency || null }} />}
     </div>
     <p className="helper">Miscellaneous spending counts arrival and departure as ½ day each, or ½ day total for a same-day visit. Half of a minor currency unit is rounded up in each miscellaneous subtotal.</p>
+    <ActivitiesBudgetEditor destination={destination} disabled={disabled} />
   </fieldset>;
 }
 

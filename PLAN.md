@@ -109,3 +109,10 @@ Use one application instance for v1. Live deployment remains a separate review s
 - Use the general estimate until a hotel is selected, then use that hotel's whole-stay price once. Unchecking or deleting the chosen hotel restores the saved estimate using current dates.
 - Preserve the general estimate through hotel selection changes. Keep zero distinct from missing, reject negative values, and group currency totals without conversion.
 - Upgrade to schema 9 with nullable hotel amount and currency fields; retain previous dates, miscellaneous amounts, selections, and other saved data.
+
+## Added scope: destination activities budgets, October 21, 2026 (TRA-29)
+- Save a general activities amount and currency for the whole party's entire destination stay, independent of dates and traveler count.
+- Explicitly choose General budget or Itemized activity costs. General mode counts the amount once; itemized mode uses included activity prices. Never count both sources.
+- Preserve the general amount and activities through method changes. Activity changes never switch methods.
+- Show the method and applicable contribution in destination and trip totals, with currencies kept separate and missing amounts distinct from zero.
+- Upgrade to schema 10 with an itemized default for existing and new destinations; preserve prior budgets, ideas, selections, images, and routes.

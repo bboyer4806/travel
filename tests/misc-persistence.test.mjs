@@ -126,7 +126,7 @@ test("schema 7 migrates with unknown dates and budgets and tolerates an already-
   const upgraded = store.getSnapshot();
   store.close(); store = null;
   db = new DatabaseSync(path);
-  assert.equal(db.prepare("PRAGMA user_version").get().user_version, 9);
+  assert.equal(db.prepare("PRAGMA user_version").get().user_version, 10);
   db.exec("PRAGMA user_version = 7");
   db.close();
   store = createStore(path);

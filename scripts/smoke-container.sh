@@ -38,12 +38,13 @@ const images = [
   Buffer.from('UklGRh4AAABXRUJQVlA4TBEAAAAvAUAAAAfQtSZVrP+BiOh/AAA=', 'base64'),
   Buffer.from('UklGRh4AAABXRUJQVlA4TBEAAAAvAUAAAAdQwjaXpf+BiOh/AAA=', 'base64'),
 ];
-assert.equal(db.prepare('PRAGMA user_version').get().user_version, 9);
+assert.equal(db.prepare('PRAGMA user_version').get().user_version, 10);
 db.exec('PRAGMA foreign_keys = ON; BEGIN IMMEDIATE;');
 db.prepare('INSERT INTO trips(id,name,dateLabel,homeCity,travelers,notes,createdAt) VALUES(?,?,?,?,?,?,?)').run('container-smoke','Persistence test','','',2,'',new Date().toISOString());
 db.prepare('INSERT INTO home_items(id,tripId,name,priceCents,notes,completed,createdAt) VALUES(?,?,?,?,?,?,?)').run('a1000000-0000-4000-8000-000000000001','container-smoke','House sitting',23950,'Give sitter a key',1,'2026-10-12T12:00:00.000Z');
 db.prepare('INSERT INTO home_items(id,tripId,name,priceCents,notes,completed,createdAt) VALUES(?,?,?,?,?,?,?)').run('a1000000-0000-4000-8000-000000000002','container-smoke','Pause mail',null,'Arrange before leaving',0,'2026-10-12T12:01:00.000Z');
 db.prepare('INSERT INTO destinations(id,tripId,city,stay,notes,position,arrivalDate,departureDate,miscDailyMinor,miscCurrency,hotelNightlyMinor,hotelCurrency) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)').run(destinationId, 'container-smoke', 'Vienna', 'Spring visit', '', 0, '2027-05-10', '2027-05-13', 3250, 'EUR', 17525, 'EUR');
+db.prepare("UPDATE destinations SET activitiesBudgetMode = 'general', activitiesGeneralMinor = 22550, activitiesCurrency = 'EUR' WHERE id = ?").run(destinationId);
 db.prepare('INSERT INTO destination_images(destinationId,version,data) VALUES(?,?,?)').run(destinationId, imageVersion, images[0]);
 for (const [index, candidate] of candidates.entries()) {
   db.prepare('INSERT INTO candidates(id,destinationId,category,name) VALUES(?,?,?,?)').run(candidate.id, destinationId, candidate.category, 'Persistence test: ' + candidate.category);
@@ -55,6 +56,7 @@ for (const [index, candidate] of candidates.entries()) {
   }
 }
 db.prepare("UPDATE candidates SET included = 1, priceCents = 40000 WHERE category = 'hotels'").run();
+db.prepare("UPDATE candidates SET included = 1, priceCents = 7550 WHERE category = 'activities'").run();
 db.exec('COMMIT;');
 db.close();
 JS
@@ -78,7 +80,7 @@ const images = [
 ];
 const db = new DatabaseSync('/data/travel.sqlite');
 try {
-  assert.equal(db.prepare('PRAGMA user_version').get().user_version, 9);
+  assert.equal(db.prepare('PRAGMA user_version').get().user_version, 10);
   assert.ok(db.prepare('SELECT id FROM trips WHERE id = ?').get('container-smoke'));
   const homeItems = db.prepare('SELECT name,priceCents,notes,completed,createdAt FROM home_items WHERE tripId = ? ORDER BY createdAt').all('container-smoke').map(row => ({...row}));
   assert.deepEqual(homeItems, [
@@ -86,6 +88,7 @@ try {
     {name:'Pause mail',priceCents:null,notes:'Arrange before leaving',completed:0,createdAt:'2026-10-12T12:01:00.000Z'},
   ]);
   assert.deepEqual({ ...db.prepare('SELECT stay,arrivalDate,departureDate,miscDailyMinor,miscCurrency,hotelNightlyMinor,hotelCurrency FROM destinations WHERE id = ?').get(destinationId) }, { stay: 'Spring visit', arrivalDate: '2027-05-10', departureDate: '2027-05-13', miscDailyMinor: 3250, miscCurrency: 'EUR', hotelNightlyMinor: 17525, hotelCurrency: 'EUR' });
+  assert.deepEqual({ ...db.prepare('SELECT activitiesBudgetMode,activitiesGeneralMinor,activitiesCurrency FROM destinations WHERE id = ?').get(destinationId) }, { activitiesBudgetMode: 'general', activitiesGeneralMinor: 22550, activitiesCurrency: 'EUR' });
   const image = db.prepare('SELECT version,data FROM destination_images WHERE destinationId = ?').get(destinationId);
   assert.equal(image?.version, imageVersion);
   assert.deepEqual(Buffer.from(image.data), images[0]);
@@ -95,6 +98,7 @@ try {
     assert.equal(saved?.destinationId, destinationId);
     assert.equal(saved.category, candidate.category);
     if (candidate.category === 'hotels') { assert.equal(saved.included, 1); assert.equal(saved.priceCents, 40000); }
+    if (candidate.category === 'activities') { assert.equal(saved.included, 1); assert.equal(saved.priceCents, 7550); }
     const savedImages = db.prepare('SELECT id,version,data,position,isMain FROM candidate_images WHERE candidateId = ? ORDER BY position').all(candidate.id);
     assert.equal(savedImages.length, 2, candidate.category + ' must retain both photos');
     for (const [position, savedImage] of savedImages.entries()) {

@@ -1,4 +1,4 @@
-import type { Budget, Candidate, Destination, Snapshot } from "./types";
+import type { ActivitiesBudgetMode, Budget, Candidate, Destination, Snapshot } from "./types";
 import { budgetDays, stayNights } from "./destination-duration.ts";
 
 type MiscellaneousInput = Pick<Destination, "arrivalDate" | "departureDate" | "miscDailyMinor" | "miscCurrency">;
@@ -60,13 +60,31 @@ export function calculateAccommodation(snapshot: Snapshot, destination: Destinat
     : { estimate, source: "estimate", hotel: null, totalMinor: estimate.subtotalMinor, currency: estimate.currency };
 }
 
+function activityCosts(snapshot: Snapshot, destination: Destination): Cost[] {
+  // Only an explicit destination edit switches sources. Dates and party size are irrelevant.
+  if (destination.activitiesBudgetMode === "general") {
+    return [{ amount: destination.activitiesGeneralMinor ?? null, currency: destination.activitiesCurrency || null, category: "activitiesCents" }];
+  }
+  return snapshot.candidates
+    .filter((item) => item.destinationId === destination.id && item.category === "activities" && item.included)
+    .map((item) => ({ amount: item.priceCents, currency: "USD", category: "activitiesCents" }));
+}
+
+export function calculateActivitiesBudget(snapshot: Snapshot, destination: Destination): DestinationBudget & { mode: ActivitiesBudgetMode } {
+  const budget = { mode: destination.activitiesBudgetMode ?? "itemized", totalsByCurrency: {}, knownCount: 0, missingCount: 0, complete: false };
+  for (const cost of activityCosts(snapshot, destination)) addCost(budget, cost);
+  budget.complete = budget.missingCount === 0;
+  return budget;
+}
+
 function destinationCosts(snapshot: Snapshot, destination: Destination): Cost[] {
   const included = snapshot.candidates.filter((item) => item.destinationId === destination.id && item.included);
   const accommodation = calculateAccommodation(snapshot, destination);
   const costs: Cost[] = [{ amount: accommodation.totalMinor, currency: accommodation.currency, category: "hotelsCents" }];
   for (const item of included) {
-    if (item.category !== "hotels") costs.push({ amount: item.priceCents, currency: "USD", category: `${item.category}Cents` });
+    if (item.category === "restaurants") costs.push({ amount: item.priceCents, currency: "USD", category: `${item.category}Cents` });
   }
+  costs.push(...activityCosts(snapshot, destination));
   const miscellaneous = calculateMiscellaneous(destination);
   costs.push({ amount: miscellaneous.subtotalMinor, currency: miscellaneous.currency, category: "miscellaneous" });
   return costs;
@@ -103,6 +121,8 @@ export function calculateBudget(snapshot: Snapshot, tripId: string): Budget {
     totalsByCurrency: {},
     miscellaneousByCurrency: {},
     hotelsByCurrency: {},
+    activitiesByCurrency: {},
+    activitiesMissingCount: 0,
     hotelMissingCount: 0,
     miscMissingCount: 0,
     knownCount: 0,
@@ -124,6 +144,10 @@ export function calculateBudget(snapshot: Snapshot, tripId: string): Budget {
       else budget.miscellaneousByCurrency[cost.currency] = (budget.miscellaneousByCurrency[cost.currency] ?? 0) + cost.amount;
     } else if (cost.amount !== null && cost.currency === "USD") {
       budget[cost.category] += cost.amount;
+    }
+    if (cost.category === "activitiesCents") {
+      if (cost.amount === null || cost.currency === null) budget.activitiesMissingCount += 1;
+      else budget.activitiesByCurrency[cost.currency] = (budget.activitiesByCurrency[cost.currency] ?? 0) + cost.amount;
     }
     if (cost.category === "hotelsCents") {
       if (cost.amount === null || cost.currency === null) budget.hotelMissingCount += 1;

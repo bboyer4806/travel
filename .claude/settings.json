@@ -1,0 +1,12 @@
+{
+  "env": { "NODE_OPTIONS": "--test-reporter=dot" },
+  "permissions": { "deny": ["Read(pnpm-lock.yaml)"] },
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Read",
+        "hooks": [{ "type": "command", "command": "node \"$CLAUDE_PROJECT_DIR/.claude/hooks/large-read.mjs\"" }]
+      }
+    ]
+  }
+}

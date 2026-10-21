@@ -1,5 +1,5 @@
-import type { Budget, Destination, Snapshot } from "./types";
-import { budgetDays } from "./destination-duration.ts";
+import type { Budget, Candidate, Destination, Snapshot } from "./types";
+import { budgetDays, stayNights } from "./destination-duration.ts";
 
 type MiscellaneousInput = Pick<Destination, "arrivalDate" | "departureDate" | "miscDailyMinor" | "miscCurrency">;
 export interface MiscellaneousBudget {
@@ -7,6 +7,20 @@ export interface MiscellaneousBudget {
   dailyMinor: number | null;
   currency: string | null;
   subtotalMinor: number | null;
+}
+type HotelEstimateInput = Pick<Destination, "arrivalDate" | "departureDate" | "hotelNightlyMinor" | "hotelCurrency">;
+export interface HotelEstimate {
+  nights: number | null;
+  nightlyMinor: number | null;
+  currency: string | null;
+  subtotalMinor: number | null;
+}
+export interface AccommodationBudget {
+  estimate: HotelEstimate;
+  source: "estimate" | "selectedHotel";
+  hotel: Candidate | null;
+  totalMinor: number | null;
+  currency: string | null;
 }
 export interface DestinationBudget {
   totalsByCurrency: Record<string, number>;
@@ -27,10 +41,32 @@ export function calculateMiscellaneous(destination: MiscellaneousInput): Miscell
   return { days, dailyMinor, currency, subtotalMinor };
 }
 
+/** One nightly amount covers all rooms and travelers; dates determine calendar nights. */
+export function calculateHotelEstimate(destination: HotelEstimateInput): HotelEstimate {
+  const nights = stayNights(destination.arrivalDate, destination.departureDate);
+  const nightlyMinor = destination.hotelNightlyMinor ?? null;
+  const currency = destination.hotelCurrency || null;
+  const subtotal = nights === null || nightlyMinor === null || currency === null ? null : nightlyMinor * nights;
+  const subtotalMinor = subtotal !== null && Number.isSafeInteger(subtotal) ? subtotal : null;
+  return { nights, nightlyMinor, currency, subtotalMinor };
+}
+
+/** A chosen hotel always replaces the estimate, including when its price is unknown. */
+export function calculateAccommodation(snapshot: Snapshot, destination: Destination): AccommodationBudget {
+  const estimate = calculateHotelEstimate(destination);
+  const hotel = snapshot.candidates.find((item) => item.destinationId === destination.id && item.category === "hotels" && item.included) ?? null;
+  return hotel
+    ? { estimate, source: "selectedHotel", hotel, totalMinor: hotel.priceCents, currency: "USD" }
+    : { estimate, source: "estimate", hotel: null, totalMinor: estimate.subtotalMinor, currency: estimate.currency };
+}
+
 function destinationCosts(snapshot: Snapshot, destination: Destination): Cost[] {
   const included = snapshot.candidates.filter((item) => item.destinationId === destination.id && item.included);
-  const costs: Cost[] = included.map((item) => ({ amount: item.priceCents, currency: "USD", category: `${item.category}Cents` }));
-  if (!included.some((item) => item.category === "hotels")) costs.push({ amount: null, currency: "USD", category: "hotelsCents" });
+  const accommodation = calculateAccommodation(snapshot, destination);
+  const costs: Cost[] = [{ amount: accommodation.totalMinor, currency: accommodation.currency, category: "hotelsCents" }];
+  for (const item of included) {
+    if (item.category !== "hotels") costs.push({ amount: item.priceCents, currency: "USD", category: `${item.category}Cents` });
+  }
   const miscellaneous = calculateMiscellaneous(destination);
   costs.push({ amount: miscellaneous.subtotalMinor, currency: miscellaneous.currency, category: "miscellaneous" });
   return costs;
@@ -66,6 +102,8 @@ export function calculateBudget(snapshot: Snapshot, tripId: string): Budget {
     restaurantsCents: 0,
     totalsByCurrency: {},
     miscellaneousByCurrency: {},
+    hotelsByCurrency: {},
+    hotelMissingCount: 0,
     miscMissingCount: 0,
     knownCount: 0,
     missingCount: 0,
@@ -84,8 +122,12 @@ export function calculateBudget(snapshot: Snapshot, tripId: string): Budget {
     if (cost.category === "miscellaneous") {
       if (cost.amount === null || cost.currency === null) budget.miscMissingCount += 1;
       else budget.miscellaneousByCurrency[cost.currency] = (budget.miscellaneousByCurrency[cost.currency] ?? 0) + cost.amount;
-    } else if (cost.amount !== null) {
+    } else if (cost.amount !== null && cost.currency === "USD") {
       budget[cost.category] += cost.amount;
+    }
+    if (cost.category === "hotelsCents") {
+      if (cost.amount === null || cost.currency === null) budget.hotelMissingCount += 1;
+      else budget.hotelsByCurrency[cost.currency] = (budget.hotelsByCurrency[cost.currency] ?? 0) + cost.amount;
     }
   }
 

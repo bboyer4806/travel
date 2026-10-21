@@ -1885,3 +1885,8 @@ button svg,a svg {
   .destination-budget-total strong { text-align: left; }
   .destination-budget-editor .field select { font-size: 16px; }
 }
+
+.hotel-budget-panel { border: 1px solid var(--line); border-radius: 12px; padding: 20px; margin: 20px 0; }
+.hotel-budget-panel .section-heading { margin-bottom: 12px; flex-wrap: wrap; gap: 12px; }
+.hotel-budget-panel h2 { font-size: 20px; }
+.accommodation-summary { margin-bottom: 18px; }

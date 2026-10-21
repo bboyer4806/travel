@@ -101,3 +101,11 @@ Use one application instance for v1. Live deployment remains a separate review s
 - Store integer currency minor units and round half a minor unit up per destination. Group totals by currency; no exchange-rate conversion is introduced.
 - Keep missing amounts or unknown durations visibly incomplete. Changing dates or amounts recalculates totals; changing traveler count does not multiply spending.
 - Upgrade databases to schema 8 with nullable destination fields, preserving previous trips, ideas, travel plans, images, and at-home items.
+
+## Added scope: nightly hotel estimates, October 20, 2026 (TRA-24)
+- Save a general nightly hotel amount and currency per destination for all rooms and travelers.
+- Reuse explicit arrival/departure dates to calculate calendar nights; same-day visits have zero nights. Show unknown duration without parsing stay notes.
+- Show the nightly estimate, nights, stay total, and the source of the accommodation budget in the destination and Hotels page.
+- Use the general estimate until a hotel is selected, then use that hotel's whole-stay price once. Unchecking or deleting the chosen hotel restores the saved estimate using current dates.
+- Preserve the general estimate through hotel selection changes. Keep zero distinct from missing, reject negative values, and group currency totals without conversion.
+- Upgrade to schema 9 with nullable hotel amount and currency fields; retain previous dates, miscellaneous amounts, selections, and other saved data.

@@ -276,7 +276,7 @@ test("schema 6 migration adds home items while preserving trips, research, itine
     const budget = calculateBudget(upgraded, tripId);
     store.close();
     const reset = new DatabaseSync(path);
-    assert.equal(reset.prepare("PRAGMA user_version").get().user_version, 8);
+    assert.equal(reset.prepare("PRAGMA user_version").get().user_version, 9);
     assert.equal(reset.prepare("PRAGMA table_list").all().find((table) => table.name === "home_items").strict, 1);
     reset.exec("PRAGMA user_version=6");
     reset.close();
@@ -286,7 +286,7 @@ test("schema 6 migration adds home items while preserving trips, research, itine
     assert.deepEqual(photos.map((photo) => store.getCandidatePhoto(candidateId, photo.id)), originalPhotos);
     const observer = new DatabaseSync(path);
     try {
-      assert.equal(observer.prepare("PRAGMA user_version").get().user_version, 8);
+      assert.equal(observer.prepare("PRAGMA user_version").get().user_version, 9);
       assert.deepEqual(observer.prepare("PRAGMA foreign_key_check").all(), []);
     } finally { observer.close(); }
   } finally { store.close(); }

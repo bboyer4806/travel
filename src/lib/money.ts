@@ -8,16 +8,16 @@ export function currencyDigits(currency: string): number {
   return new Intl.NumberFormat("en-US", { style: "currency", currency }).resolvedOptions().maximumFractionDigits!;
 }
 
-export function parseMinorAmount(value: string, currency: string | null): number | null {
+export function parseMinorAmount(value: string, currency: string | null, label = "Daily miscellaneous amount"): number | null {
   const amount = value.trim();
   if (!amount) return null;
-  if (!currency) throw new Error("Choose a currency for the daily miscellaneous amount.");
+  if (!currency) throw new Error(`Choose a currency for the ${label.toLowerCase()}.`);
   const digits = currencyDigits(currency);
   const pattern = digits === 0 ? /^\d+$/ : new RegExp(`^(?:\\d+|\\d*\\.\\d{1,${digits}})$`);
-  if (!pattern.test(amount)) throw new Error(`Daily miscellaneous amount must be positive or zero, with up to ${digits} decimal places for ${currency}. Leave it blank if unknown.`);
+  if (!pattern.test(amount)) throw new Error(`${label} must be positive or zero, with up to ${digits} decimal places for ${currency}. Leave it blank if unknown.`);
   const [major, fraction = ""] = amount.split(".");
   const minor = Number(major || "0") * 10 ** digits + Number(fraction.padEnd(digits, "0"));
-  if (!Number.isSafeInteger(minor) || minor > MAX_MAJOR_AMOUNT * 10 ** digits) throw new Error("Daily miscellaneous amount must be 100,000,000 or less.");
+  if (!Number.isSafeInteger(minor) || minor > MAX_MAJOR_AMOUNT * 10 ** digits) throw new Error(`${label} must be 100,000,000 or less.`);
   return minor;
 }
 

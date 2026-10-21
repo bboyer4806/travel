@@ -7,8 +7,13 @@ export function isValidDate(value: string): boolean {
 }
 
 // Calendar dates use UTC midnight so local time zones and daylight saving cannot alter the count.
-export function budgetDays(arrivalDate: string | null | undefined, departureDate: string | null | undefined): number | null {
+export function stayNights(arrivalDate: string | null | undefined, departureDate: string | null | undefined): number | null {
   if (!arrivalDate || !departureDate || !isValidDate(arrivalDate) || !isValidDate(departureDate)) return null;
   const days = (Date.parse(departureDate + "T00:00:00.000Z") - Date.parse(arrivalDate + "T00:00:00.000Z")) / MILLISECONDS_PER_DAY;
-  return days < 0 ? null : days === 0 ? 0.5 : days;
+  return days < 0 ? null : days;
+}
+
+export function budgetDays(arrivalDate: string | null | undefined, departureDate: string | null | undefined): number | null {
+  const nights = stayNights(arrivalDate, departureDate);
+  return nights === 0 ? 0.5 : nights;
 }

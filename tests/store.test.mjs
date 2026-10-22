@@ -113,7 +113,7 @@ test("budget totals use selected ideas, exact cents, and whole-party transport c
   store.applyMutation(candidateInput(destinationId, { category: "restaurants", name: "Lunch", price: "40.01" }));
   store.applyMutation(candidateInput(destinationId, { category: "activities", name: "Maybe later", price: "", included: false }));
   const budget = calculateBudget(store.getSnapshot(), tripId);
-  assert.deepEqual(budget, { totalCents: 36060, travelCents: 12026, hotelsCents: 20033, activitiesCents: 0, restaurantsCents: 4001, homeCents: 0, knownCount: 5, missingCount: 0, complete: true });
+  assert.deepEqual(budget, { totalCents: 36060, travelCents: 12026, hotelsCents: 20033, activitiesCents: 0, restaurantsCents: 4001, homeCents: 0, totalsByCurrency: { USD: 36060 }, miscellaneousByCurrency: {}, miscMissingCount: 1, knownCount: 5, missingCount: 1, complete: false });
   store.applyMutation({ type: "candidate.include", id: alternativeId, included: true });
   assert.equal(store.getSnapshot().candidates.find((item) => item.id === hotelId).included, false);
   assert.equal(store.getSnapshot().candidates.filter((item) => item.category === "hotels" && item.included).length, 1);
@@ -128,16 +128,16 @@ test("incomplete budgets distinguish unknown values from a known zero", (t) => {
   const { store, tripId } = setup(t);
   assert.equal(calculateBudget(store.getSnapshot(), tripId).missingCount, 1);
   const destinationId = store.applyMutation(destinationInput(tripId)).id;
-  assert.equal(calculateBudget(store.getSnapshot(), tripId).missingCount, 3);
+  assert.equal(calculateBudget(store.getSnapshot(), tripId).missingCount, 4);
   assert.equal(calculateBudget(store.getSnapshot(), tripId).knownCount, 0);
   const hotelId = store.applyMutation(candidateInput(destinationId, { price: "" })).id;
   store.applyMutation(candidateInput(destinationId, { category: "activities", name: "Unknown tour", price: "" }));
-  assert.equal(calculateBudget(store.getSnapshot(), tripId).missingCount, 4);
+  assert.equal(calculateBudget(store.getSnapshot(), tripId).missingCount, 5);
   store.applyMutation(candidateInput(destinationId, { id: hotelId, price: "0" }));
-  assert.equal(calculateBudget(store.getSnapshot(), tripId).missingCount, 3);
+  assert.equal(calculateBudget(store.getSnapshot(), tripId).missingCount, 4);
   assert.equal(calculateBudget(store.getSnapshot(), tripId).knownCount, 1);
   store.applyMutation(tripInput({ id: tripId, homeCity: "" }));
-  assert.equal(calculateBudget(store.getSnapshot(), tripId).missingCount, 4);
+  assert.equal(calculateBudget(store.getSnapshot(), tripId).missingCount, 5);
   assert.equal(calculateBudget(store.getSnapshot(), tripId).complete, false);
 });
 

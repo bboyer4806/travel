@@ -20,10 +20,19 @@ pnpm build
 For local production preview, set `TRAVEL_DATABASE_PATH` to an absolute database path before `pnpm start`. The Docker image uses a guarded startup script requiring mounted storage.
 
 ## Budget rules
-Prices are entered in USD for the entire traveling party. Hotel prices cover the whole stay; restaurant prices cover one meal.
-The estimate sums every travel leg, one selected hotel per destination, activities/restaurants included in the plan, and entered at-home expenses.
+Travel, hotel, activity, restaurant, and at-home prices are entered in USD for the entire traveling party. Daily miscellaneous spending has its own currency for each destination. Hotel prices cover the whole stay; restaurant prices cover one meal.
+The estimate sums every travel leg, one selected hotel per destination, activities/restaurants included in the plan, daily miscellaneous spending, and entered at-home expenses.
 Missing travel and selected-idea prices are unknown rather than zero. Alternatives stay saved without contributing to the budget. At-home items have optional prices: a blank price does not contribute to the total or mark the estimate incomplete; an explicit zero is a known free expense. Completing an at-home item keeps its expense in the budget.
 Changing a destination, departing city, or effective return city clears only affected travel plans, including their links and itinerary. Reordering destinations keeps unchanged connections.
+
+## Daily miscellaneous spending
+Edit a destination to enter optional arrival and departure dates, a daily miscellaneous amount, and its currency. The amount covers the whole party; changing the traveler count does not multiply it. Existing free-text stay notes remain available and are never interpreted as precise dates.
+
+Arrival and departure each count as half a day, with full intervening days: a same-day visit is ½ day total, Monday–Tuesday is 1 day, and Monday–Thursday is 3 days. The editor previews the daily amount, budget days, and subtotal as you change the fields. Each destination card shows those values and its estimate; miscellaneous spending also has its own trip budget category.
+
+Amounts use the currency's minor units (for example USD cents, whole JPY, or KWD thousandths). Half a minor unit is rounded up once per destination. Zero is a known amount; negative amounts are rejected. Clear the amount to mark it unknown; clear both amount and currency to remove both. A saved amount requires a currency. Missing amounts or incomplete dates keep the estimate partial, including when a zero amount has unknown duration.
+
+Trip and destination totals group known amounts by currency. USD miscellaneous spending joins existing USD costs; other currencies remain separate. There is no currency conversion. Exact dates and miscellaneous settings persist in the same database and backups. Older databases upgrade to schema 8 without inferring dates from stay notes.
 
 ## At home
 Each trip has an **At home** section below **Between the places**, even before destinations are added. Add, edit, or delete arrangements such as house sitting, child care, pet care, or pausing mail. Each item has a name, notes, an optional total price in USD, and a completion checkbox. Completed items can be reopened and remain visible. Items and expenses belong only to their trip and are included in backups.
@@ -38,7 +47,7 @@ The provider needs no key for this personal, non-commercial app. Its [free-servi
 ## Routes, itineraries, and research links
 Trips return to their departing city by default. Select **Return to a different city** to enter a separate endpoint. Existing trips retain their departure location and default return behavior.
 Each travel connection supports up to 30 ordered layovers or stops, with a place, arrival/departure details, and notes. The connection's estimated price covers the whole itinerary and is counted once in the trip budget.
-Connections and hotel/activity/restaurant ideas support up to 20 research links with optional short descriptions. Existing single links are retained during the additive database upgrade. Older schema versions upgrade to version 7 automatically inside a transaction; take an online backup before deploying this upgrade.
+Connections and hotel/activity/restaurant ideas support up to 20 research links with optional short descriptions. Existing single links are retained during the additive database upgrade. Older schema versions upgrade to version 8 automatically inside a transaction; take an online backup before deploying this upgrade.
 ## Images
 Each destination can have one optional uploaded image. Each hotel, activity, and restaurant can have up to 10 photos, with one selected as the main photo on its card. Click the thumbnails to view the other photos. Add photos, choose the main photo, or remove individual photos in the editor; removing the main photo selects another remaining photo. Cancel discards photo changes. Existing single idea images become the main photo automatically.
 JPEG, PNG, and WebP uploads up to 5 MiB each and 20 megapixels are supported, with at most 15 MiB of new files in one save. Images are oriented, resized to fit 1600 × 1200, stripped of metadata, and saved as WebP (up to 2 MiB each). All selected uploads must be valid before any changes are saved.

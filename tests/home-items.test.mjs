@@ -71,7 +71,7 @@ test("home budget totals distinguish optional tasks, known zero, and exact cents
   const { store, tripId } = setup(t);
   pricedTrip(store, tripId);
   const baseline = calculateBudget(store.getSnapshot(), tripId);
-  assert.equal(baseline.complete, true);
+  assert.equal(baseline.complete, false, "miscellaneous spending still needs an estimate");
   assert.equal(baseline.homeCents, 0);
   assert.equal(baseline.totalCents, 40035);
   const taskId = store.applyMutation(homeInput(tripId, { name: "Water plants", price: "  " })).id;
@@ -80,7 +80,7 @@ test("home budget totals distinguish optional tasks, known zero, and exact cents
   const freeId = store.applyMutation(homeInput(tripId, { name: "Mail hold", price: "0" })).id;
   const sitterId = store.applyMutation(homeInput(tripId, { name: "Pet care", price: "125.50" })).id;
   const extraId = store.applyMutation(homeInput(tripId, { name: "Small expense", price: ".10", completed: true })).id;
-  const expected = { ...baseline, homeCents: 12560, totalCents: baseline.totalCents + 12560, knownCount: baseline.knownCount + 3 };
+  const expected = { ...baseline, homeCents: 12560, totalCents: baseline.totalCents + 12560, totalsByCurrency: { USD: baseline.totalCents + 12560 }, knownCount: baseline.knownCount + 3 };
   assert.deepEqual(calculateBudget(store.getSnapshot(), tripId), expected);
   for (const id of [taskId, freeId, sitterId]) store.applyMutation({ type: "homeItem.complete", id, tripId, completed: true });
   assert.deepEqual(calculateBudget(store.getSnapshot(), tripId), expected);
@@ -88,7 +88,7 @@ test("home budget totals distinguish optional tasks, known zero, and exact cents
   store.applyMutation(homeInput(otherTripId, { price: "9999" }));
   assert.deepEqual(calculateBudget(store.getSnapshot(), tripId), expected, "another trip's costs stay separate");
   store.applyMutation(homeInput(tripId, { id: sitterId, name: "Pet care", price: "", completed: true }));
-  assert.deepEqual(calculateBudget(store.getSnapshot(), tripId), { ...baseline, homeCents: 10, totalCents: baseline.totalCents + 10, knownCount: baseline.knownCount + 2 });
+  assert.deepEqual(calculateBudget(store.getSnapshot(), tripId), { ...baseline, homeCents: 10, totalCents: baseline.totalCents + 10, totalsByCurrency: { USD: baseline.totalCents + 10 }, knownCount: baseline.knownCount + 2 });
   store.applyMutation({ type: "homeItem.delete", id: extraId, tripId });
   assert.deepEqual(calculateBudget(store.getSnapshot(), tripId), { ...baseline, knownCount: baseline.knownCount + 1 });
 });
@@ -98,7 +98,7 @@ test("home expenses count before destinations are planned without hiding missing
   const baseline = calculateBudget(store.getSnapshot(), tripId);
   store.applyMutation(homeInput(tripId, { price: "50.25" }));
   store.applyMutation(homeInput(tripId, { name: "Lock the windows" }));
-  assert.deepEqual(calculateBudget(store.getSnapshot(), tripId), { ...baseline, homeCents: 5025, totalCents: 5025, knownCount: baseline.knownCount + 1 });
+  assert.deepEqual(calculateBudget(store.getSnapshot(), tripId), { ...baseline, homeCents: 5025, totalCents: 5025, totalsByCurrency: { USD: 5025 }, knownCount: baseline.knownCount + 1 });
   assert.equal(calculateBudget(store.getSnapshot(), tripId).complete, false);
 });
 
@@ -276,7 +276,7 @@ test("schema 6 migration adds home items while preserving trips, research, itine
     const budget = calculateBudget(upgraded, tripId);
     store.close();
     const reset = new DatabaseSync(path);
-    assert.equal(reset.prepare("PRAGMA user_version").get().user_version, 7);
+    assert.equal(reset.prepare("PRAGMA user_version").get().user_version, 8);
     assert.equal(reset.prepare("PRAGMA table_list").all().find((table) => table.name === "home_items").strict, 1);
     reset.exec("PRAGMA user_version=6");
     reset.close();
@@ -286,7 +286,7 @@ test("schema 6 migration adds home items while preserving trips, research, itine
     assert.deepEqual(photos.map((photo) => store.getCandidatePhoto(candidateId, photo.id)), originalPhotos);
     const observer = new DatabaseSync(path);
     try {
-      assert.equal(observer.prepare("PRAGMA user_version").get().user_version, 7);
+      assert.equal(observer.prepare("PRAGMA user_version").get().user_version, 8);
       assert.deepEqual(observer.prepare("PRAGMA foreign_key_check").all(), []);
     } finally { observer.close(); }
   } finally { store.close(); }

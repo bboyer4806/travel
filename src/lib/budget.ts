@@ -1,8 +1,15 @@
-import type { ActivitiesBudgetMode, Budget, Candidate, Destination, Snapshot } from "./types";
+import type { FoodBudgetMode, ActivitiesBudgetMode, Budget, Candidate, Destination, Snapshot } from "./types";
 import { budgetDays, stayNights } from "./destination-duration.ts";
 
 type MiscellaneousInput = Pick<Destination, "arrivalDate" | "departureDate" | "miscDailyMinor" | "miscCurrency">;
 export interface MiscellaneousBudget {
+  days: number | null;
+  dailyMinor: number | null;
+  currency: string | null;
+  subtotalMinor: number | null;
+}
+type FoodEstimateInput = Pick<Destination, "arrivalDate" | "departureDate" | "foodDailyMinor" | "foodCurrency">;
+export interface FoodEstimate {
   days: number | null;
   dailyMinor: number | null;
   currency: string | null;
@@ -38,6 +45,16 @@ export function calculateMiscellaneous(destination: MiscellaneousInput): Miscell
   const dailyMinor = destination.miscDailyMinor ?? null;
   const currency = destination.miscCurrency || null;
   const subtotalMinor = days === null || dailyMinor === null || currency === null ? null : Math.round(dailyMinor * days);
+  return { days, dailyMinor, currency, subtotalMinor };
+}
+
+/** Same half-day allowance as miscellaneous; round once per destination, never per traveler. */
+export function calculateFoodEstimate(destination: FoodEstimateInput): FoodEstimate {
+  const days = budgetDays(destination.arrivalDate, destination.departureDate);
+  const dailyMinor = destination.foodDailyMinor ?? null;
+  const currency = destination.foodCurrency || null;
+  const subtotal = days === null || dailyMinor === null || currency === null ? null : Math.round(dailyMinor * days);
+  const subtotalMinor = subtotal !== null && Number.isSafeInteger(subtotal) ? subtotal : null;
   return { days, dailyMinor, currency, subtotalMinor };
 }
 
@@ -77,13 +94,27 @@ export function calculateActivitiesBudget(snapshot: Snapshot, destination: Desti
   return budget;
 }
 
+function foodCosts(snapshot: Snapshot, destination: Destination): Cost[] {
+  if (destination.foodBudgetMode === "daily") {
+    const estimate = calculateFoodEstimate(destination);
+    return [{ amount: estimate.subtotalMinor, currency: estimate.currency, category: "restaurantsCents" }];
+  }
+  return snapshot.candidates
+    .filter((item) => item.destinationId === destination.id && item.category === "restaurants" && item.included)
+    .map((item) => ({ amount: item.priceCents, currency: "USD", category: "restaurantsCents" }));
+}
+
+export function calculateFoodBudget(snapshot: Snapshot, destination: Destination): DestinationBudget & { mode: FoodBudgetMode } {
+  const budget = { mode: destination.foodBudgetMode ?? "itemized", totalsByCurrency: {}, knownCount: 0, missingCount: 0, complete: false };
+  for (const cost of foodCosts(snapshot, destination)) addCost(budget, cost);
+  budget.complete = budget.missingCount === 0;
+  return budget;
+}
+
 function destinationCosts(snapshot: Snapshot, destination: Destination): Cost[] {
-  const included = snapshot.candidates.filter((item) => item.destinationId === destination.id && item.included);
   const accommodation = calculateAccommodation(snapshot, destination);
   const costs: Cost[] = [{ amount: accommodation.totalMinor, currency: accommodation.currency, category: "hotelsCents" }];
-  for (const item of included) {
-    if (item.category === "restaurants") costs.push({ amount: item.priceCents, currency: "USD", category: `${item.category}Cents` });
-  }
+  costs.push(...foodCosts(snapshot, destination));
   costs.push(...activityCosts(snapshot, destination));
   const miscellaneous = calculateMiscellaneous(destination);
   costs.push({ amount: miscellaneous.subtotalMinor, currency: miscellaneous.currency, category: "miscellaneous" });
@@ -122,6 +153,8 @@ export function calculateBudget(snapshot: Snapshot, tripId: string): Budget {
     miscellaneousByCurrency: {},
     hotelsByCurrency: {},
     activitiesByCurrency: {},
+    foodByCurrency: {},
+    foodMissingCount: 0,
     activitiesMissingCount: 0,
     hotelMissingCount: 0,
     miscMissingCount: 0,
@@ -144,6 +177,10 @@ export function calculateBudget(snapshot: Snapshot, tripId: string): Budget {
       else budget.miscellaneousByCurrency[cost.currency] = (budget.miscellaneousByCurrency[cost.currency] ?? 0) + cost.amount;
     } else if (cost.amount !== null && cost.currency === "USD") {
       budget[cost.category] += cost.amount;
+    }
+    if (cost.category === "restaurantsCents") {
+      if (cost.amount === null || cost.currency === null) budget.foodMissingCount += 1;
+      else budget.foodByCurrency[cost.currency] = (budget.foodByCurrency[cost.currency] ?? 0) + cost.amount;
     }
     if (cost.category === "activitiesCents") {
       if (cost.amount === null || cost.currency === null) budget.activitiesMissingCount += 1;

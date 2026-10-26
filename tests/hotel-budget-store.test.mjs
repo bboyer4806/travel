@@ -144,7 +144,7 @@ test("schema 8 upgrades preserve destinations and selections; replay retains sav
     const withEstimate = store.getSnapshot();
     store.close();
     observer = new DatabaseSync(path);
-    assert.equal(observer.prepare("PRAGMA user_version").get().user_version, 10);
+    assert.equal(observer.prepare("PRAGMA user_version").get().user_version, 11);
     observer.exec("PRAGMA user_version = 8;");
     observer.close();
     store = createStore(path);
@@ -152,10 +152,10 @@ test("schema 8 upgrades preserve destinations and selections; replay retains sav
   } finally { store.close(); }
   observer = new DatabaseSync(path);
   try {
-    assert.equal(observer.prepare("PRAGMA user_version").get().user_version, 10);
-    observer.exec("PRAGMA user_version = 11;");
-    assert.throws(() => createStore(path), /newer version/);
     assert.equal(observer.prepare("PRAGMA user_version").get().user_version, 11);
+    observer.exec("PRAGMA user_version = 12;");
+    assert.throws(() => createStore(path), /newer version/);
+    assert.equal(observer.prepare("PRAGMA user_version").get().user_version, 12);
     assert.equal(observer.prepare("SELECT hotelNightlyMinor FROM destinations WHERE id = ?").get(id).hotelNightlyMinor, 12525);
   } finally { observer.close(); }
 });

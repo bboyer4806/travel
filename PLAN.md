@@ -116,3 +116,11 @@ Use one application instance for v1. Live deployment remains a separate review s
 - Preserve the general amount and activities through method changes. Activity changes never switch methods.
 - Show the method and applicable contribution in destination and trip totals, with currencies kept separate and missing amounts distinct from zero.
 - Upgrade to schema 10 with an itemized default for existing and new destinations; preserve prior budgets, ideas, selections, images, and routes.
+
+## Added scope: daily food budgets, October 21, 2026 (TRA-38)
+- Save a daily food amount and currency for the whole party, independently of restaurant entries.
+- Explicitly choose Daily food budget or Itemized restaurant costs. Default existing and new destinations to itemized; never count both sources.
+- Reuse explicit dates and miscellaneous half-day allowances: same-day ½ day, Monday–Tuesday 1 day, Monday–Thursday 3 days. Round half a minor unit up once per destination.
+- Show daily amount, budget days, subtotal, and active food contribution. Recalculate when dates or amounts change; never multiply by traveler count or parse stay notes.
+- Preserve daily settings, restaurant entries, and selections through method changes. Restaurant changes never switch methods.
+- Keep currency totals separate without conversion and distinguish zero, missing amounts, and unknown duration. Upgrade to schema 11 while preserving all earlier data and budgets.

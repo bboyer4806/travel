@@ -263,7 +263,7 @@ test("schema 9 upgrades default to itemized without changing costs; replay prese
   const savedBudget = calculateBudget(saved, tripId);
   store.close(); store = null;
   observer = new DatabaseSync(path);
-  assert.equal(observer.prepare("PRAGMA user_version").get().user_version, 11);
+  assert.equal(observer.prepare("PRAGMA user_version").get().user_version, 12);
   observer.exec("PRAGMA user_version = 9;");
   observer.close();
   store = createStore(path);
@@ -271,7 +271,7 @@ test("schema 9 upgrades default to itemized without changing costs; replay prese
   assert.deepEqual(calculateBudget(store.getSnapshot(), tripId), savedBudget);
   observer = new DatabaseSync(path);
   try {
-    assert.equal(observer.prepare("PRAGMA user_version").get().user_version, 11);
+    assert.equal(observer.prepare("PRAGMA user_version").get().user_version, 12);
     assert.deepEqual(observer.prepare("PRAGMA foreign_key_check").all(), []);
   } finally { observer.close(); }
   } finally { store?.close(); }

@@ -36,7 +36,7 @@ export interface DestinationBudget {
   complete: boolean;
 }
 
-type CostCategory = "travelCents" | "hotelsCents" | "activitiesCents" | "restaurantsCents" | "homeCents" | "miscellaneous";
+type CostCategory = "travelCents" | "hotelsCents" | "activitiesCents" | "restaurantsCents" | "homeCents" | "miscellaneous" | "shopping";
 interface Cost { amount: number | null; currency: string | null; category: CostCategory; }
 
 /** Daily spending covers the whole party. Round each destination's half minor unit up. */
@@ -116,6 +116,10 @@ function destinationCosts(snapshot: Snapshot, destination: Destination): Cost[] 
   const costs: Cost[] = [{ amount: accommodation.totalMinor, currency: accommodation.currency, category: "hotelsCents" }];
   costs.push(...foodCosts(snapshot, destination));
   costs.push(...activityCosts(snapshot, destination));
+  // Shopping is optional and already covers the whole party's entire stay.
+  if (destination.shoppingMinor != null) {
+    costs.push({ amount: destination.shoppingMinor, currency: destination.shoppingCurrency, category: "shopping" });
+  }
   const miscellaneous = calculateMiscellaneous(destination);
   costs.push({ amount: miscellaneous.subtotalMinor, currency: miscellaneous.currency, category: "miscellaneous" });
   return costs;
@@ -151,6 +155,7 @@ export function calculateBudget(snapshot: Snapshot, tripId: string): Budget {
     restaurantsCents: 0,
     totalsByCurrency: {},
     miscellaneousByCurrency: {},
+    shoppingByCurrency: {},
     hotelsByCurrency: {},
     activitiesByCurrency: {},
     foodByCurrency: {},
@@ -175,6 +180,8 @@ export function calculateBudget(snapshot: Snapshot, tripId: string): Budget {
     if (cost.category === "miscellaneous") {
       if (cost.amount === null || cost.currency === null) budget.miscMissingCount += 1;
       else budget.miscellaneousByCurrency[cost.currency] = (budget.miscellaneousByCurrency[cost.currency] ?? 0) + cost.amount;
+    } else if (cost.category === "shopping") {
+      if (cost.amount !== null && cost.currency !== null) budget.shoppingByCurrency[cost.currency] = (budget.shoppingByCurrency[cost.currency] ?? 0) + cost.amount;
     } else if (cost.amount !== null && cost.currency === "USD") {
       budget[cost.category] += cost.amount;
     }

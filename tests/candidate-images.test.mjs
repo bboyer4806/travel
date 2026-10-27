@@ -226,7 +226,7 @@ test("schema 4 upgrade preserves destination images and every record, and schema
     assert.deepEqual(store.getCandidateImage(candidateId), candidateImage);
     const observer = new DatabaseSync(path);
     try {
-      assert.equal(observer.prepare("PRAGMA user_version").get().user_version, 11);
+      assert.equal(observer.prepare("PRAGMA user_version").get().user_version, 12);
       assert.deepEqual(observer.prepare("PRAGMA foreign_key_check").all(), []);
       assert.equal(observer.prepare("PRAGMA table_list").all().find((table) => table.name === "candidate_images").strict, 1);
     } finally {

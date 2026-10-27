@@ -124,3 +124,10 @@ Use one application instance for v1. Live deployment remains a separate review s
 - Show daily amount, budget days, subtotal, and active food contribution. Recalculate when dates or amounts change; never multiply by traveler count or parse stay notes.
 - Preserve daily settings, restaurant entries, and selections through method changes. Restaurant changes never switch methods.
 - Keep currency totals separate without conversion and distinguish zero, missing amounts, and unknown duration. Upgrade to schema 11 while preserving all earlier data and budgets.
+
+## Added scope: destination shopping budgets, October 26, 2026 (TRA-43)
+- Save an optional shopping amount and currency per destination for the whole party’s entire stay, without shop or purchase records.
+- Count the amount once in destination and trip totals as Shopping, separately from miscellaneous spending. Dates, stay notes, and traveler count never multiply or change it.
+- Allow entering, editing, and clearing. Show an unset budget as Not set with no cost or required missing estimate; accept and display intentional zero, reject negative or invalid amounts.
+- Keep currency totals separate without conversion. Persist amounts and currencies through saving and reopening.
+- Upgrade to schema 12 with nullable fields, preserving earlier data and calculations; verify additive migration replay and container persistence.

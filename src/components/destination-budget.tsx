@@ -113,6 +113,24 @@ export function FoodBudgetEditor({ destination, arrivalDate = destination?.arriv
   </fieldset>;
 }
 
+function ShoppingBudgetEditor({ destination, disabled }: { destination?: Destination; disabled: boolean }) {
+  const [currency, setCurrency] = useState(destination ? destination.shoppingCurrency ?? "" : "USD");
+  const [amount, setAmount] = useState(minorAmountValue(destination?.shoppingMinor, destination?.shoppingCurrency));
+  let minor: number | null = null;
+  let error = "";
+  try { minor = parseMinorAmount(amount, currency || null, "Shopping amount"); }
+  catch (cause) { error = cause instanceof Error ? cause.message : "Enter a valid shopping amount."; }
+  return <fieldset className="destination-budget-editor wide" disabled={disabled}>
+    <legend>Shopping budget</legend>
+    <div className="form-grid">
+      <label className="field"><span>Shopping amount (optional)</span><input name="shoppingAmount" type="number" min="0" max="100000000" step={currency ? 10 ** -currencyDigits(currency) : "any"} value={amount} onChange={(event) => setAmount(event.target.value)} placeholder="Not set" /><small>Total for the whole party for the entire stay. Zero is accepted; leave blank to add no shopping cost.</small></label>
+      <label className="field"><span>Shopping budget currency</span><select name="shoppingCurrency" value={currency} onChange={(event) => setCurrency(event.target.value)} required={amount.trim() !== ""}><option value="">No currency selected</option>{SUPPORTED_CURRENCIES.map((code) => <option key={code} value={code}>{code}</option>)}</select><small>Currencies stay separate; no conversion is applied.</small></label>
+    </div>
+    <div aria-live="polite"><p className="helper">{error || "Shopping contribution: " + (minor !== null && currency ? formatCurrency(minor, currency) : "Not set")}</p></div>
+    <p className="helper">Counted once, separately from miscellaneous spending. Dates and traveler count never multiply this amount.</p>
+  </fieldset>;
+}
+
 export function DestinationBudget({ snapshot, destination }: { snapshot: Snapshot; destination: Destination }) {
   const estimate = calculateDestinationBudget(snapshot, destination.id);
   return <div className="destination-budget">
@@ -120,8 +138,9 @@ export function DestinationBudget({ snapshot, destination }: { snapshot: Snapsho
     <AccommodationSummary snapshot={snapshot} destination={destination} />
     <ActivitiesSummary snapshot={snapshot} destination={destination} />
     <FoodSummary snapshot={snapshot} destination={destination} />
+    <div className="destination-budget-total"><span>Shopping<small>Optional · whole party, entire stay</small></span><strong>{destination.shoppingMinor !== null && destination.shoppingCurrency ? formatCurrency(destination.shoppingMinor, destination.shoppingCurrency) : "Not set"}</strong></div>
     <MiscellaneousSummary destination={destination} />
-    <div className="destination-budget-total"><span>Destination {estimate.complete ? "estimate" : "partial estimate"}<small>Accommodation, activities budget, food budget, and miscellaneous · whole party</small></span><strong><CurrencyTotals totals={estimate.totalsByCurrency} /></strong></div>
+    <div className="destination-budget-total"><span>Destination {estimate.complete ? "estimate" : "partial estimate"}<small>Accommodation, activities, food, shopping, and miscellaneous · whole party</small></span><strong><CurrencyTotals totals={estimate.totalsByCurrency} /></strong></div>
   </div>;
 }
 
@@ -162,6 +181,7 @@ export function DestinationBudgetEditor({ destination, selectedHotel, disabled }
     <p className="helper">Miscellaneous spending counts arrival and departure as ½ day each, or ½ day total for a same-day visit. Half of a minor currency unit is rounded up in each miscellaneous subtotal.</p>
     <ActivitiesBudgetEditor destination={destination} disabled={disabled} />
     <FoodBudgetEditor destination={destination} arrivalDate={arrivalDate || null} departureDate={departureDate || null} disabled={disabled} />
+    <ShoppingBudgetEditor destination={destination} disabled={disabled} />
   </fieldset>;
 }
 

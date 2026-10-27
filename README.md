@@ -32,7 +32,7 @@ Arrival and departure each count as half a day, with full intervening days: a sa
 
 Amounts use the currency's minor units (for example USD cents, whole JPY, or KWD thousandths). Half a minor unit is rounded up once per destination. Zero is a known amount; negative amounts are rejected. Clear the amount to mark it unknown; clear both amount and currency to remove both. A saved amount requires a currency. Missing amounts or incomplete dates keep the estimate partial, including when a zero amount has unknown duration.
 
-Trip and destination totals group known amounts by currency. USD miscellaneous spending joins existing USD costs; other currencies remain separate. There is no currency conversion. Exact dates and miscellaneous settings persist in the same database and backups. Older databases upgrade to schema 12 without inferring dates from stay notes.
+Trip and destination totals group known amounts by currency. USD miscellaneous spending joins existing USD costs; other currencies remain separate. There is no currency conversion. Exact dates and miscellaneous settings persist in the same database and backups. Older databases upgrade to schema 13 without inferring dates from stay notes.
 
 ## Nightly hotel estimate
 Edit a destination (or use **Edit estimate & dates** on its Hotels page) to enter a general nightly hotel amount and currency for all rooms and travelers. Exact arrival and departure dates determine nights: May 12–15 is 3 nights; a same-day visit is 0 nights. The general stay estimate is the nightly amount × nights. Changing dates or the nightly amount updates the preview, destination estimate, and trip totals. Free-text stay notes are never parsed as a night count.
@@ -66,6 +66,13 @@ Edit a destination to enter an optional shopping amount and currency for the who
 
 Amounts, currency choices, edits, and clearing persist in the same database and backups. Schema 12 adds nullable shopping fields, preserving previous data and calculations. No shop or purchase records are needed.
 
+## Typical weather
+Each destination's Hotels, Activities, and Restaurants detail pages show a **Typical weather** panel with an **Edit typical weather** button. Enter optional high and low temperatures in °F, rainfall notes, the month or travel period the information describes, and a source name or link. These are manually recorded typical conditions or historical averages; there is no automatic lookup or Celsius conversion.
+
+Negative and decimal Fahrenheit values are accepted. If both temperatures are provided, the high must be at least the low. Missing values display **Not provided**; an entered zero displays **0 °F**. Save edits, leave individual fields blank to clear them, or use **Clear all weather fields** and save. Cancel discards the draft.
+
+Weather and its recorded period persist when reopening the destination and when changing destination dates or budgets. Weather details appear within destination detail pages, not on the trip overview. Schema 13 adds these optional fields without changing previous data or budget calculations; they are included in the same database and backups.
+
 ## At home
 Each trip has an **At home** section below **Between the places**, even before destinations are added. Add, edit, or delete arrangements such as house sitting, child care, pet care, or pausing mail. Each item has a name, notes, an optional total price in USD, and a completion checkbox. Completed items can be reopened and remain visible. Items and expenses belong only to their trip and are included in backups.
 
@@ -79,7 +86,7 @@ The provider needs no key for this personal, non-commercial app. Its [free-servi
 ## Routes, itineraries, and research links
 Trips return to their departing city by default. Select **Return to a different city** to enter a separate endpoint. Existing trips retain their departure location and default return behavior.
 Each travel connection supports up to 30 ordered layovers or stops, with a place, arrival/departure details, and notes. The connection's estimated price covers the whole itinerary and is counted once in the trip budget.
-Connections and hotel/activity/restaurant ideas support up to 20 research links with optional short descriptions. Existing single links are retained during the additive database upgrade. Older schema versions upgrade to version 12 automatically inside a transaction; take an online backup before deploying this upgrade.
+Connections and hotel/activity/restaurant ideas support up to 20 research links with optional short descriptions. Existing single links are retained during the additive database upgrade. Older schema versions upgrade to version 13 automatically inside a transaction; take an online backup before deploying this upgrade.
 ## Images
 Each destination can have one optional uploaded image. Each hotel, activity, and restaurant can have up to 10 photos, with one selected as the main photo on its card. Click the thumbnails to view the other photos. Add photos, choose the main photo, or remove individual photos in the editor; removing the main photo selects another remaining photo. Cancel discards photo changes. Existing single idea images become the main photo automatically.
 JPEG, PNG, and WebP uploads up to 5 MiB each and 20 megapixels are supported, with at most 15 MiB of new files in one save. Images are oriented, resized to fit 1600 × 1200, stripped of metadata, and saved as WebP (up to 2 MiB each). All selected uploads must be valid before any changes are saved.

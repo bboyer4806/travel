@@ -75,6 +75,14 @@ function priceField(input: Input): string {
   parsePrice(value);
   return value;
 }
+function temperatureField(input: Input, key: "weatherHighF" | "weatherLowF"): number | null | undefined {
+  const value = input[key];
+  if (value === undefined || value === null) return value;
+  if (typeof value !== "number" || !Number.isFinite(value)) {
+    throw new ValidationError("Typical " + (key === "weatherHighF" ? "high" : "low") + " must be a number in °F, or left blank.");
+  }
+  return value;
+}
 function destinationDateField(input: Input, key: "arrivalDate" | "departureDate"): string | null | undefined {
   if (input[key] === undefined || input[key] === null) return input[key];
   const value = textField(input, key, 10);
@@ -212,7 +220,7 @@ function validate(input: unknown): Mutation {
     case "homeItem.complete":
       return { type: value.type, id: idField(value), tripId: idField(value, "tripId"), completed: booleanField(value, "completed") };
     case "destination.save":
-      return { type: value.type, id: optionalId(value), tripId: idField(value, "tripId"), city: textField(value, "city", 120, true), stay: textField(value, "stay", 120), arrivalDate: destinationDateField(value, "arrivalDate"), departureDate: destinationDateField(value, "departureDate"), miscDailyAmount: value.miscDailyAmount === undefined ? undefined : textField(value, "miscDailyAmount", 32), miscCurrency: currencyField(value, "miscCurrency"), hotelNightlyAmount: value.hotelNightlyAmount === undefined ? undefined : textField(value, "hotelNightlyAmount", 32), hotelCurrency: currencyField(value, "hotelCurrency"), activitiesBudgetMode: activitiesModeField(value), activitiesGeneralAmount: value.activitiesGeneralAmount === undefined ? undefined : textField(value, "activitiesGeneralAmount", 32), activitiesCurrency: currencyField(value, "activitiesCurrency"), foodBudgetMode: foodModeField(value), foodDailyAmount: value.foodDailyAmount === undefined ? undefined : textField(value, "foodDailyAmount", 32), foodCurrency: currencyField(value, "foodCurrency"), shoppingAmount: value.shoppingAmount === undefined ? undefined : textField(value, "shoppingAmount", 32), shoppingCurrency: currencyField(value, "shoppingCurrency"), notes: textField(value, "notes", 8000), image: imageField(value) };
+      return { type: value.type, id: optionalId(value), tripId: idField(value, "tripId"), city: textField(value, "city", 120, true), stay: textField(value, "stay", 120), arrivalDate: destinationDateField(value, "arrivalDate"), departureDate: destinationDateField(value, "departureDate"), miscDailyAmount: value.miscDailyAmount === undefined ? undefined : textField(value, "miscDailyAmount", 32), miscCurrency: currencyField(value, "miscCurrency"), hotelNightlyAmount: value.hotelNightlyAmount === undefined ? undefined : textField(value, "hotelNightlyAmount", 32), hotelCurrency: currencyField(value, "hotelCurrency"), activitiesBudgetMode: activitiesModeField(value), activitiesGeneralAmount: value.activitiesGeneralAmount === undefined ? undefined : textField(value, "activitiesGeneralAmount", 32), activitiesCurrency: currencyField(value, "activitiesCurrency"), foodBudgetMode: foodModeField(value), foodDailyAmount: value.foodDailyAmount === undefined ? undefined : textField(value, "foodDailyAmount", 32), foodCurrency: currencyField(value, "foodCurrency"), shoppingAmount: value.shoppingAmount === undefined ? undefined : textField(value, "shoppingAmount", 32), shoppingCurrency: currencyField(value, "shoppingCurrency"), weatherHighF: temperatureField(value, "weatherHighF"), weatherLowF: temperatureField(value, "weatherLowF"), weatherRainfall: value.weatherRainfall === undefined ? undefined : textField(value, "weatherRainfall", 4000), weatherPeriod: value.weatherPeriod === undefined ? undefined : textField(value, "weatherPeriod", 120), weatherSource: value.weatherSource === undefined ? undefined : textField(value, "weatherSource", 2048), notes: textField(value, "notes", 8000), image: imageField(value) };
     case "destination.move":
       if (value.direction !== "up" && value.direction !== "down") throw new ValidationError("Choose a valid direction for this destination.");
       return { type: value.type, id: idField(value), direction: value.direction };
@@ -234,7 +242,7 @@ export function createStore(databasePath: string) {
   db.exec("BEGIN IMMEDIATE");
   try {
     const version = Number(db.prepare("PRAGMA user_version").get()?.user_version ?? 0);
-    if (version > 12) throw new Error("This database was created by a newer version of the travel app.");
+    if (version > 13) throw new Error("This database was created by a newer version of the travel app.");
     db.exec(`
     CREATE TABLE IF NOT EXISTS trips (
       id TEXT PRIMARY KEY, name TEXT NOT NULL, dateLabel TEXT NOT NULL DEFAULT '',
@@ -365,6 +373,14 @@ export function createStore(databasePath: string) {
       if (!hasColumn("destinations", "shoppingMinor")) db.exec("ALTER TABLE destinations ADD COLUMN shoppingMinor INTEGER CHECK(shoppingMinor BETWEEN 0 AND 9007199254740991);");
       if (!hasColumn("destinations", "shoppingCurrency")) db.exec("ALTER TABLE destinations ADD COLUMN shoppingCurrency TEXT;");
       db.exec("PRAGMA user_version = 12;");
+    }
+    if (version < 13) {
+      if (!hasColumn("destinations", "weatherHighF")) db.exec("ALTER TABLE destinations ADD COLUMN weatherHighF REAL;");
+      if (!hasColumn("destinations", "weatherLowF")) db.exec("ALTER TABLE destinations ADD COLUMN weatherLowF REAL;");
+      for (const column of ["weatherRainfall", "weatherPeriod", "weatherSource"]) {
+        if (!hasColumn("destinations", column)) db.exec("ALTER TABLE destinations ADD COLUMN " + column + " TEXT NOT NULL DEFAULT '';");
+      }
+      db.exec("PRAGMA user_version = 13;");
     }
     db.exec("COMMIT");
   } catch (error) {
@@ -599,19 +615,27 @@ export function createStore(databasePath: string) {
             throw new ValidationError(error instanceof Error ? error.message : "Enter a valid shopping amount.");
           }
         }
+        const weatherHighF = input.weatherHighF === undefined ? before?.weatherHighF ?? null : input.weatherHighF;
+        const weatherLowF = input.weatherLowF === undefined ? before?.weatherLowF ?? null : input.weatherLowF;
+        if (weatherHighF !== null && weatherLowF !== null && weatherHighF < weatherLowF) {
+          throw new ValidationError("Typical high (°F) must be greater than or equal to typical low (°F).");
+        }
+        const weatherRainfall = input.weatherRainfall ?? before?.weatherRainfall ?? "";
+        const weatherPeriod = input.weatherPeriod ?? before?.weatherPeriod ?? "";
+        const weatherSource = input.weatherSource ?? before?.weatherSource ?? "";
         const nights = stayNights(arrivalDate, departureDate);
         if (hotelNightlyMinor !== null && nights !== null && !Number.isSafeInteger(hotelNightlyMinor * nights)) {
           throw new ValidationError("The hotel estimate is too large. Reduce the nightly amount or date range.");
         }
         if (before) {
-          db.prepare("UPDATE destinations SET city = ?, stay = ?, notes = ?, arrivalDate = ?, departureDate = ?, miscDailyMinor = ?, miscCurrency = ?, hotelNightlyMinor = ?, hotelCurrency = ?, activitiesBudgetMode = ?, activitiesGeneralMinor = ?, activitiesCurrency = ?, foodBudgetMode = ?, foodDailyMinor = ?, foodCurrency = ?, shoppingMinor = ?, shoppingCurrency = ? WHERE id = ?").run(input.city, input.stay, input.notes, arrivalDate, departureDate, miscDailyMinor, miscCurrency, hotelNightlyMinor, hotelCurrency, activitiesBudgetMode, activitiesGeneralMinor, activitiesCurrency, foodBudgetMode, foodDailyMinor, foodCurrency, shoppingMinor, shoppingCurrency, id);
+          db.prepare("UPDATE destinations SET city = ?, stay = ?, notes = ?, arrivalDate = ?, departureDate = ?, miscDailyMinor = ?, miscCurrency = ?, hotelNightlyMinor = ?, hotelCurrency = ?, activitiesBudgetMode = ?, activitiesGeneralMinor = ?, activitiesCurrency = ?, foodBudgetMode = ?, foodDailyMinor = ?, foodCurrency = ?, shoppingMinor = ?, shoppingCurrency = ?, weatherHighF = ?, weatherLowF = ?, weatherRainfall = ?, weatherPeriod = ?, weatherSource = ? WHERE id = ?").run(input.city, input.stay, input.notes, arrivalDate, departureDate, miscDailyMinor, miscCurrency, hotelNightlyMinor, hotelCurrency, activitiesBudgetMode, activitiesGeneralMinor, activitiesCurrency, foodBudgetMode, foodDailyMinor, foodCurrency, shoppingMinor, shoppingCurrency, weatherHighF, weatherLowF, weatherRainfall, weatherPeriod, weatherSource, id);
           if (before.city !== input.city) {
             const adjacentLegs = db.prepare("SELECT id FROM legs WHERE fromId = ? OR toId = ?").all(id, id);
             for (const leg of adjacentLegs) clearLeg(leg.id as string);
           }
         } else {
           const position = orderedDestinations(input.tripId).length;
-          db.prepare("INSERT INTO destinations(id,tripId,city,stay,notes,position,arrivalDate,departureDate,miscDailyMinor,miscCurrency,hotelNightlyMinor,hotelCurrency,activitiesBudgetMode,activitiesGeneralMinor,activitiesCurrency,foodBudgetMode,foodDailyMinor,foodCurrency,shoppingMinor,shoppingCurrency) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)").run(id, input.tripId, input.city, input.stay, input.notes, position, arrivalDate, departureDate, miscDailyMinor, miscCurrency, hotelNightlyMinor, hotelCurrency, activitiesBudgetMode, activitiesGeneralMinor, activitiesCurrency, foodBudgetMode, foodDailyMinor, foodCurrency, shoppingMinor, shoppingCurrency);
+          db.prepare("INSERT INTO destinations(id,tripId,city,stay,notes,position,arrivalDate,departureDate,miscDailyMinor,miscCurrency,hotelNightlyMinor,hotelCurrency,activitiesBudgetMode,activitiesGeneralMinor,activitiesCurrency,foodBudgetMode,foodDailyMinor,foodCurrency,shoppingMinor,shoppingCurrency,weatherHighF,weatherLowF,weatherRainfall,weatherPeriod,weatherSource) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)").run(id, input.tripId, input.city, input.stay, input.notes, position, arrivalDate, departureDate, miscDailyMinor, miscCurrency, hotelNightlyMinor, hotelCurrency, activitiesBudgetMode, activitiesGeneralMinor, activitiesCurrency, foodBudgetMode, foodDailyMinor, foodCurrency, shoppingMinor, shoppingCurrency, weatherHighF, weatherLowF, weatherRainfall, weatherPeriod, weatherSource);
         }
         if (input.image === null) {
           db.prepare("DELETE FROM destination_images WHERE destinationId = ?").run(id);

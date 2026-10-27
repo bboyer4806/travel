@@ -171,7 +171,7 @@ test("schema 3 upgrades add image storage without changing destinations, and rep
     assert.deepEqual(store.getDestinationImage(destinationId), image);
     const observer = new DatabaseSync(path);
     try {
-      assert.equal(observer.prepare("PRAGMA user_version").get().user_version, 12);
+      assert.equal(observer.prepare("PRAGMA user_version").get().user_version, 13);
       assert.deepEqual(observer.prepare("PRAGMA foreign_key_check").all(), []);
     } finally {
       observer.close();

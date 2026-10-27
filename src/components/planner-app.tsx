@@ -3,6 +3,7 @@
 import Link from "next/link";
 import LocationField from "@/components/location-field";
 import HomeItems from "@/components/home-items";
+import { TypicalWeatherPanel, TypicalWeatherEditor } from "@/components/typical-weather";
 import { PlannerImage, PlannerImageEditor } from "@/components/planner-image";
 import { CandidateGallery, CandidateGalleryEditor, candidateGalleryForm, createCandidateGalleryDraft, type CandidateGalleryDraft } from "@/components/candidate-gallery";
 import TripRouteFields from "@/components/trip-route-fields";
@@ -20,6 +21,7 @@ import type { FoodBudgetMode, ActivitiesBudgetMode, Budget, Candidate, Category,
 type Editor =
   | { kind: "trip"; item?: Trip }
   | { kind: "destination"; item?: Destination }
+  | { kind: "weather"; item: Destination }
   | { kind: "activitiesBudget"; item: Destination }
   | { kind: "foodBudget"; item: Destination }
   | { kind: "leg"; item: TravelLeg }
@@ -113,6 +115,14 @@ export default function PlannerApp({ initialData, tripId, destinationId, categor
     switch (editor.kind) {
       case "delete": void perform(editor.mutation, "Removed from your notebook.", editor.redirect); break;
       case "trip": void perform({ type: "trip.save", id: editor.item?.id, name: text("name"), dateLabel: text("dateLabel"), homeCity: text("homeCity"), returnCity: fields.has("differentReturn") ? text("returnCity") : null, travelers: Number(text("travelers")), notes: text("notes") }); break;
+      case "weather": {
+        const item = editor.item;
+        void perform({ type: "destination.save", id: item.id, tripId: item.tripId, city: item.city, stay: item.stay, notes: item.notes,
+          weatherHighF: text("weatherHighF").trim() === "" ? null : Number(text("weatherHighF")),
+          weatherLowF: text("weatherLowF").trim() === "" ? null : Number(text("weatherLowF")),
+          weatherPeriod: text("weatherPeriod"), weatherRainfall: text("weatherRainfall"), weatherSource: text("weatherSource") }, "Typical weather saved.");
+        break;
+      }
       case "destination": {
         const imageForm = new FormData();
         if (imageFile) imageForm.set("image", imageFile);
@@ -143,6 +153,7 @@ export default function PlannerApp({ initialData, tripId, destinationId, categor
     }
   }
   const pageTitle = editor?.kind === "delete" ? editor.title : editor?.kind === "trip" ? (editor.item ? "Edit trip" : "A new adventure")
+    : editor?.kind === "weather" ? "Edit typical weather"
     : editor?.kind === "destination" ? (editor.item ? "Edit destination" : "Add a destination")
     : editor?.kind === "foodBudget" ? "Edit food budget"
     : editor?.kind === "activitiesBudget" ? "Edit activities budget"
@@ -212,6 +223,7 @@ export default function PlannerApp({ initialData, tripId, destinationId, categor
         <Link href={"/trips/" + trip.id} className="breadcrumb"><ArrowLeft size={16} />{trip.name}</Link>
         <section className="ideas-heading"><div><p className="eyebrow">{formatSavedDestinationLabel(destination.city).toUpperCase()} · THE POSSIBILITIES</p><h1>{labels[category]}</h1><p className="hero-description">{descriptions[category]}</p></div><button className="button primary" onClick={() => open({ kind: "candidate" })}><Plus size={17} />Add {singular[category]}</button></section>
         <nav className="category-tabs" aria-label="Destination ideas">{categories.map((kind) => { const Icon = categoryIcons[kind]; return <Link key={kind} href={"/trips/" + trip.id + "/destinations/" + destination.id + "/" + kind} className={category === kind ? "selected" : ""} aria-current={category === kind ? "page" : undefined}><Icon size={18} />{labels[kind]}<span>{data.candidates.filter((item) => item.destinationId === destination.id && item.category === kind).length}</span></Link>; })}</nav>
+        <TypicalWeatherPanel weather={destination} disabled={busy} onEdit={() => open({ kind: "weather", item: destination })} />
         {category === "hotels" && <section className="hotel-budget-panel" aria-label="Accommodation budget"><div className="section-heading"><h2>Accommodation budget</h2><button className="button secondary small" onClick={() => open({ kind: "destination", item: destination })}><Pencil size={15} />Edit estimate & dates</button></div><AccommodationSummary snapshot={data} destination={destination} /></section>}
         {category === "activities" && <section className="hotel-budget-panel" aria-label="Activities budget"><div className="section-heading"><h2>Activities budget</h2><button className="button secondary small" onClick={() => open({ kind: "activitiesBudget", item: destination })}><Pencil size={15} />Edit activities budget</button></div><ActivitiesSummary snapshot={data} destination={destination} /><p className="helper">{destination.activitiesBudgetMode === "general" ? "Your general amount supplies the budget. Activity selections are saved for itemized mode." : "Only included activity costs supply the budget. Your general amount stays saved."} Adding, editing, or removing activities never switches methods.</p></section>}
         {category === "restaurants" && <section className="hotel-budget-panel" aria-label="Food budget"><div className="section-heading"><h2>Food budget</h2><div className="heading-actions"><button className="button secondary small" onClick={() => open({ kind: "foodBudget", item: destination })}><Pencil size={15} />Edit food budget</button><button className="button secondary small" onClick={() => open({ kind: "destination", item: destination })}><CalendarDays size={15} />Edit destination dates</button></div></div><FoodSummary snapshot={data} destination={destination} /><p className="helper">{destination.foodBudgetMode === "daily" ? "Your daily subtotal supplies the budget. Restaurant selections are saved for itemized mode." : "Only included restaurant costs supply the budget. Your daily amount stays saved."} Adding, editing, or removing restaurants never switches methods.</p></section>}
@@ -239,6 +251,7 @@ export default function PlannerApp({ initialData, tripId, destinationId, categor
         <PlannerImageEditor existingSrc={editor.item?.imageVersion ? destinationImageUrl(editor.item) : null} file={imageFile} removeExisting={removeImage} onChange={(file, remove) => { setImageFile(file); setRemoveImage(remove); }} disabled={busy} />
         <Notes value={editor.item?.notes} />
       </>}
+      {editor.kind === "weather" && <TypicalWeatherEditor weather={editor.item} disabled={busy} />}
       {editor.kind === "foodBudget" && <FoodBudgetEditor destination={editor.item} disabled={busy} />}
       {editor.kind === "activitiesBudget" && <ActivitiesBudgetEditor destination={editor.item} disabled={busy} />}
       {editor.kind === "leg" && <>

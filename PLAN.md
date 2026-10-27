@@ -131,3 +131,10 @@ Use one application instance for v1. Live deployment remains a separate review s
 - Allow entering, editing, and clearing. Show an unset budget as Not set with no cost or required missing estimate; accept and display intentional zero, reject negative or invalid amounts.
 - Keep currency totals separate without conversion. Persist amounts and currencies through saving and reopening.
 - Upgrade to schema 12 with nullable fields, preserving earlier data and calculations; verify additive migration replay and container persistence.
+
+## Added scope: destination typical weather, October 27, 2026 (TRA-13)
+- Record optional typical high and low temperatures in Fahrenheit, rainfall notes, the applicable month or travel period, and a source name or link.
+- Display typical weather or historical averages on destination detail pages, separate from the trip overview; provide a focused editor with save, edit, and clear behavior.
+- Accept negative and decimal temperatures, require high to be at least low when both are supplied, and distinguish missing values (Not provided) from zero.
+- Preserve weather and its recorded period across date changes, other destination edits, database reopening, and backups. No automatic lookup or Celsius conversion.
+- Upgrade to schema 13 additively, preserve prior data and budgets, and verify migration replay and container persistence.

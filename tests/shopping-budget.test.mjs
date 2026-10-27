@@ -194,7 +194,7 @@ test("schema 11 upgrades preserve budgets, routes, ideas, images and at-home ite
     const savedBudget = calculateBudget(saved, tripId);
     store.close(); store = null;
     observer = new DatabaseSync(path);
-    assert.equal(observer.prepare("PRAGMA user_version").get().user_version, 12);
+    assert.equal(observer.prepare("PRAGMA user_version").get().user_version, 13);
     observer.exec("PRAGMA user_version = 11;");
     observer.close();
     store = createStore(path);
@@ -204,7 +204,7 @@ test("schema 11 upgrades preserve budgets, routes, ideas, images and at-home ite
     assert.deepEqual(store.getCandidateImage(candidateId), candidateImage);
     observer = new DatabaseSync(path);
     try {
-      assert.equal(observer.prepare("PRAGMA user_version").get().user_version, 12);
+      assert.equal(observer.prepare("PRAGMA user_version").get().user_version, 13);
       assert.deepEqual(observer.prepare("PRAGMA foreign_key_check").all(), []);
     } finally { observer.close(); }
   } finally { store?.close(); }

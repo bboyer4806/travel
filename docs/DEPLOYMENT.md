@@ -64,6 +64,8 @@ Photo galleries upgrade the database to schema 6. Each hotel, activity, and rest
 
 At-home planning upgrades the database to schema 7 with a separate trip-owned item table. Existing trips, travel plans, and photos are retained. At-home notes, prices, and completion states use the same persistent storage and online backups. Back up the current database before deploying (schema 5 deployments upgrade through schemas 6 and 7 in one transaction). Earlier builds reject schema 7; rollback requires a compatible build or the stopped-app restore procedure above.
 
+Typical weather upgrades the database to schema 13 with nullable Fahrenheit temperatures and optional rainfall, period, and source text on destinations. Existing data and budget calculations remain unchanged. Back up schema 12 before deployment. All weather fields are included in the same database and online backups. Schema 12 builds reject schema 13; rollback requires a compatible build or the stopped-app restore procedure above. Preserve the current database first; restoring an older backup loses later edits.
+
 ## References
 - [Dokku persistent storage](https://dokku.com/docs/advanced-usage/persistent-storage/)
 - [Node SQLite backup API](https://nodejs.org/docs/latest-v24.x/api/sqlite.html)

@@ -52,7 +52,7 @@ test("complete create, edit, clear, and delete flows preserve the trip relations
   assert.equal(store.getSnapshot().trips[0].name, "Japan 2027");
   assert.equal(store.getSnapshot().destinations[0].stay, "5 nights");
   store.applyMutation({ type: "trip.delete", id: tripId });
-  assert.deepEqual(store.getSnapshot(), { trips: [], destinations: [], legs: [], candidates: [], homeItems: [] });
+  assert.deepEqual(store.getSnapshot(), { trips: [], destinations: [], legs: [], candidates: [], homeItems: [], churches: [] });
 });
 
 test("route changes retain only unchanged connections, and deleting destinations cascades ideas", (t) => {

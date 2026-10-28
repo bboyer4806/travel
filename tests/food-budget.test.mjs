@@ -258,7 +258,7 @@ test("schema 10 migration retains itemized costs and prior budget settings; repl
     const savedBudget = calculateBudget(saved, tripId);
     store.close(); store = null;
     observer = new DatabaseSync(path);
-    assert.equal(observer.prepare("PRAGMA user_version").get().user_version, 13);
+    assert.equal(observer.prepare("PRAGMA user_version").get().user_version, 14);
     observer.exec("PRAGMA user_version = 10;");
     observer.close();
     store = createStore(path);
@@ -266,7 +266,7 @@ test("schema 10 migration retains itemized costs and prior budget settings; repl
     assert.deepEqual(calculateBudget(store.getSnapshot(), tripId), savedBudget);
     observer = new DatabaseSync(path);
     try {
-      assert.equal(observer.prepare("PRAGMA user_version").get().user_version, 13);
+      assert.equal(observer.prepare("PRAGMA user_version").get().user_version, 14);
       assert.deepEqual(observer.prepare("PRAGMA foreign_key_check").all(), []);
     } finally { observer.close(); }
   } finally { store?.close(); }

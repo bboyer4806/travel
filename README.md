@@ -32,7 +32,7 @@ Arrival and departure each count as half a day, with full intervening days: a sa
 
 Amounts use the currency's minor units (for example USD cents, whole JPY, or KWD thousandths). Half a minor unit is rounded up once per destination. Zero is a known amount; negative amounts are rejected. Clear the amount to mark it unknown; clear both amount and currency to remove both. A saved amount requires a currency. Missing amounts or incomplete dates keep the estimate partial, including when a zero amount has unknown duration.
 
-Trip and destination totals group known amounts by currency. USD miscellaneous spending joins existing USD costs; other currencies remain separate. There is no currency conversion. Exact dates and miscellaneous settings persist in the same database and backups. Older databases upgrade to schema 13 without inferring dates from stay notes.
+Trip and destination totals group known amounts by currency. USD miscellaneous spending joins existing USD costs; other currencies remain separate. There is no currency conversion. Exact dates and miscellaneous settings persist in the same database and backups. Older databases upgrade to schema 14 without inferring dates from stay notes.
 
 ## Nightly hotel estimate
 Edit a destination (or use **Edit estimate & dates** on its Hotels page) to enter a general nightly hotel amount and currency for all rooms and travelers. Exact arrival and departure dates determine nights: May 12–15 is 3 nights; a same-day visit is 0 nights. The general stay estimate is the nightly amount × nights. Changing dates or the nightly amount updates the preview, destination estimate, and trip totals. Free-text stay notes are never parsed as a night count.
@@ -73,6 +73,15 @@ Negative and decimal Fahrenheit values are accepted. If both temperatures are pr
 
 Weather and its recorded period persist when reopening the destination and when changing destination dates or budgets. Weather details appear within destination detail pages, not on the trip overview. Schema 13 adds these optional fields without changing previous data or budget calculations; they are included in the same database and backups.
 
+## Church
+Destination detail pages have an optional **Church** section after Restaurants. Enable it manually for any destination, including one without dates. Setting or changing the actual arrival/departure range to include a Sunday enables it automatically, including Sunday arrival, departure, a same-day Sunday visit, or a stay with several Sundays. Both dates must be known; stay notes are never interpreted as dates.
+
+Hide the section whenever you want. Hiding preserves every church and photo. Reopening the destination, editing weather or budgets, or saving unchanged dates keeps it hidden. Changing to a new range containing Sunday enables it again; changing to dates without Sunday or clearing dates preserves the current visibility and saved churches.
+
+Add, edit, or remove multiple church options with a name, location/address, optional denomination and website, and up to 30 Mass times with a day or date for each. A church can be saved without Mass times, a website, or photos. Missing times show **Mass times unknown**; supplied websites appear as links. Church photos use the gallery controls and upload limits below. Church entries and photos persist in the same database and backups, including while hidden.
+
+Church information appears only within the destination, never on the trip overview. Churches are separate from hotel, activity, and restaurant ideas and do not change their counts or any budget totals. Schema 14 preserves existing data and initially enables Church for existing complete date ranges containing Sunday; replaying the migration preserves saved visibility choices.
+
 ## At home
 Each trip has an **At home** section below **Between the places**, even before destinations are added. Add, edit, or delete arrangements such as house sitting, child care, pet care, or pausing mail. Each item has a name, notes, an optional total price in USD, and a completion checkbox. Completed items can be reopened and remain visible. Items and expenses belong only to their trip and are included in backups.
 
@@ -86,9 +95,9 @@ The provider needs no key for this personal, non-commercial app. Its [free-servi
 ## Routes, itineraries, and research links
 Trips return to their departing city by default. Select **Return to a different city** to enter a separate endpoint. Existing trips retain their departure location and default return behavior.
 Each travel connection supports up to 30 ordered layovers or stops, with a place, arrival/departure details, and notes. The connection's estimated price covers the whole itinerary and is counted once in the trip budget.
-Connections and hotel/activity/restaurant ideas support up to 20 research links with optional short descriptions. Existing single links are retained during the additive database upgrade. Older schema versions upgrade to version 13 automatically inside a transaction; take an online backup before deploying this upgrade.
+Connections and hotel/activity/restaurant ideas support up to 20 research links with optional short descriptions. Existing single links are retained during the additive database upgrade. Older schema versions upgrade to version 14 automatically inside a transaction; take an online backup before deploying this upgrade.
 ## Images
-Each destination can have one optional uploaded image. Each hotel, activity, and restaurant can have up to 10 photos, with one selected as the main photo on its card. Click the thumbnails to view the other photos. Add photos, choose the main photo, or remove individual photos in the editor; removing the main photo selects another remaining photo. Cancel discards photo changes. Existing single idea images become the main photo automatically.
+Each destination can have one optional uploaded image. Each hotel, activity, restaurant, and church can have up to 10 photos, with one selected as the main photo on its card. Click the thumbnails to view the other photos. Add photos, choose the main photo, or remove individual photos in the editor; removing the main photo selects another remaining photo. Cancel discards photo changes. Existing single idea images become the main photo automatically.
 JPEG, PNG, and WebP uploads up to 5 MiB each and 20 megapixels are supported, with at most 15 MiB of new files in one save. Images are oriented, resized to fit 1600 × 1200, stripped of metadata, and saved as WebP (up to 2 MiB each). All selected uploads must be valid before any changes are saved.
 Images live in the same persistent SQLite database and are included in online backups. Snapshots carry only photo IDs, versions, and the main selection; image routes serve separate, versioned responses. Image-only edits preserve travel plans, prices, research links, and budget selections.
 

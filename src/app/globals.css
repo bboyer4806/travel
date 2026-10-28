@@ -1890,3 +1890,7 @@ button svg,a svg {
 .hotel-budget-panel .section-heading { margin-bottom: 12px; flex-wrap: wrap; gap: 12px; }
 .hotel-budget-panel h2 { font-size: 20px; }
 .accommodation-summary { margin-bottom: 18px; }
+
+.church-visibility { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 16px; margin: 20px 0; }
+.church-visibility > .helper { flex: 1 1 280px; margin: 0; }
+.category-tabs { flex-wrap: wrap; }

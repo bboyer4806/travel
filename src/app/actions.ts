@@ -16,6 +16,10 @@ export async function mutatePlanner(input: Mutation, imageForm?: FormData): Prom
       const gallery = await prepareCandidateGallery(imageForm);
       mutation = { ...input, gallery, image: gallery === undefined ? await prepareImage(imageForm) : undefined };
     }
+    if (input.type === "church.save") {
+      // Only validated multipart uploads can supply church photo bytes.
+      mutation = { ...input, gallery: await prepareCandidateGallery(imageForm) };
+    }
     const result = applyMutation(mutation);
     if (input.type === "trip.delete") revalidatePath("/"); else revalidatePath("/", "layout");
     return { ok: true, ...result };

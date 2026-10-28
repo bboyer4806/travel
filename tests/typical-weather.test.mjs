@@ -185,7 +185,7 @@ test("schema 12 upgrade defaults weather to missing and preserves old data; migr
     store.close(); store = null;
     observer = new DatabaseSync(path);
     try {
-      assert.equal(observer.prepare("PRAGMA user_version").get().user_version, 13);
+      assert.equal(observer.prepare("PRAGMA user_version").get().user_version, 14);
       const columns = observer.prepare("PRAGMA table_info(destinations)").all();
       for (const name of ["weatherHighF", "weatherLowF"]) {
         assert.equal(columns.find((column) => column.name === name).type, "REAL");
@@ -211,7 +211,7 @@ test("schema 12 upgrade defaults weather to missing and preserves old data; migr
     assert.deepEqual(store.getCandidateImage(candidateId), candidateImage);
     observer = new DatabaseSync(path);
     try {
-      assert.equal(observer.prepare("PRAGMA user_version").get().user_version, 13);
+      assert.equal(observer.prepare("PRAGMA user_version").get().user_version, 14);
       assert.deepEqual(observer.prepare("PRAGMA foreign_key_check").all(), []);
     } finally { observer.close(); }
   } finally { store?.close(); }

@@ -138,3 +138,11 @@ Use one application instance for v1. Live deployment remains a separate review s
 - Accept negative and decimal temperatures, require high to be at least low when both are supplied, and distinguish missing values (Not provided) from zero.
 - Preserve weather and its recorded period across date changes, other destination edits, database reopening, and backups. No automatic lookup or Celsius conversion.
 - Upgrade to schema 13 additively, preserve prior data and budgets, and verify migration replay and container persistence.
+
+## Added scope: destination Church section, October 28, 2026 (TRA-12)
+- Add an optional Church section after Restaurants on destination detail pages, excluded from the trip overview, idea counts, and budget calculations.
+- Allow manual enabling for any destination, including undated stays. Automatically enable when the actual merged arrival/departure range changes to include a Sunday, counting both endpoints and multiple Sundays.
+- Allow hiding without deleting data. Unrelated edits and unchanged date saves preserve manual hiding; a new Sunday-containing range enables the section again. Missing dates and ranges without Sunday preserve visibility and saved information.
+- Create, edit, and remove multiple churches with name, location/address, optional denomination and website, and multiple Mass times associated with a day or date. Display unknown Mass times clearly and supplied websites as links.
+- Reuse galleries with up to 10 photos, a selected main photo, existing upload limits and processing, and ownership validation. Preserve photos on ordinary edits, hiding, date changes, reopening, and backup.
+- Upgrade to schema 14 with separate church and image records and destination visibility. Initialize Sunday visibility only when adding the column; migration replay retains saved choices. Preserve all previous budgets, weather, and other data and verify container persistence.

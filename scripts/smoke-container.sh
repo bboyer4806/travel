@@ -33,12 +33,19 @@ const candidates = [
   { id: '77777777-7777-4777-8777-777777777777', category: 'activities', version: 'cccccccc-cccc-4ccc-8ccc-cccccccccccc' },
   { id: '88888888-8888-4888-8888-888888888888', category: 'restaurants', version: 'dddddddd-dddd-4ddd-8ddd-dddddddddddd' },
 ];
+const churches = [
+  { id: 'b1000000-0000-4000-8000-000000000001', name: 'St. Stephen', address: 'Stephansplatz 3, Vienna', denomination: 'Catholic', url: 'https://example.com/church', massTimes: [
+    { id: 'b2000000-0000-4000-8000-000000000001', day: 'Sunday', time: '09:00' },
+    { id: 'b2000000-0000-4000-8000-000000000002', day: '2027-05-13', time: '18:30' },
+  ] },
+  { id: 'b1000000-0000-4000-8000-000000000002', name: 'Church with unknown times', address: '', denomination: '', url: '', massTimes: [] },
+];
 // Two different real 2-by-2 lossless WebP images, generated with sharp.
 const images = [
   Buffer.from('UklGRh4AAABXRUJQVlA4TBEAAAAvAUAAAAfQtSZVrP+BiOh/AAA=', 'base64'),
   Buffer.from('UklGRh4AAABXRUJQVlA4TBEAAAAvAUAAAAdQwjaXpf+BiOh/AAA=', 'base64'),
 ];
-assert.equal(db.prepare('PRAGMA user_version').get().user_version, 13);
+assert.equal(db.prepare('PRAGMA user_version').get().user_version, 14);
 db.exec('PRAGMA foreign_keys = ON; BEGIN IMMEDIATE;');
 db.prepare('INSERT INTO trips(id,name,dateLabel,homeCity,travelers,notes,createdAt) VALUES(?,?,?,?,?,?,?)').run('container-smoke','Persistence test','','',2,'',new Date().toISOString());
 db.prepare('INSERT INTO home_items(id,tripId,name,priceCents,notes,completed,createdAt) VALUES(?,?,?,?,?,?,?)').run('a1000000-0000-4000-8000-000000000001','container-smoke','House sitting',23950,'Give sitter a key',1,'2026-10-12T12:00:00.000Z');
@@ -61,6 +68,17 @@ for (const [index, candidate] of candidates.entries()) {
 db.prepare("UPDATE candidates SET included = 1, priceCents = 40000 WHERE category = 'hotels'").run();
 db.prepare("UPDATE candidates SET included = 1, priceCents = 7550 WHERE category = 'activities'").run();
 db.prepare("UPDATE candidates SET included = 1, priceCents = 4525 WHERE category = 'restaurants'").run();
+db.prepare('UPDATE destinations SET churchEnabled = 1 WHERE id = ?').run(destinationId);
+for (const church of churches) {
+  db.prepare('INSERT INTO churches(id,destinationId,name,address,denomination,url,massTimesJson) VALUES(?,?,?,?,?,?,?)')
+    .run(church.id, destinationId, church.name, church.address, church.denomination, church.url, JSON.stringify(church.massTimes));
+}
+for (const [position, data] of images.entries()) {
+  db.prepare('INSERT INTO church_images(id,churchId,version,data,position,isMain) VALUES(?,?,?,?,?,?)')
+    .run(`b3000000-0000-4000-8000-${String(position + 1).padStart(12, '0')}`, churches[0].id, position === 1 ? 'b4000000-0000-4000-8000-000000000001' : 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa', data, position, position === 1 ? 1 : 0);
+}
+// Hiding must preserve both churches and the gallery after container replacement.
+db.prepare('UPDATE destinations SET churchEnabled = 0 WHERE id = ?').run(destinationId);
 db.exec('COMMIT;');
 db.close();
 JS
@@ -78,13 +96,20 @@ const candidates = [
   { id: '77777777-7777-4777-8777-777777777777', category: 'activities', version: 'cccccccc-cccc-4ccc-8ccc-cccccccccccc' },
   { id: '88888888-8888-4888-8888-888888888888', category: 'restaurants', version: 'dddddddd-dddd-4ddd-8ddd-dddddddddddd' },
 ];
+const churches = [
+  { id: 'b1000000-0000-4000-8000-000000000001', name: 'St. Stephen', address: 'Stephansplatz 3, Vienna', denomination: 'Catholic', url: 'https://example.com/church', massTimes: [
+    { id: 'b2000000-0000-4000-8000-000000000001', day: 'Sunday', time: '09:00' },
+    { id: 'b2000000-0000-4000-8000-000000000002', day: '2027-05-13', time: '18:30' },
+  ] },
+  { id: 'b1000000-0000-4000-8000-000000000002', name: 'Church with unknown times', address: '', denomination: '', url: '', massTimes: [] },
+];
 const images = [
   Buffer.from('UklGRh4AAABXRUJQVlA4TBEAAAAvAUAAAAfQtSZVrP+BiOh/AAA=', 'base64'),
   Buffer.from('UklGRh4AAABXRUJQVlA4TBEAAAAvAUAAAAdQwjaXpf+BiOh/AAA=', 'base64'),
 ];
 const db = new DatabaseSync('/data/travel.sqlite');
 try {
-  assert.equal(db.prepare('PRAGMA user_version').get().user_version, 13);
+  assert.equal(db.prepare('PRAGMA user_version').get().user_version, 14);
   assert.ok(db.prepare('SELECT id FROM trips WHERE id = ?').get('container-smoke'));
   const homeItems = db.prepare('SELECT name,priceCents,notes,completed,createdAt FROM home_items WHERE tripId = ? ORDER BY createdAt').all('container-smoke').map(row => ({...row}));
   assert.deepEqual(homeItems, [
@@ -117,6 +142,20 @@ try {
       assert.deepEqual(Buffer.from(savedImage.data), images[position], candidate.category + ' photo bytes must persist');
     }
   }
+  assert.equal(db.prepare('SELECT churchEnabled FROM destinations WHERE id = ?').get(destinationId).churchEnabled, 0, 'Hidden Church section must remain hidden');
+  const savedChurches = db.prepare('SELECT id,destinationId,name,address,denomination,url,massTimesJson FROM churches WHERE destinationId = ? ORDER BY id').all(destinationId);
+  assert.deepEqual(savedChurches.map(({massTimesJson, ...church}) => ({...church, massTimes: JSON.parse(massTimesJson)})), churches.map(church => ({...church, destinationId})));
+  assert.equal(db.prepare('SELECT count(*) AS count FROM candidates WHERE destinationId = ?').get(destinationId).count, 3, 'Churches must not enter the budget candidate table');
+  const churchImages = db.prepare('SELECT id,churchId,version,data,position,isMain FROM church_images ORDER BY position').all();
+  assert.equal(churchImages.length, 2);
+  for (const [position, photo] of churchImages.entries()) {
+    assert.equal(photo.id, `b3000000-0000-4000-8000-${String(position + 1).padStart(12, '0')}`);
+    assert.equal(photo.churchId, churches[0].id);
+    assert.equal(photo.version, position === 1 ? 'b4000000-0000-4000-8000-000000000001' : 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa');
+    assert.equal(photo.position, position);
+    assert.equal(photo.isMain, position === 1 ? 1 : 0, 'Church main selection must persist');
+    assert.deepEqual(Buffer.from(photo.data), images[position], 'Church photo bytes must persist');
+  }
   assert.deepEqual(db.prepare('PRAGMA foreign_key_check').all(), []);
 } finally {
   db.close();
@@ -147,6 +186,21 @@ for (const [index, candidate] of candidates.entries()) {
   const wrongRoute = await fetch(base + 'destination-images/' + candidate.id + '?v=' + candidate.version, options());
   assert.equal(wrongRoute.status, 404, 'Candidate photos must not be returned by the destination route');
 }
+for (const [position, expected] of images.entries()) {
+  const photoId = `b3000000-0000-4000-8000-${String(position + 1).padStart(12, '0')}`;
+  const version = position === 1 ? 'b4000000-0000-4000-8000-000000000001' : 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
+  await verifyImage('church-images/' + churches[0].id + '/' + photoId, version, expected);
+  const wrongOwner = await fetch(base + 'church-images/' + churches[1].id + '/' + photoId + '?v=' + version, options());
+  assert.equal(wrongOwner.status, 404, 'A church photo must only be served under its own church');
+  const wrongCandidateRoute = await fetch(base + 'candidate-images/' + churches[0].id + '/' + photoId + '?v=' + version, options());
+  assert.equal(wrongCandidateRoute.status, 404, 'Church photos must not be returned by candidate gallery routes');
+  const wrongMainRoute = await fetch(base + 'candidate-images/' + churches[0].id + '?v=' + version, options());
+  assert.equal(wrongMainRoute.status, 404, 'Church main photos must not be returned by candidate routes');
+}
+const wrongChurchRoute = await fetch(base + 'church-images/' + candidates[0].id + '/90000000-0000-4000-8000-000000000001?v=aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa', options());
+assert.equal(wrongChurchRoute.status, 404, 'Candidate photos must not be returned by church routes');
+const missingChurchPhoto = await fetch(base + 'church-images/' + churches[0].id + '/55555555-5555-4555-8555-555555555555?v=' + imageVersion, options());
+assert.equal(missingChurchPhoto.status, 404);
 const wrongRoute = await fetch(base + 'candidate-images/' + destinationId + '?v=' + imageVersion, options());
 assert.equal(wrongRoute.status, 404, 'Destination photos must not be returned by the candidate route');
 for (const route of ['destination-images', 'candidate-images']) {

@@ -3,6 +3,7 @@
 import Link from "next/link";
 import LocationField from "@/components/location-field";
 import HomeItems from "@/components/home-items";
+import { ChurchOptions, ChurchEditor } from "@/components/churches";
 import { TypicalWeatherPanel, TypicalWeatherEditor } from "@/components/typical-weather";
 import { PlannerImage, PlannerImageEditor } from "@/components/planner-image";
 import { CandidateGallery, CandidateGalleryEditor, candidateGalleryForm, createCandidateGalleryDraft, type CandidateGalleryDraft } from "@/components/candidate-gallery";
@@ -11,12 +12,12 @@ import { ConnectionItinerary, ConnectionItineraryEditor } from "@/components/con
 import { ResearchLinks, ResearchLinksEditor } from "@/components/research-links";
 import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState, type FormEvent, type ReactNode } from "react";
-import { ArrowDown, ArrowLeft, ArrowRight, ArrowUp, BedDouble, Binoculars, CalendarDays, Check, CheckCircle2, Compass, MapPin, MoreHorizontal, Pencil, Plane, Plus, Search, Trash2, Users, Utensils, Wallet, X } from "lucide-react";
+import { ArrowDown, ArrowLeft, ArrowRight, ArrowUp, BedDouble, Binoculars, CalendarDays, Check, CheckCircle2, Church as ChurchIcon, Compass, MapPin, MoreHorizontal, Pencil, Plane, Plus, Search, Trash2, Users, Utensils, Wallet, X } from "lucide-react";
 import { mutatePlanner } from "@/app/actions";
 import { formatSavedDestinationLabel } from "@/lib/destination-label";
 import { calculateBudget, formatMoney } from "@/lib/budget";
 import { FoodBudgetEditor, FoodSummary, ActivitiesBudgetEditor, ActivitiesSummary, AccommodationSummary, CurrencyTotals, DestinationBudget, DestinationBudgetEditor } from "@/components/destination-budget";
-import type { FoodBudgetMode, ActivitiesBudgetMode, Budget, Candidate, Category, Destination, HomeItem, ItineraryStop, Mutation, ResearchLink, Snapshot, TravelLeg, Trip } from "@/lib/types";
+import type { FoodBudgetMode, ActivitiesBudgetMode, Budget, Candidate, Church, MassTime, Category, Destination, HomeItem, ItineraryStop, Mutation, ResearchLink, Snapshot, TravelLeg, Trip } from "@/lib/types";
 
 type Editor =
   | { kind: "trip"; item?: Trip }
@@ -26,6 +27,7 @@ type Editor =
   | { kind: "foodBudget"; item: Destination }
   | { kind: "leg"; item: TravelLeg }
   | { kind: "candidate"; item?: Candidate }
+  | { kind: "church"; item?: Church }
   | { kind: "homeItem"; item?: HomeItem }
   | { kind: "delete"; mutation: Mutation; title: string; description: string; redirect?: string };
 const categories: Category[] = ["hotels", "activities", "restaurants"];
@@ -63,13 +65,14 @@ function Dialog({ title, children, busy, onClose }: { title: string; children: R
   </dialog>;
 }
 
-export default function PlannerApp({ initialData, tripId, destinationId, category }: { initialData: Snapshot; tripId?: string; destinationId?: string; category?: Category }) {
+export default function PlannerApp({ initialData, tripId, destinationId, category, church = false }: { initialData: Snapshot; tripId?: string; destinationId?: string; category?: Category; church?: boolean }) {
   const router = useRouter();
   const [data, setData] = useState(initialData);
   const [lastInitial, setLastInitial] = useState(initialData);
   const [editor, setEditor] = useState<Editor | null>(null);
   const [busy, setBusy] = useState(false);
   const [itinerary, setItinerary] = useState<ItineraryStop[]>([]);
+  const [massTimes, setMassTimes] = useState<MassTime[]>([]);
   const [researchLinks, setResearchLinks] = useState<ResearchLink[]>([]);
   const [imageFile, setImageFile] = useState<File | null>(null);
   const [removeImage, setRemoveImage] = useState(false);
@@ -87,8 +90,9 @@ export default function PlannerApp({ initialData, tripId, destinationId, categor
     if (busy) return;
     if (value.kind === "leg") setItinerary(value.item.itinerary ?? []);
     if (value.kind === "leg" || value.kind === "candidate") setResearchLinks(value.item?.links ?? []);
+    if (value.kind === "church") setMassTimes(value.item?.massTimes ?? []);
     setImageFile(null); setRemoveImage(false);
-    setCandidateGallery(createCandidateGalleryDraft(value.kind === "candidate" ? value.item : undefined));
+    setCandidateGallery(createCandidateGalleryDraft(value.kind === "candidate" || value.kind === "church" ? value.item : undefined));
     setEditor(value); setError(""); setMessage("");
   };
   const close = () => { if (!busy) { setEditor(null); setImageFile(null); setCandidateGallery(createCandidateGalleryDraft()); setError(""); } };
@@ -145,6 +149,10 @@ export default function PlannerApp({ initialData, tripId, destinationId, categor
         break;
       }
       case "leg": void perform({ type: "leg.save", id: editor.item.id, method: text("method"), price: text("price"), departure: text("departure"), arrival: text("arrival"), url: researchLinks[0]?.url ?? "", links: researchLinks, notes: text("notes"), itinerary }); break;
+      case "church": {
+        if (destination) void perform({ type: "church.save", id: editor.item?.id, destinationId: destination.id, name: text("name"), address: text("address"), denomination: text("denomination"), url: text("url"), massTimes }, "Church saved.", undefined, candidateGalleryForm(candidateGallery, editor.item));
+        break;
+      }
       case "candidate": {
         const imageForm = candidateGalleryForm(candidateGallery, editor.item);
         if (destination && category) void perform({ type: "candidate.save", id: editor.item?.id, destinationId: destination.id, category, name: text("name"), price: text("price"), address: text("address"), url: researchLinks[0]?.url ?? "", links: researchLinks, notes: text("notes"), included: fields.has("included") }, "Changes saved.", undefined, imageForm);
@@ -153,6 +161,7 @@ export default function PlannerApp({ initialData, tripId, destinationId, categor
     }
   }
   const pageTitle = editor?.kind === "delete" ? editor.title : editor?.kind === "trip" ? (editor.item ? "Edit trip" : "A new adventure")
+    : editor?.kind === "church" ? (editor.item ? "Edit church" : "Add a church")
     : editor?.kind === "weather" ? "Edit typical weather"
     : editor?.kind === "destination" ? (editor.item ? "Edit destination" : "Add a destination")
     : editor?.kind === "foodBudget" ? "Edit food budget"
@@ -191,7 +200,7 @@ export default function PlannerApp({ initialData, tripId, destinationId, categor
         </section>
       </>}
 
-      {trip && !category && <>
+      {trip && !category && !church && <>
         <Link href="/" className="breadcrumb"><ArrowLeft size={16} />All trips</Link>
         <section className="trip-heading"><div><p className="eyebrow">AN ADVENTURE IN THE MAKING</p><h1>{trip.name}</h1><div className="trip-meta"><span><CalendarDays size={17} />{trip.dateLabel || "Dates to be decided"}</span><span><Users size={17} />{trip.travelers} {trip.travelers === 1 ? "traveler" : "travelers"}</span><span><MapPin size={17} />{trip.homeCity ? "Departing: " + trip.homeCity : "Add departing city"}</span>{trip.returnCity && <span><MapPin size={17} />Returning: {trip.returnCity}</span>}</div>{trip.notes && <p className="trip-notes">{trip.notes}</p>}</div>
           <div className="heading-actions"><button className="button secondary" onClick={() => open({ kind: "trip", item: trip })}><Pencil size={15} />Edit trip</button><button className="icon-button" aria-label="Delete trip" onClick={() => confirmDelete({ type: "trip.delete", id: trip.id }, "Delete this trip?", "“" + trip.name + "” and all its destinations, ideas, and At home items will be removed.", "/")}><Trash2 size={18} /></button></div>
@@ -199,7 +208,7 @@ export default function PlannerApp({ initialData, tripId, destinationId, categor
         <div className="trip-layout"><div className="trip-main">
           <section><div className="section-heading"><div><p className="eyebrow">ONE STOP AT A TIME</p><h2>The destinations</h2></div><button className="button secondary small" onClick={() => open({ kind: "destination" })}><Plus size={16} />Add destination</button></div>
             {stops.length === 0 ? <div className="empty-state"><MapPin size={29} strokeWidth={1.4} /><h3>Where should this trip take you?</h3><p>Add your first destination. Your departure and return connections will appear automatically.</p><button className="text-button" onClick={() => open({ kind: "destination" })}>Add a destination <ArrowRight size={16} /></button></div>
-              : <div className="destination-list">{stops.map((stop, index) => <article className="destination-card" key={stop.id}>{stop.imageVersion && <PlannerImage src={destinationImageUrl(stop)} name={formatSavedDestinationLabel(stop.city)} />}<div className="destination-top"><span className="stop-number">{String(index + 1).padStart(2, "0")}</span><div className="destination-name"><h3>{formatSavedDestinationLabel(stop.city)}</h3><p>{stop.stay || "Stay length to be decided"}</p></div><div className="destination-tools"><button className="icon-button" disabled={busy || index === 0} aria-label={"Move " + formatSavedDestinationLabel(stop.city) + " up"} onClick={() => void perform({ type: "destination.move", id: stop.id, direction: "up" }, "Route updated. Review the new travel connections.")}><ArrowUp size={15} /></button><button className="icon-button" disabled={busy || index === stops.length - 1} aria-label={"Move " + formatSavedDestinationLabel(stop.city) + " down"} onClick={() => void perform({ type: "destination.move", id: stop.id, direction: "down" }, "Route updated. Review the new travel connections.")}><ArrowDown size={15} /></button><button className="icon-button" aria-label={"Edit " + formatSavedDestinationLabel(stop.city)} onClick={() => open({ kind: "destination", item: stop })}><Pencil size={15} /></button><button className="icon-button" aria-label={"Delete " + formatSavedDestinationLabel(stop.city)} onClick={() => confirmDelete({ type: "destination.delete", id: stop.id }, "Remove “" + formatSavedDestinationLabel(stop.city) + "”?", "Its hotels, activities, restaurants, and affected travel plans will be removed. The remaining route will reconnect.")}><Trash2 size={15} /></button></div></div>
+              : <div className="destination-list">{stops.map((stop, index) => <article className="destination-card" key={stop.id}>{stop.imageVersion && <PlannerImage src={destinationImageUrl(stop)} name={formatSavedDestinationLabel(stop.city)} />}<div className="destination-top"><span className="stop-number">{String(index + 1).padStart(2, "0")}</span><div className="destination-name"><h3>{formatSavedDestinationLabel(stop.city)}</h3><p>{stop.stay || "Stay length to be decided"}</p></div><div className="destination-tools"><button className="icon-button" disabled={busy || index === 0} aria-label={"Move " + formatSavedDestinationLabel(stop.city) + " up"} onClick={() => void perform({ type: "destination.move", id: stop.id, direction: "up" }, "Route updated. Review the new travel connections.")}><ArrowUp size={15} /></button><button className="icon-button" disabled={busy || index === stops.length - 1} aria-label={"Move " + formatSavedDestinationLabel(stop.city) + " down"} onClick={() => void perform({ type: "destination.move", id: stop.id, direction: "down" }, "Route updated. Review the new travel connections.")}><ArrowDown size={15} /></button><button className="icon-button" aria-label={"Edit " + formatSavedDestinationLabel(stop.city)} onClick={() => open({ kind: "destination", item: stop })}><Pencil size={15} /></button><button className="icon-button" aria-label={"Delete " + formatSavedDestinationLabel(stop.city)} onClick={() => confirmDelete({ type: "destination.delete", id: stop.id }, "Remove “" + formatSavedDestinationLabel(stop.city) + "”?", "Its saved destination options, photos, and affected travel plans will be removed. The remaining route will reconnect.")}><Trash2 size={15} /></button></div></div>
                 {stop.notes && <p className="destination-notes">{stop.notes}</p>}
                 <DestinationBudget snapshot={data} destination={stop} />
                 <div className="category-links">{categories.map((kind) => { const Icon = categoryIcons[kind]; const count = data.candidates.filter((item) => item.destinationId === stop.id && item.category === kind).length; return <Link href={"/trips/" + trip.id + "/destinations/" + stop.id + "/" + kind} key={kind}><Icon size={20} strokeWidth={1.5} /><span>{labels[kind]}<small>{count} {count === 1 ? "idea" : "ideas"}</small></span><ArrowRight size={15} /></Link>; })}</div>
@@ -219,10 +228,16 @@ export default function PlannerApp({ initialData, tripId, destinationId, categor
         </div>
       </>}
 
-      {trip && destination && category && <>
+      {trip && destination && (category || church) && <>
         <Link href={"/trips/" + trip.id} className="breadcrumb"><ArrowLeft size={16} />{trip.name}</Link>
-        <section className="ideas-heading"><div><p className="eyebrow">{formatSavedDestinationLabel(destination.city).toUpperCase()} · THE POSSIBILITIES</p><h1>{labels[category]}</h1><p className="hero-description">{descriptions[category]}</p></div><button className="button primary" onClick={() => open({ kind: "candidate" })}><Plus size={17} />Add {singular[category]}</button></section>
-        <nav className="category-tabs" aria-label="Destination ideas">{categories.map((kind) => { const Icon = categoryIcons[kind]; return <Link key={kind} href={"/trips/" + trip.id + "/destinations/" + destination.id + "/" + kind} className={category === kind ? "selected" : ""} aria-current={category === kind ? "page" : undefined}><Icon size={18} />{labels[kind]}<span>{data.candidates.filter((item) => item.destinationId === destination.id && item.category === kind).length}</span></Link>; })}</nav>
+        <section className="ideas-heading"><div><p className="eyebrow">{formatSavedDestinationLabel(destination.city).toUpperCase()} · THE POSSIBILITIES</p><h1>{category ? labels[category] : "Church"}</h1><p className="hero-description">{category ? descriptions[category] : "Keep church options and Mass times for your visit."}</p></div>{category ? <button className="button primary" onClick={() => open({ kind: "candidate" })}><Plus size={17} />Add {singular[category]}</button> : destination.churchEnabled && <button className="button primary" disabled={busy} onClick={() => open({ kind: "church" })}><Plus size={17} />Add church</button>}</section>
+        <nav className="category-tabs" aria-label="Destination ideas">{categories.map((kind) => { const Icon = categoryIcons[kind]; return <Link key={kind} href={"/trips/" + trip.id + "/destinations/" + destination.id + "/" + kind} className={category === kind ? "selected" : ""} aria-current={category === kind ? "page" : undefined}><Icon size={18} />{labels[kind]}<span>{data.candidates.filter((item) => item.destinationId === destination.id && item.category === kind).length}</span></Link>; })}{destination.churchEnabled && <Link href={"/trips/" + trip.id + "/destinations/" + destination.id + "/church"} className={church ? "selected" : ""} aria-current={church ? "page" : undefined}><ChurchIcon size={18} />Church<span>{data.churches.filter((item) => item.destinationId === destination.id).length}</span></Link>}</nav>
+        {!destination.churchEnabled && <div className="church-visibility"><p className="helper">Church is optional. Enable it to save church options and Mass times, even without dates. Any previously saved options are kept.</p><button type="button" className="button secondary small" disabled={busy} onClick={() => void perform({ type: "destination.churchVisibility", id: destination.id, enabled: true }, "Church section enabled.", "/trips/" + trip.id + "/destinations/" + destination.id + "/church")}><Plus size={15} />Enable Church</button></div>}
+        {church && destination.churchEnabled && <>
+          <div className="church-visibility"><p className="helper">Hide this section whenever you like; saved churches and photos will be kept. Changing destination dates to include a Sunday enables it again.</p><div className="heading-actions"><button type="button" className="button secondary small" disabled={busy} onClick={() => open({ kind: "destination", item: destination })}><CalendarDays size={15} />Edit destination dates</button><button type="button" className="text-button" disabled={busy} onClick={() => void perform({ type: "destination.churchVisibility", id: destination.id, enabled: false }, "Church hidden. Your options and photos are saved.", "/trips/" + trip.id + "/destinations/" + destination.id + "/restaurants")}>Hide Church</button></div></div>
+          <ChurchOptions items={data.churches.filter((item) => item.destinationId === destination.id)} busy={busy} onAdd={() => open({ kind: "church" })} onEdit={(item) => open({ kind: "church", item })} onDelete={(item) => confirmDelete({ type: "church.delete", id: item.id, destinationId: destination.id }, "Delete “" + item.name + "”?", "This church and its photos will be removed from this destination.")} />
+        </>}
+        {category && <>
         <TypicalWeatherPanel weather={destination} disabled={busy} onEdit={() => open({ kind: "weather", item: destination })} />
         {category === "hotels" && <section className="hotel-budget-panel" aria-label="Accommodation budget"><div className="section-heading"><h2>Accommodation budget</h2><button className="button secondary small" onClick={() => open({ kind: "destination", item: destination })}><Pencil size={15} />Edit estimate & dates</button></div><AccommodationSummary snapshot={data} destination={destination} /></section>}
         {category === "activities" && <section className="hotel-budget-panel" aria-label="Activities budget"><div className="section-heading"><h2>Activities budget</h2><button className="button secondary small" onClick={() => open({ kind: "activitiesBudget", item: destination })}><Pencil size={15} />Edit activities budget</button></div><ActivitiesSummary snapshot={data} destination={destination} /><p className="helper">{destination.activitiesBudgetMode === "general" ? "Your general amount supplies the budget. Activity selections are saved for itemized mode." : "Only included activity costs supply the budget. Your general amount stays saved."} Adding, editing, or removing activities never switches methods.</p></section>}
@@ -230,6 +245,7 @@ export default function PlannerApp({ initialData, tripId, destinationId, categor
         <div className="list-intro"><p>{category === "hotels" ? "Choose one hotel to replace the general estimate. Uncheck it to restore the estimate." : category === "activities" ? "Save ideas and choose which to include when using itemized activity costs." : "Save ideas and choose which to include when using itemized restaurant costs."}</p><span>Prices in USD · whole party</span></div>
         {data.candidates.filter((item) => item.destinationId === destination.id && item.category === category).length === 0 ? <div className="empty-state ideas-empty">{category === "hotels" ? <BedDouble size={34} strokeWidth={1.3} /> : category === "activities" ? <Binoculars size={34} strokeWidth={1.3} /> : <Utensils size={34} strokeWidth={1.3} />}<h3>{category === "hotels" ? "A good night's sleep starts here." : category === "activities" ? "Leave a little room for discovery." : "Something delicious to look forward to."}</h3><p>Save your first {singular[category]} idea for {formatSavedDestinationLabel(destination.city)}.<br />You can add a price now or come back to it later.</p><button className="button secondary" onClick={() => open({ kind: "candidate" })}><Plus size={16} />Add {singular[category]}</button></div>
           : <div className="ideas-grid">{data.candidates.filter((item) => item.destinationId === destination.id && item.category === category).map((item) => <article className={item.included ? "idea-card included" : "idea-card"} key={item.id}><CandidateGallery candidate={item} /><div className="idea-top"><span className={item.included ? "selection-tag chosen" : "selection-tag"}>{item.included ? <><Check size={13} />{category === "hotels" ? "Chosen stay" : "In the plan"}</> : "A possibility"}</span><div className="idea-tools"><button className="icon-button" aria-label={"Edit " + item.name} onClick={() => open({ kind: "candidate", item })}><Pencil size={16} /></button><button className="icon-button" aria-label={"Delete " + item.name} onClick={() => confirmDelete({ type: "candidate.delete", id: item.id }, "Delete “" + item.name + "”?", "This idea will be removed from " + formatSavedDestinationLabel(destination.city) + " and the trip estimate.")}><Trash2 size={16} /></button></div></div><h2>{item.name}</h2>{item.address && <p className="idea-address"><MapPin size={15} />{item.address}</p>}{item.notes && <p className="idea-notes">{item.notes}</p>}<ResearchLinks links={item.links ?? []} /><div className="idea-bottom"><div><span className={item.priceCents === null ? "idea-price unknown" : "idea-price"}>{displayPrice(item.priceCents)}</span><small>{category === "hotels" ? "entire stay · whole party" : category === "restaurants" ? "one meal · whole party" : "whole party"}</small></div><button className={item.included ? "button selected-button small" : "button secondary small"} disabled={busy} aria-pressed={item.included} onClick={() => void perform({ type: "candidate.include", id: item.id, included: !item.included }, category === "activities" ? "Activity selection saved." : category === "restaurants" ? "Restaurant selection saved." : "Trip estimate updated.")}>{item.included ? <><Check size={15} />{((category === "activities" && destination.activitiesBudgetMode === "general") || (category === "restaurants" && destination.foodBudgetMode === "daily")) ? "Included for itemized" : "Included"}</> : category === "hotels" ? "Choose hotel" : ((category === "activities" && destination.activitiesBudgetMode === "general") || (category === "restaurants" && destination.foodBudgetMode === "daily")) ? "Include for itemized" : "Include in budget"}</button></div></article>)}</div>}
+      </>}
       </>}
       {!trip && tripId && <div className="empty-state"><h1>This trip is no longer here.</h1><Link href="/">Back to all trips</Link></div>}
       {message && <div className="toast" role="status"><CheckCircle2 size={17} />{message}<button aria-label="Dismiss message" className="icon-button" onClick={() => setMessage("")}><X size={14} /></button></div>}
@@ -251,6 +267,7 @@ export default function PlannerApp({ initialData, tripId, destinationId, categor
         <PlannerImageEditor existingSrc={editor.item?.imageVersion ? destinationImageUrl(editor.item) : null} file={imageFile} removeExisting={removeImage} onChange={(file, remove) => { setImageFile(file); setRemoveImage(remove); }} disabled={busy} />
         <Notes value={editor.item?.notes} />
       </>}
+      {editor.kind === "church" && <ChurchEditor item={editor.item} massTimes={massTimes} onTimesChange={setMassTimes} gallery={candidateGallery} onGalleryChange={setCandidateGallery} busy={busy} />}
       {editor.kind === "weather" && <TypicalWeatherEditor weather={editor.item} disabled={busy} />}
       {editor.kind === "foodBudget" && <FoodBudgetEditor destination={editor.item} disabled={busy} />}
       {editor.kind === "activitiesBudget" && <ActivitiesBudgetEditor destination={editor.item} disabled={busy} />}

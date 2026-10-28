@@ -17,3 +17,12 @@ export function budgetDays(arrivalDate: string | null | undefined, departureDate
   const nights = stayNights(arrivalDate, departureDate);
   return nights === 0 ? 0.5 : nights;
 }
+
+// Include both arrival and departure days, without local-time or DST shifts.
+export function containsSunday(arrivalDate: string | null | undefined, departureDate: string | null | undefined): boolean {
+  const nights = stayNights(arrivalDate, departureDate);
+  if (nights === null) return false;
+  const arrivalDay = new Date(arrivalDate + "T00:00:00.000Z").getUTCDay();
+  const daysUntilSunday = (7 - arrivalDay) % 7;
+  return nights >= daysUntilSunday;
+}

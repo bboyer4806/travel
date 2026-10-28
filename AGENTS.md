@@ -45,8 +45,12 @@ Repeat passing checks when subsequent changes affect their coverage or required 
   access SQLite directly.
 - Store validation throws `ValidationError`; upload validation throws `ImageValidationError`.
   Their messages are shown to people as written.
-- Money is integer USD cents for the whole party. `0` is a known free cost; `null` is not
-  estimated, except a blank at-home price, which is optional. Budget math: `src/lib/budget.ts`.
+- Existing category prices are integer USD cents for the whole party. Destination miscellaneous amounts,
+  nightly hotel amounts, daily food amounts, shopping totals, and general activities budgets use integer currency minor units and an explicit currency (`src/lib/money.ts`). `0` is
+  known; `null` is not estimated, except blank at-home prices and shopping budgets, which are optional. Budget math:
+  `src/lib/budget.ts`; group totals by currency without conversion. Legacy `*Cents` totals are USD only.
+- Destination arrival/departure dates are optional ISO calendar dates. Reuse
+  `src/lib/destination-duration.ts` for hotel nights and food/miscellaneous half-day allowances; never parse free-text stay notes.
 
 ## Database
 

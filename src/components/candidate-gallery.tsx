@@ -7,17 +7,19 @@ import type { Candidate } from "@/lib/types";
 import styles from "./candidate-gallery.module.css";
 
 const IMAGE_TYPES = new Set(["image/jpeg", "image/png", "image/webp"]);
-type ImageSubject = "hotel" | "activity" | "restaurant";
-const subjectLabels: Record<ImageSubject, string> = { hotel: "Hotel", activity: "Activity", restaurant: "Restaurant" };
+type ImageSubject = "hotel" | "activity" | "restaurant" | "church";
+type GalleryOwner = Pick<Candidate, "id" | "name" | "images" | "mainImageId">;
+type ImageKind = "candidate" | "church";
+const subjectLabels: Record<ImageSubject, string> = { hotel: "Hotel", activity: "Activity", restaurant: "Restaurant", church: "Church" };
 
 type DraftImage = { id: string; version?: string; file?: File };
 export type CandidateGalleryDraft = { images: DraftImage[]; removedIds: string[]; mainImageId: string | null };
 
-export function createCandidateGalleryDraft(candidate?: Candidate): CandidateGalleryDraft {
+export function createCandidateGalleryDraft(candidate?: GalleryOwner): CandidateGalleryDraft {
   return { images: (candidate?.images ?? []).map((image) => ({ ...image })), removedIds: [], mainImageId: candidate?.mainImageId ?? null };
 }
 
-export function candidateGalleryForm(draft: CandidateGalleryDraft, candidate?: Candidate): FormData | undefined {
+export function candidateGalleryForm(draft: CandidateGalleryDraft, candidate?: GalleryOwner): FormData | undefined {
   const added = draft.images.filter((image) => image.file);
   if (!added.length && !draft.removedIds.length && draft.mainImageId === (candidate?.mainImageId ?? null)) return undefined;
   const form = new FormData();
@@ -26,16 +28,16 @@ export function candidateGalleryForm(draft: CandidateGalleryDraft, candidate?: C
   return form;
 }
 
-function photoUrl(candidateId: string, image: { id: string; version?: string }) {
-  return `/api/candidate-images/${candidateId}/${image.id}?v=${image.version}`;
+function photoUrl(candidateId: string, image: { id: string; version?: string }, imageKind: ImageKind) {
+  return `/api/${imageKind}-images/${candidateId}/${image.id}?v=${image.version}`;
 }
 
-export function CandidateGallery({ candidate }: { candidate: Candidate }) {
+export function CandidateGallery({ candidate, imageKind = "candidate" }: { candidate: GalleryOwner; imageKind?: ImageKind }) {
   if (!candidate.images.length) return null;
-  return <GalleryView key={`${candidate.mainImageId}:${candidate.images.map((image) => `${image.id}:${image.version}`).join(",")}`} candidate={candidate} />;
+  return <GalleryView key={`${candidate.mainImageId}:${candidate.images.map((image) => `${image.id}:${image.version}`).join(",")}`} candidate={candidate} imageKind={imageKind} />;
 }
 
-function GalleryView({ candidate }: { candidate: Candidate }) {
+function GalleryView({ candidate, imageKind }: { candidate: GalleryOwner; imageKind: ImageKind }) {
   const [selectedId, setSelectedId] = useState(candidate.mainImageId);
   const selected = candidate.images.find((image) => image.id === selectedId) ?? candidate.images[0];
   const index = candidate.images.findIndex((image) => image.id === selected.id);
@@ -43,22 +45,22 @@ function GalleryView({ candidate }: { candidate: Candidate }) {
     <div className={styles.hero}>
       {/* Stored photos are resized and optimized on upload. */}
       {/* eslint-disable-next-line @next/next/no-img-element */}
-      <img className={styles.image} src={photoUrl(candidate.id, selected)} alt={`${candidate.name}, photo ${index + 1}`} loading="lazy" decoding="async" width={1600} height={700} />
+      <img className={styles.image} src={photoUrl(candidate.id, selected, imageKind)} alt={`${candidate.name}, photo ${index + 1}`} loading="lazy" decoding="async" width={1600} height={700} />
       {selected.id === candidate.mainImageId && <span className={styles.mainBadge}>Main photo</span>}
       {candidate.images.length > 1 && <span className={styles.count}>{index + 1} / {candidate.images.length}</span>}
     </div>
     {candidate.images.length > 1 && <div className={styles.thumbnails} role="group" aria-label="Choose a photo to view">
       {candidate.images.map((image, photoIndex) => <button type="button" className={styles.thumbnail} key={image.id} aria-pressed={selected.id === image.id} aria-label={`View photo ${photoIndex + 1} of ${candidate.name}${image.id === candidate.mainImageId ? " (main photo)" : ""}`} onClick={() => setSelectedId(image.id)}>
-        <SavedPhoto candidateId={candidate.id} image={image} alt="" />
+        <SavedPhoto imageKind={imageKind} candidateId={candidate.id} image={image} alt="" />
         {image.id === candidate.mainImageId && <span className={styles.thumbnailMain} aria-hidden="true"><Check size={11} /></span>}
       </button>)}
     </div>}
   </div>;
 }
 
-function SavedPhoto({ candidateId, image, alt }: { candidateId: string; image: { id: string; version?: string }; alt: string }) {
+function SavedPhoto({ candidateId, image, alt, imageKind }: { imageKind: ImageKind; candidateId: string; image: { id: string; version?: string }; alt: string }) {
   // eslint-disable-next-line @next/next/no-img-element
-  return <img className={styles.image} src={photoUrl(candidateId, image)} alt={alt} loading="lazy" decoding="async" width={240} height={160} />;
+  return <img className={styles.image} src={photoUrl(candidateId, image, imageKind)} alt={alt} loading="lazy" decoding="async" width={240} height={160} />;
 }
 
 function UploadPreview({ file, alt }: { file: File; alt: string }) {
@@ -72,9 +74,10 @@ function UploadPreview({ file, alt }: { file: File; alt: string }) {
   return <img ref={image} className={styles.image} alt={alt} width={240} height={160} />;
 }
 
-export function CandidateGalleryEditor({ candidate, subject, draft, onChange, disabled = false }: {
-  candidate?: Candidate;
+export function CandidateGalleryEditor({ candidate, subject, draft, onChange, disabled = false, imageKind = "candidate" }: {
+  candidate?: GalleryOwner;
   subject: ImageSubject;
+  imageKind?: ImageKind;
   draft: CandidateGalleryDraft;
   onChange: (draft: CandidateGalleryDraft) => void;
   disabled?: boolean;
@@ -115,7 +118,7 @@ export function CandidateGalleryEditor({ candidate, subject, draft, onChange, di
     {draft.images.length > 0 && <div className={styles.editGrid}>
       {draft.images.map((image, photoIndex) => <div key={image.id} className={styles.editPhoto}>
         <div className={styles.preview}>
-          {image.file ? <UploadPreview file={image.file} alt={`New ${subject} photo ${photoIndex + 1}`} /> : candidate && <SavedPhoto candidateId={candidate.id} image={image} alt={`${subjectLabels[subject]} photo ${photoIndex + 1}`} />}
+          {image.file ? <UploadPreview file={image.file} alt={`New ${subject} photo ${photoIndex + 1}`} /> : candidate && <SavedPhoto imageKind={imageKind} candidateId={candidate.id} image={image} alt={`${subjectLabels[subject]} photo ${photoIndex + 1}`} />}
           {image.id === draft.mainImageId && <span className={styles.mainBadge}>Main photo</span>}
         </div>
         <p className={styles.filename} title={image.file?.name}>{image.file?.name ?? `Photo ${photoIndex + 1}`}</p>

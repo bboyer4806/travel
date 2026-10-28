@@ -92,3 +92,57 @@ Use one application instance for v1. Live deployment remains a separate review s
 - Include entered prices in an At home budget subtotal and the trip estimate. Blank prices are optional tasks, not missing estimates; completion preserves expenses.
 - Keep these items with their trip, preserve them across restarts and backups, and remove them when the trip is deleted.
 - Upgrade existing data to schema 7 without changing travel plans or photo galleries.
+
+## Added scope: daily miscellaneous spending, October 20, 2026 (TRA-25)
+- Add optional explicit arrival and departure dates per destination; preserve existing stay notes without parsing them as dates.
+- Enter, edit, or clear a daily miscellaneous amount and currency for the whole party. Zero is valid; negative amounts are rejected.
+- Count arrival and departure as half days, intervening days as full days, and a same-day visit as half a day total.
+- Preview daily amounts, budget days, and subtotals; include miscellaneous as a separate category in destination and trip estimates.
+- Store integer currency minor units and round half a minor unit up per destination. Group totals by currency; no exchange-rate conversion is introduced.
+- Keep missing amounts or unknown durations visibly incomplete. Changing dates or amounts recalculates totals; changing traveler count does not multiply spending.
+- Upgrade databases to schema 8 with nullable destination fields, preserving previous trips, ideas, travel plans, images, and at-home items.
+
+## Added scope: nightly hotel estimates, October 20, 2026 (TRA-24)
+- Save a general nightly hotel amount and currency per destination for all rooms and travelers.
+- Reuse explicit arrival/departure dates to calculate calendar nights; same-day visits have zero nights. Show unknown duration without parsing stay notes.
+- Show the nightly estimate, nights, stay total, and the source of the accommodation budget in the destination and Hotels page.
+- Use the general estimate until a hotel is selected, then use that hotel's whole-stay price once. Unchecking or deleting the chosen hotel restores the saved estimate using current dates.
+- Preserve the general estimate through hotel selection changes. Keep zero distinct from missing, reject negative values, and group currency totals without conversion.
+- Upgrade to schema 9 with nullable hotel amount and currency fields; retain previous dates, miscellaneous amounts, selections, and other saved data.
+
+## Added scope: destination activities budgets, October 21, 2026 (TRA-29)
+- Save a general activities amount and currency for the whole party's entire destination stay, independent of dates and traveler count.
+- Explicitly choose General budget or Itemized activity costs. General mode counts the amount once; itemized mode uses included activity prices. Never count both sources.
+- Preserve the general amount and activities through method changes. Activity changes never switch methods.
+- Show the method and applicable contribution in destination and trip totals, with currencies kept separate and missing amounts distinct from zero.
+- Upgrade to schema 10 with an itemized default for existing and new destinations; preserve prior budgets, ideas, selections, images, and routes.
+
+## Added scope: daily food budgets, October 21, 2026 (TRA-38)
+- Save a daily food amount and currency for the whole party, independently of restaurant entries.
+- Explicitly choose Daily food budget or Itemized restaurant costs. Default existing and new destinations to itemized; never count both sources.
+- Reuse explicit dates and miscellaneous half-day allowances: same-day ½ day, Monday–Tuesday 1 day, Monday–Thursday 3 days. Round half a minor unit up once per destination.
+- Show daily amount, budget days, subtotal, and active food contribution. Recalculate when dates or amounts change; never multiply by traveler count or parse stay notes.
+- Preserve daily settings, restaurant entries, and selections through method changes. Restaurant changes never switch methods.
+- Keep currency totals separate without conversion and distinguish zero, missing amounts, and unknown duration. Upgrade to schema 11 while preserving all earlier data and budgets.
+
+## Added scope: destination shopping budgets, October 26, 2026 (TRA-43)
+- Save an optional shopping amount and currency per destination for the whole party’s entire stay, without shop or purchase records.
+- Count the amount once in destination and trip totals as Shopping, separately from miscellaneous spending. Dates, stay notes, and traveler count never multiply or change it.
+- Allow entering, editing, and clearing. Show an unset budget as Not set with no cost or required missing estimate; accept and display intentional zero, reject negative or invalid amounts.
+- Keep currency totals separate without conversion. Persist amounts and currencies through saving and reopening.
+- Upgrade to schema 12 with nullable fields, preserving earlier data and calculations; verify additive migration replay and container persistence.
+
+## Added scope: destination typical weather, October 27, 2026 (TRA-13)
+- Record optional typical high and low temperatures in Fahrenheit, rainfall notes, the applicable month or travel period, and a source name or link.
+- Display typical weather or historical averages on destination detail pages, separate from the trip overview; provide a focused editor with save, edit, and clear behavior.
+- Accept negative and decimal temperatures, require high to be at least low when both are supplied, and distinguish missing values (Not provided) from zero.
+- Preserve weather and its recorded period across date changes, other destination edits, database reopening, and backups. No automatic lookup or Celsius conversion.
+- Upgrade to schema 13 additively, preserve prior data and budgets, and verify migration replay and container persistence.
+
+## Added scope: destination Church section, October 28, 2026 (TRA-12)
+- Add an optional Church section after Restaurants on destination detail pages, excluded from the trip overview, idea counts, and budget calculations.
+- Allow manual enabling for any destination, including undated stays. Automatically enable when the actual merged arrival/departure range changes to include a Sunday, counting both endpoints and multiple Sundays.
+- Allow hiding without deleting data. Unrelated edits and unchanged date saves preserve manual hiding; a new Sunday-containing range enables the section again. Missing dates and ranges without Sunday preserve visibility and saved information.
+- Create, edit, and remove multiple churches with name, location/address, optional denomination and website, and multiple Mass times associated with a day or date. Display unknown Mass times clearly and supplied websites as links.
+- Reuse galleries with up to 10 photos, a selected main photo, existing upload limits and processing, and ownership validation. Preserve photos on ordinary edits, hiding, date changes, reopening, and backup.
+- Upgrade to schema 14 with separate church and image records and destination visibility. Initialize Sunday visibility only when adding the column; migration replay retains saved choices. Preserve all previous budgets, weather, and other data and verify container persistence.

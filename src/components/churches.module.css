@@ -1,0 +1,13 @@
+.denomination { color: var(--muted); font-size: 13px; margin: 12px 0; overflow-wrap: anywhere; }
+.website { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; text-decoration: underline; margin: 8px 0; }
+.times { margin-top: 20px; padding-top: 16px; border-top: 1px solid var(--line); }
+.times h3 { font-size: 15px; margin: 0 0 10px; }
+.times dl { margin: 0; font-size: 14px; }
+.times dl > div { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin: 8px 0; overflow-wrap: anywhere; }
+.times dd { margin: 0; }
+.unknown { color: var(--muted); font-size: 14px; }
+.editor { border: 1px solid var(--line); border-radius: 10px; padding: 16px; min-width: 0; }
+.editor legend { font-weight: 600; font-size: 14px; }
+.timeRow { display: grid; grid-template-columns: 1fr 1fr auto; align-items: end; gap: 10px; margin: 16px 0; }
+.timeRow input { min-width: 0; }
+@media (max-width: 540px) { .timeRow { grid-template-columns: 1fr auto; } .timeRow > label:first-child { grid-column: 1 / -1; } }

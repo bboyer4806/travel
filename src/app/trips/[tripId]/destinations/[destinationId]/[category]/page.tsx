@@ -6,9 +6,9 @@ export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 export default async function IdeasPage({ params }: { params: Promise<{ tripId: string; destinationId: string; category: string }> }) {
   const { tripId, destinationId, category } = await params;
-  if (!["hotels", "activities", "restaurants"].includes(category)) notFound();
+  if (!["hotels", "activities", "restaurants", "church"].includes(category)) notFound();
   const data = getSnapshot();
   if (!data.trips.some((trip) => trip.id === tripId) ||
       !data.destinations.some((destination) => destination.id === destinationId && destination.tripId === tripId)) notFound();
-  return <PlannerApp key={tripId + destinationId + category} initialData={data} tripId={tripId} destinationId={destinationId} category={category as Category} />;
+  return <PlannerApp key={tripId + destinationId + category} initialData={data} tripId={tripId} destinationId={destinationId} category={category === "church" ? undefined : category as Category} church={category === "church"} />;
 }

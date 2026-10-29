@@ -239,7 +239,7 @@ test("schema 5 photos migrate with their exact bytes and versions, and repeated 
     const extraImage = store.getCandidatePhoto(id, extra.id);
     store.close();
     const reset = new DatabaseSync(path);
-    assert.equal(reset.prepare("PRAGMA user_version").get().user_version, 14);
+    assert.equal(reset.prepare("PRAGMA user_version").get().user_version, 15);
     reset.exec("PRAGMA user_version=5");
     reset.close();
     store = createStore(path);
@@ -248,7 +248,7 @@ test("schema 5 photos migrate with their exact bytes and versions, and repeated 
     assert.deepEqual(store.getCandidatePhoto(id, extra.id), extraImage);
     const observer = new DatabaseSync(path);
     try {
-      assert.equal(observer.prepare("PRAGMA user_version").get().user_version, 14);
+      assert.equal(observer.prepare("PRAGMA user_version").get().user_version, 15);
       assert.deepEqual(observer.prepare("PRAGMA foreign_key_check").all(), []);
       assert.equal(observer.prepare("SELECT count(*) AS count FROM candidate_images WHERE candidateId=? AND isMain=1").get(id).count, 1);
     } finally { observer.close(); }

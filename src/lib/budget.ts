@@ -1,21 +1,21 @@
 import type { FoodBudgetMode, ActivitiesBudgetMode, Budget, Candidate, Destination, Snapshot } from "./types";
-import { budgetDays, stayNights } from "./destination-duration.ts";
+import { nightsToBudgetDays } from "./destination-duration.ts";
 
-type MiscellaneousInput = Pick<Destination, "arrivalDate" | "departureDate" | "miscDailyMinor" | "miscCurrency">;
+type MiscellaneousInput = Pick<Destination, "nights" | "miscDailyMinor" | "miscCurrency">;
 export interface MiscellaneousBudget {
   days: number | null;
   dailyMinor: number | null;
   currency: string | null;
   subtotalMinor: number | null;
 }
-type FoodEstimateInput = Pick<Destination, "arrivalDate" | "departureDate" | "foodDailyMinor" | "foodCurrency">;
+type FoodEstimateInput = Pick<Destination, "nights" | "foodDailyMinor" | "foodCurrency">;
 export interface FoodEstimate {
   days: number | null;
   dailyMinor: number | null;
   currency: string | null;
   subtotalMinor: number | null;
 }
-type HotelEstimateInput = Pick<Destination, "arrivalDate" | "departureDate" | "hotelNightlyMinor" | "hotelCurrency">;
+type HotelEstimateInput = Pick<Destination, "nights" | "hotelNightlyMinor" | "hotelCurrency">;
 export interface HotelEstimate {
   nights: number | null;
   nightlyMinor: number | null;
@@ -39,18 +39,18 @@ export interface DestinationBudget {
 type CostCategory = "travelCents" | "hotelsCents" | "activitiesCents" | "restaurantsCents" | "homeCents" | "miscellaneous" | "shopping";
 interface Cost { amount: number | null; currency: string | null; category: CostCategory; }
 
-/** Daily spending covers the whole party. Round each destination's half minor unit up. */
+/** Daily spending covers the whole party; a zero-night visit uses one full day. */
 export function calculateMiscellaneous(destination: MiscellaneousInput): MiscellaneousBudget {
-  const days = budgetDays(destination.arrivalDate, destination.departureDate);
+  const days = nightsToBudgetDays(destination.nights);
   const dailyMinor = destination.miscDailyMinor ?? null;
   const currency = destination.miscCurrency || null;
   const subtotalMinor = days === null || dailyMinor === null || currency === null ? null : Math.round(dailyMinor * days);
   return { days, dailyMinor, currency, subtotalMinor };
 }
 
-/** Same half-day allowance as miscellaneous; round once per destination, never per traveler. */
+/** Same allowance as miscellaneous, never multiplied per traveler. */
 export function calculateFoodEstimate(destination: FoodEstimateInput): FoodEstimate {
-  const days = budgetDays(destination.arrivalDate, destination.departureDate);
+  const days = nightsToBudgetDays(destination.nights);
   const dailyMinor = destination.foodDailyMinor ?? null;
   const currency = destination.foodCurrency || null;
   const subtotal = days === null || dailyMinor === null || currency === null ? null : Math.round(dailyMinor * days);
@@ -58,9 +58,9 @@ export function calculateFoodEstimate(destination: FoodEstimateInput): FoodEstim
   return { days, dailyMinor, currency, subtotalMinor };
 }
 
-/** One nightly amount covers all rooms and travelers; dates determine calendar nights. */
+/** One nightly amount covers all rooms and travelers; the entered stay length determines nights. */
 export function calculateHotelEstimate(destination: HotelEstimateInput): HotelEstimate {
-  const nights = stayNights(destination.arrivalDate, destination.departureDate);
+  const nights = destination.nights ?? null;
   const nightlyMinor = destination.hotelNightlyMinor ?? null;
   const currency = destination.hotelCurrency || null;
   const subtotal = nights === null || nightlyMinor === null || currency === null ? null : nightlyMinor * nights;

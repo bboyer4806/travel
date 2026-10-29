@@ -2,9 +2,9 @@ export type FoodBudgetMode = "itemized" | "daily";
 export type ActivitiesBudgetMode = "itemized" | "general";
 export type Category = "hotels" | "activities" | "restaurants";
 export interface TypicalWeather { weatherHighF: number | null; weatherLowF: number | null; weatherRainfall: string; weatherPeriod: string; weatherSource: string; }
-export interface Trip { id: string; name: string; dateLabel: string; homeCity: string; returnCity: string | null; travelers: number; notes: string; createdAt: string; }
+export interface Trip { startDate: string | null; endDate: string | null; id: string; name: string; dateLabel: string; homeCity: string; returnCity: string | null; travelers: number; notes: string; createdAt: string; }
 export interface HomeItem { id: string; tripId: string; name: string; notes: string; priceCents: number | null; completed: boolean; createdAt: string; }
-export interface Destination extends TypicalWeather { churchEnabled: boolean; id: string; tripId: string; city: string; stay: string; arrivalDate: string | null; departureDate: string | null; miscDailyMinor: number | null; miscCurrency: string | null; hotelNightlyMinor: number | null; hotelCurrency: string | null; activitiesBudgetMode: ActivitiesBudgetMode; activitiesGeneralMinor: number | null; activitiesCurrency: string | null; foodBudgetMode: FoodBudgetMode; foodDailyMinor: number | null; foodCurrency: string | null; shoppingMinor: number | null; shoppingCurrency: string | null; notes: string; position: number; imageVersion: string | null; }
+export interface Destination extends TypicalWeather { nights: number | null; legacyArrivalDate: string | null; legacyDepartureDate: string | null; churchEnabled: boolean; id: string; tripId: string; city: string; stay: string; arrivalDate: string | null; departureDate: string | null; miscDailyMinor: number | null; miscCurrency: string | null; hotelNightlyMinor: number | null; hotelCurrency: string | null; activitiesBudgetMode: ActivitiesBudgetMode; activitiesGeneralMinor: number | null; activitiesCurrency: string | null; foodBudgetMode: FoodBudgetMode; foodDailyMinor: number | null; foodCurrency: string | null; shoppingMinor: number | null; shoppingCurrency: string | null; notes: string; position: number; imageVersion: string | null; }
 export interface StoredImage { version: string; data: Uint8Array; }
 export interface ResearchLink { id: string; url: string; description: string; }
 export interface ItineraryStop { id: string; kind: "layover" | "stop"; place: string; arrival: string; departure: string; notes: string; }
@@ -16,12 +16,12 @@ export interface MassTime { id: string; day: string; time: string; }
 export interface Church { id: string; destinationId: string; name: string; address: string; denomination: string; url: string; massTimes: MassTime[]; images: CandidateImage[]; mainImageId: string | null; }
 export interface Snapshot { churches: Church[]; trips: Trip[]; homeItems: HomeItem[]; destinations: Destination[]; legs: TravelLeg[]; candidates: Candidate[]; }
 export type Mutation =
- | { type: "trip.save"; id?: string; name: string; dateLabel: string; homeCity: string; returnCity?: string | null; travelers: number; notes: string }
+ | { type: "trip.save"; startDate?: string | null; id?: string; name: string; dateLabel: string; homeCity: string; returnCity?: string | null; travelers: number; notes: string }
  | { type: "trip.delete"; id: string }
  | { type: "homeItem.save"; id?: string; tripId: string; name: string; price: string; notes: string; completed: boolean }
  | { type: "homeItem.delete"; id: string; tripId: string }
  | { type: "homeItem.complete"; id: string; tripId: string; completed: boolean }
- | { type: "destination.save"; id?: string; tripId: string; city: string; stay: string; arrivalDate?: string | null; departureDate?: string | null; miscDailyAmount?: string; miscCurrency?: string | null; hotelNightlyAmount?: string; hotelCurrency?: string | null; activitiesBudgetMode?: ActivitiesBudgetMode; activitiesGeneralAmount?: string; activitiesCurrency?: string | null; foodBudgetMode?: FoodBudgetMode; foodDailyAmount?: string; foodCurrency?: string | null; shoppingAmount?: string; shoppingCurrency?: string | null; weatherHighF?: number | null; weatherLowF?: number | null; weatherRainfall?: string; weatherPeriod?: string; weatherSource?: string; notes: string; image?: Uint8Array | null }
+ | { type: "destination.save"; id?: string; tripId: string; city: string; stay: string; nights?: number | null; miscDailyAmount?: string; miscCurrency?: string | null; hotelNightlyAmount?: string; hotelCurrency?: string | null; activitiesBudgetMode?: ActivitiesBudgetMode; activitiesGeneralAmount?: string; activitiesCurrency?: string | null; foodBudgetMode?: FoodBudgetMode; foodDailyAmount?: string; foodCurrency?: string | null; shoppingAmount?: string; shoppingCurrency?: string | null; weatherHighF?: number | null; weatherLowF?: number | null; weatherRainfall?: string; weatherPeriod?: string; weatherSource?: string; notes: string; image?: Uint8Array | null }
  | { type: "destination.delete"; id: string }
  | { type: "destination.churchVisibility"; id: string; enabled: boolean }
  | { type: "church.save"; id?: string; destinationId: string; name: string; address: string; denomination: string; url: string; massTimes: MassTime[]; gallery?: CandidateGalleryUpdate }

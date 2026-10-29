@@ -15,7 +15,7 @@ function sourceLink(source: string): string | undefined {
 export function TypicalWeatherPanel({ weather, disabled, onEdit }: { weather: TypicalWeather; disabled: boolean; onEdit: () => void }) {
   const href = sourceLink(weather.weatherSource);
   return <section className={styles.panel} aria-label="Typical weather">
-    <div className="section-heading"><h2>Typical weather</h2><button className="button secondary small" disabled={disabled} onClick={onEdit}><Pencil size={15} />Edit typical weather</button></div>
+    <div className="section-heading"><h4>Typical weather</h4><button className="button secondary small" disabled={disabled} onClick={onEdit}><Pencil size={15} />Edit typical weather</button></div>
     <p className="helper">Manually recorded typical weather or historical averages.</p>
     <dl className={styles.details}>
       <div><dt>Typical high (°F)</dt><dd>{weather.weatherHighF === null ? "Not provided" : `${weather.weatherHighF} °F`}</dd></div>

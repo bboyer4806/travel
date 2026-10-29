@@ -45,15 +45,17 @@ const images = [
   Buffer.from('UklGRh4AAABXRUJQVlA4TBEAAAAvAUAAAAfQtSZVrP+BiOh/AAA=', 'base64'),
   Buffer.from('UklGRh4AAABXRUJQVlA4TBEAAAAvAUAAAAdQwjaXpf+BiOh/AAA=', 'base64'),
 ];
-assert.equal(db.prepare('PRAGMA user_version').get().user_version, 14);
+assert.equal(db.prepare('PRAGMA user_version').get().user_version, 15);
 db.exec('PRAGMA foreign_keys = ON; BEGIN IMMEDIATE;');
 db.prepare('INSERT INTO trips(id,name,dateLabel,homeCity,travelers,notes,createdAt) VALUES(?,?,?,?,?,?,?)').run('container-smoke','Persistence test','','',2,'',new Date().toISOString());
+db.prepare("UPDATE trips SET startDate = '2027-05-10' WHERE id = 'container-smoke'").run();
 db.prepare('INSERT INTO home_items(id,tripId,name,priceCents,notes,completed,createdAt) VALUES(?,?,?,?,?,?,?)').run('a1000000-0000-4000-8000-000000000001','container-smoke','House sitting',23950,'Give sitter a key',1,'2026-10-12T12:00:00.000Z');
 db.prepare('INSERT INTO home_items(id,tripId,name,priceCents,notes,completed,createdAt) VALUES(?,?,?,?,?,?,?)').run('a1000000-0000-4000-8000-000000000002','container-smoke','Pause mail',null,'Arrange before leaving',0,'2026-10-12T12:01:00.000Z');
-db.prepare('INSERT INTO destinations(id,tripId,city,stay,notes,position,arrivalDate,departureDate,miscDailyMinor,miscCurrency,hotelNightlyMinor,hotelCurrency) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)').run(destinationId, 'container-smoke', 'Vienna', 'Spring visit', '', 0, '2027-05-10', '2027-05-13', 3250, 'EUR', 17525, 'EUR');
-db.prepare("UPDATE destinations SET activitiesBudgetMode = 'general', activitiesGeneralMinor = 22550, activitiesCurrency = 'EUR' WHERE id = ?").run(destinationId);
-db.prepare("UPDATE destinations SET foodBudgetMode = 'daily', foodDailyMinor = 8025, foodCurrency = 'EUR' WHERE id = ?").run(destinationId);
-db.prepare("UPDATE destinations SET shoppingMinor = 12550, shoppingCurrency = 'EUR' WHERE id = ?").run(destinationId);
+db.prepare('INSERT INTO destinations(id,tripId,city,stay,notes,position,arrivalDate,departureDate,miscDailyMinor,miscCurrency,hotelNightlyMinor,hotelCurrency) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)').run(destinationId, 'container-smoke', 'Vienna', 'Spring visit', '', 0, '2027-05-10', '2027-05-13', 3250, 'USD', 17525, 'USD');
+db.prepare('UPDATE destinations SET nights = 3 WHERE id = ?').run(destinationId);
+db.prepare("UPDATE destinations SET activitiesBudgetMode = 'general', activitiesGeneralMinor = 22550, activitiesCurrency = 'USD' WHERE id = ?").run(destinationId);
+db.prepare("UPDATE destinations SET foodBudgetMode = 'daily', foodDailyMinor = 8025, foodCurrency = 'USD' WHERE id = ?").run(destinationId);
+db.prepare("UPDATE destinations SET shoppingMinor = 12550, shoppingCurrency = 'USD' WHERE id = ?").run(destinationId);
 db.prepare('UPDATE destinations SET weatherHighF=?,weatherLowF=?,weatherRainfall=?,weatherPeriod=?,weatherSource=? WHERE id=?').run(0,-12.5,'Light winter precipitation','January','Historical climate notes',destinationId);
 db.prepare('INSERT INTO destination_images(destinationId,version,data) VALUES(?,?,?)').run(destinationId, imageVersion, images[0]);
 for (const [index, candidate] of candidates.entries()) {
@@ -109,17 +111,18 @@ const images = [
 ];
 const db = new DatabaseSync('/data/travel.sqlite');
 try {
-  assert.equal(db.prepare('PRAGMA user_version').get().user_version, 14);
-  assert.ok(db.prepare('SELECT id FROM trips WHERE id = ?').get('container-smoke'));
+  assert.equal(db.prepare('PRAGMA user_version').get().user_version, 15);
+  assert.equal(db.prepare('SELECT startDate FROM trips WHERE id = ?').get('container-smoke').startDate, '2027-05-10');
+  assert.equal(db.prepare('SELECT nights FROM destinations WHERE id = ?').get(destinationId).nights, 3);
   const homeItems = db.prepare('SELECT name,priceCents,notes,completed,createdAt FROM home_items WHERE tripId = ? ORDER BY createdAt').all('container-smoke').map(row => ({...row}));
   assert.deepEqual(homeItems, [
     {name:'House sitting',priceCents:23950,notes:'Give sitter a key',completed:1,createdAt:'2026-10-12T12:00:00.000Z'},
     {name:'Pause mail',priceCents:null,notes:'Arrange before leaving',completed:0,createdAt:'2026-10-12T12:01:00.000Z'},
   ]);
-  assert.deepEqual({ ...db.prepare('SELECT stay,arrivalDate,departureDate,miscDailyMinor,miscCurrency,hotelNightlyMinor,hotelCurrency FROM destinations WHERE id = ?').get(destinationId) }, { stay: 'Spring visit', arrivalDate: '2027-05-10', departureDate: '2027-05-13', miscDailyMinor: 3250, miscCurrency: 'EUR', hotelNightlyMinor: 17525, hotelCurrency: 'EUR' });
-  assert.deepEqual({ ...db.prepare('SELECT activitiesBudgetMode,activitiesGeneralMinor,activitiesCurrency FROM destinations WHERE id = ?').get(destinationId) }, { activitiesBudgetMode: 'general', activitiesGeneralMinor: 22550, activitiesCurrency: 'EUR' });
-  assert.deepEqual({ ...db.prepare('SELECT foodBudgetMode,foodDailyMinor,foodCurrency FROM destinations WHERE id = ?').get(destinationId) }, { foodBudgetMode: 'daily', foodDailyMinor: 8025, foodCurrency: 'EUR' });
-  assert.deepEqual({ ...db.prepare('SELECT shoppingMinor,shoppingCurrency FROM destinations WHERE id = ?').get(destinationId) }, { shoppingMinor: 12550, shoppingCurrency: 'EUR' });
+  assert.deepEqual({ ...db.prepare('SELECT stay,arrivalDate,departureDate,miscDailyMinor,miscCurrency,hotelNightlyMinor,hotelCurrency FROM destinations WHERE id = ?').get(destinationId) }, { stay: 'Spring visit', arrivalDate: '2027-05-10', departureDate: '2027-05-13', miscDailyMinor: 3250, miscCurrency: 'USD', hotelNightlyMinor: 17525, hotelCurrency: 'USD' });
+  assert.deepEqual({ ...db.prepare('SELECT activitiesBudgetMode,activitiesGeneralMinor,activitiesCurrency FROM destinations WHERE id = ?').get(destinationId) }, { activitiesBudgetMode: 'general', activitiesGeneralMinor: 22550, activitiesCurrency: 'USD' });
+  assert.deepEqual({ ...db.prepare('SELECT foodBudgetMode,foodDailyMinor,foodCurrency FROM destinations WHERE id = ?').get(destinationId) }, { foodBudgetMode: 'daily', foodDailyMinor: 8025, foodCurrency: 'USD' });
+  assert.deepEqual({ ...db.prepare('SELECT shoppingMinor,shoppingCurrency FROM destinations WHERE id = ?').get(destinationId) }, { shoppingMinor: 12550, shoppingCurrency: 'USD' });
   assert.deepEqual({...db.prepare('SELECT weatherHighF,weatherLowF,weatherRainfall,weatherPeriod,weatherSource FROM destinations WHERE id=?').get(destinationId)}, {weatherHighF:0,weatherLowF:-12.5,weatherRainfall:'Light winter precipitation',weatherPeriod:'January',weatherSource:'Historical climate notes'});
   const image = db.prepare('SELECT version,data FROM destination_images WHERE destinationId = ?').get(destinationId);
   assert.equal(image?.version, imageVersion);

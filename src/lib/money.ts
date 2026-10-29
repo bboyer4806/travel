@@ -1,9 +1,9 @@
-export const SUPPORTED_CURRENCIES: string[] = Intl.supportedValuesOf("currency");
+export const SUPPORTED_CURRENCIES: string[] = ["USD"];
 const supportedCurrencies = new Set(SUPPORTED_CURRENCIES);
 const MAX_MAJOR_AMOUNT = 100_000_000;
 
 export function currencyDigits(currency: string): number {
-  if (!supportedCurrencies.has(currency)) throw new Error("Choose a supported currency.");
+  if (!supportedCurrencies.has(currency)) throw new Error("All amounts must be entered in USD.");
   // Currency formatting without significant-digit options always resolves fraction digits.
   return new Intl.NumberFormat("en-US", { style: "currency", currency }).resolvedOptions().maximumFractionDigits!;
 }
@@ -11,8 +11,7 @@ export function currencyDigits(currency: string): number {
 export function parseMinorAmount(value: string, currency: string | null, label = "Daily miscellaneous amount"): number | null {
   const amount = value.trim();
   if (!amount) return null;
-  if (!currency) throw new Error(`Choose a currency for the ${label.toLowerCase()}.`);
-  const digits = currencyDigits(currency);
+  const digits = currencyDigits(currency || "USD");
   const pattern = digits === 0 ? /^\d+$/ : new RegExp(`^(?:\\d+|\\d*\\.\\d{1,${digits}})$`);
   if (!pattern.test(amount)) throw new Error(`${label} must be positive or zero, with up to ${digits} decimal places for ${currency}. Leave it blank if unknown.`);
   const [major, fraction = ""] = amount.split(".");
@@ -23,7 +22,7 @@ export function parseMinorAmount(value: string, currency: string | null, label =
 
 export function formatCurrency(minor: number, currency: string): string {
   const digits = currencyDigits(currency);
-  return new Intl.NumberFormat("en-US", { style: "currency", currency, currencyDisplay: "code", minimumFractionDigits: 0, maximumFractionDigits: digits }).format(minor / 10 ** digits);
+  return new Intl.NumberFormat("en-US", { style: "currency", currency, minimumFractionDigits: minor % 100 === 0 ? 0 : 2, maximumFractionDigits: digits }).format(minor / 10 ** digits);
 }
 
 export function minorAmountValue(minor: number | null | undefined, currency: string | null | undefined): string {

@@ -68,8 +68,8 @@ function legacyDatabase(path, version) {
   const before = {
     homeItems: [],
     churches: [],
-    trips: db.prepare("SELECT * FROM trips").all().map((row) => ({ ...row, returnCity: version === 2 ? "Boston" : null })),
-    destinations: db.prepare("SELECT * FROM destinations").all().map((row) => ({ ...row, imageVersion: null, arrivalDate: null, departureDate: null, miscDailyMinor: null, miscCurrency: null, hotelNightlyMinor: null, hotelCurrency: null, activitiesBudgetMode: "itemized", activitiesGeneralMinor: null, activitiesCurrency: null, foodBudgetMode: "itemized", foodDailyMinor: null, foodCurrency: null, shoppingMinor: null, shoppingCurrency: null, weatherHighF: null, weatherLowF: null, weatherRainfall: "", weatherPeriod: "", weatherSource: "", churchEnabled: false })),
+    trips: db.prepare("SELECT * FROM trips").all().map((row) => ({ ...row, startDate: null, endDate: null, returnCity: version === 2 ? "Boston" : null })),
+    destinations: db.prepare("SELECT * FROM destinations").all().map((row) => ({ ...row, nights: null, legacyArrivalDate: null, legacyDepartureDate: null, imageVersion: null, arrivalDate: null, departureDate: null, miscDailyMinor: null, miscCurrency: null, hotelNightlyMinor: null, hotelCurrency: null, activitiesBudgetMode: "itemized", activitiesGeneralMinor: null, activitiesCurrency: null, foodBudgetMode: "itemized", foodDailyMinor: null, foodCurrency: null, shoppingMinor: null, shoppingCurrency: null, weatherHighF: null, weatherLowF: null, weatherRainfall: "", weatherPeriod: "", weatherSource: "", churchEnabled: false })),
     legs: db.prepare("SELECT * FROM legs ORDER BY fromId IS NOT NULL").all().map((row) => ({ ...row, itinerary: [] })),
     candidates: db.prepare("SELECT * FROM candidates").all().map((row) => ({ ...row, included: row.included === 1, imageVersion: null, mainImageId: null, images: [] })),
   };
@@ -108,7 +108,7 @@ for (const version of [1, 2]) {
       assert.deepEqual(store.getSnapshot(), after, "reopening preserves migrated link IDs and never duplicates data");
       const observer = new DatabaseSync(path);
       try {
-        assert.equal(observer.prepare("PRAGMA user_version").get().user_version, 14);
+        assert.equal(observer.prepare("PRAGMA user_version").get().user_version, 15);
         assert.deepEqual(observer.prepare("PRAGMA foreign_key_check").all(), []);
       } finally {
         observer.close();
@@ -122,12 +122,12 @@ for (const version of [1, 2]) {
 test("a future database version is rejected without modifying its schema", (t) => {
   const path = fileDatabase(t);
   let db = new DatabaseSync(path);
-  db.exec("PRAGMA user_version = 15");
+  db.exec("PRAGMA user_version = 16");
   db.close();
   assert.throws(() => createStore(path), /newer version/);
   db = new DatabaseSync(path);
   try {
-    assert.equal(db.prepare("PRAGMA user_version").get().user_version, 15);
+    assert.equal(db.prepare("PRAGMA user_version").get().user_version, 16);
     assert.equal(db.prepare("SELECT count(*) AS count FROM sqlite_master WHERE type = 'table'").get().count, 0);
   } finally {
     db.close();
@@ -401,7 +401,7 @@ test("redeployment preserves new fields when an older app reset the schema versi
     assert.deepEqual(store.getSnapshot(), before, "schema recovery retains every stop, description, return city, and stable link ID");
     const observer = new DatabaseSync(path);
     try {
-      assert.equal(observer.prepare("PRAGMA user_version").get().user_version, 14);
+      assert.equal(observer.prepare("PRAGMA user_version").get().user_version, 15);
       assert.deepEqual(observer.prepare("PRAGMA foreign_key_check").all(), []);
     } finally {
       observer.close();

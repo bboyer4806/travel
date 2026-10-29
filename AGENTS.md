@@ -45,12 +45,17 @@ Repeat passing checks when subsequent changes affect their coverage or required 
   access SQLite directly.
 - Store validation throws `ValidationError`; upload validation throws `ImageValidationError`.
   Their messages are shown to people as written.
-- Existing category prices are integer USD cents for the whole party. Destination miscellaneous amounts,
-  nightly hotel amounts, daily food amounts, shopping totals, and general activities budgets use integer currency minor units and an explicit currency (`src/lib/money.ts`). `0` is
-  known; `null` is not estimated, except blank at-home prices and shopping budgets, which are optional. Budget math:
-  `src/lib/budget.ts`; group totals by currency without conversion. Legacy `*Cents` totals are USD only.
-- Destination arrival/departure dates are optional ISO calendar dates. Reuse
-  `src/lib/destination-duration.ts` for hotel nights and food/miscellaneous half-day allowances; never parse free-text stay notes.
+- Every amount is integer USD cents for the whole party. Destination money retains explicit
+  USD currency fields for storage compatibility; never convert or relabel unexpected non-USD data.
+  `0` is known; `null` is not estimated, except optional at-home and shopping amounts.
+  Budget math lives in `src/lib/budget.ts` and money parsing in `src/lib/money.ts`.
+- Trip startDate and destination nights are schedule inputs. Use `src/lib/trip-dates.ts`
+  for ordered read-only destination dates and trip end; retain legacy date columns for migration review.
+  Hotels use nights; daily food/miscellaneous use `nightsToBudgetDays` (zero nights = one day).
+  Never parse free-text stay notes. Church eligibility is separate from persistent manual visibility.
+- Feedback uses `/api/feedback` and server-only Jira configuration. Local testing must use
+  `scripts/jira-feedback-stub.mjs`, never real Jira. Do not expose credentials or log messages.
+- Publish `src/lib/change-log.ts` entries only for verified shipped changes at release close.
 
 ## Database
 

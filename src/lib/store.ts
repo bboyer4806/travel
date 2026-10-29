@@ -2,7 +2,8 @@ import { randomUUID } from "node:crypto";
 import { mkdirSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { DatabaseSync } from "node:sqlite";
-import { budgetDays, containsSunday, isValidDate, stayNights } from "./destination-duration.ts";
+import { containsSunday, isValidDate, nightsToBudgetDays } from "./destination-duration.ts";
+import { backfillDates, MAX_NIGHTS, sequenceDates } from "./trip-dates.ts";
 import { parseMinorAmount, SUPPORTED_CURRENCIES } from "./money.ts";
 import type { FoodBudgetMode, ActivitiesBudgetMode, Candidate, CandidateImage, CandidateGalleryUpdate, Category, Church, MassTime, Destination, HomeItem, StoredImage, ItineraryStop, Mutation, ResearchLink, Snapshot, TravelLeg, Trip } from "./types";
 
@@ -85,18 +86,26 @@ function temperatureField(input: Input, key: "weatherHighF" | "weatherLowF"): nu
   }
   return value;
 }
-function destinationDateField(input: Input, key: "arrivalDate" | "departureDate"): string | null | undefined {
+function destinationDateField(input: Input, key: "startDate"): string | null | undefined {
   if (input[key] === undefined || input[key] === null) return input[key];
   const value = textField(input, key, 10);
   if (!value) return null;
-  if (!isValidDate(value)) throw new ValidationError("Enter valid arrival and departure dates in YYYY-MM-DD format.");
+  if (!isValidDate(value)) throw new ValidationError("Enter a valid trip start date in YYYY-MM-DD format.");
+  return value;
+}
+function nightsField(input: Input): number | null | undefined {
+  const value = input.nights;
+  if (value === undefined || value === null) return value;
+  if (typeof value !== "number" || !Number.isInteger(value) || value < 0 || value > MAX_NIGHTS) {
+    throw new ValidationError(`Nights must be a whole number between 0 and ${MAX_NIGHTS}, or left blank.`);
+  }
   return value;
 }
 function currencyField(input: Input, key: "miscCurrency" | "hotelCurrency" | "activitiesCurrency" | "foodCurrency" | "shoppingCurrency"): string | null | undefined {
   if (input[key] === undefined || input[key] === null) return input[key];
   const currency = textField(input, key, 3).toUpperCase();
   if (!currency) return null;
-  if (!SUPPORTED_CURRENCIES.includes(currency)) throw new ValidationError("Choose a supported currency.");
+  if (!SUPPORTED_CURRENCIES.includes(currency)) throw new ValidationError("All amounts must be entered in USD.");
   return currency;
 }
 function activitiesModeField(input: Input): ActivitiesBudgetMode | undefined {
@@ -217,10 +226,11 @@ function validate(input: unknown): Mutation {
   const value = input as Input;
   switch (value.type) {
     case "trip.save": {
+      if (value.endDate !== undefined) throw new ValidationError("The trip end date is calculated from the start date and destination nights.");
       if (typeof value.travelers !== "number" || !Number.isInteger(value.travelers) || value.travelers < 1 || value.travelers > 999) {
         throw new ValidationError("Number of travelers must be a whole number between 1 and 999.");
       }
-      return { type: value.type, id: optionalId(value), name: textField(value, "name", 120, true), dateLabel: textField(value, "dateLabel", 120), homeCity: textField(value, "homeCity", 120), returnCity: returnCityField(value), travelers: value.travelers, notes: textField(value, "notes", 8000) };
+      return { type: value.type, id: optionalId(value), name: textField(value, "name", 120, true), startDate: destinationDateField(value, "startDate"), dateLabel: textField(value, "dateLabel", 120), homeCity: textField(value, "homeCity", 120), returnCity: returnCityField(value), travelers: value.travelers, notes: textField(value, "notes", 8000) };
     }
     case "trip.delete":
     case "destination.delete":
@@ -234,7 +244,8 @@ function validate(input: unknown): Mutation {
     case "homeItem.complete":
       return { type: value.type, id: idField(value), tripId: idField(value, "tripId"), completed: booleanField(value, "completed") };
     case "destination.save":
-      return { type: value.type, id: optionalId(value), tripId: idField(value, "tripId"), city: textField(value, "city", 120, true), stay: textField(value, "stay", 120), arrivalDate: destinationDateField(value, "arrivalDate"), departureDate: destinationDateField(value, "departureDate"), miscDailyAmount: value.miscDailyAmount === undefined ? undefined : textField(value, "miscDailyAmount", 32), miscCurrency: currencyField(value, "miscCurrency"), hotelNightlyAmount: value.hotelNightlyAmount === undefined ? undefined : textField(value, "hotelNightlyAmount", 32), hotelCurrency: currencyField(value, "hotelCurrency"), activitiesBudgetMode: activitiesModeField(value), activitiesGeneralAmount: value.activitiesGeneralAmount === undefined ? undefined : textField(value, "activitiesGeneralAmount", 32), activitiesCurrency: currencyField(value, "activitiesCurrency"), foodBudgetMode: foodModeField(value), foodDailyAmount: value.foodDailyAmount === undefined ? undefined : textField(value, "foodDailyAmount", 32), foodCurrency: currencyField(value, "foodCurrency"), shoppingAmount: value.shoppingAmount === undefined ? undefined : textField(value, "shoppingAmount", 32), shoppingCurrency: currencyField(value, "shoppingCurrency"), weatherHighF: temperatureField(value, "weatherHighF"), weatherLowF: temperatureField(value, "weatherLowF"), weatherRainfall: value.weatherRainfall === undefined ? undefined : textField(value, "weatherRainfall", 4000), weatherPeriod: value.weatherPeriod === undefined ? undefined : textField(value, "weatherPeriod", 120), weatherSource: value.weatherSource === undefined ? undefined : textField(value, "weatherSource", 2048), notes: textField(value, "notes", 8000), image: imageField(value) };
+      if (value.arrivalDate !== undefined || value.departureDate !== undefined) throw new ValidationError("Destination dates are calculated. Edit the trip start date or destination nights instead.");
+      return { type: value.type, id: optionalId(value), tripId: idField(value, "tripId"), city: textField(value, "city", 120, true), stay: textField(value, "stay", 120), nights: nightsField(value), miscDailyAmount: value.miscDailyAmount === undefined ? undefined : textField(value, "miscDailyAmount", 32), miscCurrency: currencyField(value, "miscCurrency"), hotelNightlyAmount: value.hotelNightlyAmount === undefined ? undefined : textField(value, "hotelNightlyAmount", 32), hotelCurrency: currencyField(value, "hotelCurrency"), activitiesBudgetMode: activitiesModeField(value), activitiesGeneralAmount: value.activitiesGeneralAmount === undefined ? undefined : textField(value, "activitiesGeneralAmount", 32), activitiesCurrency: currencyField(value, "activitiesCurrency"), foodBudgetMode: foodModeField(value), foodDailyAmount: value.foodDailyAmount === undefined ? undefined : textField(value, "foodDailyAmount", 32), foodCurrency: currencyField(value, "foodCurrency"), shoppingAmount: value.shoppingAmount === undefined ? undefined : textField(value, "shoppingAmount", 32), shoppingCurrency: currencyField(value, "shoppingCurrency"), weatherHighF: temperatureField(value, "weatherHighF"), weatherLowF: temperatureField(value, "weatherLowF"), weatherRainfall: value.weatherRainfall === undefined ? undefined : textField(value, "weatherRainfall", 4000), weatherPeriod: value.weatherPeriod === undefined ? undefined : textField(value, "weatherPeriod", 120), weatherSource: value.weatherSource === undefined ? undefined : textField(value, "weatherSource", 2048), notes: textField(value, "notes", 8000), image: imageField(value) };
     case "destination.churchVisibility":
       return { type: value.type, id: idField(value), enabled: booleanField(value, "enabled") };
     case "church.save":
@@ -262,7 +273,7 @@ export function createStore(databasePath: string) {
   db.exec("BEGIN IMMEDIATE");
   try {
     const version = Number(db.prepare("PRAGMA user_version").get()?.user_version ?? 0);
-    if (version > 14) throw new Error("This database was created by a newer version of the travel app.");
+    if (version > 15) throw new Error("This database was created by a newer version of the travel app.");
     db.exec(`
     CREATE TABLE IF NOT EXISTS trips (
       id TEXT PRIMARY KEY, name TEXT NOT NULL, dateLabel TEXT NOT NULL DEFAULT '',
@@ -428,6 +439,33 @@ export function createStore(databasePath: string) {
         PRAGMA user_version = 14;
       `);
     }
+    // Refuse contrary data without changing its numbers or currency labels.
+    for (const column of ["miscCurrency", "hotelCurrency", "activitiesCurrency", "foodCurrency", "shoppingCurrency"]) {
+      if (db.prepare("SELECT 1 FROM destinations WHERE " + column + " IS NOT NULL AND " + column + " != 'USD' LIMIT 1").get()) {
+        throw new Error("Unexpected non-USD data in " + column + ". Travel 1.2 requires USD. No amounts were converted; review the source database before upgrading.");
+      }
+    }
+    if (version < 15) {
+      const initializeDates = !hasColumn("destinations", "nights");
+      if (!hasColumn("trips", "startDate")) db.exec("ALTER TABLE trips ADD COLUMN startDate TEXT;");
+      if (!hasColumn("destinations", "nights")) db.exec("ALTER TABLE destinations ADD COLUMN nights INTEGER CHECK(nights BETWEEN 0 AND 3652058);");
+      if (!hasColumn("destinations", "legacyArrivalDate")) {
+        db.exec("ALTER TABLE destinations ADD COLUMN legacyArrivalDate TEXT; UPDATE destinations SET legacyArrivalDate = arrivalDate;");
+      }
+      if (!hasColumn("destinations", "legacyDepartureDate")) {
+        db.exec("ALTER TABLE destinations ADD COLUMN legacyDepartureDate TEXT; UPDATE destinations SET legacyDepartureDate = departureDate;");
+      }
+      if (initializeDates) {
+        for (const trip of db.prepare("SELECT id FROM trips").all()) {
+          const stops = db.prepare("SELECT * FROM destinations WHERE tripId = ? ORDER BY position, id").all(trip.id) as unknown as Destination[];
+          const backfill = backfillDates(stops);
+          db.prepare("UPDATE trips SET startDate = ? WHERE id = ?").run(backfill.startDate, trip.id);
+          for (const stop of backfill.destinations) db.prepare("UPDATE destinations SET nights = ? WHERE id = ?").run(stop.nights, stop.id);
+        }
+        refreshDates();
+      }
+      db.exec("PRAGMA user_version = 15;");
+    }
     db.exec("COMMIT");
   } catch (error) {
     db.exec("ROLLBACK");
@@ -451,7 +489,10 @@ export function createStore(databasePath: string) {
       photos.set(candidateId, images);
     }
     return {
-      trips: db.prepare("SELECT * FROM trips ORDER BY createdAt DESC, id").all().map((row) => ({ ...row })) as unknown as Trip[],
+      trips: db.prepare("SELECT * FROM trips ORDER BY createdAt DESC, id").all().map((row) => {
+        const trip = row as unknown as Trip;
+        return { ...trip, endDate: sequenceDates(trip.startDate, orderedDestinations(trip.id)).endDate };
+      }),
       homeItems: db.prepare("SELECT * FROM home_items ORDER BY createdAt, id").all().map((row) => {
         const item = row as unknown as StoredHomeItem;
         return { ...item, completed: item.completed === 1 };
@@ -559,6 +600,18 @@ export function createStore(databasePath: string) {
       }
     }
   }
+  function refreshDates() {
+    for (const row of db.prepare("SELECT id, startDate FROM trips").all()) {
+      try {
+        const schedule = sequenceDates(row.startDate as string | null, orderedDestinations(row.id as string));
+        for (const stop of schedule.destinations) {
+          db.prepare("UPDATE destinations SET arrivalDate = ?, departureDate = ? WHERE id = ?").run(stop.arrivalDate, stop.departureDate, stop.id);
+        }
+      } catch (error) {
+        throw new ValidationError(error instanceof Error ? error.message : "This trip's dates cannot be calculated.");
+      }
+    }
+  }
   function clearLeg(id: string) {
     db.prepare("UPDATE legs SET method = '', priceCents = NULL, departure = '', arrival = '', url = '', notes = '', itineraryJson = '[]', linksJson = '[]' WHERE id = ?").run(id);
   }
@@ -580,6 +633,7 @@ export function createStore(databasePath: string) {
         } else {
           db.prepare("INSERT INTO trips(id,name,dateLabel,homeCity,returnCity,travelers,notes,createdAt) VALUES(?,?,?,?,?,?,?,?)").run(id, input.name, input.dateLabel, input.homeCity, input.returnCity ?? null, input.travelers, input.notes, new Date().toISOString());
         }
+        if (input.startDate !== undefined) db.prepare("UPDATE trips SET startDate = ? WHERE id = ?").run(input.startDate, id);
         return id;
       }
       case "trip.delete":
@@ -610,12 +664,12 @@ export function createStore(databasePath: string) {
         const id = input.id ?? randomUUID();
         const before = input.id ? existing<StoredDestination>("destinations", id) : undefined;
         if (before && before.tripId !== input.tripId) throw new ValidationError("This destination belongs to a different trip.");
-        const arrivalDate = input.arrivalDate === undefined ? before?.arrivalDate ?? null : input.arrivalDate;
-        const departureDate = input.departureDate === undefined ? before?.departureDate ?? null : input.departureDate;
-        if (arrivalDate && departureDate && departureDate < arrivalDate) throw new ValidationError("Departure date must be on or after arrival date.");
-        const datesChanged = !before || arrivalDate !== before.arrivalDate || departureDate !== before.departureDate;
-        const churchEnabled = before?.churchEnabled === 1 || (datesChanged && containsSunday(arrivalDate, departureDate));
-        const miscCurrency = input.miscCurrency === undefined ? before?.miscCurrency ?? null : input.miscCurrency;
+        const arrivalDate = before?.arrivalDate ?? null;
+        const departureDate = before?.departureDate ?? null;
+        const nights = input.nights === undefined ? before?.nights ?? null : input.nights;
+        // Visibility preference persists through every date change. The view applies Sunday eligibility.
+        const churchEnabled = before ? before.churchEnabled === 1 : true;
+        const miscCurrency = input.miscDailyAmount ? "USD" : input.miscCurrency === undefined ? before?.miscCurrency ?? null : input.miscCurrency;
         if (input.miscDailyAmount === undefined && before?.miscDailyMinor != null && miscCurrency !== before.miscCurrency) {
           throw new ValidationError("Re-enter or clear the daily miscellaneous amount when changing its currency.");
         }
@@ -627,11 +681,11 @@ export function createStore(databasePath: string) {
             throw new ValidationError(error instanceof Error ? error.message : "Enter a valid daily miscellaneous amount.");
           }
         }
-        const days = budgetDays(arrivalDate, departureDate);
+        const days = nightsToBudgetDays(nights);
         if (miscDailyMinor !== null && days !== null && !Number.isSafeInteger(Math.round(miscDailyMinor * days))) {
           throw new ValidationError("The miscellaneous subtotal is too large. Reduce the daily amount or date range.");
         }
-        const hotelCurrency = input.hotelCurrency === undefined ? before?.hotelCurrency ?? null : input.hotelCurrency;
+        const hotelCurrency = input.hotelNightlyAmount ? "USD" : input.hotelCurrency === undefined ? before?.hotelCurrency ?? null : input.hotelCurrency;
         if (input.hotelNightlyAmount === undefined && before?.hotelNightlyMinor != null && hotelCurrency !== before.hotelCurrency) {
           throw new ValidationError("Re-enter or clear the nightly hotel amount when changing its currency.");
         }
@@ -644,7 +698,7 @@ export function createStore(databasePath: string) {
           }
         }
         const activitiesBudgetMode = input.activitiesBudgetMode ?? before?.activitiesBudgetMode ?? "itemized";
-        const activitiesCurrency = input.activitiesCurrency === undefined ? before?.activitiesCurrency ?? null : input.activitiesCurrency;
+        const activitiesCurrency = input.activitiesGeneralAmount ? "USD" : input.activitiesCurrency === undefined ? before?.activitiesCurrency ?? null : input.activitiesCurrency;
         if (input.activitiesGeneralAmount === undefined && before?.activitiesGeneralMinor != null && activitiesCurrency !== before.activitiesCurrency) {
           throw new ValidationError("Re-enter or clear the general activities amount when changing its currency.");
         }
@@ -657,7 +711,7 @@ export function createStore(databasePath: string) {
           }
         }
         const foodBudgetMode = input.foodBudgetMode ?? before?.foodBudgetMode ?? "itemized";
-        const foodCurrency = input.foodCurrency === undefined ? before?.foodCurrency ?? null : input.foodCurrency;
+        const foodCurrency = input.foodDailyAmount ? "USD" : input.foodCurrency === undefined ? before?.foodCurrency ?? null : input.foodCurrency;
         if (input.foodDailyAmount === undefined && before?.foodDailyMinor != null && foodCurrency !== before.foodCurrency) {
           throw new ValidationError("Re-enter or clear the daily food amount when changing its currency.");
         }
@@ -672,7 +726,7 @@ export function createStore(databasePath: string) {
         if (foodDailyMinor !== null && days !== null && !Number.isSafeInteger(Math.round(foodDailyMinor * days))) {
           throw new ValidationError("The food subtotal is too large. Reduce the daily amount or date range.");
         }
-        const shoppingCurrency = input.shoppingCurrency === undefined ? before?.shoppingCurrency ?? null : input.shoppingCurrency;
+        const shoppingCurrency = input.shoppingAmount ? "USD" : input.shoppingCurrency === undefined ? before?.shoppingCurrency ?? null : input.shoppingCurrency;
         if (input.shoppingAmount === undefined && before?.shoppingMinor != null && shoppingCurrency !== before.shoppingCurrency) {
           throw new ValidationError("Re-enter or clear the shopping amount when changing its currency.");
         }
@@ -692,7 +746,6 @@ export function createStore(databasePath: string) {
         const weatherRainfall = input.weatherRainfall ?? before?.weatherRainfall ?? "";
         const weatherPeriod = input.weatherPeriod ?? before?.weatherPeriod ?? "";
         const weatherSource = input.weatherSource ?? before?.weatherSource ?? "";
-        const nights = stayNights(arrivalDate, departureDate);
         if (hotelNightlyMinor !== null && nights !== null && !Number.isSafeInteger(hotelNightlyMinor * nights)) {
           throw new ValidationError("The hotel estimate is too large. Reduce the nightly amount or date range.");
         }
@@ -706,6 +759,7 @@ export function createStore(databasePath: string) {
           const position = orderedDestinations(input.tripId).length;
           db.prepare("INSERT INTO destinations(id,tripId,city,stay,notes,position,arrivalDate,departureDate,miscDailyMinor,miscCurrency,hotelNightlyMinor,hotelCurrency,activitiesBudgetMode,activitiesGeneralMinor,activitiesCurrency,foodBudgetMode,foodDailyMinor,foodCurrency,shoppingMinor,shoppingCurrency,weatherHighF,weatherLowF,weatherRainfall,weatherPeriod,weatherSource,churchEnabled) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)").run(id, input.tripId, input.city, input.stay, input.notes, position, arrivalDate, departureDate, miscDailyMinor, miscCurrency, hotelNightlyMinor, hotelCurrency, activitiesBudgetMode, activitiesGeneralMinor, activitiesCurrency, foodBudgetMode, foodDailyMinor, foodCurrency, shoppingMinor, shoppingCurrency, weatherHighF, weatherLowF, weatherRainfall, weatherPeriod, weatherSource, Number(churchEnabled));
         }
+        db.prepare("UPDATE destinations SET nights = ? WHERE id = ?").run(nights, id);
         if (input.image === null) {
           db.prepare("DELETE FROM destination_images WHERE destinationId = ?").run(id);
         } else if (input.image !== undefined) {
@@ -801,6 +855,7 @@ export function createStore(databasePath: string) {
     db.exec("BEGIN IMMEDIATE");
     try {
       const id = mutate(valid);
+      refreshDates();
       const snapshot = getSnapshot();
       db.exec("COMMIT");
       return id ? { snapshot, id } : { snapshot };

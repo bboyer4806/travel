@@ -19,68 +19,79 @@ pnpm build
 ```
 For local production preview, set `TRAVEL_DATABASE_PATH` to an absolute database path before `pnpm start`. The Docker image uses a guarded startup script requiring mounted storage.
 
+## Trip dates and nights
+Set the trip's optional **Start date**, then enter each destination's nonnegative whole number of **Nights**. Arrival and departure dates, their weekdays, and the trip end date are calculated in destination order. A departure is the next destination's arrival; changing the start, nights, or order recalculates the route. A zero-night stop arrives and departs on the same day. Dates cannot be overridden individually. Travel-leg timing notes do not determine the schedule.
+
+Missing start dates or night counts leave affected dates and the trip end incomplete. Earlier complete destinations retain their calculated ranges. Nights still drive budget estimates even when the trip start is unknown. Stay notes and the trip's flexible date label remain descriptive text and are never parsed.
+
+Schema 15 preserves original arrival/departure values separately. It backfills only valid, consistent structured dates; gaps, overlaps, invalid dates, and incomplete chains require review. Preserved dates appear beside incomplete schedules so you can set the start and nights deliberately. Migration replay retains later edits. See [deployment and rollback](docs/DEPLOYMENT.md) before upgrading.
+
 ## Budget rules
-Travel, hotel, activity, restaurant, and at-home prices are entered in USD for the entire traveling party. Daily miscellaneous spending, the general nightly hotel estimate, the general activities budget, daily food spending, and shopping each have their own currency per destination. Hotel prices cover the whole stay; restaurant prices cover one meal.
-The estimate sums every travel leg, one selected hotel or the general nightly hotel estimate per destination, the selected activities and food budgeting methods, daily miscellaneous spending, shopping budgets, and entered at-home expenses.
-Missing travel and selected-idea prices are unknown rather than zero. Alternatives stay saved without contributing to the budget. At-home items have optional prices: a blank price does not contribute to the total or mark the estimate incomplete; an explicit zero is a known free expense. Completing an at-home item keeps its expense in the budget.
-Changing a destination, departing city, or effective return city clears only affected travel plans, including their links and itinerary. Reordering destinations keeps unchanged connections.
+Every price is in **USD**, for the entire traveling party, with at most two decimal places. Currency selectors have been removed. Existing USD amounts retain their exact cents. Startup stops on unexpected non-USD records without converting or relabeling them; review those records before deployment.
+
+The estimate sums every travel leg, one selected hotel or the general nightly estimate per destination, the selected activities and food methods, miscellaneous spending, shopping, and entered at-home expenses. Alternatives stay saved without contributing. Missing required amounts remain visibly unknown; zero is known. At-home and shopping amounts are optional: blank adds no cost and does not make a complete estimate partial.
+
+Changing a destination, departing city, or effective return city clears only affected travel plans, including links and itinerary. Reordering destinations keeps unchanged connections.
 
 ## Daily miscellaneous spending
-Edit a destination to enter optional arrival and departure dates, a daily miscellaneous amount, and its currency. The amount covers the whole party; changing the traveler count does not multiply it. Existing free-text stay notes remain available and are never interpreted as precise dates.
-
-Arrival and departure each count as half a day, with full intervening days: a same-day visit is ½ day total, Monday–Tuesday is 1 day, and Monday–Thursday is 3 days. The editor previews the daily amount, budget days, and subtotal as you change the fields. Each destination card shows those values and its estimate; miscellaneous spending also has its own trip budget category.
-
-Amounts use the currency's minor units (for example USD cents, whole JPY, or KWD thousandths). Half a minor unit is rounded up once per destination. Zero is a known amount; negative amounts are rejected. Clear the amount to mark it unknown; clear both amount and currency to remove both. A saved amount requires a currency. Missing amounts or incomplete dates keep the estimate partial, including when a zero amount has unknown duration.
-
-Trip and destination totals group known amounts by currency. USD miscellaneous spending joins existing USD costs; other currencies remain separate. There is no currency conversion. Exact dates and miscellaneous settings persist in the same database and backups. Older databases upgrade to schema 14 without inferring dates from stay notes.
+Enter a daily miscellaneous amount in the destination editor. The subtotal is daily amount × nights, except a **zero-night stop uses one full budget day**. For example, three nights uses three days, one night uses one day, and zero nights also uses one day. The preview updates as nights and the amount change. Missing nights or amounts keep the estimate partial, including a zero amount with unknown nights. Clearing the amount marks it unknown.
 
 ## Nightly hotel estimate
-Edit a destination (or use **Edit estimate & dates** on its Hotels page) to enter a general nightly hotel amount and currency for all rooms and travelers. Exact arrival and departure dates determine nights: May 12–15 is 3 nights; a same-day visit is 0 nights. The general stay estimate is the nightly amount × nights. Changing dates or the nightly amount updates the preview, destination estimate, and trip totals. Free-text stay notes are never parsed as a night count.
+Enter a general nightly amount in the destination editor or from Hotels. Its subtotal is nightly amount × nights; a zero-night stay costs zero when its rate is known. Unknown nights or a missing rate remain unestimated.
 
-With no hotel selected, the general stay estimate contributes to the budget. Selecting a hotel replaces it with that hotel's existing whole-stay USD price, counted once. Selecting, editing, unchecking, or deleting a hotel never overwrites the general estimate. Unchecking or deleting the selected hotel restores the saved estimate using the current dates. A selected hotel with an unknown price keeps accommodation unknown, even if a general estimate is saved.
-
-The destination and Hotels page show the nightly amount, nights, general stay estimate, and which source supplies the accommodation total. Currency totals remain separate without conversion. Zero is intentional; negative amounts are rejected. An unknown night count or missing amount is shown as unknown, including a zero nightly amount without dates. Clear the amount to mark the estimate unknown; clear both amount and currency to remove both. General estimates and selections persist in the same database and backups.
+With no hotel selected, the general estimate supplies accommodation. Selecting a hotel replaces it with that hotel's whole-stay price, counted once. A selected hotel with an unknown price keeps accommodation unknown. Selecting, editing, unchecking, or deleting hotels preserves the general estimate; removing the selection restores it using the current nights.
 
 ## Activities budget
-Each destination offers an explicit choice between **General budget** and **Itemized activity costs**. Use **Edit activities budget** on the Activities page, or edit the destination. New and existing destinations use itemized costs until you explicitly change the method.
+Choose **General budget** or **Itemized activity costs** in the destination editor or Activities page. Itemized is the default. A general amount covers the whole stay once; nights and travelers never multiply it. Missing amounts keep totals partial only in General budget mode.
 
-The general amount and currency cover the whole party for the entire stay, counted once. Dates, stay notes, and traveler count never multiply or alter it. You can enter, edit, or clear it without creating activities. Zero is a known amount; negative amounts are rejected. A missing general amount is shown as **Not estimated** and keeps totals partial only while General budget is selected.
-
-General budget mode excludes individual activity costs, including missing prices. Itemized mode uses only included activities and their existing whole-party USD prices; an included activity with no price keeps the estimate partial, while no included activities contributes zero. The saved general amount is excluded in itemized mode. Adding, selecting, editing, and removing activities never switches methods. Switching in either direction preserves the general amount, currency, activities, and their selections.
-
-Destination cards, the Activities page, and trip totals show the active contribution. Different currencies stay separate without conversion. Method, general amount, and currency persist in the same database and backups. Schema 10 defaults older destinations to itemized without changing their calculations or saved ideas.
+Itemized mode uses only included activities, with included missing prices keeping the estimate partial; no included activities contributes zero. Switching methods preserves the general amount, saved ideas, and selections. Editing ideas never switches the method.
 
 ## Food budget
-Each destination offers **Daily food budget** or **Itemized restaurant costs**. Use **Edit food budget** on its Restaurants page or edit the destination. New and existing destinations use itemized restaurant costs until you explicitly change the method. You can enter, edit, or clear the daily amount and currency without creating restaurants.
+Choose **Daily food budget** or **Itemized restaurant costs** in the destination editor or Restaurants page. Itemized is the default. The daily amount uses the same duration as miscellaneous spending: nights, with **one full day for a zero-night stop**. Missing rates or nights are unknown, even for a zero rate, and make totals partial only in daily mode.
 
-The daily amount covers the whole traveling party. It uses the same half-day allowance as miscellaneous spending: arrival and departure each count as half a day, intervening days are full days, and a same-day visit is half a day total. Monday–Tuesday is 1 budget day; Monday–Thursday is 3. The daily subtotal is amount × budget days, rounded once per destination to the currency's minor unit (halves round up). Changing the amount or exact destination dates recalculates it; changing traveler count never multiplies it. Free-text stay notes are never parsed as a duration.
-
-Daily mode counts the daily subtotal and excludes all itemized restaurant costs, including missing prices. Itemized mode counts only included restaurants using their existing whole-party USD prices; no included restaurants contributes zero. Adding, selecting, editing, or removing restaurants never switches methods. Switching in either direction preserves restaurant entries, selections, daily amount, and currency.
-
-The editor, destination card, and Restaurants page show the daily amount, budget days, and subtotal; destination and trip totals use only the selected method. Zero is known, negative amounts are rejected, and missing amounts or unknown duration are clearly shown. A zero daily amount with unknown duration remains unestimated. Missing daily estimates make totals partial only in daily mode. Clear the amount to mark it unknown; clear both amount and currency to remove both. A saved amount requires a currency. Different currencies remain separate without conversion. Method, amount, and currency persist in the same database and backups. Schema 11 keeps existing destinations itemized and preserves their current restaurant calculations.
+Daily mode excludes restaurant costs. Itemized mode counts only included restaurants' whole-party meal prices, with included missing prices keeping the estimate partial. No included restaurants contributes zero. Switching methods preserves entries, selections, and the daily estimate. Traveler count never multiplies amounts.
 
 ## Shopping budget
-Edit a destination to enter an optional shopping amount and currency for the whole traveling party's entire stay. Shopping appears as its own category in the destination and trip estimates and is counted once. Dates, stay notes, and traveler count never multiply or change the amount. Shopping remains separate from miscellaneous spending.
+Use the edit control beside **Shopping**, or edit the destination, to enter an optional whole-stay amount. It is counted once, separately from miscellaneous spending. **Not set** adds no cost and is not a missing estimate. Zero is an intentional known amount. Clear the amount to remove its contribution.
 
-**Not set** means no shopping amount has been entered; it adds no cost and does not make an otherwise complete estimate partial. An explicit zero is shown with its currency and is a known amount. Negative amounts are rejected. Clear the amount to remove its contribution; clear both amount and currency to remove both. A saved amount requires a currency. Amounts follow the selected currency’s minor units, and different currencies stay separate without conversion.
-
-Amounts, currency choices, edits, and clearing persist in the same database and backups. Schema 12 adds nullable shopping fields, preserving previous data and calculations. No shop or purchase records are needed.
+## Destination controls
+Hotels, Activities, and Restaurants links sit beside their budget headings and show saved-idea counts. The destination editor has one **Save** in its sticky header, with pending state and save errors kept in view; Cancel discards the draft.
 
 ## Typical weather
-Each destination's Hotels, Activities, and Restaurants detail pages show a **Typical weather** panel with an **Edit typical weather** button. Enter optional high and low temperatures in °F, rainfall notes, the month or travel period the information describes, and a source name or link. These are manually recorded typical conditions or historical averages; there is no automatic lookup or Celsius conversion.
+Each destination card on the main trip page shows **Typical weather** with **Edit typical weather**. Category detail pages do not repeat it. Enter optional high and low temperatures in °F, rainfall notes, the month or period described, and a source name or link. These are manually recorded typical conditions; there is no automatic lookup or Celsius conversion.
 
-Negative and decimal Fahrenheit values are accepted. If both temperatures are provided, the high must be at least the low. Missing values display **Not provided**; an entered zero displays **0 °F**. Save edits, leave individual fields blank to clear them, or use **Clear all weather fields** and save. Cancel discards the draft.
-
-Weather and its recorded period persist when reopening the destination and when changing destination dates or budgets. Weather details appear within destination detail pages, not on the trip overview. Schema 13 adds these optional fields without changing previous data or budget calculations; they are included in the same database and backups.
+Negative and decimal Fahrenheit values are accepted; high must be at least low when both are supplied. Missing values show **Not provided** and zero shows **0 °F**. Clear individual fields or use **Clear all weather fields** and save. Weather and its recorded period persist independently of schedule and budget changes.
 
 ## Church
-Destination detail pages have an optional **Church** section after Restaurants. Enable it manually for any destination, including one without dates. Setting or changing the actual arrival/departure range to include a Sunday enables it automatically, including Sunday arrival, departure, a same-day Sunday visit, or a stay with several Sundays. Both dates must be known; stay notes are never interpreted as dates.
+Each main destination card can show **Church**. New destinations show it while dates are unknown. With a complete date range it is eligible only when that inclusive range contains a Sunday, including Sunday arrivals, departures, and same-day stops. Both destinations sharing a Sunday transfer are eligible. Manual showing cannot override a known range without Sunday.
 
-Hide the section whenever you want. Hiding preserves every church and photo. Reopening the destination, editing weather or budgets, or saving unchanged dates keeps it hidden. Changing to a new range containing Sunday enables it again; changing to dates without Sunday or clearing dates preserves the current visibility and saved churches.
+Hide Church without deleting entries or photos. Hiding persists through date changes; eligible hidden destinations offer **Show Church**. Upgrades preserve existing visibility choices, including previously disabled sections. Church is absent from category navigation; existing direct Church URLs still work and respect date eligibility and hiding.
 
-Add, edit, or remove multiple church options with a name, location/address, optional denomination and website, and up to 30 Mass times with a day or date for each. A church can be saved without Mass times, a website, or photos. Missing times show **Mass times unknown**; supplied websites appear as links. Church photos use the gallery controls and upload limits below. Church entries and photos persist in the same database and backups, including while hidden.
+Add, edit, or remove multiple churches with name, address, optional denomination and website, and up to 30 Mass times with a day or date. Missing times show **Mass times unknown**. Church galleries use the photo controls below. Entries, visibility, Mass times, and photos persist in the same database and backups, and do not change idea counts or budgets.
 
-Church information appears only within the destination, never on the trip overview. Churches are separate from hotel, activity, and restaurant ideas and do not change their counts or any budget totals. Schema 14 preserves existing data and initially enables Church for existing complete date ranges containing Sunday; replaying the migration preserves saved visibility choices.
+## Feedback
+**Send feedback** is available across the app, including inside editors without losing their drafts. Messages allow 2,000 characters. Submission shows a pending state, prevents duplicate clicks, and reports success only after Jira confirms creation. Failures preserve the draft for retry; opening again after success starts a fresh message.
+
+The server creates a Task in the TRA backlog with label `user-feedback`. Its summary uses the first 80 characters of the first message line; its description includes the full message, page path/query, browser user agent, and viewport. Jira calls time out after 10 seconds and are never automatically retried. A delivery that times out may have reached Jira, so a manual retry can create another task.
+
+Set server-only `JIRA_URL`, `JIRA_EMAIL`, and `JIRA_API_TOKEN` in production. They are never sent to the browser. No CAPTCHA or account is required. Same-origin checks, a hidden bot field, short-lived one-use tokens, and in-memory session/global rate limits protect the endpoint. Limits apply to this app's single process and reset on restart.
+
+Local testing must use the loopback stand-in, never real Jira:
+
+```sh
+node scripts/jira-feedback-stub.mjs
+# In another terminal, set these server environment variables, then pnpm dev:
+# JIRA_URL=http://127.0.0.1:3010
+# JIRA_EMAIL=stub@example.test
+# JIRA_API_TOKEN=local-stand-in
+```
+
+Development refuses non-loopback Jira URLs. The stand-in validates the issue envelope and returns a synthetic issue ID without sending anything externally. Production configuration and a real Jira delivery still require deployment verification.
+
+## What's new
+The shared header links to **What's new**. Published entries live in `src/lib/change-log.ts`, newest version first, with release date and concise changes. Add only verified shipped changes and actual release dates at release close; the implementation branch intentionally starts with **No releases yet**.
+
+When entries exist, a browser that has not visited the latest version sees an unread dot. Visiting the page marks that version seen in local storage; link prefetch does not. Newer versions trigger it again, including releases on the same date. This is browser-local, independent of other people and devices. If storage is unavailable, the current session remembers the visit.
 
 ## At home
 Each trip has an **At home** section below **Between the places**, even before destinations are added. Add, edit, or delete arrangements such as house sitting, child care, pet care, or pausing mail. Each item has a name, notes, an optional total price in USD, and a completion checkbox. Completed items can be reopened and remain visible. Items and expenses belong only to their trip and are included in backups.
@@ -95,7 +106,7 @@ The provider needs no key for this personal, non-commercial app. Its [free-servi
 ## Routes, itineraries, and research links
 Trips return to their departing city by default. Select **Return to a different city** to enter a separate endpoint. Existing trips retain their departure location and default return behavior.
 Each travel connection supports up to 30 ordered layovers or stops, with a place, arrival/departure details, and notes. The connection's estimated price covers the whole itinerary and is counted once in the trip budget.
-Connections and hotel/activity/restaurant ideas support up to 20 research links with optional short descriptions. Existing single links are retained during the additive database upgrade. Older schema versions upgrade to version 14 automatically inside a transaction; take an online backup before deploying this upgrade.
+Connections and hotel/activity/restaurant ideas support up to 20 research links with optional short descriptions. Existing single links are retained during the additive database upgrade. Older schema versions upgrade to version 15 automatically inside a transaction; take an online backup before deploying this upgrade.
 ## Images
 Each destination can have one optional uploaded image. Each hotel, activity, restaurant, and church can have up to 10 photos, with one selected as the main photo on its card. Click the thumbnails to view the other photos. Add photos, choose the main photo, or remove individual photos in the editor; removing the main photo selects another remaining photo. Cancel discards photo changes. Existing single idea images become the main photo automatically.
 JPEG, PNG, and WebP uploads up to 5 MiB each and 20 megapixels are supported, with at most 15 MiB of new files in one save. Images are oriented, resized to fit 1600 × 1200, stripped of metadata, and saved as WebP (up to 2 MiB each). All selected uploads must be valid before any changes are saved.

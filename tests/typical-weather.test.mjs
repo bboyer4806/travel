@@ -12,7 +12,7 @@ const tripInput = (overrides = {}) => ({ type: "trip.save", name: "Weather plann
 const destinationInput = (tripId, overrides = {}) => ({ type: "destination.save", tripId, city: "Reykjavik", stay: "A few nights", notes: "", ...overrides });
 const emptyWeather = { weatherHighF: null, weatherLowF: null, weatherRainfall: "", weatherPeriod: "", weatherSource: "" };
 const winterWeather = { weatherHighF: 0, weatherLowF: -12.5, weatherRainfall: "Light snow; occasional rain", weatherPeriod: "January historical averages", weatherSource: "Local climate archive" };
-const dates = { arrivalDate: "2027-01-01", departureDate: "2027-01-04" };
+const dates = { nights: 3 };
 const webp = new Uint8Array(Buffer.from("UklGRiIAAABXRUJQVlA4IBYAAAAwAQCdASoBAAEADsD+JaQAA3AAAAAA", "base64"));
 const destination = (store, id) => store.getSnapshot().destinations.find((item) => item.id === id);
 const weather = (store, id) => Object.fromEntries(Object.keys(emptyWeather).map((key) => [key, destination(store, id)[key]]));
@@ -110,14 +110,14 @@ test("date changes and other destination editors preserve manually entered weath
   const { store, tripId } = setup(t);
   const id = store.applyMutation(destinationInput(tripId, { ...dates, ...winterWeather })).id;
   for (const fields of [
-    { arrivalDate: "2027-06-01", departureDate: "2027-06-04" },
-    { arrivalDate: null, departureDate: null },
+    { nights: 3 },
+    { nights: null },
     { stay: "Three weeks in summer", notes: "New notes" },
-    { hotelNightlyAmount: "120", hotelCurrency: "EUR" },
+    { hotelNightlyAmount: "120", hotelCurrency: "USD" },
     { foodBudgetMode: "daily", foodDailyAmount: "20", foodCurrency: "USD" },
-    { activitiesBudgetMode: "general", activitiesGeneralAmount: "50", activitiesCurrency: "GBP" },
-    { shoppingAmount: "12.345", shoppingCurrency: "KWD" },
-    { miscDailyAmount: "100", miscCurrency: "JPY" },
+    { activitiesBudgetMode: "general", activitiesGeneralAmount: "50", activitiesCurrency: "USD" },
+    { shoppingAmount: "12.34", shoppingCurrency: "USD" },
+    { miscDailyAmount: "100", miscCurrency: "USD" },
     { image: webp }, { image: null },
   ]) {
     store.applyMutation(destinationInput(tripId, { id, ...fields }));
@@ -130,9 +130,9 @@ test("date changes and other destination editors preserve manually entered weath
 test("weather edits leave existing destination data, routes, choices, and separated currency budgets unchanged", (t) => {
   const { store, tripId } = setup(t);
   const id = store.applyMutation(destinationInput(tripId, {
-    ...dates, hotelNightlyAmount: "100", hotelCurrency: "EUR", miscDailyAmount: "10", miscCurrency: "USD",
-    activitiesBudgetMode: "general", activitiesGeneralAmount: "20", activitiesCurrency: "GBP",
-    foodBudgetMode: "daily", foodDailyAmount: "30", foodCurrency: "USD", shoppingAmount: "12.345", shoppingCurrency: "KWD", image: webp,
+    ...dates, hotelNightlyAmount: "100", hotelCurrency: "USD", miscDailyAmount: "10", miscCurrency: "USD",
+    activitiesBudgetMode: "general", activitiesGeneralAmount: "20", activitiesCurrency: "USD",
+    foodBudgetMode: "daily", foodDailyAmount: "30", foodCurrency: "USD", shoppingAmount: "12.34", shoppingCurrency: "USD", image: webp,
   })).id;
   store.applyMutation({ type: "candidate.save", destinationId: id, category: "activities", name: "Museum", price: "999", address: "", url: "", notes: "Preserve this idea", included: true });
   for (const leg of store.getSnapshot().legs) store.applyMutation({ type: "leg.save", id: leg.id, method: "Flight", price: "100", departure: "Morning", arrival: "Evening", url: "", notes: "Booked" });
@@ -157,9 +157,9 @@ test("schema 12 upgrade defaults weather to missing and preserves old data; migr
   try {
     const tripId = store.applyMutation(tripInput()).id;
     const id = store.applyMutation(destinationInput(tripId, {
-      ...dates, image: webp, hotelNightlyAmount: "125.25", hotelCurrency: "EUR", miscDailyAmount: "10.01", miscCurrency: "USD",
-      activitiesBudgetMode: "general", activitiesGeneralAmount: "55.55", activitiesCurrency: "GBP",
-      foodBudgetMode: "daily", foodDailyAmount: "20", foodCurrency: "USD", shoppingAmount: "12.345", shoppingCurrency: "KWD",
+      ...dates, image: webp, hotelNightlyAmount: "125.25", hotelCurrency: "USD", miscDailyAmount: "10.01", miscCurrency: "USD",
+      activitiesBudgetMode: "general", activitiesGeneralAmount: "55.55", activitiesCurrency: "USD",
+      foodBudgetMode: "daily", foodDailyAmount: "20", foodCurrency: "USD", shoppingAmount: "12.34", shoppingCurrency: "USD",
     })).id;
     const candidateId = store.applyMutation({ type: "candidate.save", destinationId: id, category: "hotels", name: "Saved hotel", price: "123.45", address: "Main street", url: "", notes: "", included: true, image: webp, links: [{ id: randomUUID(), url: "https://example.com/hotel", description: "Booking" }] }).id;
     store.applyMutation({ type: "homeItem.save", tripId, name: "House sitting", price: "23.95", notes: "Leave a key", completed: true });
@@ -185,7 +185,7 @@ test("schema 12 upgrade defaults weather to missing and preserves old data; migr
     store.close(); store = null;
     observer = new DatabaseSync(path);
     try {
-      assert.equal(observer.prepare("PRAGMA user_version").get().user_version, 14);
+      assert.equal(observer.prepare("PRAGMA user_version").get().user_version, 15);
       const columns = observer.prepare("PRAGMA table_info(destinations)").all();
       for (const name of ["weatherHighF", "weatherLowF"]) {
         assert.equal(columns.find((column) => column.name === name).type, "REAL");
@@ -211,7 +211,7 @@ test("schema 12 upgrade defaults weather to missing and preserves old data; migr
     assert.deepEqual(store.getCandidateImage(candidateId), candidateImage);
     observer = new DatabaseSync(path);
     try {
-      assert.equal(observer.prepare("PRAGMA user_version").get().user_version, 14);
+      assert.equal(observer.prepare("PRAGMA user_version").get().user_version, 15);
       assert.deepEqual(observer.prepare("PRAGMA foreign_key_check").all(), []);
     } finally { observer.close(); }
   } finally { store?.close(); }

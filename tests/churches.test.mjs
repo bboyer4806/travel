@@ -44,56 +44,9 @@ test("Sunday detection includes either endpoint, multiple Sundays, DST, leap day
   ]) assert.equal(containsSunday(start, end), expected, `${start} through ${end}`);
 });
 
-test("manual visibility works without dates; unchanged dates and unrelated edits preserve hiding", (t) => {
-  const { store, tripId, destinationId: id } = setup(t);
-  assert.equal(destination(store, id).churchEnabled, false);
-  store.applyMutation({ type: "destination.churchVisibility", id, enabled: true });
-  assert.equal(destination(store, id).churchEnabled, true);
-  store.applyMutation({ type: "destination.churchVisibility", id, enabled: false });
-  const dates = { arrivalDate: "2027-05-01", departureDate: "2027-05-02" };
-  store.applyMutation(destinationInput(tripId, { id, ...dates }));
-  assert.equal(destination(store, id).churchEnabled, true);
-  const churchId = store.applyMutation(churchInput(id)).id;
-  store.applyMutation({ type: "destination.churchVisibility", id, enabled: false });
-  for (const fields of [{}, dates, { arrivalDate: dates.arrivalDate }, { departureDate: dates.departureDate }, { notes: "Edited", weatherHighF: 70 }, { stay: "Sunday in spring" }]) {
-    store.applyMutation(destinationInput(tripId, { id, ...fields }));
-    assert.equal(destination(store, id).churchEnabled, false);
-    assert.equal(church(store, churchId).name, "St. Mary's");
-  }
-  store.applyMutation(destinationInput(tripId, { id, arrivalDate: "2027-05-02" }));
-  assert.equal(destination(store, id).churchEnabled, true, "a changed arrival uses the retained departure to detect Sunday");
-  store.applyMutation({ type: "destination.churchVisibility", id, enabled: false });
-  store.applyMutation(destinationInput(tripId, { id, departureDate: "2027-05-16" }));
-  assert.equal(destination(store, id).churchEnabled, true, "multiple Sundays still enable once");
-  store.applyMutation(destinationInput(tripId, { id, arrivalDate: "2027-05-17", departureDate: "2027-05-22" }));
-  assert.equal(destination(store, id).churchEnabled, true, "no-Sunday ranges do not turn off an enabled section");
-  store.applyMutation({ type: "destination.churchVisibility", id, enabled: false });
-  store.applyMutation(destinationInput(tripId, { id, departureDate: "2027-05-21" }));
-  assert.equal(destination(store, id).churchEnabled, false);
-  assert.ok(church(store, churchId));
-});
 
-test("new and partial destination dates enable only when the merged valid range includes Sunday", (t) => {
-  const { store, tripId, destinationId: id } = setup(t);
-  const sundayId = store.applyMutation(destinationInput(tripId, { arrivalDate: "2027-05-02", departureDate: "2027-05-02" })).id;
-  assert.equal(destination(store, sundayId).churchEnabled, true);
-  const weekdayId = store.applyMutation(destinationInput(tripId, { arrivalDate: "2027-05-03", departureDate: "2027-05-08" })).id;
-  assert.equal(destination(store, weekdayId).churchEnabled, false);
-  store.applyMutation(destinationInput(tripId, { id, arrivalDate: "2027-05-02" }));
-  assert.equal(destination(store, id).churchEnabled, false);
-  store.applyMutation(destinationInput(tripId, { id, departureDate: "2027-05-03" }));
-  assert.equal(destination(store, id).churchEnabled, true);
-  store.applyMutation({ type: "destination.churchVisibility", id, enabled: false });
-  store.applyMutation(destinationInput(tripId, { id, arrivalDate: null }));
-  assert.equal(destination(store, id).churchEnabled, false);
-  store.applyMutation(destinationInput(tripId, { id, departureDate: "2027-05-09" }));
-  assert.equal(destination(store, id).churchEnabled, false);
-  store.applyMutation(destinationInput(tripId, { id, arrivalDate: "2027-05-08" }));
-  assert.equal(destination(store, id).churchEnabled, true);
-  const before = store.getSnapshot();
-  assert.throws(() => store.applyMutation(destinationInput(tripId, { id, departureDate: "2027-05-01" })), ValidationError);
-  assert.deepEqual(store.getSnapshot(), before, "invalid date patches cannot alter visibility or data");
-});
+
+
 
 test("church details, multiple Mass times, gallery, manual hiding and optional unknowns persist after reopening", (t) => {
   const path = fileDatabase(t);
@@ -219,14 +172,15 @@ test("gallery limits include saved photos and failed additions preserve all chur
 test("churches never change candidate counts, selections, trip budgets or destination budgets", (t) => {
   const { store, tripId, destinationId } = setup(t);
   store.applyMutation(destinationInput(tripId, {
-    id: destinationId, arrivalDate: "2027-05-03", departureDate: "2027-05-06",
-    miscDailyAmount: "0", miscCurrency: "USD", hotelNightlyAmount: "100", hotelCurrency: "EUR",
-    activitiesBudgetMode: "general", activitiesGeneralAmount: "20", activitiesCurrency: "GBP",
-    foodBudgetMode: "daily", foodDailyAmount: "30", foodCurrency: "USD", shoppingAmount: "12.345", shoppingCurrency: "KWD",
+    id: destinationId, nights: 3,
+    miscDailyAmount: "0", miscCurrency: "USD", hotelNightlyAmount: "100", hotelCurrency: "USD",
+    activitiesBudgetMode: "general", activitiesGeneralAmount: "20", activitiesCurrency: "USD",
+    foodBudgetMode: "daily", foodDailyAmount: "30", foodCurrency: "USD", shoppingAmount: "12.34", shoppingCurrency: "USD",
     weatherHighF: 70, weatherLowF: 40, weatherRainfall: "Low", weatherPeriod: "May", weatherSource: "Local archive",
   }));
   for (const category of ["hotels", "activities", "restaurants"]) store.applyMutation({ type: "candidate.save", destinationId, category, name: category, price: category === "hotels" ? "0" : "", address: "", url: "", notes: "", included: true, image: webp });
   store.applyMutation({ type: "homeItem.save", tripId, name: "Mail hold", price: "", notes: "", completed: false });
+  store.applyMutation({type:"destination.churchVisibility",id:destinationId,enabled:false});
   const before = store.getSnapshot();
   const budget = calculateBudget(before, tripId), destinationBudget = calculateDestinationBudget(before, destinationId);
   const first = store.applyMutation(churchInput(destinationId, { gallery: { add: [photo()], remove: [] } })).id;
@@ -264,19 +218,20 @@ test("schema 13 upgrade initializes Sunday visibility, preserves prior data and 
   const path = fileDatabase(t);
   let store = createStore(path);
   try {
-    const tripId = store.applyMutation(tripInput()).id;
+    const tripId = store.applyMutation(tripInput({startDate:"2027-05-01"})).id;
     const id = store.applyMutation(destinationInput(tripId, {
-      arrivalDate: "2027-05-01", departureDate: "2027-05-16", image: webp,
-      miscDailyAmount: "0", miscCurrency: "USD", hotelNightlyAmount: "125.25", hotelCurrency: "EUR",
-      activitiesBudgetMode: "general", activitiesGeneralAmount: "55.55", activitiesCurrency: "GBP",
-      foodBudgetMode: "daily", foodDailyAmount: "20", foodCurrency: "USD", shoppingAmount: "12.345", shoppingCurrency: "KWD",
+      nights: 2, image: webp,
+      miscDailyAmount: "0", miscCurrency: "USD", hotelNightlyAmount: "125.25", hotelCurrency: "USD",
+      activitiesBudgetMode: "general", activitiesGeneralAmount: "55.55", activitiesCurrency: "USD",
+      foodBudgetMode: "daily", foodDailyAmount: "20", foodCurrency: "USD", shoppingAmount: "12.34", shoppingCurrency: "USD",
       weatherHighF: 70.5, weatherLowF: 40, weatherRainfall: "Some rain", weatherPeriod: "May", weatherSource: "Historical averages",
     })).id;
-    const weekdayId = store.applyMutation(destinationInput(tripId, { arrivalDate: "2027-05-03", departureDate: "2027-05-08" })).id;
-    const partialId = store.applyMutation(destinationInput(tripId, { arrivalDate: "2027-05-02" })).id;
+    const weekdayId = store.applyMutation(destinationInput(tripId, { nights: 5 })).id;
+    const partialId = store.applyMutation(destinationInput(tripId, { nights: null })).id;
     const unknownId = store.applyMutation(destinationInput(tripId)).id;
     const candidateId = store.applyMutation({ type: "candidate.save", destinationId: id, category: "hotels", name: "Saved hotel", price: "123.45", address: "Main street", url: "", notes: "", included: true, image: webp }).id;
     store.applyMutation({ type: "homeItem.save", tripId, name: "House sitting", price: "23.95", notes: "Leave a key", completed: true });
+    for (const hidden of [weekdayId,partialId,unknownId]) store.applyMutation({type:"destination.churchVisibility",id:hidden,enabled:false});
     const before = store.getSnapshot(), budget = calculateBudget(before, tripId);
     const destinationImage = store.getDestinationImage(id), candidateImage = store.getCandidateImage(candidateId);
     store.close(); store = null;
@@ -298,7 +253,7 @@ test("schema 13 upgrade initializes Sunday visibility, preserves prior data and 
     store.close(); store = null;
     observer = new DatabaseSync(path);
     try {
-      assert.equal(observer.prepare("PRAGMA user_version").get().user_version, 14);
+      assert.equal(observer.prepare("PRAGMA user_version").get().user_version, 15);
       observer.exec("PRAGMA user_version = 13;");
     } finally { observer.close(); }
     store = createStore(path);
@@ -307,7 +262,7 @@ test("schema 13 upgrade initializes Sunday visibility, preserves prior data and 
     assert.deepEqual(calculateBudget(store.getSnapshot(), tripId), budget);
     observer = new DatabaseSync(path);
     try {
-      assert.equal(observer.prepare("PRAGMA user_version").get().user_version, 14);
+      assert.equal(observer.prepare("PRAGMA user_version").get().user_version, 15);
       assert.deepEqual(observer.prepare("PRAGMA foreign_key_check").all(), []);
     } finally { observer.close(); }
   } finally { store?.close(); }

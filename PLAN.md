@@ -146,3 +146,18 @@ Use one application instance for v1. Live deployment remains a separate review s
 - Create, edit, and remove multiple churches with name, location/address, optional denomination and website, and multiple Mass times associated with a day or date. Display unknown Mass times clearly and supplied websites as links.
 - Reuse galleries with up to 10 photos, a selected main photo, existing upload limits and processing, and ownership validation. Preserve photos on ordinary edits, hiding, date changes, reopening, and backup.
 - Upgrade to schema 14 with separate church and image records and destination visibility. Initialize Sunday visibility only when adding the column; migration replay retains saved choices. Preserve all previous budgets, weather, and other data and verify container persistence.
+
+## Added scope: Travel 1.2, October 29, 2026 (TRA-57–TRA-65)
+The current Jira sprint supersedes earlier date, currency, weather-placement, and Church-visibility rules above and the earlier refinement draft.
+
+- TRA-57: global feedback sheet, 2,000-character message, server-side Jira Task creation in TRA with user-feedback label and page/browser context; preserve drafts on failure, prevent duplicate pending submissions, 10-second timeout, invisible abuse protection, and local stand-in testing only.
+- TRA-58: What's new page with published version/date/bullets and browser-local unread status. Actual visits mark seen; prefetch does not. Do not advertise unshipped changes.
+- TRA-59: USD throughout, exact cents, no currency selectors. Preserve USD data and fail safely on unexpected non-USD data without conversion or relabeling.
+- TRA-60: general hotels use nights; daily food and miscellaneous use nights except zero nights uses one full day. Fixed budgets and selected source modes remain intact.
+- TRA-61: one trip start date and ordered destination nights derive all destination ranges/weekdays and the trip end. Incomplete inputs leave affected dates incomplete. No manual destination date overrides, automatic gaps, or travel-leg date scheduling. Conservatively backfill consistent structured dates, preserve legacy values, and prompt on ambiguity; migration replay preserves edits.
+- TRA-62: one destination Save in a sticky header, with errors and pending state kept visible.
+- TRA-63: category links and counts beside corresponding budget headings; Shopping edit beside its own heading.
+- TRA-64: Typical weather summaries on main trip destination cards only, retaining the editor and saved data.
+- TRA-65: Church on main destination cards, eligible with unknown dates or an inclusive Sunday. Manual hiding persists through schedule changes. Known non-Sunday ranges cannot be overridden; shared Sunday transfers make both destinations eligible. Preserve existing direct URLs and data; remove Church category tabs.
+
+Validate duration boundaries, missing inputs, source modes, migration/replay/backup, feedback failure and duplicate protection, browser behavior, and mobile editor saving. Review implementation separately from live deployment. Configure production Jira and rehearse schema 15 on a production backup before releasing; close the release with verified change-log entries.

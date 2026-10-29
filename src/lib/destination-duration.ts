@@ -15,7 +15,11 @@ export function stayNights(arrivalDate: string | null | undefined, departureDate
 
 export function budgetDays(arrivalDate: string | null | undefined, departureDate: string | null | undefined): number | null {
   const nights = stayNights(arrivalDate, departureDate);
-  return nights === 0 ? 0.5 : nights;
+  return nightsToBudgetDays(nights);
+}
+
+export function nightsToBudgetDays(nights: number | null | undefined): number | null {
+  return nights == null || !Number.isInteger(nights) || nights < 0 ? null : Math.max(1, nights);
 }
 
 // Include both arrival and departure days, without local-time or DST shifts.

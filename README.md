@@ -89,7 +89,7 @@ node scripts/jira-feedback-stub.mjs
 Development refuses non-loopback Jira URLs. The stand-in validates the issue envelope and returns a synthetic issue ID without sending anything externally. Production configuration and a real Jira delivery still require deployment verification.
 
 ## What's new
-The shared header links to **What's new**. Published entries live in `src/lib/change-log.ts`, newest version first, with release date and concise changes. Add only verified shipped changes and actual release dates at release close; the implementation branch intentionally starts with **No releases yet**.
+The shared header links to **What's new**. Published entries live in `src/lib/change-log.ts`, newest version first, with release date and concise changes. Travel 1.2 was deployed and verified on October 29, 2026. Add only verified shipped changes and actual release dates at release close; an empty entry list displays **No releases yet**.
 
 When entries exist, a browser that has not visited the latest version sees an unread dot. Visiting the page marks that version seen in local storage; link prefetch does not. Newer versions trigger it again, including releases on the same date. This is browser-local, independent of other people and devices. If storage is unavailable, the current session remembers the visit.
 

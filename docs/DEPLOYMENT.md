@@ -99,6 +99,11 @@ All currencies must be USD. Startup checks stored currency fields inside the mig
 
 Earlier images reject schema 15. Rollback requires a compatible build or the stopped-app restore procedure above. Preserve the upgraded database and sidecars first; restoring the pre-upgrade backup loses later edits. The container smoke script checks schema 15, trip start/nights, USD amounts, and persistent galleries/Church data after container replacement.
 
+### Schema 16: Travel 1.3 idea order and Must do
+Back up before deployment and rehearse against a copy of the current database. Schema 16 adds candidate position and Must do fields. Each destination/category list starts in its previous alphabetical order (case-insensitive name, then ID); existing ideas start unmarked. Initialization runs only when each column is first added, so migration replay preserves later changes. New ideas append to their list; priority and ordering never change prices, inclusion, budget methods, galleries, research links, routes, or other trip data.
+
+The same SQLite database and online backups preserve both fields. The container smoke check verifies stored positions and Must do flags after container replacement alongside existing data and images. Earlier builds reject schema 16; rollback requires a compatible build or the stopped-app restore procedure above. Preserve the upgraded database and sidecars first; restoring a pre-upgrade backup loses subsequent edits.
+
 ### Feedback and release notes
 Configure server-only JIRA_URL (HTTPS Jira base URL), JIRA_EMAIL, and JIRA_API_TOKEN with permission to create Tasks in TRA. Use the host's secret configuration; never put credentials in source, image layers, client variables, or logs. Preserve the browser Host and Origin headers through the proxy; the feedback endpoint compares them and ignores forwarded-host claims. The HttpOnly feedback cookie is Secure for HTTPS origins.
 

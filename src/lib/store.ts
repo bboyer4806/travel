@@ -11,7 +11,7 @@ type StoredDestination = Omit<Destination, "churchEnabled"> & { churchEnabled: n
 type StoredChurch = Omit<Church, "massTimes" | "images"> & { massTimesJson: string };
 type StoredHomeItem = Omit<HomeItem, "completed"> & { completed: number };
 type StoredLeg = Omit<TravelLeg, "itinerary" | "links"> & { itineraryJson: string; linksJson: string };
-type StoredCandidate = Omit<Candidate, "links" | "included" | "images"> & { linksJson: string; included: number };
+type StoredCandidate = Omit<Candidate, "links" | "included" | "mustDo" | "images"> & { linksJson: string; included: number; mustDo: number };
 
 const MAX_IMAGE_BYTES = 2 * 1024 * 1024;
 const MAX_GALLERY_IMAGES = 10;
@@ -258,7 +258,12 @@ function validate(input: unknown): Mutation {
     case "leg.save":
       return { type: value.type, id: idField(value), method: textField(value, "method", 120), price: priceField(value), departure: textField(value, "departure", 120), arrival: textField(value, "arrival", 120), url: urlField(value), notes: textField(value, "notes", 8000), itinerary: itineraryField(value), links: linksField(value) };
     case "candidate.save":
-      return { type: value.type, id: optionalId(value), destinationId: idField(value, "destinationId"), category: categoryField(value), name: textField(value, "name", 160, true), price: priceField(value), address: textField(value, "address", 500), url: urlField(value), notes: textField(value, "notes", 8000), included: booleanField(value, "included"), links: linksField(value), image: imageField(value, "Idea"), gallery: galleryField(value) };
+      return { type: value.type, id: optionalId(value), destinationId: idField(value, "destinationId"), category: categoryField(value), name: textField(value, "name", 160, true), price: priceField(value), address: textField(value, "address", 500), url: urlField(value), notes: textField(value, "notes", 8000), included: booleanField(value, "included"), mustDo: value.mustDo === undefined ? undefined : booleanField(value, "mustDo"), links: linksField(value), image: imageField(value, "Idea"), gallery: galleryField(value) };
+    case "candidate.move":
+      if (value.direction !== "up" && value.direction !== "down") throw new ValidationError("Choose a valid direction for this idea.");
+      return { type: value.type, id: idField(value), direction: value.direction };
+    case "candidate.mustDo":
+      return { type: value.type, id: idField(value), mustDo: booleanField(value, "mustDo") };
     case "candidate.include":
       return { type: value.type, id: idField(value), included: booleanField(value, "included") };
     default:
@@ -273,7 +278,7 @@ export function createStore(databasePath: string) {
   db.exec("BEGIN IMMEDIATE");
   try {
     const version = Number(db.prepare("PRAGMA user_version").get()?.user_version ?? 0);
-    if (version > 15) throw new Error("This database was created by a newer version of the travel app.");
+    if (version > 16) throw new Error("This database was created by a newer version of the travel app.");
     db.exec(`
     CREATE TABLE IF NOT EXISTS trips (
       id TEXT PRIMARY KEY, name TEXT NOT NULL, dateLabel TEXT NOT NULL DEFAULT '',
@@ -466,6 +471,24 @@ export function createStore(databasePath: string) {
       }
       db.exec("PRAGMA user_version = 15;");
     }
+    if (version < 16) {
+      // Initialize once in the previously displayed alphabetical order. Replays
+      // must retain users' subsequent ordering and priority choices.
+      if (!hasColumn("candidates", "position")) {
+        db.exec(`
+          ALTER TABLE candidates ADD COLUMN position INTEGER NOT NULL DEFAULT 0 CHECK(position >= 0);
+          WITH ordered AS (
+            SELECT id, ROW_NUMBER() OVER (PARTITION BY destinationId, category ORDER BY name COLLATE NOCASE, id) - 1 AS position
+            FROM candidates
+          )
+          UPDATE candidates SET position = (SELECT position FROM ordered WHERE ordered.id = candidates.id);
+        `);
+      }
+      if (!hasColumn("candidates", "mustDo")) {
+        db.exec("ALTER TABLE candidates ADD COLUMN mustDo INTEGER NOT NULL DEFAULT 0 CHECK(mustDo IN (0,1) AND (category != 'hotels' OR mustDo = 0));");
+      }
+      db.exec("CREATE INDEX IF NOT EXISTS candidate_order ON candidates(destinationId, category, position, id); PRAGMA user_version = 16;");
+    }
     db.exec("COMMIT");
   } catch (error) {
     db.exec("ROLLBACK");
@@ -510,10 +533,10 @@ export function createStore(databasePath: string) {
         const { massTimesJson, ...church } = row as unknown as StoredChurch;
         return { ...church, massTimes: JSON.parse(massTimesJson) as MassTime[], images: churchPhotos.get(church.id) ?? [] };
       }),
-      candidates: db.prepare("SELECT candidates.*, candidate_images.version AS imageVersion, candidate_images.id AS mainImageId FROM candidates LEFT JOIN candidate_images ON candidate_images.candidateId = candidates.id AND candidate_images.isMain = 1 ORDER BY candidates.name COLLATE NOCASE, candidates.id").all().map((row) => {
+      candidates: db.prepare("SELECT candidates.*, candidate_images.version AS imageVersion, candidate_images.id AS mainImageId FROM candidates LEFT JOIN candidate_images ON candidate_images.candidateId = candidates.id AND candidate_images.isMain = 1 ORDER BY candidates.destinationId, candidates.category, candidates.position, candidates.id").all().map((row) => {
         const { linksJson, ...candidate } = row as unknown as StoredCandidate;
         const links = storedLinks({ ...candidate, linksJson });
-        return { ...candidate, url: links[0]?.url ?? "", included: candidate.included === 1, links, images: photos.get(candidate.id) ?? [] };
+        return { ...candidate, url: links[0]?.url ?? "", included: candidate.included === 1, mustDo: candidate.mustDo === 1, links, images: photos.get(candidate.id) ?? [] };
       }),
     };
   }
@@ -829,14 +852,35 @@ export function createStore(databasePath: string) {
         }
         const links = savedLinks(input, before);
         const url = links[0]?.url ?? "";
+        const mustDo = input.mustDo === undefined ? (before?.mustDo ?? 0) : Number(input.mustDo);
+        if (input.category === "hotels" && mustDo) throw new ValidationError("Must do is available for activities and restaurants only.");
         if (input.included && input.category === "hotels") clearHotelSelection(input.destinationId);
         if (input.id) {
-          db.prepare("UPDATE candidates SET name = ?, priceCents = ?, address = ?, url = ?, notes = ?, included = ?, linksJson = ? WHERE id = ?").run(input.name, parsePrice(input.price), input.address, url, input.notes, Number(input.included), JSON.stringify(links), id);
+          db.prepare("UPDATE candidates SET name = ?, priceCents = ?, address = ?, url = ?, notes = ?, included = ?, mustDo = ?, linksJson = ? WHERE id = ?").run(input.name, parsePrice(input.price), input.address, url, input.notes, Number(input.included), mustDo, JSON.stringify(links), id);
         } else {
-          db.prepare("INSERT INTO candidates(id,destinationId,category,name,priceCents,address,url,notes,included,linksJson) VALUES(?,?,?,?,?,?,?,?,?,?)").run(id, input.destinationId, input.category, input.name, parsePrice(input.price), input.address, url, input.notes, Number(input.included), JSON.stringify(links));
+          const position = Number(db.prepare("SELECT coalesce(max(position), -1) + 1 AS position FROM candidates WHERE destinationId = ? AND category = ?").get(input.destinationId, input.category)!.position);
+          db.prepare("INSERT INTO candidates(id,destinationId,category,name,priceCents,address,url,notes,included,mustDo,position,linksJson) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)").run(id, input.destinationId, input.category, input.name, parsePrice(input.price), input.address, url, input.notes, Number(input.included), mustDo, position, JSON.stringify(links));
         }
         saveGallery("candidate", id, input.gallery, input.image);
         return id;
+      }
+      case "candidate.move": {
+        const candidate = existing<StoredCandidate>("candidates", input.id);
+        const ordered = db.prepare("SELECT id FROM candidates WHERE destinationId = ? AND category = ? ORDER BY position, id").all(candidate.destinationId, candidate.category);
+        const index = ordered.findIndex((item) => item.id === input.id);
+        const nextIndex = index + (input.direction === "up" ? -1 : 1);
+        if (nextIndex >= 0 && nextIndex < ordered.length) {
+          [ordered[index], ordered[nextIndex]] = [ordered[nextIndex], ordered[index]];
+          const update = db.prepare("UPDATE candidates SET position = ? WHERE id = ?");
+          ordered.forEach((item, position) => update.run(position, item.id));
+        }
+        return input.id;
+      }
+      case "candidate.mustDo": {
+        const candidate = existing<StoredCandidate>("candidates", input.id);
+        if (candidate.category === "hotels") throw new ValidationError("Must do is available for activities and restaurants only.");
+        db.prepare("UPDATE candidates SET mustDo = ? WHERE id = ?").run(Number(input.mustDo), input.id);
+        return input.id;
       }
       case "candidate.delete":
         existing<Candidate>("candidates", input.id);

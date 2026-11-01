@@ -161,3 +161,12 @@ The current Jira sprint supersedes earlier date, currency, weather-placement, an
 - TRA-65: Church on main destination cards, eligible with unknown dates or an inclusive Sunday. Manual hiding persists through schedule changes. Known non-Sunday ranges cannot be overridden; shared Sunday transfers make both destinations eligible. Preserve existing direct URLs and data; remove Church category tabs.
 
 Validate duration boundaries, missing inputs, source modes, migration/replay/backup, feedback failure and duplicate protection, browser behavior, and mobile editor saving. Review implementation separately from live deployment. Configure production Jira and rehearse schema 15 on a production backup before releasing; close the release with verified change-log entries.
+
+## Added scope: Travel 1.3, October 29, 2026 (TRA-10, TRA-22, TRA-23, TRA-28, TRA-30, TRA-34, TRA-37, TRA-66)
+- TRA-10: add a saved Must do priority to activities and restaurants, editable on cards and in the editor. Keep it independent of budget inclusion, source modes, prices, and ordering.
+- TRA-22, TRA-28, TRA-34: put each category's Add button after its ideas, retaining the existing creation flow and an available button for empty lists on desktop and mobile.
+- TRA-23, TRA-30, TRA-37: allow keyboard and touch accessible Up/Down ordering within each destination's Hotels, Activities, and Restaurants list. Persist order across reopening, append new ideas, and retain positions during edits.
+- Schema 16 adds candidate positions and Must do flags. Initialize positions in the previous alphabetical order only when the column is first added; replay preserves choices. Preserve galleries, links, selections, budgets, and routes. Verify upgrade, replay, backup, and container persistence.
+- TRA-66: the What's new page and unread indicator already shipped in Travel 1.2 (TRA-58). Reuse that implementation; publish 1.3 notes only after deployment is verified at release close.
+
+Review this implementation separately from live deployment. Back up and rehearse schema 16 before release.

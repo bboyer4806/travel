@@ -11,7 +11,7 @@ export interface ItineraryStop { id: string; kind: "layover" | "stop"; place: st
 export interface TravelLeg { id: string; tripId: string; fromId: string | null; toId: string | null; method: string; priceCents: number | null; departure: string; arrival: string; url: string; notes: string; itinerary: ItineraryStop[]; links: ResearchLink[]; }
 export interface CandidateImage { id: string; version: string; }
 export interface CandidateGalleryUpdate { add: { id: string; data: Uint8Array }[]; remove: string[]; mainImageId?: string | null; }
-export interface Candidate { id: string; destinationId: string; category: Category; name: string; priceCents: number | null; address: string; url: string; notes: string; included: boolean; links: ResearchLink[]; imageVersion: string | null; images: CandidateImage[]; mainImageId: string | null; }
+export interface Candidate { id: string; destinationId: string; category: Category; position: number; mustDo: boolean; name: string; priceCents: number | null; address: string; url: string; notes: string; included: boolean; links: ResearchLink[]; imageVersion: string | null; images: CandidateImage[]; mainImageId: string | null; }
 export interface MassTime { id: string; day: string; time: string; }
 export interface Church { id: string; destinationId: string; name: string; address: string; denomination: string; url: string; massTimes: MassTime[]; images: CandidateImage[]; mainImageId: string | null; }
 export interface Snapshot { churches: Church[]; trips: Trip[]; homeItems: HomeItem[]; destinations: Destination[]; legs: TravelLeg[]; candidates: Candidate[]; }
@@ -29,7 +29,9 @@ export type Mutation =
  | { type: "destination.move"; id: string; direction: "up" | "down" }
  | { type: "leg.save"; id: string; method: string; price: string; departure: string; arrival: string; url: string; notes: string; itinerary?: ItineraryStop[]; links?: ResearchLink[] }
  | { type: "leg.clear"; id: string }
- | { type: "candidate.save"; id?: string; destinationId: string; category: Category; name: string; price: string; address: string; url: string; notes: string; included: boolean; links?: ResearchLink[]; image?: Uint8Array | null; gallery?: CandidateGalleryUpdate }
+ | { type: "candidate.save"; id?: string; destinationId: string; category: Category; name: string; price: string; address: string; url: string; notes: string; included: boolean; mustDo?: boolean; links?: ResearchLink[]; image?: Uint8Array | null; gallery?: CandidateGalleryUpdate }
+ | { type: "candidate.move"; id: string; direction: "up" | "down" }
+ | { type: "candidate.mustDo"; id: string; mustDo: boolean }
  | { type: "candidate.delete"; id: string }
  | { type: "candidate.include"; id: string; included: boolean };
 export type ActionResult = { ok: true; snapshot: Snapshot; id?: string } | { ok: false; error: string };

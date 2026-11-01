@@ -45,7 +45,7 @@ const images = [
   Buffer.from('UklGRh4AAABXRUJQVlA4TBEAAAAvAUAAAAfQtSZVrP+BiOh/AAA=', 'base64'),
   Buffer.from('UklGRh4AAABXRUJQVlA4TBEAAAAvAUAAAAdQwjaXpf+BiOh/AAA=', 'base64'),
 ];
-assert.equal(db.prepare('PRAGMA user_version').get().user_version, 15);
+assert.equal(db.prepare('PRAGMA user_version').get().user_version, 16);
 db.exec('PRAGMA foreign_keys = ON; BEGIN IMMEDIATE;');
 db.prepare('INSERT INTO trips(id,name,dateLabel,homeCity,travelers,notes,createdAt) VALUES(?,?,?,?,?,?,?)').run('container-smoke','Persistence test','','',2,'',new Date().toISOString());
 db.prepare("UPDATE trips SET startDate = '2027-05-10' WHERE id = 'container-smoke'").run();
@@ -59,7 +59,7 @@ db.prepare("UPDATE destinations SET shoppingMinor = 12550, shoppingCurrency = 'U
 db.prepare('UPDATE destinations SET weatherHighF=?,weatherLowF=?,weatherRainfall=?,weatherPeriod=?,weatherSource=? WHERE id=?').run(0,-12.5,'Light winter precipitation','January','Historical climate notes',destinationId);
 db.prepare('INSERT INTO destination_images(destinationId,version,data) VALUES(?,?,?)').run(destinationId, imageVersion, images[0]);
 for (const [index, candidate] of candidates.entries()) {
-  db.prepare('INSERT INTO candidates(id,destinationId,category,name) VALUES(?,?,?,?)').run(candidate.id, destinationId, candidate.category, 'Persistence test: ' + candidate.category);
+  db.prepare('INSERT INTO candidates(id,destinationId,category,name,position,mustDo) VALUES(?,?,?,?,?,?)').run(candidate.id, destinationId, candidate.category, 'Persistence test: ' + candidate.category, index + 2, candidate.category === 'hotels' ? 0 : 1);
   for (const [position, data] of images.entries()) {
     const photoId = `90000000-0000-4000-8000-${String(index * 2 + position + 1).padStart(12, '0')}`;
     const version = position === 1 ? candidate.version : 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
@@ -111,7 +111,7 @@ const images = [
 ];
 const db = new DatabaseSync('/data/travel.sqlite');
 try {
-  assert.equal(db.prepare('PRAGMA user_version').get().user_version, 15);
+  assert.equal(db.prepare('PRAGMA user_version').get().user_version, 16);
   assert.equal(db.prepare('SELECT startDate FROM trips WHERE id = ?').get('container-smoke').startDate, '2027-05-10');
   assert.equal(db.prepare('SELECT nights FROM destinations WHERE id = ?').get(destinationId).nights, 3);
   const homeItems = db.prepare('SELECT name,priceCents,notes,completed,createdAt FROM home_items WHERE tripId = ? ORDER BY createdAt').all('container-smoke').map(row => ({...row}));
@@ -129,9 +129,11 @@ try {
   assert.deepEqual(Buffer.from(image.data), images[0]);
   assert.equal(db.prepare('SELECT count(*) AS count FROM candidate_images').get().count, 6);
   for (const [index, candidate] of candidates.entries()) {
-    const saved = db.prepare('SELECT destinationId,category,included,priceCents FROM candidates WHERE id = ?').get(candidate.id);
+    const saved = db.prepare('SELECT destinationId,category,included,priceCents,position,mustDo FROM candidates WHERE id = ?').get(candidate.id);
     assert.equal(saved?.destinationId, destinationId);
     assert.equal(saved.category, candidate.category);
+    assert.equal(saved.position, index + 2);
+    assert.equal(saved.mustDo, candidate.category === 'hotels' ? 0 : 1);
     if (candidate.category === 'hotels') { assert.equal(saved.included, 1); assert.equal(saved.priceCents, 40000); }
     if (candidate.category === 'activities') { assert.equal(saved.included, 1); assert.equal(saved.priceCents, 7550); }
     if (candidate.category === 'restaurants') { assert.equal(saved.included, 1); assert.equal(saved.priceCents, 4525); }

@@ -57,6 +57,13 @@ Use the edit control beside **Shopping**, or edit the destination, to enter an o
 ## Destination controls
 Hotels, Activities, and Restaurants links sit beside their budget headings and show saved-idea counts. The destination editor has one **Save** in its sticky header, with pending state and save errors kept in view; Cancel discards the draft.
 
+## Idea priorities and ordering
+Each destination's Hotels, Activities, and Restaurants list has **Up** and **Down** controls on each idea. Use them by mouse, touch, or keyboard to save your preferred order. Each destination and category keeps its own order; newly added ideas appear at the end, and editing a name leaves its position unchanged. The **Add hotel**, **Add activity**, or **Add restaurant** button appears below the list and remains available when the list is empty.
+
+Mark activities and restaurants as **Must do** from their cards or editor; select the control again to remove the marker. This priority is independent of budget inclusion and does not change list order, prices, or budgeting methods. Hotels retain their separate chosen-stay selection.
+
+Schema 16 preserves each existing list's alphabetical order on its first upgrade, with no ideas initially marked Must do. Order and priority survive reopening, backups, and migration replay. See [deployment and rollback](docs/DEPLOYMENT.md) before upgrading.
+
 ## Typical weather
 Each destination card on the main trip page shows **Typical weather** with **Edit typical weather**. Category detail pages do not repeat it. Enter optional high and low temperatures in °F, rainfall notes, the month or period described, and a source name or link. These are manually recorded typical conditions; there is no automatic lookup or Celsius conversion.
 
@@ -106,7 +113,7 @@ The provider needs no key for this personal, non-commercial app. Its [free-servi
 ## Routes, itineraries, and research links
 Trips return to their departing city by default. Select **Return to a different city** to enter a separate endpoint. Existing trips retain their departure location and default return behavior.
 Each travel connection supports up to 30 ordered layovers or stops, with a place, arrival/departure details, and notes. The connection's estimated price covers the whole itinerary and is counted once in the trip budget.
-Connections and hotel/activity/restaurant ideas support up to 20 research links with optional short descriptions. Existing single links are retained during the additive database upgrade. Older schema versions upgrade to version 15 automatically inside a transaction; take an online backup before deploying this upgrade.
+Connections and hotel/activity/restaurant ideas support up to 20 research links with optional short descriptions. Existing single links are retained during the additive database upgrade. Older schema versions upgrade to version 16 automatically inside a transaction; take an online backup before deploying this upgrade.
 ## Images
 Each destination can have one optional uploaded image. Each hotel, activity, restaurant, and church can have up to 10 photos, with one selected as the main photo on its card. Click the thumbnails to view the other photos. Add photos, choose the main photo, or remove individual photos in the editor; removing the main photo selects another remaining photo. Cancel discards photo changes. Existing single idea images become the main photo automatically.
 JPEG, PNG, and WebP uploads up to 5 MiB each and 20 megapixels are supported, with at most 15 MiB of new files in one save. Images are oriented, resized to fit 1600 × 1200, stripped of metadata, and saved as WebP (up to 2 MiB each). All selected uploads must be valid before any changes are saved.

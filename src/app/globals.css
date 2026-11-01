@@ -891,6 +891,30 @@ button svg,a svg {
 .idea-tools {
   display:flex
 }
+.must-do {
+  align-self:flex-start;
+  margin-top:12px
+}
+.idea-order {
+  display:flex;
+  flex-wrap:wrap;
+  align-items:center;
+  gap:8px;
+  margin-top:20px;
+  padding-top:16px;
+  border-top:1px solid var(--line)
+}
+.idea-order>span {
+  margin-right:auto;
+  font-size:12px;
+  color:var(--muted)
+}
+.idea-order .button {
+  min-height:44px
+}
+.ideas-add {
+  margin-top:24px
+}
 .idea-card h2 {
   font-size:28px;
   overflow-wrap:anywhere

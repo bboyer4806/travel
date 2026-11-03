@@ -102,6 +102,8 @@ Earlier images reject schema 15. Rollback requires a compatible build or the sto
 ### Schema 16: Travel 1.3 idea order and Must do
 Back up before deployment and rehearse against a copy of the current database. Schema 16 adds candidate position and Must do fields. Each destination/category list starts in its previous alphabetical order (case-insensitive name, then ID); existing ideas start unmarked. Initialization runs only when each column is first added, so migration replay preserves later changes. New ideas append to their list; priority and ordering never change prices, inclusion, budget methods, galleries, research links, routes, or other trip data.
 
+On November 1, 2026, the upgrade was rehearsed against a copy of the verified schema 15 production backup. All nine tables retained their rows and original values, initial alphabetical ordering was preserved, and replay retained subsequent order and Must do edits. Integrity and foreign-key checks passed. The verified backup is retained on the server and, with explicit approval, in the ignored local backups folder. On November 2, the live schema 16 database passed integrity and foreign-key checks, and all three idea pages rendered saved ordering, applicable Must do flags, and Add actions below the list.
+
 The same SQLite database and online backups preserve both fields. The container smoke check verifies stored positions and Must do flags after container replacement alongside existing data and images. Earlier builds reject schema 16; rollback requires a compatible build or the stopped-app restore procedure above. Preserve the upgraded database and sidecars first; restoring a pre-upgrade backup loses subsequent edits.
 
 ### Feedback and release notes

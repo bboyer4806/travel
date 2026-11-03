@@ -2,6 +2,14 @@ export interface Release { version: string; date: string; changes: readonly stri
 
 // Add only verified, deployed changes and their actual release dates at release close.
 export const releases: readonly Release[] = [{
+  version: "1.3",
+  date: "2026-11-01",
+  changes: [
+    "Mark activities and restaurants as Must do from their cards or editor, independently of budget inclusion.",
+    "Arrange hotel, activity, and restaurant ideas with saved Up and Down controls. New ideas appear last, and renaming keeps their place.",
+    "Find Add hotel, Add activity, and Add restaurant below each list, including empty lists.",
+  ],
+}, {
   version: "1.2",
   date: "2026-10-29",
   changes: [

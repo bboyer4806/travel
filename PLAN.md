@@ -170,3 +170,13 @@ Validate duration boundaries, missing inputs, source modes, migration/replay/bac
 - TRA-66: the What's new page and unread indicator already shipped in Travel 1.2 (TRA-58). Reuse that implementation; publish 1.3 notes only after deployment is verified at release close.
 
 Review this implementation separately from live deployment. Back up and rehearse schema 16 before release.
+
+## Added scope: Travel 1.4, November 3, 2026 (TRA-15, TRA-52, TRA-67, TRA-71, TRA-72)
+- TRA-15: manually maintain destination entry requirements, passport nationality, purpose and circumstances, visa/electronic authorizations, passport validity, entry/health documents, transit requirements, notes, official source links, and last checked date. Show current schedule for reference, distinguish missing information from no requirements, and remind travelers to verify official sources. Dedicated edits preserve unrelated data; no automatic lookup or eligibility decisions.
+- TRA-52: destination galleries with up to 10 photos, thumbnails, a primary photo, removal, and accessible Move left/Move right ordering. Preserve existing destination images as primary, existing upload limits, versioned delivery, persistence, and other category galleries. Cancel discards draft changes; removing primary selects the first remaining photo.
+- TRA-67: display every inclusive Sunday date in the existing Church section, updating with calculated schedules. Preserve eligibility, manual hiding, churches, and Mass times; unknown dates do not imply a Sunday or verified services.
+- TRA-71: upgrade Next.js and matching ESLint configuration to exactly 16.4.5 (the approved ticket description supersedes its older 16.4.4 title). Verify frozen installation, audit, Server Actions, image handling, and existing quality gates.
+- TRA-72: focused Weather, Shopping, Food, and Activities saves omit unrelated destination fields and preserve the latest database values and travel plans. Main-editor city renaming retains the existing connection-clearing behavior.
+- Schema 17 upgrades destination images to ordered galleries; schema 18 adds destination-owned entry requirements. Preserve old data, replay safety, backups, and container persistence. Back up and rehearse on a copy before release; earlier builds reject the newer schema.
+
+Review implementation separately from live deployment. Publish 1.4 change-log entries only after deployment and release verification.

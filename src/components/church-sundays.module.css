@@ -1,0 +1,28 @@
+.panel {
+  margin-bottom: 20px;
+  padding: 18px 20px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--white);
+}
+
+.panel h3 {
+  margin: 0 0 10px;
+  font-size: 15px;
+}
+
+.panel ul {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 24px;
+  margin: 0 0 12px;
+  padding-left: 20px;
+}
+
+.panel p {
+  margin: 0 0 10px;
+}
+
+.panel p:last-child {
+  margin-bottom: 0;
+}

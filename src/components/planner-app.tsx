@@ -5,9 +5,12 @@ import { FeedbackButton } from "@/components/feedback";
 import { churchDateEligible, formatCalendarDate } from "@/lib/trip-dates";
 import LocationField from "@/components/location-field";
 import HomeItems from "@/components/home-items";
+import { ChurchSundays } from "@/components/church-sundays";
+import { EntryRequirementsPanel, EntryRequirementsEditor } from "@/components/entry-requirements";
+import { entryRequirementsFromForm } from "@/lib/entry-requirements";
 import { ChurchOptions, ChurchEditor } from "@/components/churches";
 import { TypicalWeatherPanel, TypicalWeatherEditor } from "@/components/typical-weather";
-import { PlannerImage, PlannerImageEditor } from "@/components/planner-image";
+import { DestinationGallery, DestinationGalleryEditor, createDestinationGalleryDraft, destinationGalleryForm, type DestinationGalleryDraft } from "@/components/destination-gallery";
 import CandidateList from "@/components/candidate-list";
 import { CandidateGalleryEditor, candidateGalleryForm, createCandidateGalleryDraft, type CandidateGalleryDraft } from "@/components/candidate-gallery";
 import TripRouteFields from "@/components/trip-route-fields";
@@ -27,6 +30,7 @@ type Editor =
   | { kind: "destination"; item?: Destination }
   | { kind: "shoppingBudget"; item: Destination }
   | { kind: "weather"; item: Destination }
+  | { kind: "entryRequirements"; item: Destination }
   | { kind: "activitiesBudget"; item: Destination }
   | { kind: "foodBudget"; item: Destination }
   | { kind: "leg"; item: TravelLeg }
@@ -48,7 +52,6 @@ const priceNotes = {
   activities: "Total for the whole party for this activity.",
   restaurants: "Total for one meal for the whole party.",
 };
-function destinationImageUrl(destination: Destination) { return "/api/destination-images/" + destination.id + "?v=" + destination.imageVersion; }
 function displayPrice(cents: number | null) { return cents === null ? "Not estimated" : formatMoney(cents); }
 function priceValue(cents: number | null | undefined) { return cents == null ? "" : (cents / 100).toFixed(2); }
 function BudgetValue({ budget }: { budget: Budget }) {
@@ -78,8 +81,7 @@ export default function PlannerApp({ initialData, tripId, destinationId, categor
   const [itinerary, setItinerary] = useState<ItineraryStop[]>([]);
   const [massTimes, setMassTimes] = useState<MassTime[]>([]);
   const [researchLinks, setResearchLinks] = useState<ResearchLink[]>([]);
-  const [imageFile, setImageFile] = useState<File | null>(null);
-  const [removeImage, setRemoveImage] = useState(false);
+  const [destinationGallery, setDestinationGallery] = useState<DestinationGalleryDraft>(() => createDestinationGalleryDraft());
   const [candidateGallery, setCandidateGallery] = useState<CandidateGalleryDraft>(() => createCandidateGalleryDraft());
   const [error, setError] = useState("");
   const [message, setMessage] = useState("");
@@ -95,19 +97,20 @@ export default function PlannerApp({ initialData, tripId, destinationId, categor
     if (busy) return;
     if (value.kind === "leg") setItinerary(value.item.itinerary ?? []);
     if (value.kind === "leg" || value.kind === "candidate") setResearchLinks(value.item?.links ?? []);
+    if (value.kind === "entryRequirements") setResearchLinks(value.item.entryRequirements?.sources ?? []);
     if (value.kind === "church") setMassTimes(value.item?.massTimes ?? []);
-    setImageFile(null); setRemoveImage(false);
+    setDestinationGallery(createDestinationGalleryDraft(value.kind === "destination" ? value.item : undefined));
     setCandidateGallery(createCandidateGalleryDraft(value.kind === "candidate" || value.kind === "church" ? value.item : undefined));
     setEditor(value); setError(""); setMessage("");
   };
-  const close = () => { if (!busy) { setEditor(null); setImageFile(null); setCandidateGallery(createCandidateGalleryDraft()); setError(""); } };
+  const close = () => { if (!busy) { setEditor(null); setDestinationGallery(createDestinationGalleryDraft()); setCandidateGallery(createCandidateGalleryDraft()); setError(""); } };
   async function perform(mutation: Mutation, success = "Changes saved.", redirect?: string, imageForm?: FormData) {
     if (busy) return;
     setBusy(true); setError(""); setMessage("");
     try {
       const result = await mutatePlanner(mutation, imageForm);
       if (!result.ok) { setError(result.error); return; }
-      setData(result.snapshot); setEditor(null); setImageFile(null); setCandidateGallery(createCandidateGalleryDraft()); setMessage(success);
+      setData(result.snapshot); setEditor(null); setDestinationGallery(createDestinationGalleryDraft()); setCandidateGallery(createCandidateGalleryDraft()); setMessage(success);
       if (redirect) router.push(redirect);
       else if (mutation.type === "trip.save" && !mutation.id && result.id) router.push("/trips/" + result.id);
     } catch { setError("We couldn't reach the planner. Your changes haven't been saved. Please try again."); }
@@ -124,34 +127,36 @@ export default function PlannerApp({ initialData, tripId, destinationId, categor
     switch (editor.kind) {
       case "delete": void perform(editor.mutation, "Removed from your notebook.", editor.redirect); break;
       case "trip": void perform({ type: "trip.save", id: editor.item?.id, name: text("name"), startDate: text("startDate") || null, dateLabel: text("dateLabel"), homeCity: text("homeCity"), returnCity: fields.has("differentReturn") ? text("returnCity") : null, travelers: Number(text("travelers")), notes: text("notes") }); break;
+      case "entryRequirements": {
+        void perform({ type: "destination.entryRequirements", id: editor.item.id, tripId: editor.item.tripId, requirements: entryRequirementsFromForm(fields, researchLinks) }, "Entry requirements saved.");
+        break;
+      }
       case "weather": {
         const item = editor.item;
-        void perform({ type: "destination.save", id: item.id, tripId: item.tripId, city: item.city, stay: item.stay, notes: item.notes,
+        void perform({ type: "destination.save", id: item.id, tripId: item.tripId,
           weatherHighF: text("weatherHighF").trim() === "" ? null : Number(text("weatherHighF")),
           weatherLowF: text("weatherLowF").trim() === "" ? null : Number(text("weatherLowF")),
           weatherPeriod: text("weatherPeriod"), weatherRainfall: text("weatherRainfall"), weatherSource: text("weatherSource") }, "Typical weather saved.");
         break;
       }
       case "destination": {
-        const imageForm = new FormData();
-        if (imageFile) imageForm.set("image", imageFile);
-        else if (removeImage) imageForm.set("removeImage", "true");
+        const imageForm = destinationGalleryForm(destinationGallery, editor.item);
         if (trip) void perform({ type: "destination.save", id: editor.item?.id, tripId: trip.id, city: text("city"), stay: text("stay"), notes: text("notes"), nights: text("nights") === "" ? null : Number(text("nights")), miscDailyAmount: text("miscDailyAmount"), miscCurrency: "USD", hotelNightlyAmount: text("hotelNightlyAmount"), hotelCurrency: "USD", activitiesBudgetMode: text("activitiesBudgetMode") as ActivitiesBudgetMode, activitiesGeneralAmount: text("activitiesGeneralAmount"), activitiesCurrency: "USD", foodBudgetMode: text("foodBudgetMode") as FoodBudgetMode, foodDailyAmount: text("foodDailyAmount"), foodCurrency: "USD", shoppingAmount: text("shoppingAmount"), shoppingCurrency: "USD" }, "Destination saved. Review any new travel connections.", undefined, imageForm);
         break;
       }
       case "shoppingBudget": {
         const item = editor.item;
-        void perform({ type: "destination.save", id: item.id, tripId: item.tripId, city: item.city, stay: item.stay, notes: item.notes, shoppingAmount: text("shoppingAmount"), shoppingCurrency: "USD" }, "Shopping budget saved.");
+        void perform({ type: "destination.save", id: item.id, tripId: item.tripId, shoppingAmount: text("shoppingAmount"), shoppingCurrency: "USD" }, "Shopping budget saved.");
         break;
       }
       case "foodBudget": {
         const item = editor.item;
-        void perform({ type: "destination.save", id: item.id, tripId: item.tripId, city: item.city, stay: item.stay, notes: item.notes, foodBudgetMode: text("foodBudgetMode") as FoodBudgetMode, foodDailyAmount: text("foodDailyAmount"), foodCurrency: "USD" }, "Food budget saved.");
+        void perform({ type: "destination.save", id: item.id, tripId: item.tripId, foodBudgetMode: text("foodBudgetMode") as FoodBudgetMode, foodDailyAmount: text("foodDailyAmount"), foodCurrency: "USD" }, "Food budget saved.");
         break;
       }
       case "activitiesBudget": {
         const item = editor.item;
-        void perform({ type: "destination.save", id: item.id, tripId: item.tripId, city: item.city, stay: item.stay, notes: item.notes, activitiesBudgetMode: text("activitiesBudgetMode") as ActivitiesBudgetMode, activitiesGeneralAmount: text("activitiesGeneralAmount"), activitiesCurrency: "USD" }, "Activities budget saved.");
+        void perform({ type: "destination.save", id: item.id, tripId: item.tripId, activitiesBudgetMode: text("activitiesBudgetMode") as ActivitiesBudgetMode, activitiesGeneralAmount: text("activitiesGeneralAmount"), activitiesCurrency: "USD" }, "Activities budget saved.");
         break;
       }
       case "homeItem": {
@@ -172,6 +177,7 @@ export default function PlannerApp({ initialData, tripId, destinationId, categor
   }
   const pageTitle = editor?.kind === "delete" ? editor.title : editor?.kind === "trip" ? (editor.item ? "Edit trip" : "A new adventure")
     : editor?.kind === "church" ? (editor.item ? "Edit church" : "Add a church")
+    : editor?.kind === "entryRequirements" ? "Edit entry requirements"
     : editor?.kind === "weather" ? "Edit typical weather"
     : editor?.kind === "destination" ? (editor.item ? "Edit destination: " + formatSavedDestinationLabel(editor.item.city) : "Add a destination")
     : editor?.kind === "shoppingBudget" ? "Edit shopping budget"
@@ -184,7 +190,7 @@ export default function PlannerApp({ initialData, tripId, destinationId, categor
     if (!churchDateEligible(stop)) return null;
     if (!stop.churchEnabled) return <div className="church-visibility"><p className="helper">Church is hidden. Saved churches and photos are kept.</p><button type="button" className="text-button" disabled={busy} onClick={() => void perform({ type: "destination.churchVisibility", id: stop.id, enabled: true }, "Church shown.")}>Show Church<span className="sr-only"> for {stop.city}</span></button></div>;
     return <section className="destination-church" aria-label={"Church in " + stop.city}><div className="budget-section-heading"><h4>Church</h4><div className="heading-actions"><button type="button" className="text-button" disabled={busy} onClick={() => open({ kind: "church", destinationId: stop.id })}><Plus size={15} />Add church</button><button type="button" className="text-button" disabled={busy} onClick={() => void perform({ type: "destination.churchVisibility", id: stop.id, enabled: false }, "Church hidden. Your churches and photos are saved.")}>Hide Church</button></div></div>
-      <p className="helper">Manually recorded Mass times; confirm with the church before your visit.</p>
+      <ChurchSundays destination={stop} />
       <ChurchOptions items={data.churches.filter((item) => item.destinationId === stop.id)} busy={busy} onAdd={() => open({ kind: "church", destinationId: stop.id })} onEdit={(item) => open({ kind: "church", item, destinationId: stop.id })} onDelete={(item) => confirmDelete({ type: "church.delete", id: item.id, destinationId: stop.id }, "Delete “" + item.name + "”?", "This church and its photos will be removed from this destination.")} />
     </section>;
   }
@@ -223,9 +229,10 @@ export default function PlannerApp({ initialData, tripId, destinationId, categor
         <div className="trip-layout"><div className="trip-main">
           <section><div className="section-heading"><div><p className="eyebrow">ONE STOP AT A TIME</p><h2>The destinations</h2></div><button className="button secondary small" onClick={() => open({ kind: "destination" })}><Plus size={16} />Add destination</button></div>
             {stops.length === 0 ? <div className="empty-state"><MapPin size={29} strokeWidth={1.4} /><h3>Where should this trip take you?</h3><p>Add your first destination. Your departure and return connections will appear automatically.</p><button className="text-button" onClick={() => open({ kind: "destination" })}>Add a destination <ArrowRight size={16} /></button></div>
-              : <div className="destination-list">{stops.map((stop, index) => <article className="destination-card" key={stop.id} id={"destination-" + stop.id}>{stop.imageVersion && <PlannerImage src={destinationImageUrl(stop)} name={formatSavedDestinationLabel(stop.city)} />}<div className="destination-top"><span className="stop-number">{String(index + 1).padStart(2, "0")}</span><div className="destination-name"><h3>{formatSavedDestinationLabel(stop.city)}</h3><p>{stop.stay || "Stay notes not added"}</p></div><div className="destination-tools"><button className="icon-button" disabled={busy || index === 0} aria-label={"Move " + formatSavedDestinationLabel(stop.city) + " up"} onClick={() => void perform({ type: "destination.move", id: stop.id, direction: "up" }, "Route updated. Review the new travel connections.")}><ArrowUp size={15} /></button><button className="icon-button" disabled={busy || index === stops.length - 1} aria-label={"Move " + formatSavedDestinationLabel(stop.city) + " down"} onClick={() => void perform({ type: "destination.move", id: stop.id, direction: "down" }, "Route updated. Review the new travel connections.")}><ArrowDown size={15} /></button><button className="icon-button" aria-label={"Edit " + formatSavedDestinationLabel(stop.city)} onClick={() => open({ kind: "destination", item: stop })}><Pencil size={15} /></button><button className="icon-button" aria-label={"Delete " + formatSavedDestinationLabel(stop.city)} onClick={() => confirmDelete({ type: "destination.delete", id: stop.id }, "Remove “" + formatSavedDestinationLabel(stop.city) + "”?", "Its saved destination options, photos, and affected travel plans will be removed. The remaining route will reconnect.")}><Trash2 size={15} /></button></div></div>
+              : <div className="destination-list">{stops.map((stop, index) => <article className="destination-card" key={stop.id} id={"destination-" + stop.id}><DestinationGallery destination={stop} /><div className="destination-top"><span className="stop-number">{String(index + 1).padStart(2, "0")}</span><div className="destination-name"><h3>{formatSavedDestinationLabel(stop.city)}</h3><p>{stop.stay || "Stay notes not added"}</p></div><div className="destination-tools"><button className="icon-button" disabled={busy || index === 0} aria-label={"Move " + formatSavedDestinationLabel(stop.city) + " up"} onClick={() => void perform({ type: "destination.move", id: stop.id, direction: "up" }, "Route updated. Review the new travel connections.")}><ArrowUp size={15} /></button><button className="icon-button" disabled={busy || index === stops.length - 1} aria-label={"Move " + formatSavedDestinationLabel(stop.city) + " down"} onClick={() => void perform({ type: "destination.move", id: stop.id, direction: "down" }, "Route updated. Review the new travel connections.")}><ArrowDown size={15} /></button><button className="icon-button" aria-label={"Edit " + formatSavedDestinationLabel(stop.city)} onClick={() => open({ kind: "destination", item: stop })}><Pencil size={15} /></button><button className="icon-button" aria-label={"Delete " + formatSavedDestinationLabel(stop.city)} onClick={() => confirmDelete({ type: "destination.delete", id: stop.id }, "Remove “" + formatSavedDestinationLabel(stop.city) + "”?", "Its saved destination options, photos, and affected travel plans will be removed. The remaining route will reconnect.")}><Trash2 size={15} /></button></div></div>
                 {stop.notes && <p className="destination-notes">{stop.notes}</p>}
                 <DestinationBudget snapshot={data} destination={stop} onShoppingEdit={() => open({ kind: "shoppingBudget", item: stop })} />
+                <EntryRequirementsPanel requirements={stop.entryRequirements} arrivalDate={stop.arrivalDate} departureDate={stop.departureDate} nights={stop.nights} disabled={busy} onEdit={() => open({ kind: "entryRequirements", item: stop })} onClear={() => confirmDelete({ type: "destination.entryRequirements", id: stop.id, tripId: stop.tripId, requirements: null }, "Clear entry requirements?", "This removes the recorded requirements, sources, and last checked date for " + formatSavedDestinationLabel(stop.city) + ".")} />
                 <TypicalWeatherPanel weather={stop} disabled={busy} onEdit={() => open({ kind: "weather", item: stop })} />
                 {renderChurch(stop)}
               </article>)}</div>}
@@ -280,10 +287,11 @@ export default function PlannerApp({ initialData, tripId, destinationId, categor
         <LocationField compactDestination label="City or destination" name="city" defaultValue={editor.item?.city} required autoFocus disabled={busy} placeholder="Start typing a city, e.g. Vienna" helpText="Choose a suggestion or enter any destination." hint={editor.item ? "Changing the city clears travel details for its incoming and outgoing connections." : undefined} />
         <Field label="Stay notes" wide><input name="stay" defaultValue={editor.item?.stay} maxLength={120} placeholder="3 nights, or sometime in May" /></Field>
         <DestinationBudgetEditor trip={trip!} stops={stops} destination={editor.item} selectedHotel={data.candidates.find((item) => item.destinationId === editor.item?.id && item.category === "hotels" && item.included)} disabled={busy} />
-        <PlannerImageEditor existingSrc={editor.item?.imageVersion ? destinationImageUrl(editor.item) : null} file={imageFile} removeExisting={removeImage} onChange={(file, remove) => { setImageFile(file); setRemoveImage(remove); }} disabled={busy} />
+        <DestinationGalleryEditor destination={editor.item} draft={destinationGallery} onChange={setDestinationGallery} disabled={busy} />
         <Notes value={editor.item?.notes} />
       </>}
       {editor.kind === "church" && <ChurchEditor item={editor.item} massTimes={massTimes} onTimesChange={setMassTimes} gallery={candidateGallery} onGalleryChange={setCandidateGallery} busy={busy} />}
+      {editor.kind === "entryRequirements" && <EntryRequirementsEditor requirements={editor.item.entryRequirements} sources={researchLinks} onSourcesChange={setResearchLinks} disabled={busy} />}
       {editor.kind === "weather" && <TypicalWeatherEditor weather={editor.item} disabled={busy} />}
       {editor.kind === "shoppingBudget" && <ShoppingBudgetEditor destination={editor.item} disabled={busy} />}
       {editor.kind === "foodBudget" && <FoodBudgetEditor destination={editor.item} disabled={busy} />}
@@ -312,6 +320,6 @@ export default function PlannerApp({ initialData, tripId, destinationId, categor
         {category !== "hotels" && <label className="checkbox-field wide"><input name="mustDo" type="checkbox" defaultChecked={editor.item?.mustDo ?? false} disabled={busy} /><span>Must do<small>A planning priority. Budget inclusion and list order stay separate.</small></span></label>}
         <label className="checkbox-field wide"><input name="included" type="checkbox" defaultChecked={editor.item?.included ?? false} /><span>{category === "hotels" ? "Choose this hotel for the budget" : category === "activities" ? "Include in itemized activity costs" : "Include in itemized restaurant costs"}<small>{category === "hotels" ? "Replaces the general estimate or other chosen hotel. Your general estimate stays saved." : category === "activities" ? "Applies only in Itemized activity costs mode. This does not change your budgeting method." : "Applies only in Itemized restaurant costs mode. This does not change your budgeting method."}</small></span></label>
       </>}
-    </div>{error && editor.kind !== "destination" && <p className="form-error" role="alert">{error}</p>}<div className="dialog-actions"><button type="button" className="button secondary" onClick={close} disabled={busy}>Cancel</button>{editor.kind !== "destination" && <button className={editor.kind === "delete" ? "button danger" : "button primary"} type="submit" disabled={busy}>{busy ? "Saving…" : editor.kind === "delete" ? (editor.mutation.type === "leg.clear" ? "Clear travel plan" : "Delete") : editor.kind === "trip" && !editor.item ? "Create trip" : "Save changes"}</button>}</div></form></Dialog>}
+    </div>{error && editor.kind !== "destination" && <p className="form-error" role="alert">{error}</p>}<div className="dialog-actions"><button type="button" className="button secondary" onClick={close} disabled={busy}>Cancel</button>{editor.kind !== "destination" && <button className={editor.kind === "delete" ? "button danger" : "button primary"} type="submit" disabled={busy}>{busy ? "Saving…" : editor.kind === "delete" ? (editor.mutation.type === "leg.clear" ? "Clear travel plan" : editor.mutation.type === "destination.entryRequirements" ? "Clear entry requirements" : "Delete") : editor.kind === "trip" && !editor.item ? "Create trip" : "Save changes"}</button>}</div></form></Dialog>}
   </div>;
 }

@@ -57,6 +57,13 @@ Use the edit control beside **Shopping**, or edit the destination, to enter an o
 ## Destination controls
 Hotels, Activities, and Restaurants links sit beside their budget headings and show saved-idea counts. The destination editor has one **Save** in its sticky header, with pending state and save errors kept in view; Cancel discards the draft.
 
+The focused Typical Weather, Shopping, Food, and Activities editors save only their own fields. If someone changes the city, stay notes, schedule, or other destination details while one is open, those newer details and saved travel connections are preserved. Intentionally renaming a city in the main destination editor still clears its affected connections.
+
+## Entry requirements
+Each destination card has an **Entry requirements** section for manually maintained research. Add or edit passport nationality, purpose of travel, traveler circumstances, visa or electronic authorization requirements, passport validity, entry or health documents, separate transit requirements, and notes. Save official government or immigration links with descriptions and the date you last checked the information. All fields are optional; unrecorded information does not mean no requirements apply.
+
+Current calculated arrival, departure, and nights are shown for reference. Schedule changes preserve the research and its last checked date; saving does not automatically mark it checked. Verify requirements with official sources before traveling. Travel does not retrieve requirements, verify eligibility or documents, or monitor changes. **Clear** removes the record after confirmation; Cancel discards an editor draft. Requirements are stored with the destination in schema 18, included in backups, and deleted with their destination or trip.
+
 ## Idea priorities and ordering
 Each destination's Hotels, Activities, and Restaurants list has **Up** and **Down** controls on each idea. Use them by mouse, touch, or keyboard to save your preferred order. Each destination and category keeps its own order; newly added ideas appear at the end, and editing a name leaves its position unchanged. The **Add hotel**, **Add activity**, or **Add restaurant** button appears below the list and remains available when the list is empty.
 
@@ -73,6 +80,8 @@ Negative and decimal Fahrenheit values are accepted; high must be at least low w
 Each main destination card can show **Church**. New destinations show it while dates are unknown. With a complete date range it is eligible only when that inclusive range contains a Sunday, including Sunday arrivals, departures, and same-day stops. Both destinations sharing a Sunday transfer are eligible. Manual showing cannot override a known range without Sunday.
 
 Hide Church without deleting entries or photos. Hiding persists through date changes; eligible hidden destinations offer **Show Church**. Upgrades preserve existing visibility choices, including previously disabled sections. Church is absent from category navigation; existing direct Church URLs still work and respect date eligibility and hiding.
+
+Visible Church sections list every Sunday in the calculated stay, including arrival/departure Sundays, shared transfer days, and zero-night Sunday visits. The dates update when the trip start, destination order, or nights change. Unknown schedules show no assumed Sunday. These dates do not verify the recorded Mass times; confirm them with the church.
 
 Add, edit, or remove multiple churches with name, address, optional denomination and website, and up to 30 Mass times with a day or date. Missing times show **Mass times unknown**. Church galleries use the photo controls below. Entries, visibility, Mass times, and photos persist in the same database and backups, and do not change idea counts or budgets.
 
@@ -113,9 +122,11 @@ The provider needs no key for this personal, non-commercial app. Its [free-servi
 ## Routes, itineraries, and research links
 Trips return to their departing city by default. Select **Return to a different city** to enter a separate endpoint. Existing trips retain their departure location and default return behavior.
 Each travel connection supports up to 30 ordered layovers or stops, with a place, arrival/departure details, and notes. The connection's estimated price covers the whole itinerary and is counted once in the trip budget.
-Connections and hotel/activity/restaurant ideas support up to 20 research links with optional short descriptions. Existing single links are retained during the additive database upgrade. Older schema versions upgrade to version 16 automatically inside a transaction; take an online backup before deploying this upgrade.
+Connections and hotel/activity/restaurant ideas support up to 20 research links with optional short descriptions. Existing single links are retained during the additive database upgrade. Older schema versions upgrade to version 18 automatically inside a transaction; take an online backup before deploying this upgrade.
 ## Images
-Each destination can have one optional uploaded image. Each hotel, activity, restaurant, and church can have up to 10 photos, with one selected as the main photo on its card. Click the thumbnails to view the other photos. Add photos, choose the main photo, or remove individual photos in the editor; removing the main photo selects another remaining photo. Cancel discards photo changes. Existing single idea images become the main photo automatically.
+Each destination, hotel, activity, restaurant, and church can have up to 10 photos, with one selected as the main photo on its card. Click the thumbnails to view the other photos. Add photos, choose the main photo, or remove individual photos in the editor; removing the main photo selects another remaining photo. Cancel discards photo changes. Existing single idea images become the main photo automatically.
+
+Destination galleries also have **Move left** and **Move right** controls in the editor to save photo order. The primary photo opens first, independently of its position in the thumbnail order. Removing it chooses the first remaining photo. Schema 17 preserves each existing destination image, including its bytes and version, as that destination's primary photo. Existing single-image URLs continue to serve the current primary photo; individual photo URLs retain ownership and version checks. Ordinary destination edits preserve the gallery.
 JPEG, PNG, and WebP uploads up to 5 MiB each and 20 megapixels are supported, with at most 15 MiB of new files in one save. Images are oriented, resized to fit 1600 × 1200, stripped of metadata, and saved as WebP (up to 2 MiB each). All selected uploads must be valid before any changes are saved.
 Images live in the same persistent SQLite database and are included in online backups. Snapshots carry only photo IDs, versions, and the main selection; image routes serve separate, versioned responses. Image-only edits preserve travel plans, prices, research links, and budget selections.
 

@@ -66,3 +66,15 @@ export function formatCalendarDate(date: string | null | undefined): string {
 export function churchDateEligible(destination: { arrivalDate: string | null; departureDate: string | null }): boolean {
   return !destination.arrivalDate || !destination.departureDate || containsSunday(destination.arrivalDate, destination.departureDate);
 }
+
+/** All Sundays in the inclusive stay, or null when its date range is unknown. */
+export function churchSundayDates(destination: { arrivalDate: string | null; departureDate: string | null }): string[] | null {
+  const nights = stayNights(destination.arrivalDate, destination.departureDate);
+  if (nights === null || !destination.arrivalDate) return null;
+  const arrivalDay = new Date(destination.arrivalDate + "T00:00:00.000Z").getUTCDay();
+  const sundays: string[] = [];
+  for (let offset = (7 - arrivalDay) % 7; offset <= nights; offset += 7) {
+    sundays.push(addNights(destination.arrivalDate, offset));
+  }
+  return sundays;
+}

@@ -106,6 +106,16 @@ On November 1, 2026, the upgrade was rehearsed against a copy of the verified sc
 
 The same SQLite database and online backups preserve both fields. The container smoke check verifies stored positions and Must do flags after container replacement alongside existing data and images. Earlier builds reject schema 16; rollback requires a compatible build or the stopped-app restore procedure above. Preserve the upgraded database and sidecars first; restoring a pre-upgrade backup loses subsequent edits.
 
+### Schemas 17–18: Travel 1.4 destination galleries and entry requirements
+
+Take and verify an online backup, then rehearse against a copy of the current database before deployment. Schema 17 replaces the single destination-image table with an ordered gallery table. Each old photo retains its bytes and version and becomes its destination's primary photo at position zero. The table-shape check makes replay preserve later photo additions, ordering, and primary choices. Individual photo IDs and the legacy primary-photo route both enforce destination ownership and requested versions.
+
+Schema 18 creates a destination-owned entry-requirements table. Existing destinations start without a record. Manual research, sources, and last checked dates are included in the same SQLite backup; destination and trip deletion cascade to these records. Replaying this migration preserves existing records. Neither migration changes budgets, schedules, routes, candidate/church galleries, or other trip information.
+
+The container smoke script verifies schema 18, destination photo bytes/order/primary selection, individual image routes and ownership, and entry-requirements persistence across container replacement, alongside the existing checks. Docker is required to run it; a Next.js build does not validate the container. Next.js and its ESLint configuration are pinned to 16.4.5 for this implementation. Explicit output tracing includes Sharp's platform libraries from pnpm's package layout, including the DLLs needed by local Windows standalone previews. Recheck the dependency audit at release time and report any remaining unrelated tooling advisories.
+
+Schema 16 and earlier builds reject the newer database. Rollback requires a compatible build or the stopped-app restore procedure above. Preserve the upgraded database and sidecars first; restoring a pre-upgrade backup loses later edits. Production migration rehearsal and deployment verification are still required before closing Travel 1.4 and publishing its release notes.
+
 ### Feedback and release notes
 Configure server-only JIRA_URL (HTTPS Jira base URL), JIRA_EMAIL, and JIRA_API_TOKEN with permission to create Tasks in TRA. Use the host's secret configuration; never put credentials in source, image layers, client variables, or logs. Preserve the browser Host and Origin headers through the proxy; the feedback endpoint compares them and ignores forwarded-host claims. The HttpOnly feedback cookie is Secure for HTTPS origins.
 

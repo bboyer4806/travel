@@ -253,7 +253,7 @@ test("schema 13 upgrade initializes Sunday visibility, preserves prior data and 
     store.close(); store = null;
     observer = new DatabaseSync(path);
     try {
-      assert.equal(observer.prepare("PRAGMA user_version").get().user_version, 16);
+      assert.equal(observer.prepare("PRAGMA user_version").get().user_version, 18);
       observer.exec("PRAGMA user_version = 13;");
     } finally { observer.close(); }
     store = createStore(path);
@@ -262,7 +262,7 @@ test("schema 13 upgrade initializes Sunday visibility, preserves prior data and 
     assert.deepEqual(calculateBudget(store.getSnapshot(), tripId), budget);
     observer = new DatabaseSync(path);
     try {
-      assert.equal(observer.prepare("PRAGMA user_version").get().user_version, 16);
+      assert.equal(observer.prepare("PRAGMA user_version").get().user_version, 18);
       assert.deepEqual(observer.prepare("PRAGMA foreign_key_check").all(), []);
     } finally { observer.close(); }
   } finally { store?.close(); }

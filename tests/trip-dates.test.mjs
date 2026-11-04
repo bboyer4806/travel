@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { backup, DatabaseSync } from "node:sqlite";
 import { randomUUID } from "node:crypto";
-import { addNights, backfillDates, churchDateEligible, formatCalendarDate, sequenceDates } from "../src/lib/trip-dates.ts";
+import { addNights, backfillDates, churchDateEligible, churchSundayDates, formatCalendarDate, sequenceDates } from "../src/lib/trip-dates.ts";
 import { createStore, ValidationError } from "../src/lib/store.ts";
 import { setup, tripInput, destinationInput, destination, fileDatabase, candidateInput } from "./budget-fixtures.mjs";
 
@@ -21,6 +21,52 @@ test("automatic sequence, calendar boundaries, same-day and unknown lengths", ()
     if (start) assert.equal(result.destinations[0].arrivalDate,result.destinations[0].departureDate);
   }
   assert.match(formatCalendarDate("2027-06-06"),/^Sun,/);
+});
+
+test("church Sunday dates include every Sunday and both stay endpoints", () => {
+  const sundays = (arrivalDate, departureDate) => churchSundayDates({ arrivalDate, departureDate });
+  assert.deepEqual(sundays("2027-06-06", "2027-06-20"), ["2027-06-06", "2027-06-13", "2027-06-20"]);
+  assert.deepEqual(sundays("2027-06-05", "2027-06-06"), ["2027-06-06"], "departure Sunday counts");
+  assert.deepEqual(sundays("2027-06-06", "2027-06-07"), ["2027-06-06"], "arrival Sunday counts");
+  assert.deepEqual(sundays("2027-06-06", "2027-06-06"), ["2027-06-06"], "zero-night Sunday counts");
+  assert.deepEqual(sundays("2027-06-07", "2027-06-07"), [], "zero-night Monday has no Sunday");
+  assert.deepEqual(sundays("2027-06-07", "2027-06-12"), []);
+  assert.deepEqual(sundays("2027-03-13", "2027-03-22"), ["2027-03-14", "2027-03-21"], "UTC dates survive spring DST");
+  assert.deepEqual(sundays("2027-11-06", "2027-11-15"), ["2027-11-07", "2027-11-14"], "UTC dates survive fall DST");
+  assert.deepEqual(sundays("9999-12-26", "9999-12-31"), ["9999-12-26"], "calendar limit does not overflow");
+});
+
+test("unknown or invalid ranges do not fabricate Sunday dates", () => {
+  for (const [arrivalDate, departureDate] of [
+    [null, null], ["2027-06-06", null], [null, "2027-06-06"],
+    ["2027-02-29", "2027-03-01"], ["2027-06-07", "2027-06-06"],
+  ]) assert.equal(churchSundayDates({ arrivalDate, departureDate }), null);
+});
+
+test("church Sunday dates follow start, nights and order edits without changing church details", t => {
+  const { store, tripId } = setup(t);
+  const first = store.applyMutation(destinationInput(tripId, { city: "Paris", nights: 7 })).id;
+  const second = store.applyMutation(destinationInput(tripId, { city: "Rome", nights: 1 })).id;
+  store.applyMutation({ type: "church.save", destinationId: second, name: "Chapel", address: "", denomination: "", url: "", massTimes: [{ id: randomUUID(), day: "Sunday", time: "9:00 AM" }] });
+  const churches = store.getSnapshot().churches;
+  const sundays = id => churchSundayDates(destination(store, id));
+  assert.equal(sundays(second), null);
+  store.applyMutation(tripInput({ id: tripId, startDate: "2027-06-05" }));
+  assert.deepEqual(sundays(first), ["2027-06-06"]);
+  assert.deepEqual(sundays(second), ["2027-06-13"]);
+  store.applyMutation(destinationInput(tripId, { id: first, city: "Paris", nights: 14 }));
+  assert.deepEqual(sundays(first), ["2027-06-06", "2027-06-13"]);
+  assert.deepEqual(sundays(second), ["2027-06-20"]);
+  store.applyMutation({ type: "destination.move", id: second, direction: "up" });
+  assert.deepEqual(sundays(second), ["2027-06-06"]);
+  assert.deepEqual(sundays(first), ["2027-06-06", "2027-06-13", "2027-06-20"]);
+  store.applyMutation(tripInput({ id: tripId, startDate: "2027-06-06" }));
+  assert.deepEqual(sundays(second), ["2027-06-06"]);
+  assert.deepEqual(sundays(first), ["2027-06-13", "2027-06-20"]);
+  store.applyMutation(destinationInput(tripId, { id: second, city: "Rome", nights: null }));
+  assert.equal(sundays(second), null);
+  assert.equal(sundays(first), null);
+  assert.deepEqual(store.getSnapshot().churches, churches);
 });
 
 test("night/order/start edits recalculate the entire affected sequence and preserve saved options", t => {

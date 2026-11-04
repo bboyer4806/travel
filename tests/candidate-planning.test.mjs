@@ -158,7 +158,7 @@ test("schema 15 upgrade retains alphabetical lists; replay, reopen and online ba
     assert.deepEqual(Buffer.from(restored.getCandidatePhoto(photoOwner, photoId).data), image);
   } finally { restored.close(); }
   const observer = new DatabaseSync(backupPath);
-  assert.equal(observer.prepare("PRAGMA user_version").get().user_version, 16);
+  assert.equal(observer.prepare("PRAGMA user_version").get().user_version, 18);
   assert.equal(observer.prepare("PRAGMA integrity_check").get().integrity_check, "ok");
   assert.deepEqual(observer.prepare("PRAGMA foreign_key_check").all(), []);
   observer.close();

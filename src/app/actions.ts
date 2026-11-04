@@ -3,6 +3,7 @@ import { revalidatePath } from "next/cache";
 import { applyMutation, ValidationError } from "@/lib/store";
 import { ImageValidationError, prepareImage } from "@/lib/image-upload";
 import { prepareCandidateGallery } from "@/lib/candidate-gallery-upload";
+import { prepareDestinationGallery } from "@/lib/destination-gallery-upload";
 import type { ActionResult, Mutation } from "@/lib/types";
 
 // Version one is intentionally a shared, publicly editable planner.
@@ -11,7 +12,10 @@ export async function mutatePlanner(input: Mutation, imageForm?: FormData): Prom
   try {
     // Never accept image bytes directly from the client mutation. Decode uploaded files first.
     let mutation = input;
-    if (input.type === "destination.save") mutation = { ...input, image: await prepareImage(imageForm) };
+    if (input.type === "destination.save") {
+      const gallery = await prepareDestinationGallery(imageForm);
+      mutation = { ...input, gallery, image: gallery === undefined ? await prepareImage(imageForm) : undefined };
+    }
     else if (input.type === "candidate.save") {
       const gallery = await prepareCandidateGallery(imageForm);
       mutation = { ...input, gallery, image: gallery === undefined ? await prepareImage(imageForm) : undefined };

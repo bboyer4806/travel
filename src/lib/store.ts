@@ -5,9 +5,12 @@ import { DatabaseSync } from "node:sqlite";
 import { containsSunday, isValidDate, nightsToBudgetDays } from "./destination-duration.ts";
 import { backfillDates, MAX_NIGHTS, sequenceDates } from "./trip-dates.ts";
 import { parseMinorAmount, SUPPORTED_CURRENCIES } from "./money.ts";
+import { normalizeEntryRequirements } from "./entry-requirements.ts";
+import type { EntryRequirements } from "./entry-requirements.ts";
+import type { DestinationGalleryUpdate } from "./types";
 import type { FoodBudgetMode, ActivitiesBudgetMode, Candidate, CandidateImage, CandidateGalleryUpdate, Category, Church, MassTime, Destination, HomeItem, StoredImage, ItineraryStop, Mutation, ResearchLink, Snapshot, TravelLeg, Trip } from "./types";
 
-type StoredDestination = Omit<Destination, "churchEnabled"> & { churchEnabled: number };
+type StoredDestination = Omit<Destination, "churchEnabled" | "images"> & { churchEnabled: number };
 type StoredChurch = Omit<Church, "massTimes" | "images"> & { massTimesJson: string };
 type StoredHomeItem = Omit<HomeItem, "completed"> & { completed: number };
 type StoredLeg = Omit<TravelLeg, "itinerary" | "links"> & { itineraryJson: string; linksJson: string };
@@ -189,7 +192,7 @@ function galleryField(input: Input, label = "Idea"): CandidateGalleryUpdate | un
   const value = input.gallery;
   if (!value || typeof value !== "object" || Array.isArray(value)) throw new ValidationError("These photo changes are invalid.");
   const gallery = value as Input;
-  if (!Array.isArray(gallery.add) || !Array.isArray(gallery.remove) || gallery.add.length > MAX_GALLERY_IMAGES || gallery.remove.length > MAX_GALLERY_IMAGES) throw new ValidationError(`${label === "Church" ? "A church" : "An idea"} can have up to 10 photos.`);
+  if (!Array.isArray(gallery.add) || !Array.isArray(gallery.remove) || gallery.add.length > MAX_GALLERY_IMAGES || gallery.remove.length > MAX_GALLERY_IMAGES) throw new ValidationError(`${label === "Church" ? "A church" : label === "Destination" ? "A destination" : "An idea"} can have up to 10 photos.`);
   const seen = new Set<string>();
   const add = gallery.add.map((photo) => {
     if (!photo || typeof photo !== "object" || Array.isArray(photo)) throw new ValidationError("Choose a valid photo.");
@@ -208,6 +211,16 @@ function galleryField(input: Input, label = "Idea"): CandidateGalleryUpdate | un
   });
   const mainImageId = gallery.mainImageId === undefined || gallery.mainImageId === null ? gallery.mainImageId : idField({ id: gallery.mainImageId });
   return { add, remove, mainImageId };
+}
+function destinationGalleryField(input: Input): DestinationGalleryUpdate | undefined {
+  const gallery = galleryField(input, "Destination");
+  if (!gallery) return undefined;
+  const orderValue = (input.gallery as Input).order;
+  if (orderValue === undefined) return gallery;
+  if (!Array.isArray(orderValue) || orderValue.length > MAX_GALLERY_IMAGES) throw new ValidationError("A destination can have up to 10 photos.");
+  const order = orderValue.map((id) => idField({ id }));
+  if (new Set(order.map((id) => id.toLowerCase())).size !== order.length) throw new ValidationError("Each photo must appear once in the photo order.");
+  return { ...gallery, order };
 }
 function massTimesField(input: Input): MassTime[] {
   if (!Array.isArray(input.massTimes) || input.massTimes.length > 30) throw new ValidationError("A church can have up to 30 Mass times. Leave the list empty when times are unknown.");
@@ -245,7 +258,13 @@ function validate(input: unknown): Mutation {
       return { type: value.type, id: idField(value), tripId: idField(value, "tripId"), completed: booleanField(value, "completed") };
     case "destination.save":
       if (value.arrivalDate !== undefined || value.departureDate !== undefined) throw new ValidationError("Destination dates are calculated. Edit the trip start date or destination nights instead.");
-      return { type: value.type, id: optionalId(value), tripId: idField(value, "tripId"), city: textField(value, "city", 120, true), stay: textField(value, "stay", 120), nights: nightsField(value), miscDailyAmount: value.miscDailyAmount === undefined ? undefined : textField(value, "miscDailyAmount", 32), miscCurrency: currencyField(value, "miscCurrency"), hotelNightlyAmount: value.hotelNightlyAmount === undefined ? undefined : textField(value, "hotelNightlyAmount", 32), hotelCurrency: currencyField(value, "hotelCurrency"), activitiesBudgetMode: activitiesModeField(value), activitiesGeneralAmount: value.activitiesGeneralAmount === undefined ? undefined : textField(value, "activitiesGeneralAmount", 32), activitiesCurrency: currencyField(value, "activitiesCurrency"), foodBudgetMode: foodModeField(value), foodDailyAmount: value.foodDailyAmount === undefined ? undefined : textField(value, "foodDailyAmount", 32), foodCurrency: currencyField(value, "foodCurrency"), shoppingAmount: value.shoppingAmount === undefined ? undefined : textField(value, "shoppingAmount", 32), shoppingCurrency: currencyField(value, "shoppingCurrency"), weatherHighF: temperatureField(value, "weatherHighF"), weatherLowF: temperatureField(value, "weatherLowF"), weatherRainfall: value.weatherRainfall === undefined ? undefined : textField(value, "weatherRainfall", 4000), weatherPeriod: value.weatherPeriod === undefined ? undefined : textField(value, "weatherPeriod", 120), weatherSource: value.weatherSource === undefined ? undefined : textField(value, "weatherSource", 2048), notes: textField(value, "notes", 8000), image: imageField(value) };
+      return { type: value.type, id: optionalId(value), tripId: idField(value, "tripId"), city: value.id !== undefined && value.city === undefined ? undefined : textField(value, "city", 120, true), stay: value.stay === undefined ? undefined : textField(value, "stay", 120), nights: nightsField(value), miscDailyAmount: value.miscDailyAmount === undefined ? undefined : textField(value, "miscDailyAmount", 32), miscCurrency: currencyField(value, "miscCurrency"), hotelNightlyAmount: value.hotelNightlyAmount === undefined ? undefined : textField(value, "hotelNightlyAmount", 32), hotelCurrency: currencyField(value, "hotelCurrency"), activitiesBudgetMode: activitiesModeField(value), activitiesGeneralAmount: value.activitiesGeneralAmount === undefined ? undefined : textField(value, "activitiesGeneralAmount", 32), activitiesCurrency: currencyField(value, "activitiesCurrency"), foodBudgetMode: foodModeField(value), foodDailyAmount: value.foodDailyAmount === undefined ? undefined : textField(value, "foodDailyAmount", 32), foodCurrency: currencyField(value, "foodCurrency"), shoppingAmount: value.shoppingAmount === undefined ? undefined : textField(value, "shoppingAmount", 32), shoppingCurrency: currencyField(value, "shoppingCurrency"), weatherHighF: temperatureField(value, "weatherHighF"), weatherLowF: temperatureField(value, "weatherLowF"), weatherRainfall: value.weatherRainfall === undefined ? undefined : textField(value, "weatherRainfall", 4000), weatherPeriod: value.weatherPeriod === undefined ? undefined : textField(value, "weatherPeriod", 120), weatherSource: value.weatherSource === undefined ? undefined : textField(value, "weatherSource", 2048), notes: value.notes === undefined ? undefined : textField(value, "notes", 8000), image: imageField(value), gallery: destinationGalleryField(value) };
+    case "destination.entryRequirements": {
+      let requirements: EntryRequirements | null;
+      try { requirements = normalizeEntryRequirements(value.requirements); }
+      catch (error) { throw new ValidationError(error instanceof Error ? error.message : "Enter valid entry requirements."); }
+      return { type: value.type, id: idField(value), tripId: idField(value, "tripId"), requirements };
+    }
     case "destination.churchVisibility":
       return { type: value.type, id: idField(value), enabled: booleanField(value, "enabled") };
     case "church.save":
@@ -278,7 +297,7 @@ export function createStore(databasePath: string) {
   db.exec("BEGIN IMMEDIATE");
   try {
     const version = Number(db.prepare("PRAGMA user_version").get()?.user_version ?? 0);
-    if (version > 16) throw new Error("This database was created by a newer version of the travel app.");
+    if (version > 18) throw new Error("This database was created by a newer version of the travel app.");
     db.exec(`
     CREATE TABLE IF NOT EXISTS trips (
       id TEXT PRIMARY KEY, name TEXT NOT NULL, dateLabel TEXT NOT NULL DEFAULT '',
@@ -313,7 +332,7 @@ export function createStore(databasePath: string) {
     `);
     // Version 1 reset user_version at startup. Check columns as well so a rollback
     // followed by redeployment cannot repeat ALTER TABLE or replace saved links.
-    const hasColumn = (table: "trips" | "destinations" | "legs" | "candidates" | "candidate_images", column: string) =>
+    const hasColumn = (table: "trips" | "destinations" | "legs" | "candidates" | "candidate_images" | "destination_images", column: string) =>
       db.prepare(`PRAGMA table_info(${table})`).all().some((row) => row.name === column);
     if (version < 2) {
       if (!hasColumn("trips", "returnCity")) db.exec("ALTER TABLE trips ADD COLUMN returnCity TEXT;");
@@ -489,6 +508,35 @@ export function createStore(databasePath: string) {
       }
       db.exec("CREATE INDEX IF NOT EXISTS candidate_order ON candidates(destinationId, category, position, id); PRAGMA user_version = 16;");
     }
+    if (version < 17) {
+      if (!hasColumn("destination_images", "id")) {
+        db.exec(`
+          ALTER TABLE destination_images RENAME TO destination_images_single;
+          CREATE TABLE destination_images (
+            id TEXT PRIMARY KEY, destinationId TEXT NOT NULL REFERENCES destinations(id) ON DELETE CASCADE,
+            version TEXT NOT NULL, data BLOB NOT NULL,
+            position INTEGER NOT NULL CHECK(position >= 0), isMain INTEGER NOT NULL CHECK(isMain IN (0,1))
+          ) STRICT;
+          INSERT INTO destination_images(id, destinationId, version, data, position, isMain)
+            SELECT destinationId, destinationId, version, data, 0, 1 FROM destination_images_single;
+          DROP TABLE destination_images_single;
+        `);
+      }
+      db.exec(`
+        CREATE UNIQUE INDEX IF NOT EXISTS destination_main_image ON destination_images(destinationId) WHERE isMain = 1;
+        CREATE INDEX IF NOT EXISTS destination_image_order ON destination_images(destinationId, position);
+        PRAGMA user_version = 17;
+      `);
+    }
+    if (version < 18) {
+      db.exec(`
+        CREATE TABLE IF NOT EXISTS destination_entry_requirements (
+          destinationId TEXT PRIMARY KEY REFERENCES destinations(id) ON DELETE CASCADE,
+          requirementsJson TEXT NOT NULL
+        ) STRICT;
+        PRAGMA user_version = 18;
+      `);
+    }
     db.exec("COMMIT");
   } catch (error) {
     db.exec("ROLLBACK");
@@ -497,6 +545,15 @@ export function createStore(databasePath: string) {
   }
 
   function getSnapshot(): Snapshot {
+    const requirements = new Map(db.prepare("SELECT destinationId, requirementsJson FROM destination_entry_requirements").all()
+      .map((row) => [row.destinationId as string, JSON.parse(row.requirementsJson as string) as EntryRequirements]));
+    const destinationPhotos = new Map<string, CandidateImage[]>();
+    for (const row of db.prepare("SELECT id, destinationId, version FROM destination_images ORDER BY destinationId, position, id").all()) {
+      const destinationId = row.destinationId as string;
+      const images = destinationPhotos.get(destinationId) ?? [];
+      images.push({ id: row.id as string, version: row.version as string });
+      destinationPhotos.set(destinationId, images);
+    }
     const churchPhotos = new Map<string, CandidateImage[]>();
     for (const row of db.prepare("SELECT id, churchId, version FROM church_images ORDER BY churchId, position, id").all()) {
       const churchId = row.churchId as string;
@@ -520,9 +577,9 @@ export function createStore(databasePath: string) {
         const item = row as unknown as StoredHomeItem;
         return { ...item, completed: item.completed === 1 };
       }),
-      destinations: db.prepare("SELECT destinations.*, destination_images.version AS imageVersion FROM destinations LEFT JOIN destination_images ON destination_images.destinationId = destinations.id ORDER BY destinations.tripId, destinations.position").all().map((row) => {
+      destinations: db.prepare("SELECT destinations.*, destination_images.version AS imageVersion, destination_images.id AS mainImageId FROM destinations LEFT JOIN destination_images ON destination_images.destinationId = destinations.id AND destination_images.isMain = 1 ORDER BY destinations.tripId, destinations.position").all().map((row) => {
         const destination = row as unknown as StoredDestination;
-        return { ...destination, churchEnabled: destination.churchEnabled === 1 };
+        return { ...destination, entryRequirements: requirements.get(destination.id) ?? null, churchEnabled: destination.churchEnabled === 1, images: destinationPhotos.get(destination.id) ?? [] };
       }),
       legs: db.prepare("SELECT legs.* FROM legs LEFT JOIN destinations ON destinations.id = legs.fromId ORDER BY legs.tripId, coalesce(destinations.position, -1)").all().map((row) => {
         const { itineraryJson, linksJson, ...leg } = row as unknown as StoredLeg;
@@ -541,7 +598,11 @@ export function createStore(databasePath: string) {
     };
   }
   function getDestinationImage(id: string): StoredImage | undefined {
-    const row = db.prepare("SELECT version, data FROM destination_images WHERE destinationId = ?").get(id);
+    const row = db.prepare("SELECT version, data FROM destination_images WHERE destinationId = ? AND isMain = 1").get(id);
+    return row ? { version: row.version as string, data: new Uint8Array(row.data as Uint8Array) } : undefined;
+  }
+  function getDestinationPhoto(destinationId: string, imageId: string): StoredImage | undefined {
+    const row = db.prepare("SELECT version, data FROM destination_images WHERE destinationId = ? AND id = ?").get(destinationId, imageId);
     return row ? { version: row.version as string, data: new Uint8Array(row.data as Uint8Array) } : undefined;
   }
   function getCandidateImage(id: string): StoredImage | undefined {
@@ -555,6 +616,39 @@ export function createStore(databasePath: string) {
   function getChurchPhoto(churchId: string, imageId: string): StoredImage | undefined {
     const row = db.prepare("SELECT version, data FROM church_images WHERE churchId = ? AND id = ?").get(churchId, imageId);
     return row ? { version: row.version as string, data: new Uint8Array(row.data as Uint8Array) } : undefined;
+  }
+  function saveDestinationGallery(destinationId: string, gallery?: DestinationGalleryUpdate, image?: Uint8Array | null) {
+    if (gallery === undefined && image === undefined) return;
+    const current = db.prepare("SELECT id, position, isMain FROM destination_images WHERE destinationId = ? ORDER BY position, id").all(destinationId) as unknown as { id: string; position: number; isMain: number }[];
+    const currentMain = current.find((photo) => photo.isMain === 1)?.id;
+    if (gallery === undefined) {
+      if (image === null) {
+        gallery = { add: [], remove: currentMain ? [currentMain] : [] };
+      } else if (image !== undefined && currentMain) {
+        // Old clients and URLs continue to replace or remove only the primary photo.
+        db.prepare("INSERT INTO destination_images(id,destinationId,version,data,position,isMain) VALUES(?,?,?,?,?,1) ON CONFLICT(id) DO UPDATE SET version = excluded.version, data = excluded.data").run(currentMain, destinationId, randomUUID(), image, current.find((photo) => photo.id === currentMain)!.position);
+        return;
+      } else {
+        gallery = { add: image ? [{ id: randomUUID(), data: image }] : [], remove: [] };
+      }
+    }
+    const existingIds = new Set(current.map((photo) => photo.id));
+    if (gallery.remove.some((id) => !existingIds.has(id))) throw new ValidationError("A destination photo has changed or no longer exists. Refresh and try again.");
+    for (const photo of gallery.add) {
+      if (db.prepare("SELECT 1 FROM destination_images WHERE lower(id) = lower(?)").get(photo.id)) throw new ValidationError("This destination photo already exists. Refresh and try again.");
+    }
+    const removed = new Set(gallery.remove);
+    const remaining = [...current.filter((photo) => !removed.has(photo.id)).map((photo) => photo.id), ...gallery.add.map((photo) => photo.id)];
+    if (remaining.length > MAX_GALLERY_IMAGES) throw new ValidationError("A destination can have up to 10 photos. Remove a photo before adding more.");
+    const order = gallery.order ?? remaining;
+    if (order.length !== remaining.length || order.some((id) => !remaining.includes(id))) throw new ValidationError("The destination photos have changed. Refresh before rearranging them.");
+    const main = gallery.mainImageId === undefined ? (currentMain && !removed.has(currentMain) ? currentMain : order[0] ?? null) : gallery.mainImageId;
+    if ((main === null && order.length > 0) || (main !== null && !order.includes(main))) throw new ValidationError("Choose a primary photo from the remaining destination photos. Refresh if the gallery has changed.");
+    for (const id of gallery.remove) db.prepare("DELETE FROM destination_images WHERE destinationId = ? AND id = ?").run(destinationId, id);
+    gallery.add.forEach((photo) => db.prepare("INSERT INTO destination_images(id,destinationId,version,data,position,isMain) VALUES(?,?,?,?,?,0)").run(photo.id, destinationId, randomUUID(), photo.data, order.indexOf(photo.id)));
+    order.forEach((id, position) => db.prepare("UPDATE destination_images SET position = ? WHERE destinationId = ? AND id = ?").run(position, destinationId, id));
+    db.prepare("UPDATE destination_images SET isMain = 0 WHERE destinationId = ? AND isMain = 1").run(destinationId);
+    if (main) db.prepare("UPDATE destination_images SET isMain = 1 WHERE destinationId = ? AND id = ?").run(destinationId, main);
   }
   function saveGallery(kind: "candidate" | "church", ownerId: string, gallery?: CandidateGalleryUpdate, image?: Uint8Array | null) {
     const { table, ownerColumn, label } = kind === "candidate"
@@ -687,6 +781,9 @@ export function createStore(databasePath: string) {
         const id = input.id ?? randomUUID();
         const before = input.id ? existing<StoredDestination>("destinations", id) : undefined;
         if (before && before.tripId !== input.tripId) throw new ValidationError("This destination belongs to a different trip.");
+        const city = input.city ?? before?.city ?? "";
+        const stay = input.stay ?? before?.stay ?? "";
+        const notes = input.notes ?? before?.notes ?? "";
         const arrivalDate = before?.arrivalDate ?? null;
         const departureDate = before?.departureDate ?? null;
         const nights = input.nights === undefined ? before?.nights ?? null : input.nights;
@@ -773,23 +870,30 @@ export function createStore(databasePath: string) {
           throw new ValidationError("The hotel estimate is too large. Reduce the nightly amount or date range.");
         }
         if (before) {
-          db.prepare("UPDATE destinations SET city = ?, stay = ?, notes = ?, arrivalDate = ?, departureDate = ?, miscDailyMinor = ?, miscCurrency = ?, hotelNightlyMinor = ?, hotelCurrency = ?, activitiesBudgetMode = ?, activitiesGeneralMinor = ?, activitiesCurrency = ?, foodBudgetMode = ?, foodDailyMinor = ?, foodCurrency = ?, shoppingMinor = ?, shoppingCurrency = ?, weatherHighF = ?, weatherLowF = ?, weatherRainfall = ?, weatherPeriod = ?, weatherSource = ?, churchEnabled = ? WHERE id = ?").run(input.city, input.stay, input.notes, arrivalDate, departureDate, miscDailyMinor, miscCurrency, hotelNightlyMinor, hotelCurrency, activitiesBudgetMode, activitiesGeneralMinor, activitiesCurrency, foodBudgetMode, foodDailyMinor, foodCurrency, shoppingMinor, shoppingCurrency, weatherHighF, weatherLowF, weatherRainfall, weatherPeriod, weatherSource, Number(churchEnabled), id);
-          if (before.city !== input.city) {
+          db.prepare("UPDATE destinations SET city = ?, stay = ?, notes = ?, arrivalDate = ?, departureDate = ?, miscDailyMinor = ?, miscCurrency = ?, hotelNightlyMinor = ?, hotelCurrency = ?, activitiesBudgetMode = ?, activitiesGeneralMinor = ?, activitiesCurrency = ?, foodBudgetMode = ?, foodDailyMinor = ?, foodCurrency = ?, shoppingMinor = ?, shoppingCurrency = ?, weatherHighF = ?, weatherLowF = ?, weatherRainfall = ?, weatherPeriod = ?, weatherSource = ?, churchEnabled = ? WHERE id = ?").run(city, stay, notes, arrivalDate, departureDate, miscDailyMinor, miscCurrency, hotelNightlyMinor, hotelCurrency, activitiesBudgetMode, activitiesGeneralMinor, activitiesCurrency, foodBudgetMode, foodDailyMinor, foodCurrency, shoppingMinor, shoppingCurrency, weatherHighF, weatherLowF, weatherRainfall, weatherPeriod, weatherSource, Number(churchEnabled), id);
+          if (before.city !== city) {
             const adjacentLegs = db.prepare("SELECT id FROM legs WHERE fromId = ? OR toId = ?").all(id, id);
             for (const leg of adjacentLegs) clearLeg(leg.id as string);
           }
         } else {
           const position = orderedDestinations(input.tripId).length;
-          db.prepare("INSERT INTO destinations(id,tripId,city,stay,notes,position,arrivalDate,departureDate,miscDailyMinor,miscCurrency,hotelNightlyMinor,hotelCurrency,activitiesBudgetMode,activitiesGeneralMinor,activitiesCurrency,foodBudgetMode,foodDailyMinor,foodCurrency,shoppingMinor,shoppingCurrency,weatherHighF,weatherLowF,weatherRainfall,weatherPeriod,weatherSource,churchEnabled) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)").run(id, input.tripId, input.city, input.stay, input.notes, position, arrivalDate, departureDate, miscDailyMinor, miscCurrency, hotelNightlyMinor, hotelCurrency, activitiesBudgetMode, activitiesGeneralMinor, activitiesCurrency, foodBudgetMode, foodDailyMinor, foodCurrency, shoppingMinor, shoppingCurrency, weatherHighF, weatherLowF, weatherRainfall, weatherPeriod, weatherSource, Number(churchEnabled));
+          db.prepare("INSERT INTO destinations(id,tripId,city,stay,notes,position,arrivalDate,departureDate,miscDailyMinor,miscCurrency,hotelNightlyMinor,hotelCurrency,activitiesBudgetMode,activitiesGeneralMinor,activitiesCurrency,foodBudgetMode,foodDailyMinor,foodCurrency,shoppingMinor,shoppingCurrency,weatherHighF,weatherLowF,weatherRainfall,weatherPeriod,weatherSource,churchEnabled) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)").run(id, input.tripId, city, stay, notes, position, arrivalDate, departureDate, miscDailyMinor, miscCurrency, hotelNightlyMinor, hotelCurrency, activitiesBudgetMode, activitiesGeneralMinor, activitiesCurrency, foodBudgetMode, foodDailyMinor, foodCurrency, shoppingMinor, shoppingCurrency, weatherHighF, weatherLowF, weatherRainfall, weatherPeriod, weatherSource, Number(churchEnabled));
         }
         db.prepare("UPDATE destinations SET nights = ? WHERE id = ?").run(nights, id);
-        if (input.image === null) {
-          db.prepare("DELETE FROM destination_images WHERE destinationId = ?").run(id);
-        } else if (input.image !== undefined) {
-          db.prepare("INSERT INTO destination_images(destinationId, version, data) VALUES(?,?,?) ON CONFLICT(destinationId) DO UPDATE SET version = excluded.version, data = excluded.data").run(id, randomUUID(), input.image);
-        }
+        saveDestinationGallery(id, input.gallery, input.image);
         reconcileRoute(input.tripId);
         return id;
+      }
+      case "destination.entryRequirements": {
+        const destination = existing<StoredDestination>("destinations", input.id);
+        if (destination.tripId !== input.tripId) throw new ValidationError("This destination belongs to a different trip.");
+        if (input.requirements === null) {
+          db.prepare("DELETE FROM destination_entry_requirements WHERE destinationId = ?").run(input.id);
+        } else {
+          db.prepare("INSERT INTO destination_entry_requirements(destinationId, requirementsJson) VALUES(?,?) ON CONFLICT(destinationId) DO UPDATE SET requirementsJson = excluded.requirementsJson")
+            .run(input.id, JSON.stringify(input.requirements));
+        }
+        return input.id;
       }
       case "destination.churchVisibility":
         existing<Destination>("destinations", input.id);
@@ -908,7 +1012,7 @@ export function createStore(databasePath: string) {
       throw error;
     }
   }
-  return { getSnapshot, getDestinationImage, getCandidateImage, getCandidatePhoto, getChurchPhoto, applyMutation, close: () => db.close() };
+  return { getSnapshot, getDestinationImage, getDestinationPhoto, getCandidateImage, getCandidatePhoto, getChurchPhoto, applyMutation, close: () => db.close() };
 }
 
 type Store = ReturnType<typeof createStore>;
@@ -928,6 +1032,9 @@ export function getSnapshot(): Snapshot {
 }
 export function getDestinationImage(id: string): StoredImage | undefined {
   return defaultStore().getDestinationImage(id);
+}
+export function getDestinationPhoto(destinationId: string, imageId: string): StoredImage | undefined {
+  return defaultStore().getDestinationPhoto(destinationId, imageId);
 }
 export function getCandidateImage(id: string): StoredImage | undefined {
   return defaultStore().getCandidateImage(id);

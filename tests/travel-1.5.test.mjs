@@ -49,7 +49,7 @@ test("scoped trip and destination snapshots omit unrelated data", (t) => {
   }
 
   const result = store.applyMutation({ type: "candidate.include", id: full.candidates[0].id, included: false });
-  assert.deepEqual(result, {}, "Mutations return no database snapshot");
+  assert.deepEqual(result, { id: full.candidates[0].id }, "Mutations return only the affected ID, not a snapshot");
   assert.deepEqual(store.getHomeOverview().budgets[first], calculateBudget(store.getSnapshot(), first));
   store.checkHealth();
 });

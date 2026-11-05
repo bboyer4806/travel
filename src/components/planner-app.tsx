@@ -17,7 +17,7 @@ import TripRouteFields from "@/components/trip-route-fields";
 import { ConnectionItinerary, ConnectionItineraryEditor } from "@/components/connection-itinerary";
 import { ResearchLinks, ResearchLinksEditor } from "@/components/research-links";
 import { useRouter } from "next/navigation";
-import { useEffect, useRef, useState, type FormEvent, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState, type FormEvent, type ReactNode } from "react";
 import { ArrowDown, ArrowLeft, ArrowRight, ArrowUp, BedDouble, Binoculars, CalendarDays, CheckCircle2, Compass, MapPin, MoreHorizontal, Pencil, Plane, Plus, Search, Trash2, Users, Utensils, Wallet, X } from "lucide-react";
 import { mutatePlanner } from "@/app/actions";
 import { formatSavedDestinationLabel } from "@/lib/destination-label";
@@ -72,7 +72,7 @@ function Dialog({ title, children, busy, onClose, stickySave, error }: { title: 
   </dialog>;
 }
 
-export default function PlannerApp({ initialData, tripId, destinationId, category, church = false }: { initialData: Snapshot; tripId?: string; destinationId?: string; category?: Category; church?: boolean }) {
+export default function PlannerApp({ initialData, initialBudgets, tripId, destinationId, category, church = false }: { initialData: Snapshot; initialBudgets?: Record<string, Budget>; tripId?: string; destinationId?: string; category?: Category; church?: boolean }) {
   const router = useRouter();
   const [data, setData] = useState(initialData);
   const [lastInitial, setLastInitial] = useState(initialData);
@@ -91,7 +91,8 @@ export default function PlannerApp({ initialData, tripId, destinationId, categor
   const stops = data.destinations.filter((item) => item.tripId === tripId).sort((a, b) => a.position - b.position);
   const tripLegs = data.legs.filter((leg) => leg.tripId === tripId);
   const destination = stops.find((item) => item.id === destinationId);
-  const budget = trip ? calculateBudget(data, trip.id) : null;
+  const budget = useMemo(() => trip && !destinationId ? calculateBudget(data, trip.id) : null, [data, trip, destinationId]);
+  const homeBudgets = initialBudgets ?? {};
   const legName = (id: string | null, end: "from" | "to") => id === null ? (end === "from" ? (trip?.homeCity || "Departing city") : (trip?.returnCity ?? trip?.homeCity) || "Return city") : (formatSavedDestinationLabel(stops.find((stop) => stop.id === id)?.city ?? "") || "Destination");
   const open = (value: Editor) => {
     if (busy) return;
@@ -110,9 +111,10 @@ export default function PlannerApp({ initialData, tripId, destinationId, categor
     try {
       const result = await mutatePlanner(mutation, imageForm);
       if (!result.ok) { setError(result.error); return; }
-      setData(result.snapshot); setEditor(null); setDestinationGallery(createDestinationGalleryDraft()); setCandidateGallery(createCandidateGalleryDraft()); setMessage(success);
+      setEditor(null); setDestinationGallery(createDestinationGalleryDraft()); setCandidateGallery(createCandidateGalleryDraft()); setMessage(success);
       if (redirect) router.push(redirect);
       else if (mutation.type === "trip.save" && !mutation.id && result.id) router.push("/trips/" + result.id);
+      else router.refresh();
     } catch { setError("We couldn't reach the planner. Your changes haven't been saved. Please try again."); }
     finally { setBusy(false); }
   }
@@ -209,7 +211,7 @@ export default function PlannerApp({ initialData, tripId, destinationId, categor
             : visibleTrips.length === 0 ? <div className="empty-state"><h3>No trips match that search.</h3><button className="text-button" onClick={() => setSearch("")}>Clear search</button></div>
             : <div className="trip-grid">{visibleTrips.map((item, index) => {
               const cities = data.destinations.filter((stop) => stop.tripId === item.id).sort((a, b) => a.position - b.position);
-              const estimate = calculateBudget(data, item.id);
+              const estimate = homeBudgets[item.id];
               return <article className={"trip-card tone-" + (index % 3)} key={item.id}>
                 <Link className="trip-card-main" href={"/trips/" + item.id}><div className="trip-card-top"><span className="trip-number">TRIP {String(index + 1).padStart(2, "0")}</span><Compass size={38} strokeWidth={1} /></div>
                   <h3>{item.name}</h3><p className="city-list"><MapPin size={15} />{cities.length ? cities.map((stop) => formatSavedDestinationLabel(stop.city)).join(" → ") : "Destinations to be decided"}</p>

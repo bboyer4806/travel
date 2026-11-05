@@ -2,6 +2,15 @@ export interface Release { version: string; date: string; changes: readonly stri
 
 // Add only verified, deployed changes and their actual release dates at release close.
 export const releases: readonly Release[] = [{
+  version: "1.4",
+  date: "2026-11-04",
+  changes: [
+    "Keep entry requirements with each destination, including traveler context, visa and passport rules, transit notes, official sources, and the date you checked them.",
+    "Add up to 10 destination photos, arrange their order, and choose a primary photo. Existing destination photos are kept.",
+    "See every Sunday during your stay in the Church section as your trip dates change.",
+    "Save weather, shopping, food, and activities edits without overwriting newer destination details or travel plans.",
+  ],
+}, {
   version: "1.3",
   date: "2026-11-01",
   changes: [

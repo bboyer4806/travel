@@ -1,6 +1,6 @@
-# Travel 1.4 implementation validation
+# Travel 1.4 release validation
 
-Validated locally on November 4, 2026, using Node 24.19.0 and pnpm 10.32.1. Implementation branch: `codex/travel-1.4`. This records implementation checks, not a deployed release.
+Released on November 4, 2026. [PR #17](https://github.com/bboyer4806/travel/pull/17) merged implementation commit `1d74ae6` as `dffd89e`. Local validation used Node 24.19.0 and pnpm 10.32.1.
 
 ## Scope
 
@@ -25,9 +25,17 @@ Validated locally on November 4, 2026, using Node 24.19.0 and pnpm 10.32.1. Impl
 - Standalone Sharp image processing after explicitly including native platform libraries in output tracing. The initial standalone build omitted Windows DLLs and prevented Server Actions from loading; rebuilding with the tracing rule fixed the failure.
 - Container smoke script Bash syntax and embedded JavaScript syntax. The smoke script now also processes an image with the packaged Sharp runtime.
 
-## Remaining release checks
+## Release verification
 
-- `bash scripts/smoke-container.sh` could not run because Docker is not installed on this machine. Run it in Docker-capable CI before release; local build/browser checks do not verify container replacement or mounted storage.
-- Full `pnpm audit` retains existing development-only findings: one high Zod 4.6.5 advisory (GHSA-mrhx-c7xc-m3w5) and two moderate minimatch findings (GHSA-g3hv-75wg-m249). The Next.js upgrade preserves unrelated dependency versions.
-- Back up production and rehearse schemas 17–18 against a copy, following `docs/DEPLOYMENT.md`. No production database was used for these checks.
-- Deployment, production verification, and 1.4 change-log publication remain separate release steps. Existing shipped release notes are unchanged.
+- [PR CI](https://github.com/bboyer4806/travel/actions/runs/41885905845) passed frozen installation, lint, typecheck, all 162 tests, build, and `bash scripts/smoke-container.sh`, including native image processing and persistence through container replacement. Docker remains unavailable locally.
+- Independent release review found no blockers in migrations, focused edits, gallery validation, or image ownership and version handling.
+- Took an online production backup at `/data/travel-pre-1.4-20261104-1821.sqlite` before deployment. Rehearsed schemas 16 → 18 on a separate server-side copy: eight existing tables unchanged, all three destination photos and their bytes/versions retained, integrity and foreign keys clean, and replay preserved the snapshot. Production data stayed on the server.
+- [Deployment](https://github.com/bboyer4806/travel/actions/runs/41886238202) passed every gate and deployed image `ghcr.io/bboyer4806/travel:dffd89e1028916a26fb671525a5c5ec3eb8d3722`.
+- Read-only live checks confirmed schema 18, database integrity, foreign keys, all 16 existing records and three destination photos preserved, successful photo delivery, wrong-owner photo requests rejected, native Sharp processing, and HTTP 200 health.
+- Live browser verification confirmed migrated primary photos, entry-requirement empty states and editor, Sunday messaging for unknown dates, and existing budgets and travel details. The editor was cancelled without saving. Automatic approval review declined creating a temporary production trip; no production fixture was created. Saves/uploads were verified locally, and container persistence was verified in CI.
+- Published 1.4 change-log content only after the deployed implementation passed these checks.
+- All five scope issues were transitioned to Done and Jira sprint 21 (Travel 1.4) was closed on November 4, 2026, America/New_York. Jira still classified it as future, so it was activated at closeout before completing it; those Jira timestamps describe administrative closure rather than the implementation duration.
+
+## Known dependency findings
+
+Full `pnpm audit` retains existing development-only findings: one high Zod 4.6.5 advisory (GHSA-mrhx-c7xc-m3w5) and two moderate minimatch findings (GHSA-g3hv-75wg-m249). The production audit is clean. The Next.js upgrade preserves unrelated dependency versions.

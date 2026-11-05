@@ -185,7 +185,7 @@ export default function PlannerApp({ initialData, tripId, destinationId, categor
     : editor?.kind === "activitiesBudget" ? "Edit activities budget"
     : editor?.kind === "leg" ? "Plan this connection"
     : editor?.kind === "homeItem" ? (editor.item ? "Edit home item" : "Add an item at home")
-    : editor?.kind === "candidate" && category ? (editor.item ? "Edit " : "Add a ") + singular[category] : "";
+    : editor?.kind === "candidate" && category ? (editor.item ? "Edit " : category === "activities" ? "Add " : "Add a ") + singular[category] : "";
   function renderChurch(stop: Destination) {
     if (!churchDateEligible(stop)) return null;
     if (!stop.churchEnabled) return <div className="church-visibility"><p className="helper">Church is hidden. Saved churches and photos are kept.</p><button type="button" className="text-button" disabled={busy} onClick={() => void perform({ type: "destination.churchVisibility", id: stop.id, enabled: true }, "Church shown.")}>Show Church<span className="sr-only"> for {stop.city}</span></button></div>;

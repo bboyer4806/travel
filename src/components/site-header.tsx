@@ -8,7 +8,7 @@ import { hasUnreadRelease, publishedReleases, releases } from "@/lib/change-log"
 
 const key = "travel.latestSeenRelease";
 let sessionSeen: string | null = null;
-function readSeen() { try { return localStorage.getItem(key) ?? sessionSeen; } catch { return sessionSeen; } }
+function readSeen(): string | null | undefined { try { return localStorage.getItem(key) ?? sessionSeen; } catch { return sessionSeen; } }
 function subscribe(callback: () => void) {
   window.addEventListener("storage", callback);
   window.addEventListener("travel-release-seen", callback);
@@ -18,8 +18,8 @@ function subscribe(callback: () => void) {
 export default function SiteHeader() {
   const pathname = usePathname();
   const latest = publishedReleases(releases)[0]?.version;
-  const seen = useSyncExternalStore(subscribe, readSeen, () => null);
-  const unread = pathname !== "/whats-new" && hasUnreadRelease(latest, seen);
+  const seen = useSyncExternalStore(subscribe, readSeen, () => undefined);
+  const unread = seen !== undefined && pathname !== "/whats-new" && hasUnreadRelease(latest, seen);
   useEffect(() => {
     if (pathname !== "/whats-new" || !latest) return;
     sessionSeen = latest;

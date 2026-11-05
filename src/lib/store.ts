@@ -803,7 +803,7 @@ export function createStore(databasePath: string) {
         }
         const days = nightsToBudgetDays(nights);
         if (miscDailyMinor !== null && days !== null && !Number.isSafeInteger(Math.round(miscDailyMinor * days))) {
-          throw new ValidationError("The miscellaneous subtotal is too large. Reduce the daily amount or date range.");
+          throw new ValidationError("The miscellaneous subtotal is too large. Reduce the daily amount or number of nights.");
         }
         const hotelCurrency = input.hotelNightlyAmount ? "USD" : input.hotelCurrency === undefined ? before?.hotelCurrency ?? null : input.hotelCurrency;
         if (input.hotelNightlyAmount === undefined && before?.hotelNightlyMinor != null && hotelCurrency !== before.hotelCurrency) {
@@ -844,7 +844,7 @@ export function createStore(databasePath: string) {
           }
         }
         if (foodDailyMinor !== null && days !== null && !Number.isSafeInteger(Math.round(foodDailyMinor * days))) {
-          throw new ValidationError("The food subtotal is too large. Reduce the daily amount or date range.");
+          throw new ValidationError("The food subtotal is too large. Reduce the daily amount or number of nights.");
         }
         const shoppingCurrency = input.shoppingAmount ? "USD" : input.shoppingCurrency === undefined ? before?.shoppingCurrency ?? null : input.shoppingCurrency;
         if (input.shoppingAmount === undefined && before?.shoppingMinor != null && shoppingCurrency !== before.shoppingCurrency) {
@@ -867,7 +867,7 @@ export function createStore(databasePath: string) {
         const weatherPeriod = input.weatherPeriod ?? before?.weatherPeriod ?? "";
         const weatherSource = input.weatherSource ?? before?.weatherSource ?? "";
         if (hotelNightlyMinor !== null && nights !== null && !Number.isSafeInteger(hotelNightlyMinor * nights)) {
-          throw new ValidationError("The hotel estimate is too large. Reduce the nightly amount or date range.");
+          throw new ValidationError("The hotel estimate is too large. Reduce the nightly amount or number of nights.");
         }
         if (before) {
           db.prepare("UPDATE destinations SET city = ?, stay = ?, notes = ?, arrivalDate = ?, departureDate = ?, miscDailyMinor = ?, miscCurrency = ?, hotelNightlyMinor = ?, hotelCurrency = ?, activitiesBudgetMode = ?, activitiesGeneralMinor = ?, activitiesCurrency = ?, foodBudgetMode = ?, foodDailyMinor = ?, foodCurrency = ?, shoppingMinor = ?, shoppingCurrency = ?, weatherHighF = ?, weatherLowF = ?, weatherRainfall = ?, weatherPeriod = ?, weatherSource = ?, churchEnabled = ? WHERE id = ?").run(city, stay, notes, arrivalDate, departureDate, miscDailyMinor, miscCurrency, hotelNightlyMinor, hotelCurrency, activitiesBudgetMode, activitiesGeneralMinor, activitiesCurrency, foodBudgetMode, foodDailyMinor, foodCurrency, shoppingMinor, shoppingCurrency, weatherHighF, weatherLowF, weatherRainfall, weatherPeriod, weatherSource, Number(churchEnabled), id);

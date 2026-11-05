@@ -1,8 +1,14 @@
 import { notFound } from "next/navigation";
+import type { Metadata } from "next";
+import { getTripName } from "@/lib/store";
 import PlannerApp from "@/components/planner-app";
 import { getSnapshot } from "@/lib/store";
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
+export async function generateMetadata({ params }: { params: Promise<{ tripId: string }> }): Promise<Metadata> {
+  const { tripId } = await params;
+  return { title: getTripName(tripId) ?? "Trip not found" };
+}
 export default async function TripPage({ params }: { params: Promise<{ tripId: string }> }) {
   const { tripId } = await params;
   const data = getSnapshot();

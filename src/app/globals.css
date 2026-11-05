@@ -152,6 +152,7 @@ button svg,a svg {
   padding:64px 0 62px
 }
 .eyebrow {
+  overflow-wrap:anywhere;
   font-size:10px;
   letter-spacing:2.3px;
   font-weight:600;
@@ -530,6 +531,8 @@ button svg,a svg {
   gap:8px
 }
 .breadcrumb {
+  overflow-wrap:anywhere;
+  min-width:0;
   display:inline-flex;
   align-items:center;
   gap:9px;
@@ -1094,6 +1097,8 @@ button svg,a svg {
   margin-top:23px
 }
 .form-route {
+  overflow-wrap:anywhere;
+  min-width:0;
   display:flex;
   align-items:center;
   flex-wrap:wrap;

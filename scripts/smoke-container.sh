@@ -240,6 +240,73 @@ const missingPhoto = await fetch(base + 'candidate-images/' + candidates[0].id +
 assert.equal(missingPhoto.status, 404);
 JS
 
+# A live page, static script, and actual Server Action are required for a usable build.
+docker exec -i "$container" node --input-type=module <<'JS'
+import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+import { DatabaseSync } from "node:sqlite";
+
+const origin = "http://127.0.0.1:80";
+const home = await fetch(origin + "/", { signal: AbortSignal.timeout(10000) });
+assert.equal(home.status, 200, "The production home page must render");
+const html = await home.text();
+const asset = html.match(/(?:src|href)="(\/_next\/static\/[^"]+\.js(?:\?[^"]*)?)"/);
+assert.ok(asset, "The home page must reference a JavaScript chunk");
+const script = await fetch(origin + asset[1], { signal: AbortSignal.timeout(10000) });
+assert.equal(script.status, 200, "A referenced JavaScript chunk must load");
+assert.ok((await script.text()).length > 0, "The chunk must not be empty");
+
+const manifest = JSON.parse(readFileSync("/app/.next/server/server-reference-manifest.json", "utf8"));
+const ids = Object.keys(manifest.node ?? {});
+assert.equal(ids.length, 1, "The build must expose the single mutatePlanner server action");
+const actionId = ids[0];
+
+async function mutation(input) {
+  const response = await fetch(origin + "/", {
+    method: "POST",
+    headers: {
+      "Next-Action": actionId,
+      "Accept": "text/x-component",
+      "Content-Type": "text/plain;charset=UTF-8",
+      "Origin": origin,
+    },
+    body: JSON.stringify([input]),
+    signal: AbortSignal.timeout(10000),
+  });
+  assert.equal(response.status, 200, "Server Action HTTP error");
+  const body = await response.text();
+  const results = body.split("\n").flatMap((line) => {
+    const separator = line.indexOf(":");
+    if (separator < 0) return [];
+    try {
+      const value = JSON.parse(line.slice(separator + 1));
+      return value && typeof value.ok === "boolean" ? [value] : [];
+    } catch { return []; }
+  });
+  assert.equal(results.length, 1, "Server Action must return one parseable operation result");
+  assert.equal(results[0].ok, true, "Server Action returned a save error");
+  return results[0];
+}
+
+const db = new DatabaseSync("/data/travel.sqlite", { readOnly: true });
+try {
+  const saved = await mutation({ type: "trip.save", name: "Container action smoke", startDate: null, dateLabel: "", homeCity: "Test", returnCity: null, travelers: 2, notes: "" });
+  assert.match(saved.id, /^[a-f0-9-]{36}$/i);
+  assert.equal(db.prepare("SELECT name FROM trips WHERE id = ?").get(saved.id)?.name, "Container action smoke");
+  await mutation({ type: "trip.delete", id: saved.id });
+  assert.equal(db.prepare("SELECT id FROM trips WHERE id = ?").get(saved.id), undefined, "Temporary trip must be removed");
+} finally {
+  db.close();
+}
+JS
+
+# The unused Next optimizer must not retrieve or cache an existing saved photo.
+optimizer_status="$(curl -sS -o /dev/null -w '%{http_code}' 'http://127.0.0.1:3007/_next/image?url=%2Fapi%2Fdestination-images%2F22222222-2222-4222-8222-222222222222%3Fv%3D33333333-3333-4333-8333-333333333333&w=256&q=75')"
+if [ "$optimizer_status" != "404" ]; then
+  echo "The unused Next.js image optimizer returned HTTP $optimizer_status, expected 404." >&2
+  exit 1
+fi
+
 # A container without the persistent mount must refuse to start.
 set +e
 timeout 10s docker run --rm --name travel-check-no-storage "$image" > storage-guard.log 2>&1

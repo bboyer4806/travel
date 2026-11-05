@@ -1,9 +1,9 @@
-import { getSnapshot } from "@/lib/store";
+import { checkHealth } from "@/lib/store";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 export function GET() {
   try {
-    getSnapshot();
+    checkHealth();
     return Response.json({ status: "ok" });
   } catch {
     return Response.json({ status: "unavailable" }, { status: 503 });

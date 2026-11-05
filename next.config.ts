@@ -1,6 +1,7 @@
 import type { NextConfig } from "next";
 const nextConfig: NextConfig = {
   output: "standalone",
+  images: { unoptimized: true },
   // Native Sharp libraries (including Windows DLLs) are loaded dynamically.
   // Keep them with pnpm's platform package in the standalone deployment.
   outputFileTracingIncludes: {

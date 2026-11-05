@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { calculateBudget } from "./budget.ts";
 import { mkdirSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { DatabaseSync } from "node:sqlite";
@@ -486,7 +487,7 @@ export function createStore(databasePath: string) {
           db.prepare("UPDATE trips SET startDate = ? WHERE id = ?").run(backfill.startDate, trip.id);
           for (const stop of backfill.destinations) db.prepare("UPDATE destinations SET nights = ? WHERE id = ?").run(stop.nights, stop.id);
         }
-        refreshDates();
+        for (const trip of db.prepare("SELECT id FROM trips").all()) refreshDates(trip.id as string);
       }
       db.exec("PRAGMA user_version = 15;");
     }
@@ -544,59 +545,94 @@ export function createStore(databasePath: string) {
     throw error;
   }
 
-  function getSnapshot(): Snapshot {
-    const requirements = new Map(db.prepare("SELECT destinationId, requirementsJson FROM destination_entry_requirements").all()
+  function getSnapshot(scope?: { tripId: string; destinationId?: string }): Snapshot {
+    const tripArgs = scope ? [scope.tripId] : [];
+    const destinationArgs = scope ? (scope.destinationId ? [scope.tripId, scope.destinationId] : [scope.tripId]) : [];
+    const childWhere = scope ? " WHERE destinationId IN (SELECT id FROM destinations WHERE tripId = ?" + (scope.destinationId ? " AND id = ?" : "") + ")" : "";
+    const query = (sql: string, args: string[] = []) => db.prepare(sql).all(...args);
+    const requirements = new Map(query("SELECT destinationId, requirementsJson FROM destination_entry_requirements" + childWhere, destinationArgs)
       .map((row) => [row.destinationId as string, JSON.parse(row.requirementsJson as string) as EntryRequirements]));
     const destinationPhotos = new Map<string, CandidateImage[]>();
-    for (const row of db.prepare("SELECT id, destinationId, version FROM destination_images ORDER BY destinationId, position, id").all()) {
+    for (const row of query("SELECT id, destinationId, version FROM destination_images" + childWhere + " ORDER BY destinationId, position, id", destinationArgs)) {
       const destinationId = row.destinationId as string;
       const images = destinationPhotos.get(destinationId) ?? [];
       images.push({ id: row.id as string, version: row.version as string });
       destinationPhotos.set(destinationId, images);
     }
     const churchPhotos = new Map<string, CandidateImage[]>();
-    for (const row of db.prepare("SELECT id, churchId, version FROM church_images ORDER BY churchId, position, id").all()) {
+    for (const row of query("SELECT id, churchId, version FROM church_images" + (scope ? " WHERE churchId IN (SELECT id FROM churches" + childWhere + ")" : "") + " ORDER BY churchId, position, id", destinationArgs)) {
       const churchId = row.churchId as string;
       const images = churchPhotos.get(churchId) ?? [];
       images.push({ id: row.id as string, version: row.version as string });
       churchPhotos.set(churchId, images);
     }
     const photos = new Map<string, CandidateImage[]>();
-    for (const row of db.prepare("SELECT id, candidateId, version FROM candidate_images ORDER BY candidateId, position, id").all()) {
+    for (const row of query("SELECT id, candidateId, version FROM candidate_images" + (scope ? " WHERE candidateId IN (SELECT id FROM candidates" + childWhere + ")" : "") + " ORDER BY candidateId, position, id", destinationArgs)) {
       const candidateId = row.candidateId as string;
       const images = photos.get(candidateId) ?? [];
       images.push({ id: row.id as string, version: row.version as string });
       photos.set(candidateId, images);
     }
     return {
-      trips: db.prepare("SELECT * FROM trips ORDER BY createdAt DESC, id").all().map((row) => {
+      trips: query("SELECT * FROM trips" + (scope ? " WHERE id = ?" : "") + " ORDER BY createdAt DESC, id", tripArgs).map((row) => {
         const trip = row as unknown as Trip;
         return { ...trip, endDate: sequenceDates(trip.startDate, orderedDestinations(trip.id)).endDate };
       }),
-      homeItems: db.prepare("SELECT * FROM home_items ORDER BY createdAt, id").all().map((row) => {
+      homeItems: query("SELECT * FROM home_items" + (scope ? " WHERE tripId = ?" : "") + " ORDER BY createdAt, id", tripArgs).map((row) => {
         const item = row as unknown as StoredHomeItem;
         return { ...item, completed: item.completed === 1 };
       }),
-      destinations: db.prepare("SELECT destinations.*, destination_images.version AS imageVersion, destination_images.id AS mainImageId FROM destinations LEFT JOIN destination_images ON destination_images.destinationId = destinations.id AND destination_images.isMain = 1 ORDER BY destinations.tripId, destinations.position").all().map((row) => {
+      destinations: query("SELECT destinations.*, destination_images.version AS imageVersion, destination_images.id AS mainImageId FROM destinations LEFT JOIN destination_images ON destination_images.destinationId = destinations.id AND destination_images.isMain = 1" + (scope ? " WHERE destinations.tripId = ?" : "") + " ORDER BY destinations.tripId, destinations.position", tripArgs).map((row) => {
         const destination = row as unknown as StoredDestination;
         return { ...destination, entryRequirements: requirements.get(destination.id) ?? null, churchEnabled: destination.churchEnabled === 1, images: destinationPhotos.get(destination.id) ?? [] };
       }),
-      legs: db.prepare("SELECT legs.* FROM legs LEFT JOIN destinations ON destinations.id = legs.fromId ORDER BY legs.tripId, coalesce(destinations.position, -1)").all().map((row) => {
+      legs: query("SELECT legs.* FROM legs LEFT JOIN destinations ON destinations.id = legs.fromId" + (scope ? " WHERE legs.tripId = ?" : "") + " ORDER BY legs.tripId, coalesce(destinations.position, -1)", tripArgs).map((row) => {
         const { itineraryJson, linksJson, ...leg } = row as unknown as StoredLeg;
         const links = storedLinks({ ...leg, linksJson });
         return { ...leg, url: links[0]?.url ?? "", itinerary: JSON.parse(itineraryJson) as ItineraryStop[], links };
       }),
-      churches: db.prepare("SELECT churches.*, church_images.id AS mainImageId FROM churches LEFT JOIN church_images ON church_images.churchId = churches.id AND church_images.isMain = 1 ORDER BY churches.name COLLATE NOCASE, churches.id").all().map((row) => {
+      churches: query("SELECT churches.*, church_images.id AS mainImageId FROM churches LEFT JOIN church_images ON church_images.churchId = churches.id AND church_images.isMain = 1" + (scope ? " WHERE churches.destinationId IN (SELECT id FROM destinations WHERE tripId = ?" + (scope.destinationId ? " AND id = ?" : "") + ")" : "") + " ORDER BY churches.name COLLATE NOCASE, churches.id", destinationArgs).map((row) => {
         const { massTimesJson, ...church } = row as unknown as StoredChurch;
         return { ...church, massTimes: JSON.parse(massTimesJson) as MassTime[], images: churchPhotos.get(church.id) ?? [] };
       }),
-      candidates: db.prepare("SELECT candidates.*, candidate_images.version AS imageVersion, candidate_images.id AS mainImageId FROM candidates LEFT JOIN candidate_images ON candidate_images.candidateId = candidates.id AND candidate_images.isMain = 1 ORDER BY candidates.destinationId, candidates.category, candidates.position, candidates.id").all().map((row) => {
+      candidates: query("SELECT candidates.*, candidate_images.version AS imageVersion, candidate_images.id AS mainImageId FROM candidates LEFT JOIN candidate_images ON candidate_images.candidateId = candidates.id AND candidate_images.isMain = 1" + (scope ? " WHERE candidates.destinationId IN (SELECT id FROM destinations WHERE tripId = ?" + (scope.destinationId ? " AND id = ?" : "") + ")" : "") + " ORDER BY candidates.destinationId, candidates.category, candidates.position, candidates.id", destinationArgs).map((row) => {
         const { linksJson, ...candidate } = row as unknown as StoredCandidate;
         const links = storedLinks({ ...candidate, linksJson });
         return { ...candidate, url: links[0]?.url ?? "", included: candidate.included === 1, mustDo: candidate.mustDo === 1, links, images: photos.get(candidate.id) ?? [] };
       }),
     };
   }
+  function getHomeOverview() {
+    const rawTrips = db.prepare("SELECT * FROM trips ORDER BY createdAt DESC, id").all() as unknown as Trip[];
+    const destinations = db.prepare(`SELECT id,tripId,city,position,nights,miscDailyMinor,miscCurrency,hotelNightlyMinor,hotelCurrency,
+      activitiesBudgetMode,activitiesGeneralMinor,activitiesCurrency,foodBudgetMode,foodDailyMinor,foodCurrency,
+      shoppingMinor,shoppingCurrency FROM destinations ORDER BY tripId,position,id`).all() as unknown as Destination[];
+    const trips = rawTrips.map((trip) => ({ ...trip, endDate: sequenceDates(trip.startDate, destinations.filter((stop) => stop.tripId === trip.id)).endDate }));
+    const input: Snapshot = {
+      trips, destinations,
+      legs: db.prepare("SELECT tripId,fromId,toId,priceCents FROM legs").all() as unknown as TravelLeg[],
+      candidates: db.prepare("SELECT destinationId,category,priceCents,included FROM candidates").all().map((row) => ({ ...row, included: row.included === 1 })) as unknown as Candidate[],
+      homeItems: db.prepare("SELECT tripId,priceCents FROM home_items").all() as unknown as HomeItem[],
+      churches: [],
+    };
+    const budgets = Object.fromEntries(trips.map((trip) => [trip.id, calculateBudget(input, trip.id)]));
+    return {
+      data: {
+        trips,
+        destinations: destinations.map(({ id, tripId, city, position }) => ({ id, tripId, city, position })) as Destination[],
+        legs: [], candidates: [], homeItems: [], churches: [],
+      } as Snapshot,
+      budgets,
+    };
+  }
+  function getTripName(id: string): string | undefined {
+    return db.prepare("SELECT name FROM trips WHERE id = ?").get(id)?.name as string | undefined;
+  }
+  function getDestinationName(tripId: string, destinationId: string): string | undefined {
+    return db.prepare("SELECT city FROM destinations WHERE tripId = ? AND id = ?").get(tripId, destinationId)?.city as string | undefined;
+  }
+  function checkHealth(): void { db.prepare("SELECT 1").get(); }
+
   function getDestinationImage(id: string): StoredImage | undefined {
     const row = db.prepare("SELECT version, data FROM destination_images WHERE destinationId = ? AND isMain = 1").get(id);
     return row ? { version: row.version as string, data: new Uint8Array(row.data as Uint8Array) } : undefined;
@@ -717,16 +753,16 @@ export function createStore(databasePath: string) {
       }
     }
   }
-  function refreshDates() {
-    for (const row of db.prepare("SELECT id, startDate FROM trips").all()) {
-      try {
-        const schedule = sequenceDates(row.startDate as string | null, orderedDestinations(row.id as string));
-        for (const stop of schedule.destinations) {
-          db.prepare("UPDATE destinations SET arrivalDate = ?, departureDate = ? WHERE id = ?").run(stop.arrivalDate, stop.departureDate, stop.id);
-        }
-      } catch (error) {
-        throw new ValidationError(error instanceof Error ? error.message : "This trip's dates cannot be calculated.");
+  function refreshDates(tripId: string) {
+    const trip = db.prepare("SELECT startDate FROM trips WHERE id = ?").get(tripId);
+    if (!trip) return;
+    try {
+      const schedule = sequenceDates(trip.startDate as string | null, orderedDestinations(tripId));
+      for (const stop of schedule.destinations) {
+        db.prepare("UPDATE destinations SET arrivalDate = ?, departureDate = ? WHERE id = ?").run(stop.arrivalDate, stop.departureDate, stop.id);
       }
+    } catch (error) {
+      throw new ValidationError(error instanceof Error ? error.message : "This trip's dates cannot be calculated.");
     }
   }
   function clearLeg(id: string) {
@@ -803,7 +839,7 @@ export function createStore(databasePath: string) {
         }
         const days = nightsToBudgetDays(nights);
         if (miscDailyMinor !== null && days !== null && !Number.isSafeInteger(Math.round(miscDailyMinor * days))) {
-          throw new ValidationError("The miscellaneous subtotal is too large. Reduce the daily amount or date range.");
+          throw new ValidationError("The miscellaneous subtotal is too large. Reduce the daily amount or number of nights.");
         }
         const hotelCurrency = input.hotelNightlyAmount ? "USD" : input.hotelCurrency === undefined ? before?.hotelCurrency ?? null : input.hotelCurrency;
         if (input.hotelNightlyAmount === undefined && before?.hotelNightlyMinor != null && hotelCurrency !== before.hotelCurrency) {
@@ -844,7 +880,7 @@ export function createStore(databasePath: string) {
           }
         }
         if (foodDailyMinor !== null && days !== null && !Number.isSafeInteger(Math.round(foodDailyMinor * days))) {
-          throw new ValidationError("The food subtotal is too large. Reduce the daily amount or date range.");
+          throw new ValidationError("The food subtotal is too large. Reduce the daily amount or number of nights.");
         }
         const shoppingCurrency = input.shoppingAmount ? "USD" : input.shoppingCurrency === undefined ? before?.shoppingCurrency ?? null : input.shoppingCurrency;
         if (input.shoppingAmount === undefined && before?.shoppingMinor != null && shoppingCurrency !== before.shoppingCurrency) {
@@ -867,7 +903,7 @@ export function createStore(databasePath: string) {
         const weatherPeriod = input.weatherPeriod ?? before?.weatherPeriod ?? "";
         const weatherSource = input.weatherSource ?? before?.weatherSource ?? "";
         if (hotelNightlyMinor !== null && nights !== null && !Number.isSafeInteger(hotelNightlyMinor * nights)) {
-          throw new ValidationError("The hotel estimate is too large. Reduce the nightly amount or date range.");
+          throw new ValidationError("The hotel estimate is too large. Reduce the nightly amount or number of nights.");
         }
         if (before) {
           db.prepare("UPDATE destinations SET city = ?, stay = ?, notes = ?, arrivalDate = ?, departureDate = ?, miscDailyMinor = ?, miscCurrency = ?, hotelNightlyMinor = ?, hotelCurrency = ?, activitiesBudgetMode = ?, activitiesGeneralMinor = ?, activitiesCurrency = ?, foodBudgetMode = ?, foodDailyMinor = ?, foodCurrency = ?, shoppingMinor = ?, shoppingCurrency = ?, weatherHighF = ?, weatherLowF = ?, weatherRainfall = ?, weatherPeriod = ?, weatherSource = ?, churchEnabled = ? WHERE id = ?").run(city, stay, notes, arrivalDate, departureDate, miscDailyMinor, miscCurrency, hotelNightlyMinor, hotelCurrency, activitiesBudgetMode, activitiesGeneralMinor, activitiesCurrency, foodBudgetMode, foodDailyMinor, foodCurrency, shoppingMinor, shoppingCurrency, weatherHighF, weatherLowF, weatherRainfall, weatherPeriod, weatherSource, Number(churchEnabled), id);
@@ -998,21 +1034,31 @@ export function createStore(databasePath: string) {
       }
     }
   }
-  function applyMutation(input: unknown): { snapshot: Snapshot; id?: string } {
+  function applyMutation(input: unknown): { id?: string } {
     const valid = validate(input);
     db.exec("BEGIN IMMEDIATE");
     try {
+      let scheduleTrip: string | undefined;
+      if (valid.type === "trip.save" && valid.startDate !== undefined) {
+        if (valid.id && db.prepare("SELECT startDate FROM trips WHERE id = ?").get(valid.id)?.startDate !== valid.startDate) scheduleTrip = valid.id;
+      } else if (valid.type === "destination.save") {
+        if (!valid.id || (valid.nights !== undefined &&
+            db.prepare("SELECT nights FROM destinations WHERE id = ?").get(valid.id)?.nights !== valid.nights)) scheduleTrip = valid.tripId;
+      } else if (valid.type === "destination.delete" || valid.type === "destination.move") {
+        scheduleTrip = existing<Destination>("destinations", valid.id).tripId;
+      }
       const id = mutate(valid);
-      refreshDates();
-      const snapshot = getSnapshot();
+      if (valid.type === "trip.save" && !valid.id && valid.startDate !== undefined) scheduleTrip = id;
+      if (scheduleTrip) refreshDates(scheduleTrip);
       db.exec("COMMIT");
-      return id ? { snapshot, id } : { snapshot };
+      return id ? { id } : {};
     } catch (error) {
       db.exec("ROLLBACK");
       throw error;
     }
   }
-  return { getSnapshot, getDestinationImage, getDestinationPhoto, getCandidateImage, getCandidatePhoto, getChurchPhoto, applyMutation, close: () => db.close() };
+
+  return { getSnapshot, getHomeOverview, getTripName, getDestinationName, checkHealth, getDestinationImage, getDestinationPhoto, getCandidateImage, getCandidatePhoto, getChurchPhoto, applyMutation, close: () => db.close() };
 }
 
 type Store = ReturnType<typeof createStore>;
@@ -1045,6 +1091,13 @@ export function getCandidatePhoto(candidateId: string, imageId: string): StoredI
 export function getChurchPhoto(churchId: string, imageId: string): StoredImage | undefined {
   return defaultStore().getChurchPhoto(churchId, imageId);
 }
-export function applyMutation(input: unknown): { snapshot: Snapshot; id?: string } {
+export function applyMutation(input: unknown): { id?: string } {
   return defaultStore().applyMutation(input);
 }
+export function getTripSnapshot(tripId: string, destinationId?: string): Snapshot {
+  return defaultStore().getSnapshot({ tripId, destinationId });
+}
+export function getHomeOverview() { return defaultStore().getHomeOverview(); }
+export function getTripName(id: string) { return defaultStore().getTripName(id); }
+export function getDestinationName(tripId: string, destinationId: string) { return defaultStore().getDestinationName(tripId, destinationId); }
+export function checkHealth(): void { defaultStore().checkHealth(); }

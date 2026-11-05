@@ -38,5 +38,5 @@ export type Mutation =
  | { type: "candidate.mustDo"; id: string; mustDo: boolean }
  | { type: "candidate.delete"; id: string }
  | { type: "candidate.include"; id: string; included: boolean };
-export type ActionResult = { ok: true; snapshot: Snapshot; id?: string } | { ok: false; error: string };
+export type ActionResult = { ok: true; id?: string } | { ok: false; error: string };
 export interface Budget { shoppingByCurrency: Record<string, number>; foodByCurrency: Record<string, number>; foodMissingCount: number; activitiesByCurrency: Record<string, number>; activitiesMissingCount: number; hotelsByCurrency: Record<string, number>; hotelMissingCount: number; totalsByCurrency: Record<string, number>; miscellaneousByCurrency: Record<string, number>; miscMissingCount: number; totalCents: number; homeCents: number; travelCents: number; hotelsCents: number; activitiesCents: number; restaurantsCents: number; knownCount: number; missingCount: number; complete: boolean; }

@@ -180,3 +180,10 @@ Review this implementation separately from live deployment. Back up and rehearse
 - Schema 17 upgrades destination images to ordered galleries; schema 18 adds destination-owned entry requirements. Preserve old data, replay safety, backups, and container persistence. Back up and rehearse on a copy before release; earlier builds reject the newer schema.
 
 Review implementation separately from live deployment. Publish 1.4 change-log entries only after deployment and release verification.
+
+## Added scope: November 4, 2026, Travel 1.5
+- Improve page and save performance using scoped SQLite reads, compact mutation responses, trip-specific date refresh, and stable home budget summaries.
+- Fix page metadata, misleading wording, long-name wrapping, and the What's New unread flash.
+- Extend the production container smoke test to render a page, load an asset, and create/delete via the normal server action.
+- Disable unused Next.js image optimization without changing the existing image APIs.
+- Automate encrypted daily off-host backups to an always-on Windows 11 PC via Tailscale and SSH, retain 30 days, validate transferred backups, and block deployment if the required backup fails. Provisioning the server and computer is a separate administrator task.

@@ -40,9 +40,10 @@ Repeat passing checks when subsequent changes affect their coverage or required 
 - Application writes go through `mutatePlanner` in `src/app/actions.ts`, into `applyMutation`
   in `src/lib/store.ts`. A new operation adds a `Mutation` variant in `src/lib/types.ts` and
   a case in both `validate` and `mutate` in the store.
-- `src/lib/store.ts` is the application's database boundary. Pages and API routes read through
-  its exported getters (`getSnapshot` and the image getters). Backup utilities and tests also
-  access SQLite directly.
+- `src/lib/store.ts` is the application's database boundary. Home pages read `getHomeOverview`,
+  trip and category pages read `getTripSnapshot`, and saves return only an ID or error.
+  `getSnapshot` remains for full read-only checks and tests. Backup utilities and tests
+  also access SQLite directly.
 - Store validation throws `ValidationError`; upload validation throws `ImageValidationError`.
   Their messages are shown to people as written.
 - Every amount is integer USD cents for the whole party. Destination money retains explicit
@@ -77,6 +78,6 @@ raises the newer-version guard. Add a rollback note for the new version to `docs
 
 A behavior change updates README.md in the same change; new scope adds a dated "Added scope"
 section to PLAN.md. A push to `main`, including documentation-only changes, runs the checks,
-then deploys to travel.dev.boyersoftware.com; PRs run checks only.
+then requires a verified off-host encrypted backup before deploying to travel.dev.boyersoftware.com; PRs run checks only.
 Update these instructions alongside changes to the commands or conventions they describe.
 `CLAUDE.md` imports this shared guidance.

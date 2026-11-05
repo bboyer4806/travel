@@ -40,6 +40,45 @@ sudo dokku run travel node scripts/backup.mjs /data/travel-backup-2026-10-07.sql
 Use a unique filename every time. The helper refuses overwrite, reads the configured source without creating an empty database, and validates the snapshot.
 Copy successful backups to separate storage; backups on the same disk are insufficient for disk loss.
 
+## Travel 1.5: encrypted off-host backups to Windows 11
+
+**Do this setup before merging Travel 1.5.** GitHub deployment now fails closed when a fresh off-host backup cannot be verified. Installing the code does not by itself configure the server, the Windows 11 receiver, or an automatic schedule.
+
+The production database, including all gallery photos stored as SQLite BLOBs, is backed up online using the existing validated `scripts/backup.mjs`. The server encrypts each snapshot with [age](https://age-encryption.org/), sends only the encrypted file to an always-on Windows 11 computer over Tailscale and OpenSSH, and asks the receiver to independently verify its SHA-256 hash. Temporary plaintext snapshots are removed from the host, and the Windows receiver retains backups from the most recent 30 days.
+
+1. **Windows receiver.** Set up Tailscale on Windows 11 and the Dokku server, and verify they can reach one another over the private tailnet. Create a dedicated non-administrator Windows account for the backups, install and enable Windows OpenSSH Server, restrict inbound SSH to Tailscale, and configure key-only SSH access. While signed in as this account, create `$env:USERPROFILE\travel-backups`, restrict its NTFS permissions, and put `scripts/verify-retain.ps1` there. Windows SSH logins must start in that account's profile directory for the relative path `travel-backups\verify-retain.ps1` to resolve. Install age on Windows and create a recipient/identity key pair with `age-keygen`. Store the **private identity only on Windows** in a protected separate directory and retain an offline recovery copy. Record its public `age1...` recipient for the server; do not copy the private key to Linux or GitHub.
+
+2. **Production host.** Install `age`, `openssh-client`, `openssl`, and `cron`; retain the existing working Dokku app and persistent mount. Install `scripts/offhost-backup.sh` as `/usr/local/sbin/travel-offhost-backup` owned by root with mode `700`. Create a dedicated server-to-Windows SSH private key and its Windows account authorized-key entry. Save that key in a root-only file. Create `/etc/travel-backup.env` owned by root with mode `600`, with exactly these variables:
+
+   ```sh
+   TRAVEL_BACKUP_RECIPIENT=age1...your-public-recipient
+   TRAVEL_BACKUP_WINDOWS_USER=your-dedicated-windows-user
+   TRAVEL_BACKUP_TAILSCALE_IP=100.x.y.z
+   TRAVEL_BACKUP_SSH_KEY=/root/.ssh/travel-windows-backup
+   ```
+
+   Pin the verified Windows SSH server host key in root-only `/etc/travel-backup-known-hosts`; do not depend on automatically accepting a newly presented host key. Validate the host key out of band, then test SSH and SCP to the Windows backup account. Confirm free disk space and that the Windows system remains online.
+
+3. **Daily scheduling.** Run a manual `sudo /usr/local/sbin/travel-offhost-backup` first, then install `/etc/cron.d/travel-backup` with this UTC schedule:
+
+   ```cron
+   0 3 * * * root /usr/local/sbin/travel-offhost-backup >> /var/log/travel-backup.log 2>&1
+   ```
+
+   The script fails on a missing database, corrupt snapshot, failed encryption, transfer, checksum, or retention operation. Check `/var/log/travel-backup.log` and cron logs daily, and configure administrator notification from the host's normal monitoring system. The script never modifies the live database and removes its temporary host files on exit.
+
+4. **Pre-deployment backup identity.** Create a dedicated `backup-runner` SSH account on the Dokku host. Restrict its passwordless sudo permission to exactly `/usr/local/sbin/travel-offhost-backup`; do not grant broader administrative commands. Add its SSH private key as the GitHub Actions secret `TRAVEL_BACKUP_HOST_SSH_KEY`. Add the **verified, pinned** Dokku host SSH public key line to `TRAVEL_BACKUP_KNOWN_HOSTS`. The deployment workflow uses the existing `DOKKU_HOST` secret and calls the same backup script before deploying. Missing secrets or any backup error stop deployment.
+
+5. **Independent recovery rehearsal.** On Windows, select an encrypted backup and decrypt it to an **isolated test file**, never onto a running production database:
+
+   ```powershell
+   age -d -i "$env:USERPROFILE\.config\age\travel-identity.txt" -o "$env:TEMP\travel-restore-test.sqlite" "$env:USERPROFILE\travel-backups\<backup-file>.sqlite.age"
+   ```
+
+   Open the isolated file read-only with SQLite and verify `PRAGMA integrity_check` returns `ok`, `PRAGMA foreign_key_check` has no rows, and that expected trips, destinations, prices, and photo BLOB rows exist. Delete the isolated test file afterward. For a real restore, use the **stopped-app** restore procedure below; never copy it over an active SQLite database.
+
+Before activating automatic deployment, test a successful transfer, checksum verification, deliberate Windows-disconnected failure (must block deployment), 30-day pruning, and a successful isolated restore. Deployment is not considered enabled until these tests pass. The host and the Windows receiver remain responsible for retaining the root-only configuration and Windows private decryption identity outside source control.
+
 ## Restore
 
 1. Stop the travel app to prevent new writes.

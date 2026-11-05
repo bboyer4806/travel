@@ -487,7 +487,7 @@ export function createStore(databasePath: string) {
           db.prepare("UPDATE trips SET startDate = ? WHERE id = ?").run(backfill.startDate, trip.id);
           for (const stop of backfill.destinations) db.prepare("UPDATE destinations SET nights = ? WHERE id = ?").run(stop.nights, stop.id);
         }
-        refreshDates();
+        for (const trip of db.prepare("SELECT id FROM trips").all()) refreshDates(trip.id as string);
       }
       db.exec("PRAGMA user_version = 15;");
     }

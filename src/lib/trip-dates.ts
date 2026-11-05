@@ -59,8 +59,9 @@ export function backfillDates(stops: readonly { id: string; arrivalDate: string 
   };
 }
 
+const calendarDateFormatter = new Intl.DateTimeFormat("en-US", { weekday: "short", month: "short", day: "numeric", year: "numeric", timeZone: "UTC" });
 export function formatCalendarDate(date: string | null | undefined): string {
-  return date ? new Intl.DateTimeFormat("en-US", { weekday: "short", month: "short", day: "numeric", year: "numeric", timeZone: "UTC" }).format(new Date(date + "T00:00:00.000Z")) : "Not yet calculable";
+  return date ? calendarDateFormatter.format(new Date(date + "T00:00:00.000Z")) : "Not yet calculable";
 }
 
 export function churchDateEligible(destination: { arrivalDate: string | null; departureDate: string | null }): boolean {

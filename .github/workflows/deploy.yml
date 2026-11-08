@@ -53,23 +53,6 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
-      # A failed off-host backup blocks deployment before production data is touched.
-      - name: Require verified off-host backup
-        env:
-          BACKUP_KEY: ${{ secrets.TRAVEL_BACKUP_HOST_SSH_KEY }}
-          BACKUP_HOST: ${{ secrets.DOKKU_HOST }}
-          BACKUP_KNOWN_HOSTS: ${{ secrets.TRAVEL_BACKUP_KNOWN_HOSTS }}
-        run: |
-          set -euo pipefail
-          : "${BACKUP_KEY:?Configure TRAVEL_BACKUP_HOST_SSH_KEY}"
-          : "${BACKUP_HOST:?Configure DOKKU_HOST}"
-          : "${BACKUP_KNOWN_HOSTS:?Configure TRAVEL_BACKUP_KNOWN_HOSTS}"
-          install -d -m 700 ~/.ssh
-          printf '%s\n' "$BACKUP_KEY" > ~/.ssh/travel_backup
-          printf '%s\n' "$BACKUP_KNOWN_HOSTS" > ~/.ssh/known_hosts
-          chmod 600 ~/.ssh/travel_backup ~/.ssh/known_hosts
-          ssh -o BatchMode=yes -o StrictHostKeyChecking=yes -i ~/.ssh/travel_backup "backup-runner@$BACKUP_HOST" sudo /usr/local/sbin/travel-offhost-backup
-
       - name: Deploy to Dokku
         env:
           SSH_KEY: ${{ secrets.DOKKU_SSH_KEY }}

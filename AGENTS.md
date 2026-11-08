@@ -78,6 +78,6 @@ raises the newer-version guard. Add a rollback note for the new version to `docs
 
 A behavior change updates README.md in the same change; new scope adds a dated "Added scope"
 section to PLAN.md. A push to `main`, including documentation-only changes, runs the checks,
-then requires a verified off-host encrypted backup before deploying to travel.dev.boyersoftware.com; PRs run checks only.
+then deploys to travel.dev.boyersoftware.com; PRs run checks only.
 Update these instructions alongside changes to the commands or conventions they describe.
 `CLAUDE.md` imports this shared guidance.

@@ -186,4 +186,4 @@ Review implementation separately from live deployment. Publish 1.4 change-log en
 - Fix page metadata, misleading wording, long-name wrapping, and the What's New unread flash.
 - Extend the production container smoke test to render a page, load an asset, and create/delete via the normal server action.
 - Disable unused Next.js image optimization without changing the existing image APIs.
-- Deferred (TRA-77): Automate encrypted daily off-host backups to an always-on Windows 11 PC via Tailscale and SSH, retain 30 days, validate transferred backups, and block deployment if the required backup fails. Keep this ticket separate from the Travel 1.5 production release.
+- Automate encrypted daily off-host backups to an always-on Windows 11 PC via Tailscale and SSH, retain 30 days, validate transferred backups, and block deployment if the required backup fails. Provisioning the server and computer is a separate administrator task.

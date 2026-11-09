@@ -12,8 +12,9 @@ This block is written and re-added by `next dev` — verify at `node_modules/nex
 
 A shared travel planner: trips, ordered destinations, travel between them, hotel, activity and
 restaurant ideas, at-home arrangements and an estimated budget. Next.js 16, React 19 and
-TypeScript, with one SQLite database through Node 24's built-in `node:sqlite`. Google Sign In
-(Auth.js) is required: only explicitly authorized Google accounts can view and edit trips.
+TypeScript, with one SQLite database through Node 24's built-in `node:sqlite`. Signing in with
+Google is required, as in Budget and Meals: only explicitly authorized Google accounts can view
+and edit trips.
 
 Consult the relevant sections of [README.md](README.md) for setup and behavior,
 [PLAN.md](PLAN.md) for agreed scope, and [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) for hosting,
@@ -24,26 +25,30 @@ behavior and commands against the source and configuration.
 
 Use Node 24 and pnpm 10.32.1, matching `package.json` and CI. Install with
 `pnpm install --frozen-lockfile` and start with `pnpm dev`. Local data lives in
-`data/travel.sqlite`; set `TRAVEL_DATABASE_PATH` to use another file. Signing in needs
-`AUTH_SECRET`, `AUTH_GOOGLE_ID`, `AUTH_GOOGLE_SECRET` and `TRAVEL_OWNER_EMAIL` in `.env.local`
-(see README.md). Never commit or log their values.
+`data/travel.sqlite`; set `TRAVEL_DATABASE_PATH` to use another file. The server refuses to
+start without `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET` and `TRAVEL_OWNER_EMAIL` in `.env.local`,
+from an OAuth client allowing `http://localhost:3000/auth/google/callback` (see README.md). There
+is no stand-in for Google. Never commit or log their values.
 
 ## Checks
 
 Use targeted checks while iterating. Before pushing, run the checks from
 `.github/workflows/check.yml`: `pnpm lint`, `pnpm typecheck`, `pnpm test` and `pnpm build`.
-CI also runs `bash scripts/smoke-container.sh`, which needs Docker, Bash and the installed
-dependencies (it mints test sessions with `next-auth/jwt`) and checks the container, persistent
-storage and sign-in enforcement. A Next.js build alone does not verify those.
+CI also runs `bash scripts/smoke-container.sh`, which needs Docker and Bash and checks the
+container, persistent storage and sign-in enforcement. A Next.js build alone does not verify those.
 Fix regressions caused by your change; report unrelated baseline failures and blocked checks.
 Repeat passing checks when subsequent changes affect their coverage or required gates demand it.
 
 ## Code
 
-- Authentication lives in `src/auth.ts`. Every page and its `generateMetadata` call `requireAccount`
-  first; every Server Action and route handler checks `currentAccount` before reading input.
-  Only `/signin`, `/api/auth/*` and `/api/health` are public. Authorized accounts are the store's
-  `accounts` table: emails, each bound to Google's stable subject at its first sign-in.
+- Signing in follows Budget and Meals. `src/lib/google.ts` is the hand-written Google code flow,
+  `src/auth.ts` the session checks, and `src/instrumentation.ts` refuses to start without the
+  settings. Every page and its `generateMetadata` call `requireAccount()` first; every Server Action
+  and route handler checks `currentAccount()` before using input. `src/proxy.ts` only checks that a
+  session cookie exists, so it protects nothing on its own. Only `/login`, `/auth/google/*` and
+  `/api/health` are public. Only the Google callback route may start a session, never an action.
+- Authorized accounts and sessions are the store's `accounts` and `sessions` tables: emails, each
+  bound to Google's stable subject at first sign-in, and hashed session tokens.
 - Application writes go through `mutatePlanner` in `src/app/actions.ts`, into `applyMutation`
   in `src/lib/store.ts`. A new operation adds a `Mutation` variant in `src/lib/types.ts` and
   a case in both `validate` and `mutate` in the store.

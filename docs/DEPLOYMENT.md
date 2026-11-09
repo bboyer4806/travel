@@ -32,36 +32,34 @@ The Docker image must be tested on a Docker-capable machine or CI; a local Next 
 
 ## Google Sign In (TRA-103)
 
-Travel uses Auth.js with Google. Only authorized accounts can sign in: the designated initial owner, and (with TRA-104) people a trip owner shares a trip with. Authorizations live in the SQLite `accounts` table, so they are included in every backup.
+Travel signs in with Google the same way as Budget and Meals: a hand-written OpenID Connect code flow with PKCE and sessions in Travel's own SQLite database. Only authorized accounts can sign in: the designated initial owner, and (with TRA-104) people a trip owner shares a trip with. Authorizations and sessions live in the `accounts` and `sessions` tables, so backups include them.
 
-**Coordinate with TRA-104.** A push to `main` deploys. Deployed without TRA-104, only the owner can sign in, so anyone else currently using Travel loses access until their trips are shared with them. Deploy the two together as agreed, after these settings exist and the integrated build has passed in an isolated environment.
+**Deployment order.** TRA-103 merges and deploys on its own; TRA-104 follows. Until TRA-104 ships, only the owner can sign in. Brian is currently Travel's only user, so that window is acceptable.
 
 1. **Identify the initial owner.** Choose the Google account that will own existing trips. Its email is the only authorization created by configuration; nobody gains access by signing in first.
 
-2. **Create the Google OAuth client.** In Google Cloud Console, configure the OAuth consent screen (Google Auth Platform) for External users with only the `openid`, `email` and `profile` scopes, and publish it, or add every intended person as a test user while it is in testing. Create an OAuth client of type **Web application** with this authorized redirect URI:
+2. **Set up the Google OAuth client.** Travel can use the same Web application client as Budget and Meals or one of its own. In Google Cloud Console (Google Auth Platform → Clients), add this authorized redirect URI to the client:
 
    ```text
-   https://travel.dev.boyersoftware.com/api/auth/callback/google
+   https://travel.dev.boyersoftware.com/auth/google/callback
    ```
 
-   For local development, use a separate client allowing `http://localhost:3000/api/auth/callback/google`.
+   For local development, add `http://localhost:3000/auth/google/callback`. The consent screen asks only for `openid`, `email` and `profile`; while it is in testing, only its listed test users can sign in. Sharing a client never shares a sign-in: each app has its own sessions and its own host-only cookies, so signing in to one does not sign you in to another.
 
 3. **Configure the server before deploying.** From a root shell on the Dokku host, set the server-only settings. Never put these values in source, image layers, client variables, tickets or logs:
 
    ```sh
    sudo dokku config:set --no-restart travel \
-     AUTH_URL=https://travel.dev.boyersoftware.com \
-     AUTH_SECRET="$(openssl rand -base64 33)" \
-     AUTH_GOOGLE_ID='<OAuth client ID>' \
-     AUTH_GOOGLE_SECRET='<OAuth client secret>' \
+     GOOGLE_CLIENT_ID='<OAuth client ID>' \
+     GOOGLE_CLIENT_SECRET='<OAuth client secret>' \
      TRAVEL_OWNER_EMAIL='<owner Google email>'
    ```
 
-   `AUTH_URL` fixes the public HTTPS origin used for Google's redirect and for Secure, `__Secure-` prefixed cookies, so forwarded host headers are never trusted. The startup script refuses to run when any setting is missing, `AUTH_SECRET` is shorter than 32 characters, or `AUTH_URL` is not HTTPS.
+   The server refuses to start, naming what is missing, without both Google settings or with an invalid `TRAVEL_OWNER_EMAIL`, so a deployment without them fails instead of running. Travel builds Google's redirect URI from each request's `Host` and `X-Forwarded-Proto`, so there is no URL setting, but Google refuses one that isn't on the client exactly. Keep the proxy passing both headers; the HTTPS scheme also makes the cookies Secure and `__Host-` prefixed.
 
-4. **Verify after deployment.** Confirm `/api/health` returns HTTP 200 and opening the site goes to the sign-in page. Sign in as the owner and confirm existing trips, prices and photos are intact. Sign in with an unauthorized Google account and confirm the access-denied message and that no session is created. Cancel at Google's account chooser and confirm the sign-in page reports it. Sign out and confirm trips and photo URLs are no longer reachable.
+4. **Verify after deployment.** Confirm `/api/health` returns HTTP 200 and opening the site goes to the sign-in page. Sign in as the owner and confirm existing trips, prices and photos are intact. Sign in with an unauthorized Google account and confirm the access-denied message and that no session starts. Cancel at Google's account chooser and confirm you return to the sign-in page. Sign out and confirm trips and photo URLs are no longer reachable.
 
-Sessions are encrypted cookies lasting 30 days. Signing out deletes the cookie from that browser. Changing `AUTH_SECRET` (a `dokku config:set` restarts the app) immediately ends every session, and everyone signs in again. Auth.js errors are logged as a type and message only; secrets, OAuth tokens and session contents are never logged.
+Sessions last 30 days from last use. Signing out deletes that browser's session on the server, and deleting rows from the `sessions` table ends those sessions on their next request. Sign-in failures are logged with their cause only; codes, tokens, secrets and session values are never logged.
 
 ## Backup
 
@@ -191,8 +189,8 @@ The container smoke script verifies schema 18, destination photo bytes/order/pri
 
 Schema 16 and earlier builds reject the newer database. Rollback requires a compatible build or the stopped-app restore procedure above. Preserve the upgraded database and sidecars first; restoring a pre-upgrade backup loses later edits. Production migration rehearsal and deployment verification are still required before closing Travel 1.4 and publishing its release notes.
 
-### Schema 19: Google Sign In accounts
-Google Sign In upgrades the database to schema 19 with an `accounts` table holding each authorized email, the stable Google account identifier bound at that person's first sign-in, and when it was authorized. Trips and all other data are unchanged. The table is included in the same online backups, and replaying the migration keeps existing authorizations and bindings. Take and verify a backup before deployment; the startup authorization of `TRAVEL_OWNER_EMAIL` is the only change at upgrade.
+### Schema 19: Google Sign In accounts and sessions
+Google Sign In upgrades the database to schema 19 with two tables. `accounts` holds each authorized email, the stable Google account identifier bound at that person's first sign-in, their Google display name, and when the email was authorized. `sessions` holds a SHA-256 hash of each browser's session token, its account and its expiry, never the token itself. Trips and all other data are unchanged. Both tables are included in the same online backups, and replaying the migration keeps existing authorizations, bindings and sessions. Take and verify a backup before deployment; the startup authorization of `TRAVEL_OWNER_EMAIL` is the only change at upgrade.
 
 Schema 18 and earlier builds reject schema 19. Rollback requires a compatible build or the stopped-app restore procedure above; preserve the upgraded database and sidecars first, because restoring an older backup loses later edits and authorizations. **A build from before Google Sign In has no sign-in at all: anyone with the URL could again view and edit every trip.** Prefer fixing forward. If a rollback is unavoidable, keep the app stopped until access is otherwise restricted.
 

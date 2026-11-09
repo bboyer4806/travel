@@ -8,18 +8,16 @@ import { getTripSnapshot } from "@/lib/store";
 import type { Category } from "@/lib/types";
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
-const categoryPath = (tripId: string, destinationId: string, category: string) =>
-  `/trips/${encodeURIComponent(tripId)}/destinations/${encodeURIComponent(destinationId)}/${encodeURIComponent(category)}`;
 export async function generateMetadata({ params }: { params: Promise<{ tripId: string; destinationId: string; category: string }> }): Promise<Metadata> {
   const { tripId, destinationId, category } = await params;
-  await requireAccount(categoryPath(tripId, destinationId, category));
+  await requireAccount();
   const labels: Record<string, string> = { hotels: "Hotels", activities: "Activities", restaurants: "Restaurants", church: "Church" };
   const city = getDestinationName(tripId, destinationId);
   return { title: labels[category] && city ? `${labels[category]} · ${formatSavedDestinationLabel(city)}` : "Destination not found" };
 }
 export default async function IdeasPage({ params }: { params: Promise<{ tripId: string; destinationId: string; category: string }> }) {
   const { tripId, destinationId, category } = await params;
-  await requireAccount(categoryPath(tripId, destinationId, category));
+  await requireAccount();
   if (!["hotels", "activities", "restaurants", "church"].includes(category)) notFound();
   const data = getTripSnapshot(tripId, destinationId);
   if (!data.trips.some((trip) => trip.id === tripId) ||

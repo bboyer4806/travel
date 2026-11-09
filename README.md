@@ -7,30 +7,37 @@ Requires Node 24 and pnpm 10.32.1.
 pnpm install --frozen-lockfile
 pnpm dev
 ```
-Open http://localhost:3000 and sign in with Google. Before starting, put these server-only settings in `.env.local` (excluded from Git); see [Google Sign In](#google-sign-in):
+Open http://localhost:3000 and sign in with Google. The server refuses to start, in `pnpm dev` and in production, until these server-only settings are in `.env.local` (excluded from Git); see [Google Sign In](#google-sign-in):
 
 ```sh
-# At least 32 random characters, for example from: openssl rand -base64 33
-AUTH_SECRET=
-# A Google OAuth web client that allows http://localhost:3000/api/auth/callback/google
-AUTH_GOOGLE_ID=
-AUTH_GOOGLE_SECRET=
+# From a Google OAuth web client whose redirect URIs include http://localhost:3000/auth/google/callback
+GOOGLE_CLIENT_ID=
+GOOGLE_CLIENT_SECRET=
 # The Google account authorized to use Travel
 TRAVEL_OWNER_EMAIL=
 ```
 
+There is no stand-in for Google, so signing in locally needs that real client.
+
 Local data is stored in `data/travel.sqlite`. It is excluded from Git. Set `TRAVEL_DATABASE_PATH` to choose another location.
 
 ## Google Sign In
-Every page, saved change, photo, city suggestion, feedback message and What's new entry requires signing in with Google. Only explicitly authorized Google accounts can sign in. The sign-in page, the Auth.js endpoints under `/api/auth`, and `/api/health` are the only public routes.
+Sign in with Google is the only way in, and Travel signs in the same way as Budget and Meals: the OpenID Connect code flow with PKCE, written by hand in `src/lib/google.ts`, with sessions kept in Travel's own database. Every page, saved change, photo, city suggestion, feedback message and What's new entry requires signing in. Only the sign-in page (`/login`), the Google routes under `/auth/google`, and `/api/health` are public.
 
-- **Initial owner.** The Google account named by `TRAVEL_OWNER_EMAIL` is authorized when the app starts. Access never depends on who signs in first, and someone who is not authorized cannot register.
-- **Additional people.** An email is authorized when a trip owner shares a trip with it (TRA-104), even before that person has ever signed in. Authorization is permanent; it remains if every shared trip is later revoked. Authorized people can create their own trips.
-- **Identity.** Travel uses Google's verified email from the ID token, never browser-supplied details. The first sign-in binds the authorization to Google's stable account identifier, so a reassigned email address cannot take over the account and an existing account keeps access if its email changes. Google passwords and OAuth tokens are never stored.
-- **Sessions.** Signing in creates an encrypted, HttpOnly, SameSite=Lax session cookie that is Secure in production and lasts 30 days. It persists across navigation and refreshes. Every request rechecks that the session is valid and its account is still authorized; expired, invalid, or tampered sessions are rejected. **Sign out** in the header removes the session from that browser.
-- **Errors.** A canceled or failed Google sign-in creates no session and returns to the sign-in page with a message. An unauthorized Google account is told it doesn't have access and can choose a different account. A save attempted after the session ends keeps the editor open and asks you to sign in again in another tab.
+- **Who can sign in.** The Google account named by `TRAVEL_OWNER_EMAIL` is authorized when the app starts; access never depends on who signs in first, and nobody can register themselves. An email is also authorized when a trip owner shares a trip with it (TRA-104), even before that person has ever signed in. Authorization is permanent, even if every shared trip is later revoked. Authorized people can create their own trips.
+- **Identity.** Travel uses only what Google's ID token says. The email must be verified by Google, and the first sign-in binds the authorization to Google's stable account identifier, so a reassigned email address cannot take over the account, and an account keeps access if its email changes. Google passwords and OAuth tokens are never stored.
+- **Sessions.** Signing in starts a session that lasts 30 days from last use, across navigation and refreshes. The browser holds a random token in an HttpOnly, SameSite=Lax cookie, Secure and `__Host-` prefixed over HTTPS, and the database keeps only a hash of it. Every request checks the session against the database; an expired, unknown or altered token is refused. **Sign out** in the header ends the session on the server and removes the cookie.
+- **Turned away.** Signed-out visitors go to the sign-in page, and after signing in start from All trips. The sign-in page says why when Google sign-in is refused:
 
-Signed-out visitors are sent to the sign-in page and return to the page they asked for after signing in. Saved photos are served with private caching so shared caches never store them.
+| Google came back with | The sign-in page says |
+| --- | --- |
+| An account that hasn't been given access | This Google account doesn't have access to Travel, with a reminder to choose another account or ask a trip owner to share a trip |
+| An email Google hasn't verified | Google hasn't verified this account's email address |
+| A sign-in that didn't start in this browser, or started over ten minutes ago | That sign-in expired |
+| A failure exchanging Google's code | Google sign in didn't finish |
+| Cancel, on Google's screen | Nothing |
+
+None of these creates a session. A save attempted after the session ends keeps the editor open and asks you to sign in again in another tab. Saved photos are served with private caching, so shared caches never store them.
 
 ## Checks
 ```sh
@@ -39,7 +46,7 @@ pnpm typecheck
 pnpm test
 pnpm build
 ```
-For local production preview, set `TRAVEL_DATABASE_PATH` to an absolute database path and `AUTH_URL` to the preview address (for example `http://localhost:3000`) before `pnpm start`. The Docker image uses a guarded startup script requiring mounted storage.
+For local production preview, set `TRAVEL_DATABASE_PATH` to an absolute database path before `pnpm start`. The Docker image uses a guarded startup script requiring mounted storage.
 
 ## Travel 1.5 responsiveness and backups
 Trip and destination pages fetch only the relevant trip's data. Home-page budgets are computed on the server and reused while searching, and saves refresh the displayed page without returning the entire database to the browser. The unused Next.js image optimizer is disabled; existing photo routes and galleries are unchanged.

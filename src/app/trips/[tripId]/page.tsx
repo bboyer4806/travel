@@ -8,12 +8,12 @@ export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 export async function generateMetadata({ params }: { params: Promise<{ tripId: string }> }): Promise<Metadata> {
   const { tripId } = await params;
-  await requireAccount("/trips/" + encodeURIComponent(tripId));
+  await requireAccount();
   return { title: getTripName(tripId) ?? "Trip not found" };
 }
 export default async function TripPage({ params }: { params: Promise<{ tripId: string }> }) {
   const { tripId } = await params;
-  await requireAccount("/trips/" + encodeURIComponent(tripId));
+  await requireAccount();
   const data = getTripSnapshot(tripId);
   if (!data.trips.some((trip) => trip.id === tripId)) notFound();
   return <PlannerApp key={tripId} initialData={data} tripId={tripId} />;

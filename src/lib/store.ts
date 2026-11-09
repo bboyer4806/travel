@@ -1,4 +1,4 @@
-import { randomUUID } from "node:crypto";
+import { createHash, randomBytes, randomUUID } from "node:crypto";
 import { calculateBudget } from "./budget.ts";
 import { mkdirSync } from "node:fs";
 import { dirname, resolve } from "node:path";
@@ -7,6 +7,7 @@ import { containsSunday, isValidDate, nightsToBudgetDays } from "./destination-d
 import { backfillDates, MAX_NIGHTS, sequenceDates } from "./trip-dates.ts";
 import { parseMinorAmount, SUPPORTED_CURRENCIES } from "./money.ts";
 import { normalizeEntryRequirements } from "./entry-requirements.ts";
+import { SESSION_DAYS } from "./session-cookie.ts";
 import type { EntryRequirements } from "./entry-requirements.ts";
 import type { DestinationGalleryUpdate } from "./types";
 import type { AuthorizedAccount, GoogleIdentity } from "./types";
@@ -22,6 +23,8 @@ const MAX_IMAGE_BYTES = 2 * 1024 * 1024;
 const MAX_GALLERY_IMAGES = 10;
 const MAX_PRICE_CENTS = 10_000_000_000;
 const CATEGORIES = ["hotels", "activities", "restaurants"] as const;
+const DAY_MS = 24 * 60 * 60 * 1000;
+const SESSION_MS = SESSION_DAYS * DAY_MS;
 
 export class ValidationError extends Error {
   constructor(message: string) {
@@ -549,13 +552,21 @@ export function createStore(databasePath: string) {
     }
     if (version < 19) {
       // An email is authorized first; its stable Google subject is bound at the first sign-in.
+      // Sessions keep only a hash of each browser's token, so a copy of the database signs nobody in.
       db.exec(`
         CREATE TABLE IF NOT EXISTS accounts (
           id TEXT PRIMARY KEY,
           email TEXT NOT NULL UNIQUE CHECK(email != '' AND email = lower(trim(email))),
           googleSubject TEXT UNIQUE CHECK(googleSubject IS NULL OR googleSubject != ''),
+          name TEXT,
           authorizedAt TEXT NOT NULL
         ) STRICT;
+        CREATE TABLE IF NOT EXISTS sessions (
+          tokenHash TEXT PRIMARY KEY,
+          accountId TEXT NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
+          expiresAt INTEGER NOT NULL
+        ) STRICT;
+        CREATE INDEX IF NOT EXISTS sessions_account ON sessions(accountId);
         PRAGMA user_version = 19;
       `);
     }
@@ -1079,15 +1090,15 @@ export function createStore(databasePath: string) {
     }
   }
 
+  const account = (row: Record<string, unknown>): AuthorizedAccount => ({ id: row.id as string, email: row.email as string, name: row.name as string | null });
   function authorizeAccount(email: string): AuthorizedAccount {
     const address = emailAddress(email);
     db.prepare("INSERT INTO accounts(id, email, authorizedAt) VALUES(?, ?, ?) ON CONFLICT(email) DO NOTHING").run(randomUUID(), address, new Date().toISOString());
-    const row = db.prepare("SELECT id, email FROM accounts WHERE email = ?").get(address)!;
-    return { id: row.id as string, email: row.email as string };
+    return account(db.prepare("SELECT id, email, name FROM accounts WHERE email = ?").get(address)!);
   }
   function getAccountByGoogleSubject(subject: string): AuthorizedAccount | undefined {
-    const row = db.prepare("SELECT id, email FROM accounts WHERE googleSubject = ?").get(subject);
-    return row ? { id: row.id as string, email: row.email as string } : undefined;
+    const row = db.prepare("SELECT id, email, name FROM accounts WHERE googleSubject = ?").get(subject);
+    return row ? account(row) : undefined;
   }
   function authorizeGoogleSignIn(identity: GoogleIdentity): AuthorizedAccount | undefined {
     if (!identity.emailVerified || !identity.subject) return undefined;
@@ -1095,10 +1106,43 @@ export function createStore(databasePath: string) {
     // so an address reassigned to a different Google account never inherits access.
     db.prepare("UPDATE accounts SET googleSubject = ? WHERE email = ? AND googleSubject IS NULL AND NOT EXISTS (SELECT 1 FROM accounts WHERE googleSubject = ?)")
       .run(identity.subject, normalizeEmail(identity.email), identity.subject);
+    db.prepare("UPDATE accounts SET name = ? WHERE googleSubject = ?").run(identity.name, identity.subject);
     return getAccountByGoogleSubject(identity.subject);
   }
 
-  return { getSnapshot, getHomeOverview, getTripName, getDestinationName, checkHealth, getDestinationImage, getDestinationPhoto, getCandidateImage, getCandidatePhoto, getChurchPhoto, applyMutation, authorizeAccount, getAccountByGoogleSubject, authorizeGoogleSignIn, close: () => db.close() };
+  const tokenHash = (token: string) => createHash("sha256").update(token).digest("hex");
+  /** Starts a session and returns the token for the browser's cookie. Expired sessions are swept on the way. */
+  function createSession(accountId: string, now: number): string {
+    db.prepare("DELETE FROM sessions WHERE expiresAt <= ?").run(now);
+    const token = randomBytes(32).toString("base64url");
+    db.prepare("INSERT INTO sessions(tokenHash, accountId, expiresAt) VALUES(?, ?, ?)").run(tokenHash(token), accountId, now + SESSION_MS);
+    return token;
+  }
+  /** The account a session token belongs to, or undefined when it is unknown, expired or signed out. */
+  function readSession(token: string, now: number): AuthorizedAccount | undefined {
+    const hash = tokenHash(token);
+    const row = db.prepare("SELECT accounts.id, accounts.email, accounts.name, sessions.expiresAt FROM sessions JOIN accounts ON accounts.id = sessions.accountId WHERE sessions.tokenHash = ?").get(hash);
+    if (!row) return undefined;
+    const expiresAt = row.expiresAt as number;
+    if (expiresAt <= now) {
+      db.prepare("DELETE FROM sessions WHERE tokenHash = ?").run(hash);
+      return undefined;
+    }
+    // Thirty days from last use, written at most once a day so reading a trip isn't a write.
+    if (expiresAt - now <= SESSION_MS - DAY_MS) db.prepare("UPDATE sessions SET expiresAt = ? WHERE tokenHash = ?").run(now + SESSION_MS, hash);
+    return account(row);
+  }
+  function deleteSession(token: string): void {
+    db.prepare("DELETE FROM sessions WHERE tokenHash = ?").run(tokenHash(token));
+  }
+
+  return { getSnapshot, getHomeOverview, getTripName, getDestinationName, checkHealth, getDestinationImage, getDestinationPhoto, getCandidateImage, getCandidatePhoto, getChurchPhoto, applyMutation, authorizeAccount, getAccountByGoogleSubject, authorizeGoogleSignIn, createSession, readSession, deleteSession, close: () => db.close() };
+}
+
+/** The Google account authorized during initial setup. src/instrumentation.ts checks it as the server starts. */
+export function ownerEmail(): string {
+  try { return emailAddress(process.env.TRAVEL_OWNER_EMAIL ?? ""); }
+  catch { throw new Error("TRAVEL_OWNER_EMAIL must be the email address of the Google account authorized during initial setup."); }
 }
 
 type Store = ReturnType<typeof createStore>;
@@ -1109,12 +1153,10 @@ function defaultStore(): Store {
     if (process.env.NODE_ENV === "production" && !configuredPath) {
       throw new Error("TRAVEL_DATABASE_PATH must point to persistent storage in production.");
     }
-    let ownerEmail: string;
-    try { ownerEmail = emailAddress(process.env.TRAVEL_OWNER_EMAIL ?? ""); }
-    catch { throw new Error("TRAVEL_OWNER_EMAIL must be the email address of the Google account authorized during initial setup."); }
+    const owner = ownerEmail();
     const store = createStore(configuredPath || resolve(process.cwd(), "data", "travel.sqlite"));
     // The initial owner comes from deployment configuration, never from whoever signs in first.
-    store.authorizeAccount(ownerEmail);
+    store.authorizeAccount(owner);
     globalStore.travelStore = store;
   }
   return globalStore.travelStore;
@@ -1147,5 +1189,7 @@ export function getHomeOverview() { return defaultStore().getHomeOverview(); }
 export function getTripName(id: string) { return defaultStore().getTripName(id); }
 export function getDestinationName(tripId: string, destinationId: string) { return defaultStore().getDestinationName(tripId, destinationId); }
 export function checkHealth(): void { defaultStore().checkHealth(); }
-export function getAccountByGoogleSubject(subject: string) { return defaultStore().getAccountByGoogleSubject(subject); }
 export function authorizeGoogleSignIn(identity: GoogleIdentity) { return defaultStore().authorizeGoogleSignIn(identity); }
+export function createSession(accountId: string) { return defaultStore().createSession(accountId, Date.now()); }
+export function readSession(token: string) { return defaultStore().readSession(token, Date.now()); }
+export function deleteSession(token: string) { defaultStore().deleteSession(token); }

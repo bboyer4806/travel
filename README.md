@@ -19,10 +19,10 @@ pnpm build
 ```
 For local production preview, set `TRAVEL_DATABASE_PATH` to an absolute database path before `pnpm start`. The Docker image uses a guarded startup script requiring mounted storage.
 
-## Travel 1.5 responsiveness
+## Travel 1.5 responsiveness and backups
 Trip and destination pages fetch only the relevant trip's data. Home-page budgets are computed on the server and reused while searching, and saves refresh the displayed page without returning the entire database to the browser. The unused Next.js image optimizer is disabled; existing photo routes and galleries are unchanged.
 
-Encrypted off-host backup automation (TRA-77) is deferred. Existing manual SQLite backups remain available; see [deployment](docs/DEPLOYMENT.md).
+Production deployments now require a verified, encrypted off-host backup before replacing the running application. Daily backups and the Windows/Tailscale receiver need one-time administrator setup described in [deployment](docs/DEPLOYMENT.md). Do not merge deployment changes until that setup and an isolated restore have been verified.
 
 ## Trip dates and nights
 Set the trip's optional **Start date**, then enter each destination's nonnegative whole number of **Nights**. Arrival and departure dates, their weekdays, and the trip end date are calculated in destination order. A departure is the next destination's arrival; changing the start, nights, or order recalculates the route. A zero-night stop arrives and departs on the same day. Dates cannot be overridden individually. Travel-leg timing notes do not determine the schedule.

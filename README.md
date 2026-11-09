@@ -22,7 +22,7 @@ For local production preview, set `TRAVEL_DATABASE_PATH` to an absolute database
 ## Travel 1.5 responsiveness and backups
 Trip and destination pages fetch only the relevant trip's data. Home-page budgets are computed on the server and reused while searching, and saves refresh the displayed page without returning the entire database to the browser. The unused Next.js image optimizer is disabled; existing photo routes and galleries are unchanged.
 
-Production deployments now require a verified, encrypted off-host backup before replacing the running application. Daily backups and the Windows/Tailscale receiver need one-time administrator setup described in [deployment](docs/DEPLOYMENT.md). Do not merge deployment changes until that setup and an isolated restore have been verified.
+Production deployments require a verified, encrypted off-host backup before replacing the running application, and the server also sends one to the Windows receiver daily at 03:00 UTC. The one-time administrator setup, its November 9, 2026 verification and the isolated restore rehearsal are described in [deployment](docs/DEPLOYMENT.md).
 
 ## Trip dates and nights
 Set the trip's optional **Start date**, then enter each destination's nonnegative whole number of **Nights**. Arrival and departure dates, their weekdays, and the trip end date are calculated in destination order. A departure is the next destination's arrival; changing the start, nights, or order recalculates the route. A zero-night stop arrives and departs on the same day. Dates cannot be overridden individually. Travel-leg timing notes do not determine the schedule.

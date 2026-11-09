@@ -7,8 +7,30 @@ Requires Node 24 and pnpm 10.32.1.
 pnpm install --frozen-lockfile
 pnpm dev
 ```
-Open http://localhost:3000. No account is required. Anyone with access to the app can view and edit every trip.
+Open http://localhost:3000 and sign in with Google. Before starting, put these server-only settings in `.env.local` (excluded from Git); see [Google Sign In](#google-sign-in):
+
+```sh
+# At least 32 random characters, for example from: openssl rand -base64 33
+AUTH_SECRET=
+# A Google OAuth web client that allows http://localhost:3000/api/auth/callback/google
+AUTH_GOOGLE_ID=
+AUTH_GOOGLE_SECRET=
+# The Google account authorized to use Travel
+TRAVEL_OWNER_EMAIL=
+```
+
 Local data is stored in `data/travel.sqlite`. It is excluded from Git. Set `TRAVEL_DATABASE_PATH` to choose another location.
+
+## Google Sign In
+Every page, saved change, photo, city suggestion, feedback message and What's new entry requires signing in with Google. Only explicitly authorized Google accounts can sign in. The sign-in page, the Auth.js endpoints under `/api/auth`, and `/api/health` are the only public routes.
+
+- **Initial owner.** The Google account named by `TRAVEL_OWNER_EMAIL` is authorized when the app starts. Access never depends on who signs in first, and someone who is not authorized cannot register.
+- **Additional people.** An email is authorized when a trip owner shares a trip with it (TRA-104), even before that person has ever signed in. Authorization is permanent; it remains if every shared trip is later revoked. Authorized people can create their own trips.
+- **Identity.** Travel uses Google's verified email from the ID token, never browser-supplied details. The first sign-in binds the authorization to Google's stable account identifier, so a reassigned email address cannot take over the account and an existing account keeps access if its email changes. Google passwords and OAuth tokens are never stored.
+- **Sessions.** Signing in creates an encrypted, HttpOnly, SameSite=Lax session cookie that is Secure in production and lasts 30 days. It persists across navigation and refreshes. Every request rechecks that the session is valid and its account is still authorized; expired, invalid, or tampered sessions are rejected. **Sign out** in the header removes the session from that browser.
+- **Errors.** A canceled or failed Google sign-in creates no session and returns to the sign-in page with a message. An unauthorized Google account is told it doesn't have access and can choose a different account. A save attempted after the session ends keeps the editor open and asks you to sign in again in another tab.
+
+Signed-out visitors are sent to the sign-in page and return to the page they asked for after signing in. Saved photos are served with private caching so shared caches never store them.
 
 ## Checks
 ```sh
@@ -17,7 +39,7 @@ pnpm typecheck
 pnpm test
 pnpm build
 ```
-For local production preview, set `TRAVEL_DATABASE_PATH` to an absolute database path before `pnpm start`. The Docker image uses a guarded startup script requiring mounted storage.
+For local production preview, set `TRAVEL_DATABASE_PATH` to an absolute database path and `AUTH_URL` to the preview address (for example `http://localhost:3000`) before `pnpm start`. The Docker image uses a guarded startup script requiring mounted storage.
 
 ## Travel 1.5 responsiveness and backups
 Trip and destination pages fetch only the relevant trip's data. Home-page budgets are computed on the server and reused while searching, and saves refresh the displayed page without returning the entire database to the browser. The unused Next.js image optimizer is disabled; existing photo routes and galleries are unchanged.
@@ -95,7 +117,7 @@ Add, edit, or remove multiple churches with name, address, optional denomination
 
 The server creates a Task in the TRA backlog with label `user-feedback`. Its summary uses the first 80 characters of the first message line; its description includes the full message, page path/query, browser user agent, and viewport. Jira calls time out after 10 seconds and are never automatically retried. A delivery that times out may have reached Jira, so a manual retry can create another task.
 
-Set server-only `JIRA_URL`, `JIRA_EMAIL`, and `JIRA_API_TOKEN` in production. They are never sent to the browser. No CAPTCHA or account is required. Same-origin checks, a hidden bot field, short-lived one-use tokens, and in-memory session/global rate limits protect the endpoint. Limits apply to this app's single process and reset on restart.
+Set server-only `JIRA_URL`, `JIRA_EMAIL`, and `JIRA_API_TOKEN` in production. They are never sent to the browser. Sending feedback requires signing in; there is no CAPTCHA. Same-origin checks, a hidden bot field, short-lived one-use tokens, and in-memory session/global rate limits protect the endpoint. Limits apply to this app's single process and reset on restart.
 
 Local testing must use the loopback stand-in, never real Jira:
 
@@ -138,7 +160,7 @@ Images live in the same persistent SQLite database and are included in online ba
 ## Hosting
 The existing GitHub Actions deployment builds a Node container and deploys it to Dokku at travel.dev.boyersoftware.com after checks pass.
 **Provision persistent storage before the first app deployment.** See [deployment and recovery instructions](docs/DEPLOYMENT.md).
-This first version runs one application instance with SQLite; accounts and live collaboration conflict resolution are future work.
+This version runs one application instance with SQLite. Google Sign In requires the production settings in [deployment](docs/DEPLOYMENT.md#google-sign-in-tra-103); trip ownership and sharing arrive with TRA-104, and live collaboration conflict resolution is future work.
 
 ## Backups
 ```sh

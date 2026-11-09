@@ -9,6 +9,7 @@ import { parseMinorAmount, SUPPORTED_CURRENCIES } from "./money.ts";
 import { normalizeEntryRequirements } from "./entry-requirements.ts";
 import type { EntryRequirements } from "./entry-requirements.ts";
 import type { DestinationGalleryUpdate } from "./types";
+import type { AuthorizedAccount, GoogleIdentity } from "./types";
 import type { FoodBudgetMode, ActivitiesBudgetMode, Candidate, CandidateImage, CandidateGalleryUpdate, Category, Church, MassTime, Destination, HomeItem, StoredImage, ItineraryStop, Mutation, ResearchLink, Snapshot, TravelLeg, Trip } from "./types";
 
 type StoredDestination = Omit<Destination, "churchEnabled" | "images"> & { churchEnabled: number };
@@ -44,6 +45,14 @@ function idField(input: Input, key = "id"): string {
     throw new ValidationError("This item has an invalid identifier. Please refresh and try again.");
   }
   return value;
+}
+function normalizeEmail(value: string): string {
+  return value.trim().toLowerCase();
+}
+function emailAddress(value: string): string {
+  const email = normalizeEmail(value);
+  if (email.length > 254 || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) throw new ValidationError("Enter a valid email address.");
+  return email;
 }
 function optionalId(input: Input): string | undefined {
   return input.id === undefined ? undefined : idField(input);
@@ -298,7 +307,7 @@ export function createStore(databasePath: string) {
   db.exec("BEGIN IMMEDIATE");
   try {
     const version = Number(db.prepare("PRAGMA user_version").get()?.user_version ?? 0);
-    if (version > 18) throw new Error("This database was created by a newer version of the travel app.");
+    if (version > 19) throw new Error("This database was created by a newer version of the travel app.");
     db.exec(`
     CREATE TABLE IF NOT EXISTS trips (
       id TEXT PRIMARY KEY, name TEXT NOT NULL, dateLabel TEXT NOT NULL DEFAULT '',
@@ -536,6 +545,18 @@ export function createStore(databasePath: string) {
           requirementsJson TEXT NOT NULL
         ) STRICT;
         PRAGMA user_version = 18;
+      `);
+    }
+    if (version < 19) {
+      // An email is authorized first; its stable Google subject is bound at the first sign-in.
+      db.exec(`
+        CREATE TABLE IF NOT EXISTS accounts (
+          id TEXT PRIMARY KEY,
+          email TEXT NOT NULL UNIQUE CHECK(email != '' AND email = lower(trim(email))),
+          googleSubject TEXT UNIQUE CHECK(googleSubject IS NULL OR googleSubject != ''),
+          authorizedAt TEXT NOT NULL
+        ) STRICT;
+        PRAGMA user_version = 19;
       `);
     }
     db.exec("COMMIT");
@@ -1058,7 +1079,26 @@ export function createStore(databasePath: string) {
     }
   }
 
-  return { getSnapshot, getHomeOverview, getTripName, getDestinationName, checkHealth, getDestinationImage, getDestinationPhoto, getCandidateImage, getCandidatePhoto, getChurchPhoto, applyMutation, close: () => db.close() };
+  function authorizeAccount(email: string): AuthorizedAccount {
+    const address = emailAddress(email);
+    db.prepare("INSERT INTO accounts(id, email, authorizedAt) VALUES(?, ?, ?) ON CONFLICT(email) DO NOTHING").run(randomUUID(), address, new Date().toISOString());
+    const row = db.prepare("SELECT id, email FROM accounts WHERE email = ?").get(address)!;
+    return { id: row.id as string, email: row.email as string };
+  }
+  function getAccountByGoogleSubject(subject: string): AuthorizedAccount | undefined {
+    const row = db.prepare("SELECT id, email FROM accounts WHERE googleSubject = ?").get(subject);
+    return row ? { id: row.id as string, email: row.email as string } : undefined;
+  }
+  function authorizeGoogleSignIn(identity: GoogleIdentity): AuthorizedAccount | undefined {
+    if (!identity.emailVerified || !identity.subject) return undefined;
+    // A verified email claims its authorization once. Later sign-ins match the stable subject,
+    // so an address reassigned to a different Google account never inherits access.
+    db.prepare("UPDATE accounts SET googleSubject = ? WHERE email = ? AND googleSubject IS NULL AND NOT EXISTS (SELECT 1 FROM accounts WHERE googleSubject = ?)")
+      .run(identity.subject, normalizeEmail(identity.email), identity.subject);
+    return getAccountByGoogleSubject(identity.subject);
+  }
+
+  return { getSnapshot, getHomeOverview, getTripName, getDestinationName, checkHealth, getDestinationImage, getDestinationPhoto, getCandidateImage, getCandidatePhoto, getChurchPhoto, applyMutation, authorizeAccount, getAccountByGoogleSubject, authorizeGoogleSignIn, close: () => db.close() };
 }
 
 type Store = ReturnType<typeof createStore>;
@@ -1069,7 +1109,13 @@ function defaultStore(): Store {
     if (process.env.NODE_ENV === "production" && !configuredPath) {
       throw new Error("TRAVEL_DATABASE_PATH must point to persistent storage in production.");
     }
-    globalStore.travelStore = createStore(configuredPath || resolve(process.cwd(), "data", "travel.sqlite"));
+    let ownerEmail: string;
+    try { ownerEmail = emailAddress(process.env.TRAVEL_OWNER_EMAIL ?? ""); }
+    catch { throw new Error("TRAVEL_OWNER_EMAIL must be the email address of the Google account authorized during initial setup."); }
+    const store = createStore(configuredPath || resolve(process.cwd(), "data", "travel.sqlite"));
+    // The initial owner comes from deployment configuration, never from whoever signs in first.
+    store.authorizeAccount(ownerEmail);
+    globalStore.travelStore = store;
   }
   return globalStore.travelStore;
 }
@@ -1101,3 +1147,5 @@ export function getHomeOverview() { return defaultStore().getHomeOverview(); }
 export function getTripName(id: string) { return defaultStore().getTripName(id); }
 export function getDestinationName(tripId: string, destinationId: string) { return defaultStore().getDestinationName(tripId, destinationId); }
 export function checkHealth(): void { defaultStore().checkHealth(); }
+export function getAccountByGoogleSubject(subject: string) { return defaultStore().getAccountByGoogleSubject(subject); }
+export function authorizeGoogleSignIn(identity: GoogleIdentity) { return defaultStore().authorizeGoogleSignIn(identity); }

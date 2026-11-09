@@ -1,9 +1,11 @@
+import { currentAccount, signedOutResponse } from "@/auth";
 import { LocationSearchError, searchLocations } from "@/lib/location-search";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 export async function GET(request: Request) {
+  if (!(await currentAccount())) return signedOutResponse();
   try {
     const locations = await searchLocations(new URL(request.url).searchParams.get("q"));
     return Response.json({ locations }, { headers: { "Cache-Control": "private, max-age=300" } });

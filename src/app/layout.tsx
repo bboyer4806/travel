@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import "./globals.css";
+import { currentAccount } from "@/auth";
 import FeedbackProvider from "@/components/feedback";
 import SiteHeader from "@/components/site-header";
 export const metadata: Metadata = {
@@ -7,6 +8,9 @@ export const metadata: Metadata = {
   description: "A shared notebook for the trips you might take. Gather destinations, compare ideas, and plan the cost.",
   robots: { index: false, follow: false },
 };
-export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
-  return <html lang="en"><body><FeedbackProvider><SiteHeader />{children}</FeedbackProvider></body></html>;
+export default async function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
+  // Display only. Every page, action and data route checks the session itself.
+  const account = await currentAccount();
+  if (!account) return <html lang="en"><body><SiteHeader account={null} />{children}</body></html>;
+  return <html lang="en"><body><FeedbackProvider><SiteHeader account={{ email: account.email, name: account.name }} />{children}</FeedbackProvider></body></html>;
 }

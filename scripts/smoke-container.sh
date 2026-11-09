@@ -7,17 +7,33 @@ container="travel-check"
 volume="travel-check-storage"
 cleanup() {
   if [ "$?" -ne 0 ]; then docker logs "$container" || true; fi
-  docker rm -f "$container" travel-check-no-storage >/dev/null 2>&1 || true
+  docker rm -f "$container" travel-check-refusal >/dev/null 2>&1 || true
   docker volume rm "$volume" >/dev/null 2>&1 || true
 }
 trap cleanup EXIT
+
+# Test-only sign-in settings. The HTTPS AUTH_URL gives the production cookie names and flags; Google is never called.
+random_secret() { node -e 'process.stdout.write(require("node:crypto").randomBytes(33).toString("base64"))'; }
+auth_secret="$(random_secret)"
+auth_env=(-e "AUTH_SECRET=$auth_secret" -e AUTH_GOOGLE_ID=smoke-test-client -e AUTH_GOOGLE_SECRET=smoke-test-secret -e TRAVEL_OWNER_EMAIL=owner@example.test)
+# Mint session cookies with Auth.js itself (from the installed dependencies), as a completed Google sign-in would.
+session() {
+  AUTH_SECRET="${3:-$auth_secret}" node --input-type=module -e '
+    import { encode } from "next-auth/jwt";
+    const [subject, maxAge] = process.argv.slice(1);
+    process.stdout.write(await encode({ token: { sub: subject, name: "Smoke Owner" }, secret: process.env.AUTH_SECRET, salt: "__Secure-authjs.session-token", maxAge: Number(maxAge) }));
+  ' "$1" "$2"
+}
+owner_session="$(session smoke-owner-subject 3600)"
+sessions=(-e "OWNER_SESSION=$owner_session" -e "EXPIRED_SESSION=$(session smoke-owner-subject -120)"
+  -e "UNKNOWN_SESSION=$(session smoke-unknown-subject 3600)" -e "FOREIGN_SESSION=$(session smoke-owner-subject 3600 "$(random_secret)")")
 
 docker build -t "$image" .
 docker volume create "$volume" >/dev/null
 docker run --rm --user 0 --entrypoint sh -v "$volume:/data" "$image" -c 'touch /data/.travel-persistent-storage && chown -R 1001:1001 /data'
 
 start() {
-  docker run -d --name "$container" -p 127.0.0.1:3007:80 -v "$volume:/data" "$image" >/dev/null
+  docker run -d --name "$container" -p 127.0.0.1:3007:80 -v "$volume:/data" "${auth_env[@]}" -e AUTH_URL=https://travel.example.test "$image" >/dev/null
   curl --fail --silent --show-error --connect-timeout 2 --max-time 5 --retry-max-time 45 --retry 20 --retry-delay 1 --retry-connrefused --retry-all-errors http://127.0.0.1:3007/api/health
 }
 
@@ -50,8 +66,12 @@ const images = [
   Buffer.from('UklGRh4AAABXRUJQVlA4TBEAAAAvAUAAAAfQtSZVrP+BiOh/AAA=', 'base64'),
   Buffer.from('UklGRh4AAABXRUJQVlA4TBEAAAAvAUAAAAdQwjaXpf+BiOh/AAA=', 'base64'),
 ];
-assert.equal(db.prepare('PRAGMA user_version').get().user_version, 18);
+assert.equal(db.prepare('PRAGMA user_version').get().user_version, 19);
+// TRAVEL_OWNER_EMAIL is authorized at startup, before anyone signs in.
+assert.deepEqual(db.prepare('SELECT email, googleSubject FROM accounts').all().map(row => ({...row})), [{ email: 'owner@example.test', googleSubject: null }]);
 db.exec('PRAGMA foreign_keys = ON; BEGIN IMMEDIATE;');
+// The owner's first Google sign-in binds their stable subject.
+db.prepare("UPDATE accounts SET googleSubject = 'smoke-owner-subject' WHERE email = 'owner@example.test'").run();
 db.prepare('INSERT INTO trips(id,name,dateLabel,homeCity,travelers,notes,createdAt) VALUES(?,?,?,?,?,?,?)').run('container-smoke','Persistence test','','',2,'',new Date().toISOString());
 db.prepare("UPDATE trips SET startDate = '2027-05-10' WHERE id = 'container-smoke'").run();
 db.prepare('INSERT INTO home_items(id,tripId,name,priceCents,notes,completed,createdAt) VALUES(?,?,?,?,?,?,?)').run('a1000000-0000-4000-8000-000000000001','container-smoke','House sitting',23950,'Give sitter a key',1,'2026-10-12T12:00:00.000Z');
@@ -96,7 +116,7 @@ JS
 # Replace the container, keeping the explicitly mounted volume.
 docker rm -f "$container" >/dev/null
 start
-docker exec -i "$container" node --input-type=module <<'JS'
+docker exec -i "${sessions[@]}" "$container" node --input-type=module <<'JS'
 import assert from 'node:assert/strict';
 import { DatabaseSync } from 'node:sqlite';
 const destinationId = '22222222-2222-4222-8222-222222222222';
@@ -120,7 +140,8 @@ const images = [
 ];
 const db = new DatabaseSync('/data/travel.sqlite');
 try {
-  assert.equal(db.prepare('PRAGMA user_version').get().user_version, 18);
+  assert.equal(db.prepare('PRAGMA user_version').get().user_version, 19);
+  assert.deepEqual(db.prepare('SELECT email, googleSubject FROM accounts').all().map(row => ({...row})), [{ email: 'owner@example.test', googleSubject: 'smoke-owner-subject' }], 'Authorization must persist');
   assert.equal(db.prepare('SELECT startDate FROM trips WHERE id = ?').get('container-smoke').startDate, '2027-05-10');
   assert.equal(db.prepare('SELECT nights FROM destinations WHERE id = ?').get(destinationId).nights, 3);
   const homeItems = db.prepare('SELECT name,priceCents,notes,completed,createdAt FROM home_items WHERE tripId = ? ORDER BY createdAt').all('container-smoke').map(row => ({...row}));
@@ -185,7 +206,7 @@ try {
   db.close();
 }
 const base = 'http://127.0.0.1:80/api/';
-const options = () => ({ signal: AbortSignal.timeout(5000) });
+const options = () => ({ headers: { cookie: '__Secure-authjs.session-token=' + process.env.OWNER_SESSION }, signal: AbortSignal.timeout(5000) });
 async function verifyImage(path, version, expected) {
   const endpoint = base + path;
   const response = await fetch(endpoint + '?v=' + version, options());
@@ -240,41 +261,49 @@ const missingPhoto = await fetch(base + 'candidate-images/' + candidates[0].id +
 assert.equal(missingPhoto.status, 404);
 JS
 
-# A live page, static script, and actual Server Action are required for a usable build.
-docker exec -i "$container" node --input-type=module <<'JS'
+# A live page, static script, and actual Server Action are required for a usable build,
+# and only an authorized session may read or change trips.
+docker exec -i "${sessions[@]}" "$container" node --input-type=module <<'JS'
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { DatabaseSync } from "node:sqlite";
 
 const origin = "http://127.0.0.1:80";
-const home = await fetch(origin + "/", { signal: AbortSignal.timeout(10000) });
+const signal = () => AbortSignal.timeout(10000);
+const cookie = (session) => session === undefined ? {} : { Cookie: "__Secure-authjs.session-token=" + session };
+const owner = cookie(process.env.OWNER_SESSION);
+const get = (path, headers = {}) => fetch(origin + path, { headers, redirect: "manual", signal: signal() });
+
+const home = await get("/", owner);
 assert.equal(home.status, 200, "The production home page must render");
 const html = await home.text();
+assert.match(html, /Persistence test/, "The signed-in owner must see saved trips");
+assert.match(html, /owner@example\.test/, "The header must show the signed-in account");
 const asset = html.match(/(?:src|href)="(\/_next\/static\/[^"]+\.js(?:\?[^"]*)?)"/);
 assert.ok(asset, "The home page must reference a JavaScript chunk");
-const script = await fetch(origin + asset[1], { signal: AbortSignal.timeout(10000) });
+const script = await fetch(origin + asset[1], { signal: signal() });
 assert.equal(script.status, 200, "A referenced JavaScript chunk must load");
 assert.ok((await script.text()).length > 0, "The chunk must not be empty");
+const signIn = await get("/signin");
+assert.equal(signIn.status, 200, "The sign-in page must render for signed-out visitors");
+assert.match(await signIn.text(), /Sign in with Google/);
 
 const manifest = JSON.parse(readFileSync("/app/.next/server/server-reference-manifest.json", "utf8"));
-const ids = Object.keys(manifest.node ?? {});
-assert.equal(ids.length, 1, "The build must expose the single mutatePlanner server action");
-const actionId = ids[0];
-
-async function mutation(input) {
+const actions = Object.fromEntries(Object.entries(manifest.node ?? {}).map(([id, entry]) => [entry.exportedName, id]));
+assert.deepEqual(Object.keys(actions).sort(), ["mutatePlanner", "signInWithGoogle", "signOutOfTravel"], "Only the planner and sign-in Server Actions may be exposed");
+async function action(name, args, headers) {
   const response = await fetch(origin + "/", {
     method: "POST",
-    headers: {
-      "Next-Action": actionId,
-      "Accept": "text/x-component",
-      "Content-Type": "text/plain;charset=UTF-8",
-      "Origin": origin,
-    },
-    body: JSON.stringify([input]),
-    signal: AbortSignal.timeout(10000),
+    redirect: "manual",
+    headers: { "Next-Action": actions[name], "Accept": "text/x-component", "Content-Type": "text/plain;charset=UTF-8", "Origin": origin, ...headers },
+    body: JSON.stringify(args),
+    signal: signal(),
   });
   assert.equal(response.status, 200, "Server Action HTTP error");
-  const body = await response.text();
+  return response;
+}
+async function mutation(input, headers = owner) {
+  const body = await (await action("mutatePlanner", [input], headers)).text();
   const results = body.split("\n").flatMap((line) => {
     const separator = line.indexOf(":");
     if (separator < 0) return [];
@@ -284,20 +313,61 @@ async function mutation(input) {
     } catch { return []; }
   });
   assert.equal(results.length, 1, "Server Action must return one parseable operation result");
-  assert.equal(results[0].ok, true, "Server Action returned a save error");
   return results[0];
 }
 
 const db = new DatabaseSync("/data/travel.sqlite", { readOnly: true });
 try {
-  const saved = await mutation({ type: "trip.save", name: "Container action smoke", startDate: null, dateLabel: "", homeCity: "Test", returnCity: null, travelers: 2, notes: "" });
+  const trip = { type: "trip.save", name: "Container action smoke", startDate: null, dateLabel: "", homeCity: "Test", returnCity: null, travelers: 2, notes: "" };
+  // Missing, expired, unauthorized, forged and tampered sessions are all rejected.
+  const parts = process.env.OWNER_SESSION.split(".");
+  parts[3] = (parts[3][0] === "A" ? "B" : "A") + parts[3].slice(1);
+  const rejected = { none: undefined, expired: process.env.EXPIRED_SESSION, unauthorized: process.env.UNKNOWN_SESSION, otherSecret: process.env.FOREIGN_SESSION, tampered: parts.join("."), malformed: "not-a-session" };
+  for (const [label, session] of Object.entries(rejected)) {
+    const headers = cookie(session);
+    for (const path of ["/", "/trips/container-smoke", "/trips/container-smoke/destinations/22222222-2222-4222-8222-222222222222/hotels", "/whats-new"]) {
+      const body = await (await get(path, headers)).text();
+      assert.ok(body.includes("NEXT_REDIRECT;replace;/signin?callbackUrl=" + encodeURIComponent(path) + ";"), `${label} ${path} must redirect to sign in`);
+      assert.ok(!body.includes("Persistence test") && !body.includes("Vienna"), `${label} ${path} must not include trip data`);
+    }
+    for (const path of ["/api/destination-images/22222222-2222-4222-8222-222222222222?v=33333333-3333-4333-8333-333333333333",
+      "/api/destination-images/22222222-2222-4222-8222-222222222222/a2000000-0000-4000-8000-000000000001?v=33333333-3333-4333-8333-333333333333",
+      "/api/candidate-images/66666666-6666-4666-8666-666666666666?v=bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+      "/api/candidate-images/66666666-6666-4666-8666-666666666666/90000000-0000-4000-8000-000000000002?v=bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+      "/api/church-images/b1000000-0000-4000-8000-000000000001/b3000000-0000-4000-8000-000000000002?v=b4000000-0000-4000-8000-000000000001",
+      "/api/locations?q=Vienna"]) {
+      const response = await get(path, headers);
+      assert.equal(response.status, 401, `${label} ${path} must be refused`);
+      assert.ok(!response.headers.get("content-type")?.startsWith("image/"), `${label} ${path} must not return image bytes`);
+    }
+    const feedback = await fetch(origin + "/api/feedback", { method: "POST", headers: { ...headers, "Content-Type": "application/json", Origin: origin }, body: JSON.stringify({ action: "open" }), signal: signal() });
+    assert.equal(feedback.status, 401, `${label} feedback must be refused`);
+    assert.deepEqual(await mutation(trip, headers), { ok: false, error: "Your session has ended. Sign in again in another tab, then save again." }, `${label} must not save`);
+    assert.equal(db.prepare("SELECT count(*) AS count FROM trips WHERE name = ?").get(trip.name).count, 0, `${label} must not create a trip`);
+  }
+
+  const saved = await mutation(trip);
+  assert.equal(saved.ok, true, "Server Action returned a save error");
   assert.match(saved.id, /^[a-f0-9-]{36}$/i);
   assert.equal(db.prepare("SELECT name FROM trips WHERE id = ?").get(saved.id)?.name, "Container action smoke");
-  await mutation({ type: "trip.delete", id: saved.id });
+  assert.equal((await mutation({ type: "trip.delete", id: saved.id })).ok, true, "Server Action returned a delete error");
   assert.equal(db.prepare("SELECT id FROM trips WHERE id = ?").get(saved.id), undefined, "Temporary trip must be removed");
 } finally {
   db.close();
 }
+
+// The session cookie is HttpOnly, Secure and SameSite=Lax, and exposes no OAuth tokens.
+const session = await get("/api/auth/session", owner);
+assert.equal(session.status, 200);
+assert.deepEqual(await session.json().then(({ user }) => user), { id: "smoke-owner-subject", name: "Smoke Owner" });
+const renewed = session.headers.getSetCookie().find((value) => value.startsWith("__Secure-authjs.session-token="));
+assert.ok(renewed, "The session cookie must use the __Secure- prefix");
+for (const attribute of ["Path=/", "HttpOnly", "Secure", "SameSite=Lax"]) assert.ok(renewed.split("; ").includes(attribute), "Session cookie needs " + attribute);
+
+// Sign out removes the session cookie and returns to sign in.
+const signOut = await action("signOutOfTravel", [], owner);
+assert.equal(signOut.headers.get("x-action-redirect"), "https://travel.example.test/signin;push");
+assert.ok(signOut.headers.getSetCookie().some((value) => value.startsWith("__Secure-authjs.session-token=;") && value.includes("Max-Age=0")), "Sign out must clear the session cookie");
 JS
 
 # The unused Next optimizer must not retrieve or cache an existing saved photo.
@@ -307,13 +377,19 @@ if [ "$optimizer_status" != "404" ]; then
   exit 1
 fi
 
-# A container without the persistent mount must refuse to start.
-set +e
-timeout 10s docker run --rm --name travel-check-no-storage "$image" > storage-guard.log 2>&1
-guard_status=$?
-set -e
-if [ "$guard_status" -ne 1 ] || ! grep -q "Persistent travel storage is not ready" storage-guard.log; then
-  cat storage-guard.log >&2
-  echo "The app did not correctly refuse startup without persistent storage." >&2
-  exit 1
-fi
+# A container without the persistent mount, or without complete HTTPS sign-in settings, must refuse to start.
+refuses() {
+  local expected="$1"; shift
+  set +e
+  timeout 10s docker run --rm --name travel-check-refusal "$@" "$image" > startup-guard.log 2>&1
+  local status=$?
+  set -e
+  if [ "$status" -ne 1 ] || ! grep -q "$expected" startup-guard.log; then
+    cat startup-guard.log >&2
+    echo "The app did not correctly refuse startup: expected \"$expected\"." >&2
+    exit 1
+  fi
+}
+refuses "Persistent travel storage is not ready"
+refuses "Missing sign-in settings: AUTH_SECRET, AUTH_URL, AUTH_GOOGLE_ID, AUTH_GOOGLE_SECRET, TRAVEL_OWNER_EMAIL" -v "$volume:/data"
+refuses "AUTH_URL must be the public HTTPS address" -v "$volume:/data" "${auth_env[@]}" -e AUTH_URL=http://travel.example.test

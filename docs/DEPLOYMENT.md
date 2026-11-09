@@ -1,6 +1,6 @@
 # Deploying Travel
 
-The app uses Node 24, Next.js standalone output, and SQLite. One app instance serves a shared database. Anyone with the URL can view and edit data; no accounts in this version.
+The app uses Node 24, Next.js standalone output, and SQLite. One app instance serves a shared database. Only authorized Google accounts can sign in and use it; configure [Google Sign In](#google-sign-in-tra-103) before deploying.
 
 ## One-time persistent storage setup
 
@@ -26,8 +26,42 @@ The startup script requires the marker and writable storage. Without them startu
 - Keep the proxy request-body limit at least 16 MiB. Next.js permits 16 MiB request bodies, allowing 15 MiB of new photo files per save plus form fields and multipart overhead. Individual files remain limited to 5 MiB. The travel host currently computes a 20 MiB Nginx limit (`client_max_body_size 20m`).
 - Keep one web instance: shared SQLite on one server is the v1 deployment model.
 - Confirm /api/health returns HTTP 200. Create a temporary trip, restart the app, and verify the trip remains before considering persistence verified.
+- The container refuses to start without the Google Sign In settings below, so a deployment without them fails instead of running unprotected.
 
 The Docker image must be tested on a Docker-capable machine or CI; a local Next build alone does not prove the container or host mount works.
+
+## Google Sign In (TRA-103)
+
+Travel uses Auth.js with Google. Only authorized accounts can sign in: the designated initial owner, and (with TRA-104) people a trip owner shares a trip with. Authorizations live in the SQLite `accounts` table, so they are included in every backup.
+
+**Coordinate with TRA-104.** A push to `main` deploys. Deployed without TRA-104, only the owner can sign in, so anyone else currently using Travel loses access until their trips are shared with them. Deploy the two together as agreed, after these settings exist and the integrated build has passed in an isolated environment.
+
+1. **Identify the initial owner.** Choose the Google account that will own existing trips. Its email is the only authorization created by configuration; nobody gains access by signing in first.
+
+2. **Create the Google OAuth client.** In Google Cloud Console, configure the OAuth consent screen (Google Auth Platform) for External users with only the `openid`, `email` and `profile` scopes, and publish it, or add every intended person as a test user while it is in testing. Create an OAuth client of type **Web application** with this authorized redirect URI:
+
+   ```text
+   https://travel.dev.boyersoftware.com/api/auth/callback/google
+   ```
+
+   For local development, use a separate client allowing `http://localhost:3000/api/auth/callback/google`.
+
+3. **Configure the server before deploying.** From a root shell on the Dokku host, set the server-only settings. Never put these values in source, image layers, client variables, tickets or logs:
+
+   ```sh
+   sudo dokku config:set --no-restart travel \
+     AUTH_URL=https://travel.dev.boyersoftware.com \
+     AUTH_SECRET="$(openssl rand -base64 33)" \
+     AUTH_GOOGLE_ID='<OAuth client ID>' \
+     AUTH_GOOGLE_SECRET='<OAuth client secret>' \
+     TRAVEL_OWNER_EMAIL='<owner Google email>'
+   ```
+
+   `AUTH_URL` fixes the public HTTPS origin used for Google's redirect and for Secure, `__Secure-` prefixed cookies, so forwarded host headers are never trusted. The startup script refuses to run when any setting is missing, `AUTH_SECRET` is shorter than 32 characters, or `AUTH_URL` is not HTTPS.
+
+4. **Verify after deployment.** Confirm `/api/health` returns HTTP 200 and opening the site goes to the sign-in page. Sign in as the owner and confirm existing trips, prices and photos are intact. Sign in with an unauthorized Google account and confirm the access-denied message and that no session is created. Cancel at Google's account chooser and confirm the sign-in page reports it. Sign out and confirm trips and photo URLs are no longer reachable.
+
+Sessions are encrypted cookies lasting 30 days. Signing out deletes the cookie from that browser. Changing `AUTH_SECRET` (a `dokku config:set` restarts the app) immediately ends every session, and everyone signs in again. Auth.js errors are logged as a type and message only; secrets, OAuth tokens and session contents are never logged.
 
 ## Backup
 
@@ -156,6 +190,11 @@ Schema 18 creates a destination-owned entry-requirements table. Existing destina
 The container smoke script verifies schema 18, destination photo bytes/order/primary selection, individual image routes and ownership, and entry-requirements persistence across container replacement, alongside the existing checks. Docker is required to run it; a Next.js build does not validate the container. Next.js and its ESLint configuration are pinned to 16.4.5 for this implementation. Explicit output tracing includes Sharp's platform libraries from pnpm's package layout, including the DLLs needed by local Windows standalone previews. Recheck the dependency audit at release time and report any remaining unrelated tooling advisories.
 
 Schema 16 and earlier builds reject the newer database. Rollback requires a compatible build or the stopped-app restore procedure above. Preserve the upgraded database and sidecars first; restoring a pre-upgrade backup loses later edits. Production migration rehearsal and deployment verification are still required before closing Travel 1.4 and publishing its release notes.
+
+### Schema 19: Google Sign In accounts
+Google Sign In upgrades the database to schema 19 with an `accounts` table holding each authorized email, the stable Google account identifier bound at that person's first sign-in, and when it was authorized. Trips and all other data are unchanged. The table is included in the same online backups, and replaying the migration keeps existing authorizations and bindings. Take and verify a backup before deployment; the startup authorization of `TRAVEL_OWNER_EMAIL` is the only change at upgrade.
+
+Schema 18 and earlier builds reject schema 19. Rollback requires a compatible build or the stopped-app restore procedure above; preserve the upgraded database and sidecars first, because restoring an older backup loses later edits and authorizations. **A build from before Google Sign In has no sign-in at all: anyone with the URL could again view and edit every trip.** Prefer fixing forward. If a rollback is unavoidable, keep the app stopped until access is otherwise restricted.
 
 ### Feedback and release notes
 Configure server-only JIRA_URL (HTTPS Jira base URL), JIRA_EMAIL, and JIRA_API_TOKEN with permission to create Tasks in TRA. Use the host's secret configuration; never put credentials in source, image layers, client variables, or logs. Preserve the browser Host and Origin headers through the proxy; the feedback endpoint compares them and ignores forwarded-host claims. The HttpOnly feedback cookie is Secure for HTTPS origins.

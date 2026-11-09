@@ -1,15 +1,17 @@
 "use server";
 import { revalidatePath } from "next/cache";
+import { currentAccount } from "@/auth";
 import { applyMutation, ValidationError } from "@/lib/store";
 import { ImageValidationError, prepareImage } from "@/lib/image-upload";
 import { prepareCandidateGallery } from "@/lib/candidate-gallery-upload";
 import { prepareDestinationGallery } from "@/lib/destination-gallery-upload";
 import type { ActionResult, Mutation } from "@/lib/types";
 
-// Version one is intentionally a shared, publicly editable planner.
 // Next.js Server Actions enforce same-origin requests; all input is validated in the store.
 export async function mutatePlanner(input: Mutation, imageForm?: FormData): Promise<ActionResult> {
   try {
+    // A Server Action is a public endpoint: verify the session before processing any input.
+    if (!(await currentAccount())) return { ok: false, error: "Your session has ended. Sign in again in another tab, then save again." };
     // Never accept image bytes directly from the client mutation. Decode uploaded files first.
     let mutation = input;
     if (input.type === "destination.save") {

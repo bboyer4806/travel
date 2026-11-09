@@ -123,19 +123,32 @@ button svg,a svg {
   height:2px;
   background:var(--green)
 }
-.shared-label {
+.account-menu {
   margin-left:auto;
   display:flex;
   align-items:center;
-  gap:9px;
-  color:var(--muted);
-  font-size:12px
+  gap:18px;
+  min-width:0
 }
-.shared-label>span {
-  width:6px;
-  height:6px;
-  background:#75997d;
-  border-radius:50%
+.account-identity {
+  display:flex;
+  flex-direction:column;
+  align-items:flex-end;
+  min-width:0;
+  font-size:12px;
+  line-height:1.4
+}
+.account-name {
+  color:var(--ink);
+  font-weight:600
+}
+.account-email {
+  min-width:0;
+  max-width:280px;
+  overflow:hidden;
+  text-overflow:ellipsis;
+  white-space:nowrap;
+  color:var(--muted)
 }
 .main-content {
   width:calc(100% - 112px);
@@ -1338,14 +1351,6 @@ button svg,a svg {
   width:31px;
   height:31px
 }
-.shared-label {
-  font-size:0;
-  gap:0
-}
-.shared-label>span {
-  width:7px;
-  height:7px
-}
 .nav-link {
   font-size:12px;
   padding:26px 0
@@ -1963,3 +1968,12 @@ body:has(.editor-dialog[open])>.feedback-launcher,body:has(.editor-dialog[open])
   .budget-section-heading { gap:4px; }
 }
 @media print { .feedback-launcher,.feedback-inline,.feedback-dialog { display:none!important; } }
+.sign-in { max-width:620px; padding-top:72px; }
+.sign-in h1 { font-size:clamp(38px,4.5vw,56px); letter-spacing:-1.5px; }
+.sign-in .form-error { margin:0 0 24px; }
+@media(max-width:780px) {
+  .site-header { flex-wrap:wrap; height:auto; row-gap:0; }
+  .account-menu { order:3; width:100%; justify-content:space-between; gap:12px; padding:2px 0 10px; }
+  .account-identity { flex-direction:row; gap:8px; align-items:baseline; }
+  .account-email { max-width:none; }
+}

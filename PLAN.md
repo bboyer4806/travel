@@ -187,3 +187,11 @@ Review implementation separately from live deployment. Publish 1.4 change-log en
 - Extend the production container smoke test to render a page, load an asset, and create/delete via the normal server action.
 - Disable unused Next.js image optimization without changing the existing image APIs.
 - Automate encrypted daily off-host backups to an always-on Windows 11 PC via Tailscale and SSH, retain 30 days, validate transferred backups, and block deployment if the required backup fails. Provisioning the server and computer is a separate administrator task.
+
+## Added scope: November 9, 2026, Google Sign In (TRA-103)
+This supersedes the v1 "No sign-in" access rule above.
+- Require Google Sign In (Auth.js, Google only) before any trip information, photo, city suggestion, feedback, What's new entry or change is available. Only the sign-in page, Auth.js endpoints and the health check are public.
+- Authorize only explicitly approved Google accounts: the designated owner from deployment configuration, and emails a trip owner shares a trip with (TRA-104). Authorization is never granted by signing in first and persists after shared access is revoked. No self-registration, other providers, administration screens or notifications.
+- Use Google's verified email and bind each authorization to the stable Google account identifier at first sign-in. Store no Google passwords or OAuth tokens.
+- Keep encrypted, HttpOnly, SameSite=Lax session cookies (Secure in production) for 30 days across navigation and refreshes, with Sign out in the header showing the signed-in account. Reject missing, expired, invalid or tampered sessions in pages, Server Actions and data routes; show clear messages for failed, canceled and unauthorized sign-ins.
+- Schema 19 adds the accounts table without changing existing trips; it is included in backups. Configure production OAuth credentials, the session secret, the public HTTPS URL and the initial owner before deploying, and coordinate deployment with TRA-104 ownership and sharing.

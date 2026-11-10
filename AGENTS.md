@@ -35,7 +35,8 @@ is no stand-in for Google. Never commit or log their values.
 Use targeted checks while iterating. Before pushing, run the checks from
 `.github/workflows/check.yml`: `pnpm lint`, `pnpm typecheck`, `pnpm test` and `pnpm build`.
 CI also runs `bash scripts/smoke-container.sh`, which needs Docker and Bash and checks the
-container, persistent storage and sign-in enforcement. A Next.js build alone does not verify those.
+container, persistent storage, sign-in enforcement and trip isolation. A Next.js build alone does
+not verify those.
 Fix regressions caused by your change; report unrelated baseline failures and blocked checks.
 Repeat passing checks when subsequent changes affect their coverage or required gates demand it.
 
@@ -49,15 +50,21 @@ Repeat passing checks when subsequent changes affect their coverage or required 
   `/api/health` are public. Only the Google callback route may start a session, never an action.
 - Authorized accounts and sessions are the store's `accounts` and `sessions` tables: emails, each
   bound to Google's stable subject at first sign-in, and hashed session tokens.
+- Each trip has one owner (`trips.ownerId`) and is shared through `trip_shares` (TRA-104). The
+  store decides access: every read and `applyMutation` take the signed-in account's ID from
+  `requireAccount()` or `currentAccount()`, never from input, and a trip the account can't open
+  looks the same as a missing one. Only owners delete, share or unshare a trip.
 - Application writes go through `mutatePlanner` in `src/app/actions.ts`, into `applyMutation`
   in `src/lib/store.ts`. A new operation adds a `Mutation` variant in `src/lib/types.ts` and
-  a case in both `validate` and `mutate` in the store.
+  a case in `validate`, `mutationTrip` and `mutate` in the store. `mutationTrip` finds the trip
+  a change applies to from saved rows; a change it doesn't place in a trip is refused.
 - `src/lib/store.ts` is the application's database boundary. Home pages read `getHomeOverview`,
   trip and category pages read `getTripSnapshot`, and saves return only an ID or error.
-  `getSnapshot` remains for full read-only checks and tests. Backup utilities and tests
+  The store's `getSnapshot` reads every trip, for checks and tests only. Backup utilities and tests
   also access SQLite directly.
 - Store validation throws `ValidationError`; upload validation throws `ImageValidationError`.
-  Their messages are shown to people as written.
+  Their messages are shown to people as written. Recognize the store's with `isValidationError`,
+  not `instanceof`: a production build can bundle the store more than once.
 - Every amount is integer USD cents for the whole party. Destination money retains explicit
   USD currency fields for storage compatibility; never convert or relabel unexpected non-USD data.
   `0` is known; `null` is not estimated, except optional at-home and shopping amounts.
@@ -72,7 +79,8 @@ Repeat passing checks when subsequent changes affect their coverage or required 
 
 ## Database
 
-The schema version is SQLite `user_version` (see `createStore` in `src/lib/store.ts`). A schema
+The schema version is SQLite `user_version` (see `createStore` in `src/lib/store.ts`, which also
+authorizes the designated owner it is given at every start). A schema
 change adds the next `if (version < N)` block inside the startup transaction, keeps older
 databases upgrading, tolerates a block that already ran (as the `hasColumn` checks do), and
 raises the newer-version guard. Add a rollback note for the new version to `docs/DEPLOYMENT.md`.
@@ -80,8 +88,10 @@ raises the newer-version guard. Add a rollback note for the new version to `docs
 ## Tests
 
 - Tests are `tests/*.test.mjs` using `node:test`. They import TypeScript libraries directly and
-  use in-memory or temporary on-disk databases (see `createStore(":memory:")` and `fileDatabase`
-  in `tests/store.test.mjs`).
+  use in-memory or temporary on-disk databases (see `fileDatabase` in `tests/store.test.mjs`).
+  Planning tests use `createOwnedStore` from `tests/owned-store.mjs`, which reads and writes as the
+  designated owner; access tests call `createStore(path, ownerEmail)` with several accounts, as
+  `tests/sharing.test.mjs` does.
 - Node runs that TypeScript by stripping types, without path aliases. Code in `src/lib` uses
   relative imports for values (type-only `@/` imports are fine) and only erasable TypeScript: no
   enums or parameter properties. Passing type checks alone does not verify these runtime rules.

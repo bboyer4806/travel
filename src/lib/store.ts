@@ -10,7 +10,7 @@ import { normalizeEntryRequirements } from "./entry-requirements.ts";
 import { SESSION_DAYS } from "./session-cookie.ts";
 import type { EntryRequirements } from "./entry-requirements.ts";
 import type { DestinationGalleryUpdate } from "./types";
-import type { AuthorizedAccount, GoogleIdentity } from "./types";
+import type { AuthorizedAccount, GoogleIdentity, TripAccess, TripMember } from "./types";
 import type { FoodBudgetMode, ActivitiesBudgetMode, Candidate, CandidateImage, CandidateGalleryUpdate, Category, Church, MassTime, Destination, HomeItem, StoredImage, ItineraryStop, Mutation, ResearchLink, Snapshot, TravelLeg, Trip } from "./types";
 
 type StoredDestination = Omit<Destination, "churchEnabled" | "images"> & { churchEnabled: number };
@@ -25,12 +25,40 @@ const MAX_PRICE_CENTS = 10_000_000_000;
 const CATEGORIES = ["hotels", "activities", "restaurants"] as const;
 const DAY_MS = 24 * 60 * 60 * 1000;
 const SESSION_MS = SESSION_DAYS * DAY_MS;
+/** The trips an account owns or was shared, as SQL binding the account's ID twice. Every read of trip data is limited to these. */
+const VISIBLE_TRIPS = "SELECT id FROM trips WHERE ownerId = ? UNION SELECT tripId FROM trip_shares WHERE accountId = ?";
+/** Every trip column but the owner's account ID, which stays on the server. */
+const TRIP_COLUMNS = "id, name, dateLabel, homeCity, returnCity, travelers, notes, createdAt, startDate";
+/** How each saved item finds its trip, through its parents. */
+const TRIP_OF = {
+  trips: "SELECT id AS tripId FROM trips WHERE id = ?",
+  destinations: "SELECT tripId FROM destinations WHERE id = ?",
+  home_items: "SELECT tripId FROM home_items WHERE id = ?",
+  legs: "SELECT tripId FROM legs WHERE id = ?",
+  candidates: "SELECT destinations.tripId FROM candidates JOIN destinations ON destinations.id = candidates.destinationId WHERE candidates.id = ?",
+  churches: "SELECT destinations.tripId FROM churches JOIN destinations ON destinations.id = churches.destinationId WHERE churches.id = ?",
+} as const;
+/** A missing trip and one the account can't open look the same, so an ID reveals nothing about other people's trips. */
+const NOT_AVAILABLE = "This item no longer exists or isn't shared with you. Please refresh and try again.";
+const OWNER_ONLY: Partial<Record<Mutation["type"], string>> = {
+  "trip.delete": "Only the trip's owner can delete it.",
+  "trip.share": "Only the trip's owner can share it.",
+  "trip.unshare": "Only the trip's owner can remove someone's access.",
+};
 
 export class ValidationError extends Error {
   constructor(message: string) {
     super(message);
     this.name = "ValidationError";
   }
+}
+/**
+ * Whether an error is the store's, with a message to show as written. Checked by name, not class: a
+ * production build can bundle this module more than once, and the one store on globalThis throws the
+ * class of whichever copy created it, so `instanceof` fails in the others.
+ */
+export function isValidationError(error: unknown): error is ValidationError {
+  return error instanceof Error && error.name === "ValidationError";
 }
 
 type Input = Record<string, unknown>;
@@ -263,6 +291,9 @@ function validate(input: unknown): Mutation {
     case "candidate.delete":
     case "leg.clear":
       return { type: value.type, id: idField(value) };
+    case "trip.share":
+    case "trip.unshare":
+      return { type: value.type, tripId: idField(value, "tripId"), email: emailAddress(textField(value, "email", 254)) };
     case "homeItem.save":
       return { type: value.type, id: optionalId(value), tripId: idField(value, "tripId"), name: textField(value, "name", 160, true), price: priceField(value), notes: textField(value, "notes", 8000), completed: booleanField(value, "completed") };
     case "homeItem.delete":
@@ -303,14 +334,19 @@ function validate(input: unknown): Mutation {
   }
 }
 
-export function createStore(databasePath: string) {
+/**
+ * Opens Travel's database, upgrading it in one transaction. `ownerEmail` is the designated owner
+ * from deployment configuration: authorized at every start, and the owner of every trip from before sharing.
+ */
+export function createStore(databasePath: string, ownerEmail: string) {
+  const owner = emailAddress(ownerEmail);
   if (databasePath !== ":memory:") mkdirSync(dirname(resolve(databasePath)), { recursive: true });
   const db = new DatabaseSync(databasePath, { timeout: 5000 });
   db.exec("PRAGMA foreign_keys = ON; PRAGMA journal_mode = WAL;");
   db.exec("BEGIN IMMEDIATE");
   try {
     const version = Number(db.prepare("PRAGMA user_version").get()?.user_version ?? 0);
-    if (version > 19) throw new Error("This database was created by a newer version of the travel app.");
+    if (version > 20) throw new Error("This database was created by a newer version of the travel app.");
     db.exec(`
     CREATE TABLE IF NOT EXISTS trips (
       id TEXT PRIMARY KEY, name TEXT NOT NULL, dateLabel TEXT NOT NULL DEFAULT '',
@@ -570,6 +606,30 @@ export function createStore(databasePath: string) {
         PRAGMA user_version = 19;
       `);
     }
+    // The designated owner comes from deployment configuration, never from whoever signs in first.
+    const ownerId = authorizeAccount(owner).id;
+    if (version < 20) {
+      // Every trip has one owner, who may share it with other accounts. Trips from before sharing all
+      // go to the designated owner; a replay finds none without an owner and changes nothing.
+      // SQLite can't add a NOT NULL column that references another table, so triggers keep every trip owned.
+      if (!hasColumn("trips", "ownerId")) db.exec("ALTER TABLE trips ADD COLUMN ownerId TEXT REFERENCES accounts(id);");
+      db.prepare("UPDATE trips SET ownerId = ? WHERE ownerId IS NULL").run(ownerId);
+      db.exec(`
+        CREATE INDEX IF NOT EXISTS trips_owner ON trips(ownerId);
+        CREATE TRIGGER IF NOT EXISTS trips_insert_owner BEFORE INSERT ON trips WHEN NEW.ownerId IS NULL
+          BEGIN SELECT RAISE(ABORT, 'Every trip needs an owner.'); END;
+        CREATE TRIGGER IF NOT EXISTS trips_update_owner BEFORE UPDATE OF ownerId ON trips WHEN NEW.ownerId IS NULL
+          BEGIN SELECT RAISE(ABORT, 'Every trip needs an owner.'); END;
+        CREATE TABLE IF NOT EXISTS trip_shares (
+          tripId TEXT NOT NULL REFERENCES trips(id) ON DELETE CASCADE,
+          accountId TEXT NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
+          sharedAt TEXT NOT NULL,
+          PRIMARY KEY (tripId, accountId)
+        ) STRICT;
+        CREATE INDEX IF NOT EXISTS trip_shares_account ON trip_shares(accountId);
+        PRAGMA user_version = 20;
+      `);
+    }
     db.exec("COMMIT");
   } catch (error) {
     db.exec("ROLLBACK");
@@ -606,7 +666,7 @@ export function createStore(databasePath: string) {
       photos.set(candidateId, images);
     }
     return {
-      trips: query("SELECT * FROM trips" + (scope ? " WHERE id = ?" : "") + " ORDER BY createdAt DESC, id", tripArgs).map((row) => {
+      trips: query("SELECT " + TRIP_COLUMNS + " FROM trips" + (scope ? " WHERE id = ?" : "") + " ORDER BY createdAt DESC, id", tripArgs).map((row) => {
         const trip = row as unknown as Trip;
         return { ...trip, endDate: sequenceDates(trip.startDate, orderedDestinations(trip.id)).endDate };
       }),
@@ -634,17 +694,19 @@ export function createStore(databasePath: string) {
       }),
     };
   }
-  function getHomeOverview() {
-    const rawTrips = db.prepare("SELECT * FROM trips ORDER BY createdAt DESC, id").all() as unknown as Trip[];
+  /** The trips the account owns or was shared, with their budgets and what the account may do with each. */
+  function getHomeOverview(accountId: string) {
+    const visible = [accountId, accountId];
+    const rawTrips = db.prepare(`SELECT ${TRIP_COLUMNS} FROM trips WHERE id IN (${VISIBLE_TRIPS}) ORDER BY createdAt DESC, id`).all(...visible) as unknown as Trip[];
     const destinations = db.prepare(`SELECT id,tripId,city,position,nights,miscDailyMinor,miscCurrency,hotelNightlyMinor,hotelCurrency,
       activitiesBudgetMode,activitiesGeneralMinor,activitiesCurrency,foodBudgetMode,foodDailyMinor,foodCurrency,
-      shoppingMinor,shoppingCurrency FROM destinations ORDER BY tripId,position,id`).all() as unknown as Destination[];
+      shoppingMinor,shoppingCurrency FROM destinations WHERE tripId IN (${VISIBLE_TRIPS}) ORDER BY tripId,position,id`).all(...visible) as unknown as Destination[];
     const trips = rawTrips.map((trip) => ({ ...trip, endDate: sequenceDates(trip.startDate, destinations.filter((stop) => stop.tripId === trip.id)).endDate }));
     const input: Snapshot = {
       trips, destinations,
-      legs: db.prepare("SELECT tripId,fromId,toId,priceCents FROM legs").all() as unknown as TravelLeg[],
-      candidates: db.prepare("SELECT destinationId,category,priceCents,included FROM candidates").all().map((row) => ({ ...row, included: row.included === 1 })) as unknown as Candidate[],
-      homeItems: db.prepare("SELECT tripId,priceCents FROM home_items").all() as unknown as HomeItem[],
+      legs: db.prepare(`SELECT tripId,fromId,toId,priceCents FROM legs WHERE tripId IN (${VISIBLE_TRIPS})`).all(...visible) as unknown as TravelLeg[],
+      candidates: db.prepare(`SELECT destinationId,category,priceCents,included FROM candidates WHERE destinationId IN (SELECT id FROM destinations WHERE tripId IN (${VISIBLE_TRIPS}))`).all(...visible).map((row) => ({ ...row, included: row.included === 1 })) as unknown as Candidate[],
+      homeItems: db.prepare(`SELECT tripId,priceCents FROM home_items WHERE tripId IN (${VISIBLE_TRIPS})`).all(...visible) as unknown as HomeItem[],
       churches: [],
     };
     const budgets = Object.fromEntries(trips.map((trip) => [trip.id, calculateBudget(input, trip.id)]));
@@ -655,33 +717,71 @@ export function createStore(databasePath: string) {
         legs: [], candidates: [], homeItems: [], churches: [],
       } as Snapshot,
       budgets,
+      access: Object.fromEntries(trips.map((trip) => [trip.id, tripAccess(accountId, trip.id)!])) as Record<string, TripAccess>,
     };
   }
-  function getTripName(id: string): string | undefined {
+  /** One trip's page, or one destination's, and what the account may do there. Undefined when the account can't open the trip. */
+  function getTripSnapshot(accountId: string, tripId: string, destinationId?: string): { data: Snapshot; access: TripAccess } | undefined {
+    const access = tripAccess(accountId, tripId);
+    return access && { data: getSnapshot({ tripId, destinationId }), access };
+  }
+  function getTripName(accountId: string, id: string): string | undefined {
+    if (!tripRole(accountId, id)) return undefined;
     return db.prepare("SELECT name FROM trips WHERE id = ?").get(id)?.name as string | undefined;
   }
-  function getDestinationName(tripId: string, destinationId: string): string | undefined {
+  function getDestinationName(accountId: string, tripId: string, destinationId: string): string | undefined {
+    if (!tripRole(accountId, tripId)) return undefined;
     return db.prepare("SELECT city FROM destinations WHERE tripId = ? AND id = ?").get(tripId, destinationId)?.city as string | undefined;
+  }
+  /** The trip a saved item belongs to, found through its parents. Undefined when the item doesn't exist. */
+  function tripOf(table: keyof typeof TRIP_OF, id: string): string | undefined {
+    return db.prepare(TRIP_OF[table]).get(id)?.tripId as string | undefined;
+  }
+  /** The account's role in a trip, or undefined when the trip doesn't exist or isn't the account's to open. */
+  function tripRole(accountId: string, tripId: string | undefined): TripAccess["role"] | undefined {
+    if (tripId === undefined) return undefined;
+    const row = db.prepare("SELECT CASE WHEN ownerId = ? THEN 'owner' WHEN EXISTS (SELECT 1 FROM trip_shares WHERE tripId = trips.id AND accountId = ?) THEN 'editor' END AS role FROM trips WHERE id = ?")
+      .get(accountId, accountId, tripId);
+    return (row?.role ?? undefined) as TripAccess["role"] | undefined;
+  }
+  function member(row: Record<string, unknown>): TripMember {
+    return { email: row.email as string, name: row.name as string | null };
+  }
+  /** Who owns the trip, and, for its owner only, who it is shared with. */
+  function tripAccess(accountId: string, tripId: string): TripAccess | undefined {
+    const role = tripRole(accountId, tripId);
+    if (!role) return undefined;
+    const owner = member(db.prepare("SELECT accounts.email, accounts.name FROM trips JOIN accounts ON accounts.id = trips.ownerId WHERE trips.id = ?").get(tripId)!);
+    if (role === "editor") return { role, owner };
+    const sharedWith = db.prepare("SELECT accounts.email, accounts.name FROM trip_shares JOIN accounts ON accounts.id = trip_shares.accountId WHERE trip_shares.tripId = ? ORDER BY accounts.email")
+      .all(tripId).map(member);
+    return { role, owner, sharedWith };
   }
   function checkHealth(): void { db.prepare("SELECT 1").get(); }
 
-  function getDestinationImage(id: string): StoredImage | undefined {
+  // Photos are served only from trips the account can open, the same as everything else in them.
+  function getDestinationImage(accountId: string, id: string): StoredImage | undefined {
+    if (!tripRole(accountId, tripOf("destinations", id))) return undefined;
     const row = db.prepare("SELECT version, data FROM destination_images WHERE destinationId = ? AND isMain = 1").get(id);
     return row ? { version: row.version as string, data: new Uint8Array(row.data as Uint8Array) } : undefined;
   }
-  function getDestinationPhoto(destinationId: string, imageId: string): StoredImage | undefined {
+  function getDestinationPhoto(accountId: string, destinationId: string, imageId: string): StoredImage | undefined {
+    if (!tripRole(accountId, tripOf("destinations", destinationId))) return undefined;
     const row = db.prepare("SELECT version, data FROM destination_images WHERE destinationId = ? AND id = ?").get(destinationId, imageId);
     return row ? { version: row.version as string, data: new Uint8Array(row.data as Uint8Array) } : undefined;
   }
-  function getCandidateImage(id: string): StoredImage | undefined {
+  function getCandidateImage(accountId: string, id: string): StoredImage | undefined {
+    if (!tripRole(accountId, tripOf("candidates", id))) return undefined;
     const row = db.prepare("SELECT version, data FROM candidate_images WHERE candidateId = ? AND isMain = 1").get(id);
     return row ? { version: row.version as string, data: new Uint8Array(row.data as Uint8Array) } : undefined;
   }
-  function getCandidatePhoto(candidateId: string, imageId: string): StoredImage | undefined {
+  function getCandidatePhoto(accountId: string, candidateId: string, imageId: string): StoredImage | undefined {
+    if (!tripRole(accountId, tripOf("candidates", candidateId))) return undefined;
     const row = db.prepare("SELECT version, data FROM candidate_images WHERE candidateId = ? AND id = ?").get(candidateId, imageId);
     return row ? { version: row.version as string, data: new Uint8Array(row.data as Uint8Array) } : undefined;
   }
-  function getChurchPhoto(churchId: string, imageId: string): StoredImage | undefined {
+  function getChurchPhoto(accountId: string, churchId: string, imageId: string): StoredImage | undefined {
+    if (!tripRole(accountId, tripOf("churches", churchId))) return undefined;
     const row = db.prepare("SELECT version, data FROM church_images WHERE churchId = ? AND id = ?").get(churchId, imageId);
     return row ? { version: row.version as string, data: new Uint8Array(row.data as Uint8Array) } : undefined;
   }
@@ -803,7 +903,7 @@ export function createStore(databasePath: string) {
   function clearHotelSelection(destinationId: string) {
     db.prepare("UPDATE candidates SET included = 0 WHERE destinationId = ? AND category = 'hotels'").run(destinationId);
   }
-  function mutate(input: Mutation): string | undefined {
+  function mutate(accountId: string, input: Mutation): string | undefined {
     switch (input.type) {
       case "trip.save": {
         const id = input.id ?? randomUUID();
@@ -816,7 +916,8 @@ export function createStore(databasePath: string) {
           const affectedLegs = db.prepare("SELECT id FROM legs WHERE tripId = ? AND ((? AND fromId IS NULL) OR (? AND toId IS NULL))").all(id, Number(departingChanged), Number(returningChanged));
           for (const leg of affectedLegs) clearLeg(leg.id as string);
         } else {
-          db.prepare("INSERT INTO trips(id,name,dateLabel,homeCity,returnCity,travelers,notes,createdAt) VALUES(?,?,?,?,?,?,?,?)").run(id, input.name, input.dateLabel, input.homeCity, input.returnCity ?? null, input.travelers, input.notes, new Date().toISOString());
+          // A new trip belongs to the account that creates it.
+          db.prepare("INSERT INTO trips(id,name,dateLabel,homeCity,returnCity,travelers,notes,createdAt,ownerId) VALUES(?,?,?,?,?,?,?,?,?)").run(id, input.name, input.dateLabel, input.homeCity, input.returnCity ?? null, input.travelers, input.notes, new Date().toISOString(), accountId);
         }
         if (input.startDate !== undefined) db.prepare("UPDATE trips SET startDate = ? WHERE id = ?").run(input.startDate, id);
         return id;
@@ -825,6 +926,20 @@ export function createStore(databasePath: string) {
         existing<Trip>("trips", input.id);
         db.prepare("DELETE FROM trips WHERE id = ?").run(input.id);
         return;
+      case "trip.share": {
+        // Sharing authorizes the email to sign in, even before that person ever has. Nothing is sent to them.
+        const recipient = authorizeAccount(input.email);
+        if (db.prepare("SELECT 1 FROM trips WHERE id = ? AND ownerId = ?").get(input.tripId, recipient.id)) throw new ValidationError("You own this trip, so you already have access.");
+        const shared = db.prepare("INSERT INTO trip_shares(tripId, accountId, sharedAt) VALUES(?, ?, ?) ON CONFLICT DO NOTHING").run(input.tripId, recipient.id, new Date().toISOString());
+        if (shared.changes === 0) throw new ValidationError(`This trip is already shared with ${recipient.email}.`);
+        return input.tripId;
+      }
+      case "trip.unshare": {
+        // Only this trip's access ends. The email stays authorized, and nothing in the trip changes.
+        const removed = db.prepare("DELETE FROM trip_shares WHERE tripId = ? AND accountId = (SELECT id FROM accounts WHERE email = ?)").run(input.tripId, input.email);
+        if (removed.changes === 0) throw new ValidationError(`This trip isn't shared with ${input.email}. Refresh to see who has access.`);
+        return input.tripId;
+      }
       case "homeItem.save": {
         existing<Trip>("trips", input.tripId);
         const id = input.id ?? randomUUID();
@@ -1066,10 +1181,39 @@ export function createStore(databasePath: string) {
       }
     }
   }
-  function applyMutation(input: unknown): { id?: string } {
+  /**
+   * The trip a change applies to, found from the most specific saved item it names, so a browser can't
+   * claim an item belongs to a trip it can open. `mutate` still checks that the item matches the rest.
+   */
+  function mutationTrip(input: Mutation): string | undefined {
+    switch (input.type) {
+      case "trip.save": case "trip.delete": return input.id && tripOf("trips", input.id);
+      case "trip.share": case "trip.unshare": return tripOf("trips", input.tripId);
+      case "homeItem.save": return input.id ? tripOf("home_items", input.id) : tripOf("trips", input.tripId);
+      case "homeItem.delete": case "homeItem.complete": return tripOf("home_items", input.id);
+      case "destination.save": return input.id ? tripOf("destinations", input.id) : tripOf("trips", input.tripId);
+      case "destination.delete": case "destination.move": case "destination.churchVisibility": case "destination.entryRequirements": return tripOf("destinations", input.id);
+      case "church.save": return input.id ? tripOf("churches", input.id) : tripOf("destinations", input.destinationId);
+      case "church.delete": return tripOf("churches", input.id);
+      case "leg.save": case "leg.clear": return tripOf("legs", input.id);
+      case "candidate.save": return input.id ? tripOf("candidates", input.id) : tripOf("destinations", input.destinationId);
+      case "candidate.move": case "candidate.mustDo": case "candidate.delete": case "candidate.include": return tripOf("candidates", input.id);
+    }
+  }
+  /** Owners and the accounts they shared a trip with may change it; deleting it and changing who has it are for its owner. */
+  function authorize(accountId: string, input: Mutation): void {
+    if (input.type === "trip.save" && input.id === undefined) return;
+    const role = tripRole(accountId, mutationTrip(input));
+    if (!role) throw new ValidationError(NOT_AVAILABLE);
+    const ownerOnly = OWNER_ONLY[input.type];
+    if (ownerOnly && role !== "owner") throw new ValidationError(ownerOnly);
+  }
+  /** `accountId` is the signed-in account from the server's session, never anything the browser sent. */
+  function applyMutation(accountId: string, input: unknown): { id?: string } {
     const valid = validate(input);
     db.exec("BEGIN IMMEDIATE");
     try {
+      authorize(accountId, valid);
       let scheduleTrip: string | undefined;
       if (valid.type === "trip.save" && valid.startDate !== undefined) {
         if (valid.id && db.prepare("SELECT startDate FROM trips WHERE id = ?").get(valid.id)?.startDate !== valid.startDate) scheduleTrip = valid.id;
@@ -1079,7 +1223,7 @@ export function createStore(databasePath: string) {
       } else if (valid.type === "destination.delete" || valid.type === "destination.move") {
         scheduleTrip = existing<Destination>("destinations", valid.id).tripId;
       }
-      const id = mutate(valid);
+      const id = mutate(accountId, valid);
       if (valid.type === "trip.save" && !valid.id && valid.startDate !== undefined) scheduleTrip = id;
       if (scheduleTrip) refreshDates(scheduleTrip);
       db.exec("COMMIT");
@@ -1090,7 +1234,10 @@ export function createStore(databasePath: string) {
     }
   }
 
-  const account = (row: Record<string, unknown>): AuthorizedAccount => ({ id: row.id as string, email: row.email as string, name: row.name as string | null });
+  // Declared, not assigned, because the startup transaction above already authorizes the owner.
+  function account(row: Record<string, unknown>): AuthorizedAccount {
+    return { id: row.id as string, email: row.email as string, name: row.name as string | null };
+  }
   function authorizeAccount(email: string): AuthorizedAccount {
     const address = emailAddress(email);
     db.prepare("INSERT INTO accounts(id, email, authorizedAt) VALUES(?, ?, ?) ON CONFLICT(email) DO NOTHING").run(randomUUID(), address, new Date().toISOString());
@@ -1136,7 +1283,8 @@ export function createStore(databasePath: string) {
     db.prepare("DELETE FROM sessions WHERE tokenHash = ?").run(tokenHash(token));
   }
 
-  return { getSnapshot, getHomeOverview, getTripName, getDestinationName, checkHealth, getDestinationImage, getDestinationPhoto, getCandidateImage, getCandidatePhoto, getChurchPhoto, applyMutation, authorizeAccount, getAccountByGoogleSubject, authorizeGoogleSignIn, createSession, readSession, deleteSession, close: () => db.close() };
+  // getSnapshot reads every trip, for checks and tests. Everything the app shows or changes takes the signed-in account.
+  return { getSnapshot, getHomeOverview, getTripSnapshot, getTripName, getDestinationName, checkHealth, getDestinationImage, getDestinationPhoto, getCandidateImage, getCandidatePhoto, getChurchPhoto, applyMutation, authorizeAccount, getAccountByGoogleSubject, authorizeGoogleSignIn, createSession, readSession, deleteSession, close: () => db.close() };
 }
 
 /** The Google account authorized during initial setup. src/instrumentation.ts checks it as the server starts. */
@@ -1154,40 +1302,33 @@ function defaultStore(): Store {
       throw new Error("TRAVEL_DATABASE_PATH must point to persistent storage in production.");
     }
     const owner = ownerEmail();
-    const store = createStore(configuredPath || resolve(process.cwd(), "data", "travel.sqlite"));
-    // The initial owner comes from deployment configuration, never from whoever signs in first.
-    store.authorizeAccount(owner);
-    globalStore.travelStore = store;
+    globalStore.travelStore = createStore(configuredPath || resolve(process.cwd(), "data", "travel.sqlite"), owner);
   }
   return globalStore.travelStore;
 }
-export function getSnapshot(): Snapshot {
-  return defaultStore().getSnapshot();
+// Each takes the signed-in account's ID from the server's session, and sees only that account's trips.
+export function getDestinationImage(accountId: string, id: string): StoredImage | undefined {
+  return defaultStore().getDestinationImage(accountId, id);
 }
-export function getDestinationImage(id: string): StoredImage | undefined {
-  return defaultStore().getDestinationImage(id);
+export function getDestinationPhoto(accountId: string, destinationId: string, imageId: string): StoredImage | undefined {
+  return defaultStore().getDestinationPhoto(accountId, destinationId, imageId);
 }
-export function getDestinationPhoto(destinationId: string, imageId: string): StoredImage | undefined {
-  return defaultStore().getDestinationPhoto(destinationId, imageId);
+export function getCandidateImage(accountId: string, id: string): StoredImage | undefined {
+  return defaultStore().getCandidateImage(accountId, id);
 }
-export function getCandidateImage(id: string): StoredImage | undefined {
-  return defaultStore().getCandidateImage(id);
+export function getCandidatePhoto(accountId: string, candidateId: string, imageId: string): StoredImage | undefined {
+  return defaultStore().getCandidatePhoto(accountId, candidateId, imageId);
 }
-export function getCandidatePhoto(candidateId: string, imageId: string): StoredImage | undefined {
-  return defaultStore().getCandidatePhoto(candidateId, imageId);
+export function getChurchPhoto(accountId: string, churchId: string, imageId: string): StoredImage | undefined {
+  return defaultStore().getChurchPhoto(accountId, churchId, imageId);
 }
-export function getChurchPhoto(churchId: string, imageId: string): StoredImage | undefined {
-  return defaultStore().getChurchPhoto(churchId, imageId);
+export function applyMutation(accountId: string, input: unknown): { id?: string } {
+  return defaultStore().applyMutation(accountId, input);
 }
-export function applyMutation(input: unknown): { id?: string } {
-  return defaultStore().applyMutation(input);
-}
-export function getTripSnapshot(tripId: string, destinationId?: string): Snapshot {
-  return defaultStore().getSnapshot({ tripId, destinationId });
-}
-export function getHomeOverview() { return defaultStore().getHomeOverview(); }
-export function getTripName(id: string) { return defaultStore().getTripName(id); }
-export function getDestinationName(tripId: string, destinationId: string) { return defaultStore().getDestinationName(tripId, destinationId); }
+export function getTripSnapshot(accountId: string, tripId: string, destinationId?: string) { return defaultStore().getTripSnapshot(accountId, tripId, destinationId); }
+export function getHomeOverview(accountId: string) { return defaultStore().getHomeOverview(accountId); }
+export function getTripName(accountId: string, id: string) { return defaultStore().getTripName(accountId, id); }
+export function getDestinationName(accountId: string, tripId: string, destinationId: string) { return defaultStore().getDestinationName(accountId, tripId, destinationId); }
 export function checkHealth(): void { defaultStore().checkHealth(); }
 export function authorizeGoogleSignIn(identity: GoogleIdentity) { return defaultStore().authorizeGoogleSignIn(identity); }
 export function createSession(accountId: string) { return defaultStore().createSession(accountId, Date.now()); }

@@ -5,7 +5,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import test from "node:test";
-import { createStore, ValidationError } from "../src/lib/store.ts";
+import { ValidationError } from "../src/lib/store.ts";
+import { createOwnedStore } from "./owned-store.mjs";
 import { calculateBudget } from "../src/lib/budget.ts";
 import { storedImageResponse } from "../src/lib/stored-image-response.ts";
 
@@ -28,7 +29,7 @@ function plan(store) {
 
 test("destination photo add, primary selection, reorder and fallback persist without altering planning data", (t) => {
   const path = databasePath(t);
-  let store = createStore(path);
+  let store = createOwnedStore(path);
   try {
     const { tripId, id } = plan(store);
     const before = store.getSnapshot();
@@ -53,7 +54,7 @@ test("destination photo add, primary selection, reorder and fallback persist wit
     assert.deepEqual(store.getDestinationImage(id), store.getDestinationPhoto(id, photos[2].id));
     const saved = store.getSnapshot();
     store.close();
-    store = createStore(path);
+    store = createOwnedStore(path);
     assert.deepEqual(store.getSnapshot(), saved);
     store.applyMutation({ type: "destination.save", tripId, id, gallery: { add: [], remove: [photos[2].id, photos[0].id], mainImageId: null, order: [] } });
     assert.deepEqual(destination(store, id).images, []);
@@ -63,7 +64,7 @@ test("destination photo add, primary selection, reorder and fallback persist wit
 });
 
 test("destination galleries validate ownership, ordering, limits and photo data atomically", (t) => {
-  const store = createStore(":memory:");
+  const store = createOwnedStore(":memory:");
   t.after(() => store.close());
   const { tripId, id } = plan(store);
   const own = photo(), foreign = photo(), extra = photo();
@@ -98,7 +99,7 @@ test("destination galleries validate ownership, ordering, limits and photo data 
 });
 
 test("concurrent adds survive ordinary edits and stale reorder fails without discarding new photos", (t) => {
-  const store = createStore(":memory:");
+  const store = createOwnedStore(":memory:");
   t.after(() => store.close());
   const { tripId, id } = plan(store);
   const first = photo(), second = photo(), third = photo();
@@ -113,7 +114,7 @@ test("concurrent adds survive ordinary edits and stale reorder fails without dis
 
 test("gallery write failures roll back removals, additions, destination changes and route changes", (t) => {
   const path = databasePath(t);
-  const store = createStore(path);
+  const store = createOwnedStore(path);
   const observer = new DatabaseSync(path);
   try {
     const { tripId, id } = plan(store);
@@ -131,7 +132,7 @@ test("gallery write failures roll back removals, additions, destination changes 
 
 test("schema 16 single images migrate unchanged and replay preserves galleries and primary choice", (t) => {
   const path = databasePath(t);
-  let store = createStore(path);
+  let store = createOwnedStore(path);
   try {
     const { tripId, id } = plan(store);
     store.applyMutation({ type: "destination.save", tripId, id, image: webp });
@@ -142,7 +143,7 @@ test("schema 16 single images migrate unchanged and replay preserves galleries a
     old.exec("DROP TABLE destination_images; CREATE TABLE destination_images(destinationId TEXT PRIMARY KEY REFERENCES destinations(id) ON DELETE CASCADE, version TEXT NOT NULL, data BLOB NOT NULL) STRICT; PRAGMA user_version=16;");
     old.prepare("INSERT INTO destination_images(destinationId,version,data) VALUES(?,?,?)").run(id, original.version, original.data);
     old.close();
-    store = createStore(path);
+    store = createOwnedStore(path);
     assert.deepEqual(store.getDestinationImage(id), original);
     assert.deepEqual(store.getDestinationPhoto(id, id), original);
     assert.deepEqual(destination(store, id).images, [{ id, version: original.version }]);
@@ -155,7 +156,7 @@ test("schema 16 single images migrate unchanged and replay preserves galleries a
     const reset = new DatabaseSync(path);
     reset.exec("PRAGMA user_version=16");
     reset.close();
-    store = createStore(path);
+    store = createOwnedStore(path);
     assert.deepEqual(store.getSnapshot(), snapshot);
     assert.deepEqual(store.getDestinationPhoto(id, id), original);
     const observer = new DatabaseSync(path);
@@ -165,7 +166,7 @@ test("schema 16 single images migrate unchanged and replay preserves galleries a
 });
 
 test("legacy image changes affect only primary and destination gallery deletion cascades independently", (t) => {
-  const store = createStore(":memory:");
+  const store = createOwnedStore(":memory:");
   t.after(() => store.close());
   const { tripId, id } = plan(store);
   const photos = [photo(), photo()];
@@ -191,7 +192,7 @@ test("legacy image changes affect only primary and destination gallery deletion 
 });
 
 test("individual destination photo reads enforce owner, version and cache semantics", async (t) => {
-  const store = createStore(":memory:");
+  const store = createOwnedStore(":memory:");
   t.after(() => store.close());
   const { tripId, id } = plan(store);
   const image = photo();

@@ -5,7 +5,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import test from "node:test";
-import { createStore, ValidationError } from "../src/lib/store.ts";
+import { ValidationError } from "../src/lib/store.ts";
+import { createOwnedStore } from "./owned-store.mjs";
 import { calculateBudget } from "../src/lib/budget.ts";
 
 const webp = new Uint8Array(Buffer.from("UklGRiIAAABXRUJQVlA4IBYAAAAwAQCdASoBAAEADsD+JaQAA3AAAAAA", "base64"));
@@ -37,7 +38,7 @@ function planningFields(item) {
 for (const category of ["hotels", "activities", "restaurants"]) {
   test(`${category} galleries persist multiple photos and main selection without changing planning details`, (t) => {
     const path = databasePath(t);
-    let store = createStore(path);
+    let store = createOwnedStore(path);
     try {
       const { tripId, destinationId } = seed(store);
       const first = photo();
@@ -66,7 +67,7 @@ for (const category of ["hotels", "activities", "restaurants"]) {
       assert.deepEqual(candidate(store, id).images, saved.images, "a notes-only save preserves the gallery");
       const before = store.getSnapshot();
       store.close();
-      store = createStore(path);
+      store = createOwnedStore(path);
       assert.deepEqual(store.getSnapshot(), before);
       assert.deepEqual(before.candidates.find((item) => item.id === id).images.map((item) => store.getCandidatePhoto(id, item.id)), originalPhotos);
       const copy = store.getCandidatePhoto(id, second.id);
@@ -77,7 +78,7 @@ for (const category of ["hotels", "activities", "restaurants"]) {
 }
 
 test("incremental gallery edits retain concurrently added photos and choose a fallback main", (t) => {
-  const store = createStore(":memory:");
+  const store = createOwnedStore(":memory:");
   t.after(() => store.close());
   const { destinationId } = seed(store);
   const first = photo(), second = photo(), third = photo(alternative), fourth = photo();
@@ -101,7 +102,7 @@ test("incremental gallery edits retain concurrently added photos and choose a fa
 });
 
 test("legacy single-photo edits replace or remove only the main photo", (t) => {
-  const store = createStore(":memory:");
+  const store = createOwnedStore(":memory:");
   t.after(() => store.close());
   const { destinationId } = seed(store);
   const first = photo(), second = photo();
@@ -121,7 +122,7 @@ test("legacy single-photo edits replace or remove only the main photo", (t) => {
 });
 
 test("gallery ownership, stale edits, duplicate IDs, and main-photo checks fail atomically", (t) => {
-  const store = createStore(":memory:");
+  const store = createOwnedStore(":memory:");
   t.after(() => store.close());
   const { destinationId } = seed(store);
   const own = photo(), foreign = photo(), extra = photo();
@@ -162,7 +163,7 @@ test("gallery ownership, stale edits, duplicate IDs, and main-photo checks fail 
 });
 
 test("the ten-photo limit counts retained photos and permits removal plus replacement", (t) => {
-  const store = createStore(":memory:");
+  const store = createOwnedStore(":memory:");
   t.after(() => store.close());
   const { destinationId } = seed(store);
   const input = ideaInput(destinationId);
@@ -184,7 +185,7 @@ test("the ten-photo limit counts retained photos and permits removal plus replac
 
 test("a failure after the first gallery write rolls back additions, removals, and planning changes", (t) => {
   const path = databasePath(t);
-  const store = createStore(path);
+  const store = createOwnedStore(path);
   const observer = new DatabaseSync(path);
   try {
     const { tripId, destinationId } = seed(store);
@@ -210,7 +211,7 @@ test("a failure after the first gallery write rolls back additions, removals, an
 
 test("schema 5 photos migrate with their exact bytes and versions, and repeated migration preserves galleries", (t) => {
   const path = databasePath(t);
-  let store = createStore(path);
+  let store = createOwnedStore(path);
   try {
     const { tripId, destinationId } = seed(store);
     const input = ideaInput(destinationId);
@@ -224,7 +225,7 @@ test("schema 5 photos migrate with their exact bytes and versions, and repeated 
     legacy.exec("DROP TABLE candidate_images; CREATE TABLE candidate_images(candidateId TEXT PRIMARY KEY REFERENCES candidates(id) ON DELETE CASCADE, version TEXT NOT NULL, data BLOB NOT NULL) STRICT; PRAGMA user_version=5;");
     legacy.prepare("INSERT INTO candidate_images(candidateId,version,data) VALUES(?,?,?)").run(id, original.version, original.data);
     legacy.close();
-    store = createStore(path);
+    store = createOwnedStore(path);
     assert.deepEqual(store.getCandidateImage(id), original);
     assert.deepEqual(store.getCandidatePhoto(id, id), original);
     assert.deepEqual(candidate(store, id).images, [{ id, version: original.version }]);
@@ -239,16 +240,16 @@ test("schema 5 photos migrate with their exact bytes and versions, and repeated 
     const extraImage = store.getCandidatePhoto(id, extra.id);
     store.close();
     const reset = new DatabaseSync(path);
-    assert.equal(reset.prepare("PRAGMA user_version").get().user_version, 19);
+    assert.equal(reset.prepare("PRAGMA user_version").get().user_version, 20);
     reset.exec("PRAGMA user_version=5");
     reset.close();
-    store = createStore(path);
+    store = createOwnedStore(path);
     assert.deepEqual(store.getSnapshot(), upgraded);
     assert.deepEqual(store.getCandidatePhoto(id, id), original);
     assert.deepEqual(store.getCandidatePhoto(id, extra.id), extraImage);
     const observer = new DatabaseSync(path);
     try {
-      assert.equal(observer.prepare("PRAGMA user_version").get().user_version, 19);
+      assert.equal(observer.prepare("PRAGMA user_version").get().user_version, 20);
       assert.deepEqual(observer.prepare("PRAGMA foreign_key_check").all(), []);
       assert.equal(observer.prepare("SELECT count(*) AS count FROM candidate_images WHERE candidateId=? AND isMain=1").get(id).count, 1);
     } finally { observer.close(); }
@@ -257,7 +258,7 @@ test("schema 5 photos migrate with their exact bytes and versions, and repeated 
 
 test("deleting an idea, destination, or trip removes every owned gallery photo only", (t) => {
   const path = databasePath(t);
-  const store = createStore(path);
+  const store = createOwnedStore(path);
   const observer = new DatabaseSync(path);
   try {
     const { tripId, destinationId } = seed(store);

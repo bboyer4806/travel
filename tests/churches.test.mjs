@@ -6,7 +6,8 @@ import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import test from "node:test";
 import { containsSunday } from "../src/lib/destination-duration.ts";
-import { createStore, ValidationError } from "../src/lib/store.ts";
+import { ValidationError } from "../src/lib/store.ts";
+import { createOwnedStore } from "./owned-store.mjs";
 import { calculateBudget, calculateDestinationBudget } from "../src/lib/budget.ts";
 
 const tripInput = (overrides = {}) => ({ type: "trip.save", name: "Church planning", dateLabel: "May 2027", homeCity: "New York", travelers: 2, notes: "", ...overrides });
@@ -18,7 +19,7 @@ const photo = () => ({ id: randomUUID(), data: webp });
 const destination = (store, id) => store.getSnapshot().destinations.find((item) => item.id === id);
 const church = (store, id) => store.getSnapshot().churches.find((item) => item.id === id);
 function setup(t) {
-  const store = createStore(":memory:");
+  const store = createOwnedStore(":memory:");
   t.after(() => store.close());
   const tripId = store.applyMutation(tripInput()).id;
   const destinationId = store.applyMutation(destinationInput(tripId)).id;
@@ -50,7 +51,7 @@ test("Sunday detection includes either endpoint, multiple Sundays, DST, leap day
 
 test("church details, multiple Mass times, gallery, manual hiding and optional unknowns persist after reopening", (t) => {
   const path = fileDatabase(t);
-  let store = createStore(path);
+  let store = createOwnedStore(path);
   try {
     const tripId = store.applyMutation(tripInput()).id;
     const destinationId = store.applyMutation(destinationInput(tripId)).id;
@@ -75,7 +76,7 @@ test("church details, multiple Mass times, gallery, manual hiding and optional u
     assert.equal(church(store, id).mainImageId, second.id);
     store.applyMutation({ type: "destination.churchVisibility", id: destinationId, enabled: false });
     const before = store.getSnapshot();
-    store.close(); store = createStore(path);
+    store.close(); store = createOwnedStore(path);
     assert.deepEqual(store.getSnapshot(), before);
     assert.deepEqual(store.getChurchPhoto(id, second.id), storedPhoto);
     assert.deepEqual(store.getChurchPhoto(id, first.id).data, webp);
@@ -216,7 +217,7 @@ test("deleting churches, destinations and trips cascades their church images wit
 
 test("schema 13 upgrade initializes Sunday visibility, preserves prior data and replays without resetting hidden churches", (t) => {
   const path = fileDatabase(t);
-  let store = createStore(path);
+  let store = createOwnedStore(path);
   try {
     const tripId = store.applyMutation(tripInput({startDate:"2027-05-01"})).id;
     const id = store.applyMutation(destinationInput(tripId, {
@@ -238,7 +239,7 @@ test("schema 13 upgrade initializes Sunday visibility, preserves prior data and 
     let observer = new DatabaseSync(path);
     try { observer.exec("DROP TABLE church_images; DROP TABLE churches; ALTER TABLE destinations DROP COLUMN churchEnabled; PRAGMA user_version = 13;"); }
     finally { observer.close(); }
-    store = createStore(path);
+    store = createOwnedStore(path);
     assert.deepEqual(store.getSnapshot(), before);
     assert.equal(destination(store, id).churchEnabled, true);
     for (const other of [weekdayId, partialId, unknownId]) assert.equal(destination(store, other).churchEnabled, false);
@@ -253,16 +254,16 @@ test("schema 13 upgrade initializes Sunday visibility, preserves prior data and 
     store.close(); store = null;
     observer = new DatabaseSync(path);
     try {
-      assert.equal(observer.prepare("PRAGMA user_version").get().user_version, 19);
+      assert.equal(observer.prepare("PRAGMA user_version").get().user_version, 20);
       observer.exec("PRAGMA user_version = 13;");
     } finally { observer.close(); }
-    store = createStore(path);
+    store = createOwnedStore(path);
     assert.deepEqual(store.getSnapshot(), saved, "migration replay preserves explicit hiding, enabling, churches and photos");
     assert.deepEqual(store.getChurchPhoto(churchId, picture.id), savedPhoto);
     assert.deepEqual(calculateBudget(store.getSnapshot(), tripId), budget);
     observer = new DatabaseSync(path);
     try {
-      assert.equal(observer.prepare("PRAGMA user_version").get().user_version, 19);
+      assert.equal(observer.prepare("PRAGMA user_version").get().user_version, 20);
       assert.deepEqual(observer.prepare("PRAGMA foreign_key_check").all(), []);
     } finally { observer.close(); }
   } finally { store?.close(); }

@@ -5,7 +5,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import test from "node:test";
-import { createStore, ValidationError } from "../src/lib/store.ts";
+import { ValidationError } from "../src/lib/store.ts";
+import { createOwnedStore } from "./owned-store.mjs";
 import { calculateBudget } from "../src/lib/budget.ts";
 
 const tripInput = (overrides = {}) => ({ type: "trip.save", name: "Europe", dateLabel: "Fall 2027", homeCity: "New York", travelers: 2, notes: "A possible trip", ...overrides });
@@ -16,7 +17,7 @@ const stopInput = (overrides = {}) => ({ id: randomUUID(), kind: "layover", plac
 const linkInput = (overrides = {}) => ({ id: randomUUID(), url: "https://example.com/research", description: "A useful option", ...overrides });
 const legsFor = (store, tripId) => store.getSnapshot().legs.filter((leg) => leg.tripId === tripId);
 function setup(t) {
-  const store = createStore(":memory:");
+  const store = createOwnedStore(":memory:");
   t.after(() => store.close());
   return { store, tripId: store.applyMutation(tripInput()).id };
 }
@@ -90,7 +91,7 @@ for (const version of [1, 2]) {
     const before = legacyDatabase(path, version);
     before.destinations = before.destinations.map(item => ({ ...item, entryRequirements: null, images: [], mainImageId: null }));
     before.candidates = before.candidates.map(item => ({ ...item, position: 0, mustDo: false }));
-    let store = createStore(path);
+    let store = createOwnedStore(path);
     try {
       const after = store.getSnapshot();
       const withoutLinks = (item) => { const fields = { ...item }; delete fields.links; return fields; };
@@ -106,11 +107,11 @@ for (const version of [1, 2]) {
         assert.equal("itineraryJson" in item, false);
       }
       store.close();
-      store = createStore(path);
+      store = createOwnedStore(path);
       assert.deepEqual(store.getSnapshot(), after, "reopening preserves migrated link IDs and never duplicates data");
       const observer = new DatabaseSync(path);
       try {
-        assert.equal(observer.prepare("PRAGMA user_version").get().user_version, 19);
+        assert.equal(observer.prepare("PRAGMA user_version").get().user_version, 20);
         assert.deepEqual(observer.prepare("PRAGMA foreign_key_check").all(), []);
       } finally {
         observer.close();
@@ -124,12 +125,12 @@ for (const version of [1, 2]) {
 test("a future database version is rejected without modifying its schema", (t) => {
   const path = fileDatabase(t);
   let db = new DatabaseSync(path);
-  db.exec("PRAGMA user_version = 20");
+  db.exec("PRAGMA user_version = 21");
   db.close();
-  assert.throws(() => createStore(path), /newer version/);
+  assert.throws(() => createOwnedStore(path), /newer version/);
   db = new DatabaseSync(path);
   try {
-    assert.equal(db.prepare("PRAGMA user_version").get().user_version, 20);
+    assert.equal(db.prepare("PRAGMA user_version").get().user_version, 21);
     assert.equal(db.prepare("SELECT count(*) AS count FROM sqlite_master WHERE type = 'table'").get().count, 0);
   } finally {
     db.close();
@@ -189,7 +190,7 @@ test("return and departing city edits clear only connections whose effective end
 
 test("return cities, ordered itineraries, and multiple links survive edits and database restarts", (t) => {
   const path = fileDatabase(t);
-  let store = createStore(path);
+  let store = createOwnedStore(path);
   try {
     const tripId = store.applyMutation(tripInput({ returnCity: "Boston" })).id;
     const destinationId = store.applyMutation(destinationInput(tripId)).id;
@@ -215,7 +216,7 @@ test("return cities, ordered itineraries, and multiple links survive edits and d
     assert.deepEqual(store.getSnapshot().candidates[0].links, hotelLinks);
     const before = store.getSnapshot();
     store.close();
-    store = createStore(path);
+    store = createOwnedStore(path);
     assert.deepEqual(store.getSnapshot(), before);
     assert.equal(store.getSnapshot().trips[0].returnCity, "Boston");
     store.applyMutation(legInput(leg.id, { itinerary: [], links: [] }));
@@ -345,7 +346,7 @@ test("research link validation rejects invalid URLs and malformed arrays before 
 
 test("URL-only writes during deployment remain visible with stable IDs and preserve later research links", (t) => {
   const path = fileDatabase(t);
-  const store = createStore(path);
+  const store = createOwnedStore(path);
   const legacy = new DatabaseSync(path);
   try {
     const tripId = store.applyMutation(tripInput()).id;
@@ -383,7 +384,7 @@ test("URL-only writes during deployment remain visible with stable IDs and prese
 
 test("redeployment preserves new fields when an older app reset the schema version marker", (t) => {
   const path = fileDatabase(t);
-  let store = createStore(path);
+  let store = createOwnedStore(path);
   try {
     const tripId = store.applyMutation(tripInput({ returnCity: "Boston" })).id;
     const destinationId = store.applyMutation(destinationInput(tripId)).id;
@@ -399,11 +400,11 @@ test("redeployment preserves new fields when an older app reset the schema versi
     } finally {
       legacy.close();
     }
-    store = createStore(path);
+    store = createOwnedStore(path);
     assert.deepEqual(store.getSnapshot(), before, "schema recovery retains every stop, description, return city, and stable link ID");
     const observer = new DatabaseSync(path);
     try {
-      assert.equal(observer.prepare("PRAGMA user_version").get().user_version, 19);
+      assert.equal(observer.prepare("PRAGMA user_version").get().user_version, 20);
       assert.deepEqual(observer.prepare("PRAGMA foreign_key_check").all(), []);
     } finally {
       observer.close();

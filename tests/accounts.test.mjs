@@ -6,6 +6,7 @@ import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import test from "node:test";
 import { authorizeGoogleSignIn, createStore, ValidationError } from "../src/lib/store.ts";
+import { UNDO_SCHEMA_20 } from "./owned-store.mjs";
 
 const google = (subject, email, emailVerified = true, name = null) => ({ subject, email, emailVerified, name });
 const DAY = 24 * 60 * 60 * 1000;
@@ -23,11 +24,13 @@ const accountRows = (path) => rows(path, "SELECT email, googleSubject, name FROM
 
 test("only explicitly authorized, verified Google accounts sign in, bound to their stable subject", (t) => {
   const path = fileDatabase(t);
-  const store = createStore(path);
+  assert.throws(() => createStore(path, "not an email"), ValidationError, "the designated owner must be an email address");
+  const store = createStore(path, "  Owner@Example.COM ");
   t.after(() => store.close());
-  // Nobody is authorized by signing in first, and an uninvited account cannot register itself.
+  // Only the designated owner is authorized at startup. Nobody is authorized by signing in first,
+  // and an uninvited account cannot register itself.
   assert.equal(store.authorizeGoogleSignIn(google("first-visitor", "first@example.com")), undefined);
-  assert.deepEqual(accountRows(path), []);
+  assert.deepEqual(accountRows(path), [{ email: "owner@example.com", googleSubject: null, name: null }]);
 
   const owner = store.authorizeAccount("  Owner@Example.COM ");
   assert.deepEqual({ email: owner.email, name: owner.name }, { email: "owner@example.com", name: null });
@@ -67,7 +70,7 @@ test("only explicitly authorized, verified Google accounts sign in, bound to the
 
 test("sessions last thirty days from last use, keep only a token hash, and end on sign out", (t) => {
   const path = fileDatabase(t);
-  const store = createStore(path);
+  const store = createStore(path, "owner@example.com");
   t.after(() => store.close());
   const owner = store.authorizeAccount("owner@example.com");
   const start = Date.UTC(2026, 10, 9);
@@ -102,14 +105,14 @@ test("sessions last thirty days from last use, keep only a token hash, and end o
 
 test("schema 19 adds accounts and sessions without changing trips, and replay keeps both", (t) => {
   const path = fileDatabase(t);
-  let store = createStore(path);
-  const { id: tripId } = store.applyMutation({ type: "trip.save", name: "Lisbon", dateLabel: "Spring", homeCity: "Boston", travelers: 2, notes: "Keep me" });
+  let store = createStore(path, "owner@example.com");
+  const { id: tripId } = store.applyMutation(store.authorizeAccount("owner@example.com").id, { type: "trip.save", name: "Lisbon", dateLabel: "Spring", homeCity: "Boston", travelers: 2, notes: "Keep me" });
   store.close();
   let db = new DatabaseSync(path);
-  db.exec("DROP TABLE sessions; DROP TABLE accounts; PRAGMA user_version = 18;");
+  db.exec(UNDO_SCHEMA_20 + "DROP TABLE sessions; DROP TABLE accounts; PRAGMA user_version = 18;");
   db.close();
 
-  store = createStore(path);
+  store = createStore(path, "owner@example.com");
   assert.deepEqual(store.getSnapshot().trips.map(({ id, name, notes }) => ({ id, name, notes })), [{ id: tripId, name: "Lisbon", notes: "Keep me" }]);
   const owner = store.authorizeAccount("owner@example.com");
   store.authorizeGoogleSignIn(google("owner-subject", "owner@example.com", true, "Owner"));
@@ -117,16 +120,16 @@ test("schema 19 adds accounts and sessions without changing trips, and replay ke
   store.close();
 
   db = new DatabaseSync(path);
-  assert.equal(db.prepare("PRAGMA user_version").get().user_version, 19);
+  assert.equal(db.prepare("PRAGMA user_version").get().user_version, 20);
   db.exec("PRAGMA user_version = 18;");
   db.close();
-  store = createStore(path);
+  store = createStore(path, "owner@example.com");
   t.after(() => store.close());
   assert.deepEqual(store.readSession(token, Date.now()), { ...owner, name: "Owner" });
   assert.equal(store.getSnapshot().trips.length, 1);
   db = new DatabaseSync(path, { readOnly: true });
   try {
-    assert.equal(db.prepare("PRAGMA user_version").get().user_version, 19);
+    assert.equal(db.prepare("PRAGMA user_version").get().user_version, 20);
     assert.equal(db.prepare("PRAGMA integrity_check").get().integrity_check, "ok");
     assert.deepEqual(db.prepare("PRAGMA foreign_key_check").all(), []);
     // Duplicate emails are impossible even outside the store's own checks.

@@ -8,13 +8,14 @@ export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 export async function generateMetadata({ params }: { params: Promise<{ tripId: string }> }): Promise<Metadata> {
   const { tripId } = await params;
-  await requireAccount();
-  return { title: getTripName(tripId) ?? "Trip not found" };
+  const account = await requireAccount();
+  return { title: getTripName(account.id, tripId) ?? "Trip not found" };
 }
 export default async function TripPage({ params }: { params: Promise<{ tripId: string }> }) {
   const { tripId } = await params;
-  await requireAccount();
-  const data = getTripSnapshot(tripId);
-  if (!data.trips.some((trip) => trip.id === tripId)) notFound();
-  return <PlannerApp key={tripId} initialData={data} tripId={tripId} />;
+  const account = await requireAccount();
+  // A trip that isn't this account's to open is not found, the same as one that doesn't exist.
+  const trip = getTripSnapshot(account.id, tripId);
+  if (!trip) notFound();
+  return <PlannerApp key={tripId} initialData={trip.data} access={{ [tripId]: trip.access }} tripId={tripId} />;
 }

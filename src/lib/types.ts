@@ -21,6 +21,8 @@ export interface Snapshot { churches: Church[]; trips: Trip[]; homeItems: HomeIt
 export type Mutation =
  | { type: "trip.save"; startDate?: string | null; id?: string; name: string; dateLabel: string; homeCity: string; returnCity?: string | null; travelers: number; notes: string }
  | { type: "trip.delete"; id: string }
+ | { type: "trip.share"; tripId: string; email: string }
+ | { type: "trip.unshare"; tripId: string; email: string }
  | { type: "homeItem.save"; id?: string; tripId: string; name: string; price: string; notes: string; completed: boolean }
  | { type: "homeItem.delete"; id: string; tripId: string }
  | { type: "homeItem.complete"; id: string; tripId: string; completed: boolean }
@@ -43,4 +45,8 @@ export type ActionResult = { ok: true; id?: string } | { ok: false; error: strin
 export interface AuthorizedAccount { id: string; email: string; name: string | null; }
 /** Who Google's ID token says signed in, never what the browser says. */
 export interface GoogleIdentity { subject: string; email: string; emailVerified: boolean; name: string | null; }
+/** An account with access to a trip: its authorized email, and its Google name once it has signed in. */
+export interface TripMember { email: string; name: string | null; }
+/** What the signed-in account may do with a trip. Only its owner sees, and changes, who it is shared with. */
+export type TripAccess = { role: "owner"; owner: TripMember; sharedWith: TripMember[] } | { role: "editor"; owner: TripMember };
 export interface Budget { shoppingByCurrency: Record<string, number>; foodByCurrency: Record<string, number>; foodMissingCount: number; activitiesByCurrency: Record<string, number>; activitiesMissingCount: number; hotelsByCurrency: Record<string, number>; hotelMissingCount: number; totalsByCurrency: Record<string, number>; miscellaneousByCurrency: Record<string, number>; miscMissingCount: number; totalCents: number; homeCents: number; travelCents: number; hotelsCents: number; activitiesCents: number; restaurantsCents: number; knownCount: number; missingCount: number; complete: boolean; }

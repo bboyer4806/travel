@@ -4,7 +4,7 @@ import { getHomeOverview } from "@/lib/store";
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 export default async function HomePage() {
-  await requireAccount();
-  const { data, budgets } = getHomeOverview();
-  return <PlannerApp key="home" initialData={data} initialBudgets={budgets} />;
+  const account = await requireAccount();
+  const { data, budgets, access } = getHomeOverview(account.id);
+  return <PlannerApp key="home" initialData={data} initialBudgets={budgets} access={access} />;
 }

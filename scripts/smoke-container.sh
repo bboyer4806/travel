@@ -54,7 +54,7 @@ const images = [
   Buffer.from('UklGRh4AAABXRUJQVlA4TBEAAAAvAUAAAAfQtSZVrP+BiOh/AAA=', 'base64'),
   Buffer.from('UklGRh4AAABXRUJQVlA4TBEAAAAvAUAAAAdQwjaXpf+BiOh/AAA=', 'base64'),
 ];
-assert.equal(db.prepare('PRAGMA user_version').get().user_version, 19);
+assert.equal(db.prepare('PRAGMA user_version').get().user_version, 20);
 // TRAVEL_OWNER_EMAIL is authorized at startup, before anyone signs in.
 assert.deepEqual(db.prepare('SELECT email, googleSubject FROM accounts').all().map(row => ({...row})), [{ email: 'owner@example.test', googleSubject: null }]);
 db.exec('PRAGMA foreign_keys = ON; BEGIN IMMEDIATE;');
@@ -65,7 +65,13 @@ db.prepare("UPDATE accounts SET googleSubject = 'smoke-owner-subject', name = 'S
 const tokenHash = (token) => createHash('sha256').update(token).digest('hex');
 db.prepare('INSERT INTO sessions(tokenHash, accountId, expiresAt) VALUES(?,?,?)').run(tokenHash('smoke-owner-session'), owner, Date.now() + 3_600_000);
 db.prepare('INSERT INTO sessions(tokenHash, accountId, expiresAt) VALUES(?,?,?)').run(tokenHash('smoke-expired-session'), owner, Date.now() - 60_000);
-db.prepare('INSERT INTO trips(id,name,dateLabel,homeCity,travelers,notes,createdAt) VALUES(?,?,?,?,?,?,?)').run('container-smoke','Persistence test','','',2,'',new Date().toISOString());
+// Two more signed-in accounts: one the owner shares the trip with, and one it is never shared with.
+for (const [id, person] of [['e1000000-0000-4000-8000-000000000001', 'editor'], ['e1000000-0000-4000-8000-000000000002', 'outsider']]) {
+  db.prepare('INSERT INTO accounts(id,email,googleSubject,name,authorizedAt) VALUES(?,?,?,?,?)').run(id, `${person}@example.test`, `smoke-${person}-subject`, `Smoke ${person}`, new Date().toISOString());
+  db.prepare('INSERT INTO sessions(tokenHash, accountId, expiresAt) VALUES(?,?,?)').run(tokenHash(`smoke-${person}-session`), id, Date.now() + 3_600_000);
+}
+db.prepare('INSERT INTO trips(id,name,dateLabel,homeCity,travelers,notes,createdAt,ownerId) VALUES(?,?,?,?,?,?,?,?)').run('container-smoke','Persistence test','','',2,'',new Date().toISOString(),owner);
+db.prepare('INSERT INTO trip_shares(tripId,accountId,sharedAt) VALUES(?,?,?)').run('container-smoke', 'e1000000-0000-4000-8000-000000000001', new Date().toISOString());
 db.prepare("UPDATE trips SET startDate = '2027-05-10' WHERE id = 'container-smoke'").run();
 db.prepare('INSERT INTO home_items(id,tripId,name,priceCents,notes,completed,createdAt) VALUES(?,?,?,?,?,?,?)').run('a1000000-0000-4000-8000-000000000001','container-smoke','House sitting',23950,'Give sitter a key',1,'2026-10-12T12:00:00.000Z');
 db.prepare('INSERT INTO home_items(id,tripId,name,priceCents,notes,completed,createdAt) VALUES(?,?,?,?,?,?,?)').run('a1000000-0000-4000-8000-000000000002','container-smoke','Pause mail',null,'Arrange before leaving',0,'2026-10-12T12:01:00.000Z');
@@ -133,9 +139,15 @@ const images = [
 ];
 const db = new DatabaseSync('/data/travel.sqlite');
 try {
-  assert.equal(db.prepare('PRAGMA user_version').get().user_version, 19);
-  assert.deepEqual(db.prepare('SELECT email, googleSubject, name FROM accounts').all().map(row => ({...row})), [{ email: 'owner@example.test', googleSubject: 'smoke-owner-subject', name: 'Smoke Owner' }], 'Authorization must persist');
-  assert.equal(db.prepare('SELECT count(*) AS count FROM sessions').get().count, 2, 'Sessions must persist');
+  assert.equal(db.prepare('PRAGMA user_version').get().user_version, 20);
+  assert.deepEqual(db.prepare('SELECT email, googleSubject, name FROM accounts ORDER BY email').all().map(row => ({...row})), [
+    { email: 'editor@example.test', googleSubject: 'smoke-editor-subject', name: 'Smoke editor' },
+    { email: 'outsider@example.test', googleSubject: 'smoke-outsider-subject', name: 'Smoke outsider' },
+    { email: 'owner@example.test', googleSubject: 'smoke-owner-subject', name: 'Smoke Owner' },
+  ], 'Authorization must persist');
+  assert.equal(db.prepare('SELECT count(*) AS count FROM sessions').get().count, 4, 'Sessions must persist');
+  assert.equal(db.prepare("SELECT accounts.email FROM trips JOIN accounts ON accounts.id = trips.ownerId WHERE trips.id = 'container-smoke'").get().email, 'owner@example.test', 'Ownership must persist');
+  assert.deepEqual(db.prepare('SELECT tripId, accountId FROM trip_shares').all().map(row => ({...row})), [{ tripId: 'container-smoke', accountId: 'e1000000-0000-4000-8000-000000000001' }], 'Sharing must persist');
   assert.equal(db.prepare('SELECT startDate FROM trips WHERE id = ?').get('container-smoke').startDate, '2027-05-10');
   assert.equal(db.prepare('SELECT nights FROM destinations WHERE id = ?').get(destinationId).nights, 3);
   const homeItems = db.prepare('SELECT name,priceCents,notes,completed,createdAt FROM home_items WHERE tripId = ? ORDER BY createdAt').all('container-smoke').map(row => ({...row}));
@@ -267,6 +279,9 @@ const origin = "http://127.0.0.1:80";
 const signal = () => AbortSignal.timeout(10000);
 const cookie = (token, name = "travel_session") => token === undefined ? {} : { Cookie: `${name}=${token}` };
 const owner = cookie("smoke-owner-session");
+// The seeded trip is shared with the editor and never with the outsider.
+const editor = cookie("smoke-editor-session");
+const outsider = cookie("smoke-outsider-session");
 const https = { "X-Forwarded-Proto": "https" };
 const get = (path, headers = {}) => fetch(origin + path, { headers, redirect: "manual", signal: signal() });
 const tokenHash = (token) => createHash("sha256").update(token).digest("hex");
@@ -336,6 +351,22 @@ async function assertRefused(label, headers) {
   const feedback = await fetch(origin + "/api/feedback", { method: "POST", headers: { ...headers, "Content-Type": "application/json", Origin: origin }, body: JSON.stringify({ action: "open" }), signal: signal() });
   assert.equal(feedback.status, 401, `${label} feedback must be refused`);
 }
+// Signed in, but the trip isn't theirs: it is missing from their list, its pages are not found, and its photos aren't served.
+async function assertHidden(label, headers) {
+  const list = await get("/", headers);
+  assert.equal(list.status, 200, `${label} home page`);
+  assert.ok(!(await list.text()).includes("Persistence test"), `${label} must not see the trip in their list`);
+  for (const path of pages.slice(1, 3)) {
+    const body = await (await get(path, headers)).text();
+    assert.ok(body.includes("This page has moved on."), `${label} ${path} must be not found`);
+    assert.ok(!body.includes("Persistence test") && !body.includes("Vienna"), `${label} ${path} must not include trip data`);
+  }
+  for (const path of dataRoutes.slice(0, 5)) {
+    const response = await get(path, headers);
+    assert.equal(response.status, 404, `${label} ${path} must not be served`);
+    assert.ok(!response.headers.get("content-type")?.startsWith("image/"), `${label} ${path} must not return image bytes`);
+  }
+}
 
 const db = new DatabaseSync("/data/travel.sqlite", { readOnly: true });
 try {
@@ -350,10 +381,50 @@ try {
   }
   assert.equal(db.prepare("SELECT count(*) AS count FROM sessions WHERE tokenHash = ?").get(tokenHash("smoke-expired-session")).count, 0, "An expired session is removed when presented");
 
+  // The owner's trip pages offer Share and Delete. Someone it is shared with opens the same trip, its
+  // ideas and its photos, without either; someone it isn't shared with finds nothing.
+  const ownerPage = await (await get(pages[1], owner)).text();
+  assert.ok(ownerPage.includes(">Share<") && ownerPage.includes('aria-label="Delete trip"'), "The owner can share and delete the trip");
+  const editorList = await (await get("/", editor)).text();
+  assert.match(editorList, /Persistence test/, "A shared trip appears in its recipient's list");
+  assert.match(editorList, /Shared by Smoke Owner/);
+  for (const path of pages.slice(1, 3)) {
+    const response = await get(path, editor);
+    assert.equal(response.status, 200, `editor ${path}`);
+    const body = await response.text();
+    assert.match(body, /Persistence test/, `The editor can open ${path}`);
+    assert.ok(!body.includes(">Share<") && !body.includes('aria-label="Delete trip"'), `The editor can't share or delete from ${path}`);
+  }
+  for (const path of dataRoutes.slice(0, 5)) assert.equal((await get(path, editor)).status, 200, `The editor can load ${path}`);
+  await assertHidden("outsider", outsider);
+
   const saved = await mutation(trip);
   assert.equal(saved.ok, true, "Server Action returned a save error");
   assert.match(saved.id, /^[a-f0-9-]{36}$/i);
   assert.equal(db.prepare("SELECT name FROM trips WHERE id = ?").get(saved.id)?.name, "Container action smoke");
+
+  // Sharing through the real Server Action: only the owner may share, delete or remove access, and removing access ends it at once.
+  const notAvailable = { ok: false, error: "This item no longer exists or isn't shared with you. Please refresh and try again." };
+  const edit = (notes) => ({ ...trip, id: saved.id, notes });
+  const notes = () => db.prepare("SELECT notes FROM trips WHERE id = ?").get(saved.id).notes;
+  assert.deepEqual(await mutation(edit("Editor, too soon"), editor), notAvailable, "Nobody else can change a trip before it is shared");
+  assert.deepEqual(await mutation({ type: "trip.share", tripId: saved.id, email: " Editor@Example.test " }), { ok: true, id: saved.id });
+  assert.deepEqual(await mutation({ type: "trip.share", tripId: saved.id, email: "editor@example.test" }), { ok: false, error: "This trip is already shared with editor@example.test." });
+  // Someone who has never signed in is authorized by the share alone; nothing is sent to them.
+  assert.deepEqual(await mutation({ type: "trip.share", tripId: saved.id, email: "first-timer@example.test" }), { ok: true, id: saved.id });
+  assert.deepEqual({ ...db.prepare("SELECT email, googleSubject FROM accounts WHERE email = 'first-timer@example.test'").get() }, { email: "first-timer@example.test", googleSubject: null });
+  assert.deepEqual(await mutation(edit("Edited by the editor"), editor), { ok: true, id: saved.id });
+  assert.equal(notes(), "Edited by the editor");
+  assert.match(await (await get("/trips/" + saved.id, owner)).text(), /Edited by the editor/, "The owner sees the editor's change");
+  assert.deepEqual(await mutation({ type: "trip.delete", id: saved.id }, editor), { ok: false, error: "Only the trip's owner can delete it." });
+  assert.deepEqual(await mutation({ type: "trip.share", tripId: saved.id, email: "outsider@example.test" }, editor), { ok: false, error: "Only the trip's owner can share it." });
+  assert.deepEqual(await mutation({ type: "trip.unshare", tripId: saved.id, email: "first-timer@example.test" }, editor), { ok: false, error: "Only the trip's owner can remove someone's access." });
+  assert.deepEqual(await mutation(edit("Outsider"), outsider), notAvailable);
+  assert.deepEqual(await mutation({ type: "trip.unshare", tripId: saved.id, email: "editor@example.test" }), { ok: true, id: saved.id });
+  assert.deepEqual(await mutation(edit("Editor, after removal"), editor), notAvailable, "Removing access ends it at once");
+  const revoked = await (await get("/trips/" + saved.id, editor)).text();
+  assert.ok(revoked.includes("This page has moved on.") && !revoked.includes("Edited by the editor"), "A removed editor's saved URL no longer opens the trip");
+  assert.equal(notes(), "Edited by the editor", "Removing access keeps the trip as it was");
   assert.equal((await mutation({ type: "trip.delete", id: saved.id })).ok, true, "Server Action returned a delete error");
   assert.equal(db.prepare("SELECT id FROM trips WHERE id = ?").get(saved.id), undefined, "Temporary trip must be removed");
 

@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { createStore } from "../src/lib/store.ts";
+import { createOwnedStore } from "./owned-store.mjs";
 import { calculateBudget } from "../src/lib/budget.ts";
 
 const trip = (name, startDate) => ({
@@ -15,7 +15,7 @@ const hotel = (destinationId) => ({
 });
 
 test("scoped trip and destination snapshots omit unrelated data", (t) => {
-  const store = createStore(":memory:");
+  const store = createOwnedStore(":memory:");
   t.after(() => store.close());
   const first = store.applyMutation(trip("Europe", "2027-06-01")).id;
   const second = store.applyMutation(trip("Asia", "2027-08-01")).id;
@@ -55,7 +55,7 @@ test("scoped trip and destination snapshots omit unrelated data", (t) => {
 });
 
 test("only the affected trip's schedule changes after mutations", (t) => {
-  const store = createStore(":memory:");
+  const store = createOwnedStore(":memory:");
   t.after(() => store.close());
   const first = store.applyMutation(trip("First", "2027-06-01")).id;
   const second = store.applyMutation(trip("Second", "2027-07-01")).id;

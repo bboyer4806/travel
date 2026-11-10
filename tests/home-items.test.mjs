@@ -5,7 +5,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import test from "node:test";
-import { createStore, ValidationError } from "../src/lib/store.ts";
+import { ValidationError } from "../src/lib/store.ts";
+import { createOwnedStore } from "./owned-store.mjs";
 import { calculateBudget } from "../src/lib/budget.ts";
 
 const tripInput = (overrides = {}) => ({ type: "trip.save", name: "Spring trip", dateLabel: "Spring 2027", homeCity: "Boston", travelers: 2, notes: "", ...overrides });
@@ -17,7 +18,7 @@ const otherWebp = new Uint8Array(webp);
 otherWebp[otherWebp.length - 1] = 1;
 const item = (store, id) => store.getSnapshot().homeItems.find((entry) => entry.id === id);
 function setup(t) {
-  const store = createStore(":memory:");
+  const store = createOwnedStore(":memory:");
   t.after(() => store.close());
   const tripId = store.applyMutation(tripInput()).id;
   return { store, tripId };
@@ -168,7 +169,7 @@ test("invalid home-item values leave existing tasks, trip details, and budgets u
 
 test("home items survive database reopening with their exact amounts, notes, and completion state", (t) => {
   const path = databasePath(t);
-  let store = createStore(path);
+  let store = createOwnedStore(path);
   try {
     const tripId = store.applyMutation(tripInput()).id;
     const taskId = store.applyMutation(homeInput(tripId)).id;
@@ -176,7 +177,7 @@ test("home items survive database reopening with their exact amounts, notes, and
     const before = store.getSnapshot();
     const budget = calculateBudget(before, tripId);
     store.close();
-    store = createStore(path);
+    store = createOwnedStore(path);
     assert.deepEqual(store.getSnapshot(), before);
     assert.deepEqual(calculateBudget(store.getSnapshot(), tripId), budget);
     assert.equal(item(store, taskId).completed, false);
@@ -186,7 +187,7 @@ test("home items survive database reopening with their exact amounts, notes, and
     store.applyMutation({ type: "homeItem.complete", id: expenseId, tripId, completed: false });
     const reopened = store.getSnapshot();
     store.close();
-    store = createStore(path);
+    store = createOwnedStore(path);
     assert.deepEqual(store.getSnapshot(), reopened);
     assert.equal(item(store, expenseId).completed, false);
   } finally { store.close(); }
@@ -194,7 +195,7 @@ test("home items survive database reopening with their exact amounts, notes, and
 
 test("deleting a trip cascades only its home items, while destination changes preserve them", (t) => {
   const path = databasePath(t);
-  const store = createStore(path);
+  const store = createOwnedStore(path);
   const observer = new DatabaseSync(path);
   try {
     const tripId = store.applyMutation(tripInput()).id;
@@ -220,7 +221,7 @@ test("deleting a trip cascades only its home items, while destination changes pr
 
 test("storage failures roll back home-item edits, deletions, and trip cascades", (t) => {
   const path = databasePath(t);
-  const store = createStore(path);
+  const store = createOwnedStore(path);
   const observer = new DatabaseSync(path);
   try {
     const tripId = store.applyMutation(tripInput()).id;
@@ -249,7 +250,7 @@ test("storage failures roll back home-item edits, deletions, and trip cascades",
 
 test("schema 6 migration adds home items while preserving trips, research, itineraries, and photo galleries", (t) => {
   const path = databasePath(t);
-  let store = createStore(path);
+  let store = createOwnedStore(path);
   try {
     const tripId = store.applyMutation(tripInput()).id;
     const destinationId = store.applyMutation(destinationInput(tripId, { image: webp })).id;
@@ -264,7 +265,7 @@ test("schema 6 migration adds home items while preserving trips, research, itine
     const legacy = new DatabaseSync(path);
     legacy.exec("DROP TABLE home_items; PRAGMA user_version=6;");
     legacy.close();
-    store = createStore(path);
+    store = createOwnedStore(path);
     assert.deepEqual(store.getSnapshot(), before);
     assert.deepEqual(store.getSnapshot().homeItems, []);
     assert.deepEqual(photos.map((photo) => store.getCandidatePhoto(candidateId, photo.id)), originalPhotos);
@@ -276,17 +277,17 @@ test("schema 6 migration adds home items while preserving trips, research, itine
     const budget = calculateBudget(upgraded, tripId);
     store.close();
     const reset = new DatabaseSync(path);
-    assert.equal(reset.prepare("PRAGMA user_version").get().user_version, 19);
+    assert.equal(reset.prepare("PRAGMA user_version").get().user_version, 20);
     assert.equal(reset.prepare("PRAGMA table_list").all().find((table) => table.name === "home_items").strict, 1);
     reset.exec("PRAGMA user_version=6");
     reset.close();
-    store = createStore(path);
+    store = createOwnedStore(path);
     assert.deepEqual(store.getSnapshot(), upgraded, "repeating the additive migration preserves saved home tasks and expenses");
     assert.deepEqual(calculateBudget(store.getSnapshot(), tripId), budget);
     assert.deepEqual(photos.map((photo) => store.getCandidatePhoto(candidateId, photo.id)), originalPhotos);
     const observer = new DatabaseSync(path);
     try {
-      assert.equal(observer.prepare("PRAGMA user_version").get().user_version, 19);
+      assert.equal(observer.prepare("PRAGMA user_version").get().user_version, 20);
       assert.deepEqual(observer.prepare("PRAGMA foreign_key_check").all(), []);
     } finally { observer.close(); }
   } finally { store.close(); }

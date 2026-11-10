@@ -3,7 +3,8 @@ import test from "node:test";
 import { backup, DatabaseSync } from "node:sqlite";
 import { randomUUID } from "node:crypto";
 import { addNights, backfillDates, churchDateEligible, churchSundayDates, formatCalendarDate, sequenceDates } from "../src/lib/trip-dates.ts";
-import { createStore, ValidationError } from "../src/lib/store.ts";
+import { ValidationError } from "../src/lib/store.ts";
+import { createOwnedStore } from "./owned-store.mjs";
 import { setup, tripInput, destinationInput, destination, fileDatabase, candidateInput } from "./budget-fixtures.mjs";
 
 test("automatic sequence, calendar boundaries, same-day and unknown lengths", () => {
@@ -143,7 +144,7 @@ test("backfill never guesses from partial, inconsistent, invalid or missing date
 
 for (const consistent of [true,false]) test(`schema 14 date backfill, originals, replay and online backup (${consistent ? "consistent" : "gapped"})`,async t=>{
   const path=fileDatabase(t);
-  let store=createStore(path);
+  let store=createOwnedStore(path);
   const tripId=store.applyMutation(tripInput()).id;
   const first=store.applyMutation(destinationInput(tripId,{hotelNightlyAmount:"123.45",weatherHighF:0,weatherLowF:-12.5})).id;
   const second=store.applyMutation(destinationInput(tripId,{city:"Rome"})).id;
@@ -156,7 +157,7 @@ for (const consistent of [true,false]) test(`schema 14 date backfill, originals,
   db.prepare("UPDATE destinations SET arrivalDate=?,departureDate=? WHERE id=?").run("2027-06-01","2027-06-04",first);
   db.prepare("UPDATE destinations SET arrivalDate=?,departureDate=? WHERE id=?").run(consistent?"2027-06-04":"2027-06-05","2027-06-06",second);
   db.exec("ALTER TABLE trips DROP COLUMN startDate; ALTER TABLE destinations DROP COLUMN nights; ALTER TABLE destinations DROP COLUMN legacyArrivalDate; ALTER TABLE destinations DROP COLUMN legacyDepartureDate; PRAGMA user_version=14;"); db.close();
-  store=createStore(path);
+  store=createOwnedStore(path);
   try {
     const saved=store.getSnapshot();
     assert.equal(saved.trips[0].startDate,consistent?"2027-06-01":null);
@@ -174,21 +175,21 @@ for (const consistent of [true,false]) test(`schema 14 date backfill, originals,
     store.applyMutation({type:"destination.churchVisibility",id:first,enabled:false});
     const edited=store.getSnapshot();
     store.close(); db=new DatabaseSync(path); db.exec("PRAGMA user_version=14"); db.close();
-    store=createStore(path); assert.deepEqual(store.getSnapshot(),edited);
+    store=createOwnedStore(path); assert.deepEqual(store.getSnapshot(),edited);
     db=new DatabaseSync(path,{readOnly:true}); await backup(db,path+".backup"); db.close();
-    const restored=createStore(path+".backup");
+    const restored=createOwnedStore(path+".backup");
     try { assert.deepEqual(restored.getSnapshot(),edited); } finally { restored.close(); }
     db=new DatabaseSync(path,{readOnly:true}); assert.equal(db.prepare("PRAGMA integrity_check").get().integrity_check,"ok"); assert.deepEqual(db.prepare("PRAGMA foreign_key_check").all(),[]); db.close();
   } finally { store.close(); }
 });
 
 test("contrary legacy currency aborts the upgrade without relabeling amounts or advancing schema",t=>{
-  const path=fileDatabase(t); let store=createStore(path);
+  const path=fileDatabase(t); let store=createOwnedStore(path);
   const tripId=store.applyMutation(tripInput()).id;
   const id=store.applyMutation(destinationInput(tripId,{shoppingAmount:"123.45"})).id;
   store.close(); const db=new DatabaseSync(path);
   db.prepare("UPDATE destinations SET shoppingCurrency='KWD' WHERE id=?").run(id); db.exec("PRAGMA user_version=14");
-  assert.throws(()=>createStore(path),/Unexpected non-USD data/);
+  assert.throws(()=>createOwnedStore(path),/Unexpected non-USD data/);
   assert.equal(db.prepare("PRAGMA user_version").get().user_version,14);
   assert.equal(db.prepare("SELECT shoppingMinor FROM destinations WHERE id=?").get(id).shoppingMinor,12345);
   assert.equal(db.prepare("SELECT shoppingCurrency FROM destinations WHERE id=?").get(id).shoppingCurrency,"KWD"); db.close();

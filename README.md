@@ -39,6 +39,17 @@ Sign in with Google is the only way in, and Travel signs in the same way as Budg
 
 None of these creates a session. A save attempted after the session ends keeps the editor open and asks you to sign in again in another tab. Saved photos are served with private caching, so shared caches never store them.
 
+## Sharing trips
+Each trip has one owner and is private to its owner until shared (TRA-104).
+
+- **Owners.** A new trip belongs to the account that creates it. Trips from before sharing belong to the designated owner, `TRAVEL_OWNER_EMAIL`, assigned once by the schema 20 upgrade and never by who signs in first. Ownership can't be transferred.
+- **Sharing.** On the trip's page, the owner chooses **Share** and enters a Google account's email address, including someone who has never signed in to Travel. That email becomes authorized to sign in, and the trip appears in their list once they sign in with that Google account. Travel sends no invitation, email or link, so tell them yourself. An email can be added to a trip once; adding it again, or the owner's own email, is refused.
+- **What shared people can do.** Everything in the trip: its details and dates, destinations, travel, hotels, activities, restaurants, churches, entry requirements, budgets, At home items and photos. Only the owner can delete the trip, share it, or remove someone, and the Share and Delete controls appear only for the owner. There are no view-only or custom roles.
+- **Who has access.** The Share dialog lists the owner and everyone the trip is shared with, each with **Remove**. Trip lists show both your own trips and trips shared with you, marked **Shared by** their owner.
+- **Removing access.** Takes effect on that person's next request: the trip leaves their list, its pages and saved links show "This page has moved on.", saves are refused and photos are no longer served. Nothing in the trip changes. Their email stays authorized, so they keep their own trips and any others shared with them. Photos their browser already downloaded can stay in that browser's cache.
+- **Working together.** Everyone with access works on the same saved trip, and changes appear when the page reloads, including after each save. There are no live updates or edit conflict checks: the last save wins.
+- **Enforcement.** The server checks the signed-in account against the trip on every page, Server Action and photo request, finding each item's trip from what is saved rather than from what the browser sends. A trip you can't open looks the same as one that doesn't exist.
+
 ## Checks
 ```sh
 pnpm lint
@@ -167,7 +178,7 @@ Images live in the same persistent SQLite database and are included in online ba
 ## Hosting
 The existing GitHub Actions deployment builds a Node container and deploys it to Dokku at travel.dev.boyersoftware.com after checks pass.
 **Provision persistent storage before the first app deployment.** See [deployment and recovery instructions](docs/DEPLOYMENT.md).
-This version runs one application instance with SQLite. Google Sign In requires the production settings in [deployment](docs/DEPLOYMENT.md#google-sign-in-tra-103); trip ownership and sharing arrive with TRA-104, and live collaboration conflict resolution is future work.
+This version runs one application instance with SQLite. Google Sign In requires the production settings in [deployment](docs/DEPLOYMENT.md#google-sign-in-tra-103); trip ownership and sharing need no further settings, but the schema 20 upgrade assigns existing trips to `TRAVEL_OWNER_EMAIL` (see [deployment](docs/DEPLOYMENT.md#schema-20-trip-ownership-and-sharing-tra-104)). Live collaboration and conflict resolution are future work.
 
 ## Backups
 ```sh

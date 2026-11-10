@@ -201,7 +201,7 @@ test("individual destination photo reads enforce owner, version and cache semant
   const request = (suffix = "", headers) => new Request(`https://example.test/api/destination-images/${id}/${image.id}${suffix}`, { headers });
   const response = storedImageResponse(request(`?v=${version}`), id, read);
   assert.equal(response.status, 200);
-  assert.equal(response.headers.get("cache-control"), "public, max-age=31536000, immutable");
+  assert.equal(response.headers.get("cache-control"), "private, max-age=31536000, immutable");
   assert.deepEqual(new Uint8Array(await response.arrayBuffer()), webp);
   assert.equal(storedImageResponse(request(`?v=${version}`, { "if-none-match": `"${version}"` }), id, read).status, 304);
   assert.equal(storedImageResponse(request("?v=stale"), id, read).status, 404);

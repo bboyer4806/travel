@@ -39,4 +39,8 @@ export type Mutation =
  | { type: "candidate.delete"; id: string }
  | { type: "candidate.include"; id: string; included: boolean };
 export type ActionResult = { ok: true; id?: string } | { ok: false; error: string };
+/** An email authorized to use Travel. Its Google subject is bound privately at the first sign-in. */
+export interface AuthorizedAccount { id: string; email: string; name: string | null; }
+/** Who Google's ID token says signed in, never what the browser says. */
+export interface GoogleIdentity { subject: string; email: string; emailVerified: boolean; name: string | null; }
 export interface Budget { shoppingByCurrency: Record<string, number>; foodByCurrency: Record<string, number>; foodMissingCount: number; activitiesByCurrency: Record<string, number>; activitiesMissingCount: number; hotelsByCurrency: Record<string, number>; hotelMissingCount: number; totalsByCurrency: Record<string, number>; miscellaneousByCurrency: Record<string, number>; miscMissingCount: number; totalCents: number; homeCents: number; travelCents: number; hotelsCents: number; activitiesCents: number; restaurantsCents: number; knownCount: number; missingCount: number; complete: boolean; }

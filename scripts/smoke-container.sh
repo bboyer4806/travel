@@ -7,7 +7,7 @@ container="travel-check"
 volume="travel-check-storage"
 cleanup() {
   if [ "$?" -ne 0 ]; then docker logs "$container" || true; fi
-  docker rm -f "$container" travel-check-no-storage >/dev/null 2>&1 || true
+  docker rm -f "$container" travel-check-refusal >/dev/null 2>&1 || true
   docker volume rm "$volume" >/dev/null 2>&1 || true
 }
 trap cleanup EXIT
@@ -16,14 +16,18 @@ docker build -t "$image" .
 docker volume create "$volume" >/dev/null
 docker run --rm --user 0 --entrypoint sh -v "$volume:/data" "$image" -c 'touch /data/.travel-persistent-storage && chown -R 1001:1001 /data'
 
+# Test-only sign-in settings. Google is never called: sessions are inserted as a completed sign-in leaves them.
+auth_env=(-e GOOGLE_CLIENT_ID=smoke-test-client -e GOOGLE_CLIENT_SECRET=smoke-test-secret -e TRAVEL_OWNER_EMAIL=owner@example.test)
+
 start() {
-  docker run -d --name "$container" -p 127.0.0.1:3007:80 -v "$volume:/data" "$image" >/dev/null
+  docker run -d --name "$container" -p 127.0.0.1:3007:80 -v "$volume:/data" "${auth_env[@]}" "$image" >/dev/null
   curl --fail --silent --show-error --connect-timeout 2 --max-time 5 --retry-max-time 45 --retry 20 --retry-delay 1 --retry-connrefused --retry-all-errors http://127.0.0.1:3007/api/health
 }
 
 start
 docker exec -i "$container" node --input-type=module <<'JS'
 import assert from 'node:assert/strict';
+import { createHash } from 'node:crypto';
 import { DatabaseSync } from 'node:sqlite';
 import sharp from 'sharp';
 // Image uploads and Server Actions must be able to load the packaged native runtime.
@@ -50,8 +54,17 @@ const images = [
   Buffer.from('UklGRh4AAABXRUJQVlA4TBEAAAAvAUAAAAfQtSZVrP+BiOh/AAA=', 'base64'),
   Buffer.from('UklGRh4AAABXRUJQVlA4TBEAAAAvAUAAAAdQwjaXpf+BiOh/AAA=', 'base64'),
 ];
-assert.equal(db.prepare('PRAGMA user_version').get().user_version, 18);
+assert.equal(db.prepare('PRAGMA user_version').get().user_version, 19);
+// TRAVEL_OWNER_EMAIL is authorized at startup, before anyone signs in.
+assert.deepEqual(db.prepare('SELECT email, googleSubject FROM accounts').all().map(row => ({...row})), [{ email: 'owner@example.test', googleSubject: null }]);
 db.exec('PRAGMA foreign_keys = ON; BEGIN IMMEDIATE;');
+// As the owner's first Google sign-in leaves it: the stable subject bound, and a session per browser
+// stored only as a token hash. One session has already expired.
+const owner = db.prepare("SELECT id FROM accounts WHERE email = 'owner@example.test'").get().id;
+db.prepare("UPDATE accounts SET googleSubject = 'smoke-owner-subject', name = 'Smoke Owner' WHERE id = ?").run(owner);
+const tokenHash = (token) => createHash('sha256').update(token).digest('hex');
+db.prepare('INSERT INTO sessions(tokenHash, accountId, expiresAt) VALUES(?,?,?)').run(tokenHash('smoke-owner-session'), owner, Date.now() + 3_600_000);
+db.prepare('INSERT INTO sessions(tokenHash, accountId, expiresAt) VALUES(?,?,?)').run(tokenHash('smoke-expired-session'), owner, Date.now() - 60_000);
 db.prepare('INSERT INTO trips(id,name,dateLabel,homeCity,travelers,notes,createdAt) VALUES(?,?,?,?,?,?,?)').run('container-smoke','Persistence test','','',2,'',new Date().toISOString());
 db.prepare("UPDATE trips SET startDate = '2027-05-10' WHERE id = 'container-smoke'").run();
 db.prepare('INSERT INTO home_items(id,tripId,name,priceCents,notes,completed,createdAt) VALUES(?,?,?,?,?,?,?)').run('a1000000-0000-4000-8000-000000000001','container-smoke','House sitting',23950,'Give sitter a key',1,'2026-10-12T12:00:00.000Z');
@@ -120,7 +133,9 @@ const images = [
 ];
 const db = new DatabaseSync('/data/travel.sqlite');
 try {
-  assert.equal(db.prepare('PRAGMA user_version').get().user_version, 18);
+  assert.equal(db.prepare('PRAGMA user_version').get().user_version, 19);
+  assert.deepEqual(db.prepare('SELECT email, googleSubject, name FROM accounts').all().map(row => ({...row})), [{ email: 'owner@example.test', googleSubject: 'smoke-owner-subject', name: 'Smoke Owner' }], 'Authorization must persist');
+  assert.equal(db.prepare('SELECT count(*) AS count FROM sessions').get().count, 2, 'Sessions must persist');
   assert.equal(db.prepare('SELECT startDate FROM trips WHERE id = ?').get('container-smoke').startDate, '2027-05-10');
   assert.equal(db.prepare('SELECT nights FROM destinations WHERE id = ?').get(destinationId).nights, 3);
   const homeItems = db.prepare('SELECT name,priceCents,notes,completed,createdAt FROM home_items WHERE tripId = ? ORDER BY createdAt').all('container-smoke').map(row => ({...row}));
@@ -185,7 +200,7 @@ try {
   db.close();
 }
 const base = 'http://127.0.0.1:80/api/';
-const options = () => ({ signal: AbortSignal.timeout(5000) });
+const options = () => ({ headers: { cookie: 'travel_session=smoke-owner-session' }, signal: AbortSignal.timeout(5000) });
 async function verifyImage(path, version, expected) {
   const endpoint = base + path;
   const response = await fetch(endpoint + '?v=' + version, options());
@@ -240,41 +255,52 @@ const missingPhoto = await fetch(base + 'candidate-images/' + candidates[0].id +
 assert.equal(missingPhoto.status, 404);
 JS
 
-# A live page, static script, and actual Server Action are required for a usable build.
+# A live page, static script, and actual Server Action are required for a usable build,
+# and only a current session may read or change trips.
 docker exec -i "$container" node --input-type=module <<'JS'
 import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { DatabaseSync } from "node:sqlite";
 
 const origin = "http://127.0.0.1:80";
-const home = await fetch(origin + "/", { signal: AbortSignal.timeout(10000) });
+const signal = () => AbortSignal.timeout(10000);
+const cookie = (token, name = "travel_session") => token === undefined ? {} : { Cookie: `${name}=${token}` };
+const owner = cookie("smoke-owner-session");
+const https = { "X-Forwarded-Proto": "https" };
+const get = (path, headers = {}) => fetch(origin + path, { headers, redirect: "manual", signal: signal() });
+const tokenHash = (token) => createHash("sha256").update(token).digest("hex");
+
+const home = await get("/", owner);
 assert.equal(home.status, 200, "The production home page must render");
 const html = await home.text();
+assert.match(html, /Persistence test/, "The signed-in owner must see saved trips");
+assert.match(html, /owner@example\.test/, "The header must show the signed-in account");
 const asset = html.match(/(?:src|href)="(\/_next\/static\/[^"]+\.js(?:\?[^"]*)?)"/);
 assert.ok(asset, "The home page must reference a JavaScript chunk");
-const script = await fetch(origin + asset[1], { signal: AbortSignal.timeout(10000) });
+const script = await fetch(origin + asset[1], { signal: signal() });
 assert.equal(script.status, 200, "A referenced JavaScript chunk must load");
 assert.ok((await script.text()).length > 0, "The chunk must not be empty");
+const login = await get("/login");
+assert.equal(login.status, 200, "The sign-in page must render for signed-out visitors");
+assert.match(await login.text(), /href="\/auth\/google"[^>]*>Sign in with Google/);
 
 const manifest = JSON.parse(readFileSync("/app/.next/server/server-reference-manifest.json", "utf8"));
-const ids = Object.keys(manifest.node ?? {});
-assert.equal(ids.length, 1, "The build must expose the single mutatePlanner server action");
-const actionId = ids[0];
-
-async function mutation(input) {
+const actions = Object.fromEntries(Object.entries(manifest.node ?? {}).map(([id, entry]) => [entry.exportedName, id]));
+assert.deepEqual(Object.keys(actions).sort(), ["mutatePlanner", "signOutOfTravel"], "Only the planner and sign-out Server Actions may be exposed");
+async function action(name, args, headers) {
   const response = await fetch(origin + "/", {
     method: "POST",
-    headers: {
-      "Next-Action": actionId,
-      "Accept": "text/x-component",
-      "Content-Type": "text/plain;charset=UTF-8",
-      "Origin": origin,
-    },
-    body: JSON.stringify([input]),
-    signal: AbortSignal.timeout(10000),
+    redirect: "manual",
+    headers: { "Next-Action": actions[name], "Accept": "text/x-component", "Content-Type": "text/plain;charset=UTF-8", "Origin": origin, ...headers },
+    body: JSON.stringify(args),
+    signal: signal(),
   });
   assert.equal(response.status, 200, "Server Action HTTP error");
-  const body = await response.text();
+  return response;
+}
+async function mutation(input, headers = owner) {
+  const body = await (await action("mutatePlanner", [input], headers)).text();
   const results = body.split("\n").flatMap((line) => {
     const separator = line.indexOf(":");
     if (separator < 0) return [];
@@ -284,17 +310,90 @@ async function mutation(input) {
     } catch { return []; }
   });
   assert.equal(results.length, 1, "Server Action must return one parseable operation result");
-  assert.equal(results[0].ok, true, "Server Action returned a save error");
   return results[0];
+}
+const pages = ["/", "/trips/container-smoke", "/trips/container-smoke/destinations/22222222-2222-4222-8222-222222222222/hotels", "/whats-new"];
+const dataRoutes = ["/api/destination-images/22222222-2222-4222-8222-222222222222?v=33333333-3333-4333-8333-333333333333",
+  "/api/destination-images/22222222-2222-4222-8222-222222222222/a2000000-0000-4000-8000-000000000001?v=33333333-3333-4333-8333-333333333333",
+  "/api/candidate-images/66666666-6666-4666-8666-666666666666?v=bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+  "/api/candidate-images/66666666-6666-4666-8666-666666666666/90000000-0000-4000-8000-000000000002?v=bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+  "/api/church-images/b1000000-0000-4000-8000-000000000001/b3000000-0000-4000-8000-000000000002?v=b4000000-0000-4000-8000-000000000001",
+  "/api/locations?q=Vienna"];
+async function assertRefused(label, headers) {
+  for (const path of pages) {
+    const response = await get(path, headers);
+    const body = await response.text();
+    // Without a cookie the proxy redirects; with one it can't judge, the page itself redirects.
+    if (response.status === 307) assert.equal(new URL(response.headers.get("location"), origin).pathname, "/login", `${label} ${path}`);
+    else assert.ok(body.includes("NEXT_REDIRECT;replace;/login;307;"), `${label} ${path} must redirect to sign in`);
+    assert.ok(!body.includes("Persistence test") && !body.includes("Vienna"), `${label} ${path} must not include trip data`);
+  }
+  for (const path of dataRoutes) {
+    const response = await get(path, headers);
+    assert.equal(response.status, 401, `${label} ${path} must be refused`);
+    assert.ok(!response.headers.get("content-type")?.startsWith("image/"), `${label} ${path} must not return image bytes`);
+  }
+  const feedback = await fetch(origin + "/api/feedback", { method: "POST", headers: { ...headers, "Content-Type": "application/json", Origin: origin }, body: JSON.stringify({ action: "open" }), signal: signal() });
+  assert.equal(feedback.status, 401, `${label} feedback must be refused`);
 }
 
 const db = new DatabaseSync("/data/travel.sqlite", { readOnly: true });
 try {
-  const saved = await mutation({ type: "trip.save", name: "Container action smoke", startDate: null, dateLabel: "", homeCity: "Test", returnCity: null, travelers: 2, notes: "" });
+  const trip = { type: "trip.save", name: "Container action smoke", startDate: null, dateLabel: "", homeCity: "Test", returnCity: null, travelers: 2, notes: "" };
+  // Signed out, an expired, unknown or malformed session, or a cookie read over the wrong protocol.
+  const rejected = { none: undefined, expired: "smoke-expired-session", unknown: "smoke-unknown-session", malformed: "x", wrongName: "smoke-owner-session" };
+  for (const [label, token] of Object.entries(rejected)) {
+    const headers = label === "wrongName" ? cookie(token, "__Host-travel_session") : cookie(token);
+    await assertRefused(label, headers);
+    assert.deepEqual(await mutation(trip, headers), { ok: false, error: "Your session has ended. Sign in again in another tab, then save again." }, `${label} must not save`);
+    assert.equal(db.prepare("SELECT count(*) AS count FROM trips WHERE name = ?").get(trip.name).count, 0, `${label} must not create a trip`);
+  }
+  assert.equal(db.prepare("SELECT count(*) AS count FROM sessions WHERE tokenHash = ?").get(tokenHash("smoke-expired-session")).count, 0, "An expired session is removed when presented");
+
+  const saved = await mutation(trip);
+  assert.equal(saved.ok, true, "Server Action returned a save error");
   assert.match(saved.id, /^[a-f0-9-]{36}$/i);
   assert.equal(db.prepare("SELECT name FROM trips WHERE id = ?").get(saved.id)?.name, "Container action smoke");
-  await mutation({ type: "trip.delete", id: saved.id });
+  assert.equal((await mutation({ type: "trip.delete", id: saved.id })).ok, true, "Server Action returned a delete error");
   assert.equal(db.prepare("SELECT id FROM trips WHERE id = ?").get(saved.id), undefined, "Temporary trip must be removed");
+
+  // Over HTTPS the session cookie is __Host- prefixed, HttpOnly, Secure and Lax, and each visit renews it for thirty days.
+  const renewed = (await get("/", { ...https, ...cookie("smoke-owner-session", "__Host-travel_session") })).headers.getSetCookie();
+  const sessionCookie = renewed.find((value) => value.startsWith("__Host-travel_session=smoke-owner-session;"));
+  assert.ok(sessionCookie, "Visiting must renew the session cookie");
+  const flags = (value) => value.split("; ").slice(1).map((flag) => flag.toLowerCase());
+  for (const flag of ["path=/", "max-age=2592000", "httponly", "secure", "samesite=lax"]) assert.ok(flags(sessionCookie).includes(flag), "Session cookie needs " + flag);
+
+  // Sign in with Google starts at Google with PKCE and a ten-minute flow cookie of its own.
+  const start = await get("/auth/google", https);
+  assert.equal(start.status, 307);
+  const google = new URL(start.headers.get("location"));
+  assert.equal(google.origin + google.pathname, "https://accounts.google.com/o/oauth2/v2/auth");
+  assert.equal(google.searchParams.get("client_id"), "smoke-test-client");
+  assert.match(google.searchParams.get("redirect_uri"), /^https:\/\/[^/]+\/auth\/google\/callback$/);
+  assert.equal(google.searchParams.get("code_challenge_method"), "S256");
+  assert.equal(google.searchParams.get("prompt"), "select_account");
+  const flowCookie = start.headers.getSetCookie().find((value) => value.startsWith("__Host-travel_google="));
+  assert.ok(flowCookie, "The trip to Google needs its cookie");
+  for (const flag of ["path=/", "max-age=600", "httponly", "secure", "samesite=lax"]) assert.ok(flags(flowCookie).includes(flag), "Google cookie needs " + flag);
+  const flow = { ...https, Cookie: flowCookie.split(";")[0] };
+  const sessionsBefore = db.prepare("SELECT count(*) AS count FROM sessions").get().count;
+  // A callback that didn't start in this browser, or was canceled at Google, signs nobody in.
+  for (const [query, location] of [["state=forged&code=forged", "/login?error=expired"], [`state=${google.searchParams.get("state")}&error=access_denied`, "/login"]]) {
+    const callback = await get("/auth/google/callback?" + query, flow);
+    assert.equal(callback.status, 307);
+    assert.equal(new URL(callback.headers.get("location"), origin).pathname + new URL(callback.headers.get("location"), origin).search, location);
+    assert.ok(!callback.headers.getSetCookie().some((value) => value.includes("travel_session=")), "A failed sign-in must not set a session");
+    assert.ok(callback.headers.getSetCookie().some((value) => value.startsWith("__Host-travel_google=;") && flags(value).includes("max-age=0")), "The Google cookie is good for one trip");
+  }
+  assert.equal(db.prepare("SELECT count(*) AS count FROM sessions").get().count, sessionsBefore, "A failed sign-in must not create a session");
+
+  // Sign out ends the session on the server, not only in this browser.
+  const signOut = await action("signOutOfTravel", [], owner);
+  assert.match(signOut.headers.get("x-action-redirect") ?? "", /^\/login;/);
+  assert.ok(signOut.headers.getSetCookie().some((value) => value.startsWith("travel_session=;") && flags(value).includes("max-age=0")), "Sign out must clear the session cookie");
+  assert.equal(db.prepare("SELECT count(*) AS count FROM sessions WHERE tokenHash = ?").get(tokenHash("smoke-owner-session")).count, 0, "Sign out must delete the session");
+  await assertRefused("signedOut", owner);
 } finally {
   db.close();
 }
@@ -307,13 +406,19 @@ if [ "$optimizer_status" != "404" ]; then
   exit 1
 fi
 
-# A container without the persistent mount must refuse to start.
-set +e
-timeout 10s docker run --rm --name travel-check-no-storage "$image" > storage-guard.log 2>&1
-guard_status=$?
-set -e
-if [ "$guard_status" -ne 1 ] || ! grep -q "Persistent travel storage is not ready" storage-guard.log; then
-  cat storage-guard.log >&2
-  echo "The app did not correctly refuse startup without persistent storage." >&2
-  exit 1
-fi
+# A container without the persistent mount, or without the sign-in settings, must refuse to start.
+refuses() {
+  local expected="$1"; shift
+  set +e
+  timeout 10s docker run --rm --name travel-check-refusal "$@" "$image" > startup-guard.log 2>&1
+  local status=$?
+  set -e
+  if [ "$status" -ne 1 ] || ! grep -q "$expected" startup-guard.log; then
+    cat startup-guard.log >&2
+    echo "The app did not correctly refuse startup: expected \"$expected\"." >&2
+    exit 1
+  fi
+}
+refuses "Persistent travel storage is not ready"
+refuses "Sign in with Google can't work without GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET" -v "$volume:/data"
+refuses "TRAVEL_OWNER_EMAIL must be" -v "$volume:/data" -e GOOGLE_CLIENT_ID=smoke-test-client -e GOOGLE_CLIENT_SECRET=smoke-test-secret -e TRAVEL_OWNER_EMAIL=not-an-email

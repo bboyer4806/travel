@@ -187,3 +187,12 @@ Review implementation separately from live deployment. Publish 1.4 change-log en
 - Extend the production container smoke test to render a page, load an asset, and create/delete via the normal server action.
 - Disable unused Next.js image optimization without changing the existing image APIs.
 - Automate encrypted daily off-host backups to an always-on Windows 11 PC via Tailscale and SSH, retain 30 days, validate transferred backups, and block deployment if the required backup fails. Provisioning the server and computer is a separate administrator task.
+
+## Added scope: November 9, 2026, Google Sign In (TRA-103)
+This supersedes the v1 "No sign-in" access rule above. On November 9, 2026, Brian chose to sign in the same way as Budget and Meals instead of the ticket's Auth.js plan.
+- Require Google Sign In before any trip information, photo, city suggestion, feedback, What's new entry or change is available. Only the sign-in page, the Google sign-in routes and the health check are public.
+- Sign in as Budget and Meals do: a hand-written OpenID Connect code flow with PKCE, `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET` set on the server, a startup refusal without them, and sessions in Travel's own SQLite database. Travel keeps its own sessions and cookies even when the Google OAuth client is shared, so signing in to one app never signs in to another.
+- Authorize only explicitly approved Google accounts: the designated owner from `TRAVEL_OWNER_EMAIL`, and emails a trip owner shares a trip with (TRA-104). Authorization is never granted by signing in first and persists after shared access is revoked. No self-registration, other providers, administration screens or notifications.
+- Use Google's verified email and bind each authorization to the stable Google account identifier at first sign-in. Store no Google passwords or OAuth tokens, and only a hash of each session token.
+- Keep sessions for 30 days from last use across navigation and refreshes, with an HttpOnly, SameSite=Lax cookie that is Secure and `__Host-` prefixed over HTTPS. Sign out in the header shows the signed-in account and ends the session on the server. Reject missing, expired, unknown or altered sessions in pages, Server Actions and data routes; explain refused, unverified, expired and failed sign-ins.
+- Schema 19 adds the accounts and sessions tables without changing existing trips; both are included in backups. TRA-103 deploys on its own, before TRA-104, once the Google settings and initial owner are configured.

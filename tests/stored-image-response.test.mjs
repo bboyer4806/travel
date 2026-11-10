@@ -14,7 +14,8 @@ test("image responses deliver bytes with correct type and versioned caching", as
   assert.equal(response.headers.get("content-type"), "image/webp");
   assert.equal(response.headers.get("content-length"), "3");
   assert.equal(response.headers.get("x-content-type-options"), "nosniff");
-  assert.match(response.headers.get("cache-control"), /immutable/);
+  // Photos require sign-in, so shared caches must never store them.
+  assert.equal(response.headers.get("cache-control"), "private, max-age=31536000, immutable");
   assert.deepEqual(new Uint8Array(await response.arrayBuffer()), data);
   const uncached = storedImageResponse(request(), id, readImage);
   assert.equal(uncached.headers.get("cache-control"), "no-cache");

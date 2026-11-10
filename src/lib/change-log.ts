@@ -2,6 +2,20 @@ export interface Release { version: string; date: string; changes: readonly stri
 
 // Add only verified, deployed changes and their actual release dates at release close.
 export const releases: readonly Release[] = [{
+  version: "1.6",
+  date: "2026-11-10",
+  changes: [
+    "Sign in with Google to open Travel. Only Google accounts that have been given access can see or change trips.",
+    "See which account you're signed in with in the header, and sign out there. Signing in lasts 30 days from your last visit.",
+  ],
+}, {
+  version: "1.5",
+  date: "2026-11-08",
+  changes: [
+    "Open trips and save changes faster. Trip pages load only the trip you're viewing.",
+    "See the trip or destination you're viewing named in your browser tab, with clearer wording and long names that wrap instead of overflowing. The What's new dot no longer flickers when a page opens.",
+  ],
+}, {
   version: "1.4",
   date: "2026-11-04",
   changes: [

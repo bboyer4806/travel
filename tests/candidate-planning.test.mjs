@@ -6,7 +6,8 @@ import { basename, join, resolve, sep } from "node:path";
 import { spawnSync } from "node:child_process";
 import { DatabaseSync } from "node:sqlite";
 import test from "node:test";
-import { createStore, ValidationError } from "../src/lib/store.ts";
+import { ValidationError } from "../src/lib/store.ts";
+import { createOwnedStore } from "./owned-store.mjs";
 import { calculateBudget } from "../src/lib/budget.ts";
 
 const tripInput = { type: "trip.save", name: "Planning priorities", dateLabel: "", homeCity: "Home", travelers: 2, notes: "" };
@@ -31,7 +32,7 @@ function fileDatabase(t) {
 
 for (const category of ["hotels", "activities", "restaurants"]) {
   test(`${category}: moves are scoped, preserve details, and append after deletion`, t => {
-    const store = createStore(":memory:");
+    const store = createOwnedStore(":memory:");
     t.after(() => store.close());
     const { tripId, destinationId } = seed(store);
     const otherDestination = seed(store).destinationId;
@@ -73,7 +74,7 @@ for (const category of ["hotels", "activities", "restaurants"]) {
 }
 
 test("Must do can be saved, toggled and cleared independently of budgets and order", t => {
-  const store = createStore(":memory:");
+  const store = createOwnedStore(":memory:");
   t.after(() => store.close());
   const { tripId, destinationId } = seed(store);
   for (const category of ["activities", "restaurants"]) {
@@ -113,7 +114,7 @@ test("Must do can be saved, toggled and cleared independently of budgets and ord
 
 test("schema 15 upgrade retains alphabetical lists; replay, reopen and online backup retain new choices", t => {
   const path = fileDatabase(t);
-  let store = createStore(path);
+  let store = createOwnedStore(path);
   const { tripId, destinationId } = seed(store);
   const photoId = randomUUID();
   for (const category of ["hotels", "activities", "restaurants"]) {
@@ -128,7 +129,7 @@ test("schema 15 upgrade retains alphabetical lists; replay, reopen and online ba
   legacy.exec("DROP INDEX candidate_order; ALTER TABLE candidates DROP COLUMN position; ALTER TABLE candidates DROP COLUMN mustDo; PRAGMA user_version = 15;");
   const expected = legacy.prepare("SELECT id FROM candidates ORDER BY destinationId, category, name COLLATE NOCASE, id").all().map(row => row.id);
   legacy.close();
-  store = createStore(path);
+  store = createOwnedStore(path);
   assert.deepEqual(store.getSnapshot().candidates.map(item => item.id), expected);
   assert.ok(store.getSnapshot().candidates.every(item => item.mustDo === false));
   for (const category of ["hotels", "activities", "restaurants"]) {
@@ -142,23 +143,23 @@ test("schema 15 upgrade retains alphabetical lists; replay, reopen and online ba
   const reset = new DatabaseSync(path);
   reset.exec("PRAGMA user_version = 15;");
   reset.close();
-  store = createStore(path);
+  store = createOwnedStore(path);
   assert.deepEqual(store.getSnapshot(), saved, "migration replay preserves saved order, priority and all other fields");
   store.close();
-  store = createStore(path);
+  store = createOwnedStore(path);
   assert.deepEqual(store.getSnapshot(), saved, "normal restart preserves choices");
   const backupPath = join(path, "..", "backup.sqlite");
   const result = spawnSync(process.execPath, ["scripts/backup.mjs", backupPath], { env: { ...process.env, TRAVEL_DATABASE_PATH: path }, encoding: "utf8" });
   store.close();
   assert.equal(result.status, 0, result.stderr);
-  const restored = createStore(backupPath);
+  const restored = createOwnedStore(backupPath);
   try {
     assert.deepEqual(restored.getSnapshot(), saved);
     assert.deepEqual(calculateBudget(restored.getSnapshot(), tripId), budget);
     assert.deepEqual(Buffer.from(restored.getCandidatePhoto(photoOwner, photoId).data), image);
   } finally { restored.close(); }
   const observer = new DatabaseSync(backupPath);
-  assert.equal(observer.prepare("PRAGMA user_version").get().user_version, 19);
+  assert.equal(observer.prepare("PRAGMA user_version").get().user_version, 20);
   assert.equal(observer.prepare("PRAGMA integrity_check").get().integrity_check, "ok");
   assert.deepEqual(observer.prepare("PRAGMA foreign_key_check").all(), []);
   observer.close();

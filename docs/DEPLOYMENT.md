@@ -32,9 +32,9 @@ The Docker image must be tested on a Docker-capable machine or CI; a local Next 
 
 ## Google Sign In (TRA-103)
 
-Travel signs in with Google the same way as Budget and Meals: a hand-written OpenID Connect code flow with PKCE and sessions in Travel's own SQLite database. Only authorized accounts can sign in: the designated initial owner, and (with TRA-104) people a trip owner shares a trip with. Authorizations and sessions live in the `accounts` and `sessions` tables, so backups include them.
+Travel signs in with Google the same way as Budget and Meals: a hand-written OpenID Connect code flow with PKCE and sessions in Travel's own SQLite database. Only authorized accounts can sign in: the designated initial owner, and people a trip owner shares a trip with ([TRA-104](#trip-sharing-tra-104)). Authorizations and sessions live in the `accounts` and `sessions` tables, so backups include them.
 
-**Deployment order.** TRA-103 merges and deploys on its own; TRA-104 follows. Until TRA-104 ships, only the owner can sign in. Brian is currently Travel's only user, so that window is acceptable.
+**Deployment order.** TRA-103 merged and deployed on its own; TRA-104 follows. Until TRA-104 ships, only the owner can sign in. Brian is currently Travel's only user, so that window is acceptable.
 
 1. **Identify the initial owner.** Choose the Google account that will own existing trips. Its email is the only authorization created by configuration; nobody gains access by signing in first.
 
@@ -60,6 +60,16 @@ Travel signs in with Google the same way as Budget and Meals: a hand-written Ope
 4. **Verify after deployment.** Confirm `/api/health` returns HTTP 200 and opening the site goes to the sign-in page. Sign in as the owner and confirm existing trips, prices and photos are intact. Sign in with an unauthorized Google account and confirm the access-denied message and that no session starts. Cancel at Google's account chooser and confirm you return to the sign-in page. Sign out and confirm trips and photo URLs are no longer reachable.
 
 Sessions last 30 days from last use. Signing out deletes that browser's session on the server, and deleting rows from the `sessions` table ends those sessions on their next request. Sign-in failures are logged with their cause only; codes, tokens, secrets and session values are never logged.
+
+## Trip sharing (TRA-104)
+
+Each trip has one owner, and owners share trips with other Google accounts from the trip's **Share** dialog. No new settings are needed, and nothing is emailed. The upgrade to [schema 20](#schema-20-trip-ownership-and-sharing-tra-104) gives every existing trip to the account named by `TRAVEL_OWNER_EMAIL`.
+
+1. **Confirm the designated owner.** Before deploying, confirm that `TRAVEL_OWNER_EMAIL` on the host (`sudo dokku config:get travel TRAVEL_OWNER_EMAIL`) is the Google account that should own every existing trip. The upgrade assigns them once, inside its startup transaction, and never by who signs in first. Ownership can't be transferred afterwards, and changing the setting later authorizes the new email without moving any trip.
+
+2. **Back up.** The deployment workflow takes and verifies its encrypted off-host backup before deploying. Also take an on-host online backup with a unique name (see [Backup](#backup)) as the schema 19 rollback point, and keep it until the upgrade is verified.
+
+3. **Verify after deployment.** Confirm `/api/health` returns HTTP 200. Sign in as the owner and confirm every existing trip, price and photo is intact, with **Share** and the delete button on each trip page. Share one trip with a second Google account you control, sign in as it in another browser, and confirm only that trip is listed, marked **Shared by**, that you can edit it, and that its page has neither **Share** nor delete. As the owner, remove that account in the Share dialog, then confirm the second browser's next reload of the trip's URL shows "This page has moved on." and its list no longer has the trip. Nothing in the trip should have changed.
 
 ## Backup
 
@@ -193,6 +203,13 @@ Schema 16 and earlier builds reject the newer database. Rollback requires a comp
 Google Sign In upgrades the database to schema 19 with two tables. `accounts` holds each authorized email, the stable Google account identifier bound at that person's first sign-in, their Google display name, and when the email was authorized. `sessions` holds a SHA-256 hash of each browser's session token, its account and its expiry, never the token itself. Trips and all other data are unchanged. Both tables are included in the same online backups, and replaying the migration keeps existing authorizations, bindings and sessions. Take and verify a backup before deployment; the startup authorization of `TRAVEL_OWNER_EMAIL` is the only change at upgrade.
 
 Schema 18 and earlier builds reject schema 19. Rollback requires a compatible build or the stopped-app restore procedure above; preserve the upgraded database and sidecars first, because restoring an older backup loses later edits and authorizations. **A build from before Google Sign In has no sign-in at all: anyone with the URL could again view and edit every trip.** Prefer fixing forward. If a rollback is unavoidable, keep the app stopped until access is otherwise restricted.
+
+### Schema 20: trip ownership and sharing (TRA-104)
+Trip sharing upgrades the database to schema 20 in the startup transaction. `trips` gains an `ownerId` referencing `accounts`, and triggers refuse any trip without an owner, because SQLite can't add a required column that references another table. Every existing trip is assigned to the account of `TRAVEL_OWNER_EMAIL`, which startup authorizes first; who signed in first plays no part. A new `trip_shares` table holds one row per trip and account it is shared with, keyed by both, so an email can't be invited twice. Deleting a trip removes its shares. Removing a share deletes only that row: the account stays authorized and the trip is unchanged. Both tables are in the same online backups. A replay finds every trip owned and changes nothing, even if `TRAVEL_OWNER_EMAIL` has changed since.
+
+**Rehearsal, November 10, 2026.** In an isolated environment, the schema 19 build from `main` wrote a production-like database: 2 trips, 3 destinations, 5 connections, 9 ideas, 3 churches, 18 photos, entry requirements, At home items, and the owner's bound account and session. `scripts/backup.mjs` backed it up, and the backup matched the live file. The TRA-104 build then upgraded the live file: every existing table kept its row count, the full snapshot and every photo's bytes and version were unchanged, home budgets were unchanged, every trip belonged to the designated owner, the owner stayed signed in, and `integrity_check` and `foreign_key_check` passed. Replaying the upgrade changed nothing. The schema 19 build refused the upgraded file without modifying it, and after the stopped-app restore of the backup it opened the schema 19 data unchanged, with the owner's session. A rehearsal against a copy of the verified production backup is still required before deployment, as for earlier schemas.
+
+Schema 19 builds reject schema 20. Rollback requires a compatible build or the stopped-app restore of the pre-upgrade backup above. Preserve the upgraded database and sidecars first: restoring loses ownership, shares, accounts authorized by sharing, and every later edit. **Never lower `user_version` to run an older build on a schema 20 database: schema 19 builds have no trip isolation, so every account a trip was shared with could see and change every trip.** Prefer fixing forward.
 
 ### Feedback and release notes
 Configure server-only JIRA_URL (HTTPS Jira base URL), JIRA_EMAIL, and JIRA_API_TOKEN with permission to create Tasks in TRA. Use the host's secret configuration; never put credentials in source, image layers, client variables, or logs. Preserve the browser Host and Origin headers through the proxy; the feedback endpoint compares them and ignores forwarded-host claims. The HttpOnly feedback cookie is Secure for HTTPS origins.

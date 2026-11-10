@@ -6,7 +6,8 @@ import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import test from "node:test";
 import { calculateBudget, calculateDestinationBudget } from "../src/lib/budget.ts";
-import { createStore, ValidationError } from "../src/lib/store.ts";
+import { ValidationError } from "../src/lib/store.ts";
+import { createOwnedStore } from "./owned-store.mjs";
 
 const tripInput = (overrides = {}) => ({ type: "trip.save", name: "Weather planning", dateLabel: "2027", homeCity: "Boston", travelers: 2, notes: "", ...overrides });
 const destinationInput = (tripId, overrides = {}) => ({ type: "destination.save", tripId, city: "Reykjavik", stay: "A few nights", notes: "", ...overrides });
@@ -17,7 +18,7 @@ const webp = new Uint8Array(Buffer.from("UklGRiIAAABXRUJQVlA4IBYAAAAwAQCdASoBAAE
 const destination = (store, id) => store.getSnapshot().destinations.find((item) => item.id === id);
 const weather = (store, id) => Object.fromEntries(Object.keys(emptyWeather).map((key) => [key, destination(store, id)[key]]));
 function setup(t) {
-  const store = createStore(":memory:");
+  const store = createOwnedStore(":memory:");
   t.after(() => store.close());
   return { store, tripId: store.applyMutation(tripInput()).id };
 }
@@ -49,7 +50,7 @@ test("optional weather defaults to missing, preserves zero, and accepts partial 
 
 test("weather save, edit, per-field omission, and clearing survive closing and reopening", (t) => {
   const path = fileDatabase(t);
-  let store = createStore(path);
+  let store = createOwnedStore(path);
   try {
     const tripId = store.applyMutation(tripInput()).id;
     const id = store.applyMutation(destinationInput(tripId, {
@@ -69,7 +70,7 @@ test("weather save, edit, per-field omission, and clearing survive closing and r
       assert.deepEqual(weather(store, id), expected);
       const before = store.getSnapshot();
       store.close(); store = null;
-      store = createStore(path);
+      store = createOwnedStore(path);
       assert.deepEqual(store.getSnapshot(), before);
       assert.deepEqual(weather(store, id), expected);
     }
@@ -153,7 +154,7 @@ test("weather edits leave existing destination data, routes, choices, and separa
 
 test("schema 12 upgrade defaults weather to missing and preserves old data; migration replay retains saved weather", (t) => {
   const path = fileDatabase(t);
-  let store = createStore(path);
+  let store = createOwnedStore(path);
   try {
     const tripId = store.applyMutation(tripInput()).id;
     const id = store.applyMutation(destinationInput(tripId, {
@@ -174,7 +175,7 @@ test("schema 12 upgrade defaults weather to missing and preserves old data; migr
       for (const column of Object.keys(emptyWeather)) observer.exec(`ALTER TABLE destinations DROP COLUMN ${column};`);
       observer.exec("PRAGMA user_version = 12;");
     } finally { observer.close(); }
-    store = createStore(path);
+    store = createOwnedStore(path);
     assert.deepEqual(store.getSnapshot(), before);
     assert.deepEqual(weather(store, id), emptyWeather);
     assert.deepEqual(calculateBudget(store.getSnapshot(), tripId), budget);
@@ -185,7 +186,7 @@ test("schema 12 upgrade defaults weather to missing and preserves old data; migr
     store.close(); store = null;
     observer = new DatabaseSync(path);
     try {
-      assert.equal(observer.prepare("PRAGMA user_version").get().user_version, 19);
+      assert.equal(observer.prepare("PRAGMA user_version").get().user_version, 20);
       const columns = observer.prepare("PRAGMA table_info(destinations)").all();
       for (const name of ["weatherHighF", "weatherLowF"]) {
         assert.equal(columns.find((column) => column.name === name).type, "REAL");
@@ -197,21 +198,21 @@ test("schema 12 upgrade defaults weather to missing and preserves old data; migr
       }
       observer.exec("PRAGMA user_version = 12;");
     } finally { observer.close(); }
-    store = createStore(path);
+    store = createOwnedStore(path);
     assert.deepEqual(store.getSnapshot(), saved);
     assert.deepEqual(calculateBudget(store.getSnapshot(), tripId), budget);
     store.close(); store = null;
     observer = new DatabaseSync(path);
     try { observer.exec("ALTER TABLE destinations DROP COLUMN weatherSource; PRAGMA user_version = 12;"); }
     finally { observer.close(); }
-    store = createStore(path);
+    store = createOwnedStore(path);
     assert.deepEqual(weather(store, id), { ...winterWeather, weatherSource: "" });
     assert.deepEqual(calculateBudget(store.getSnapshot(), tripId), budget);
     assert.deepEqual(store.getDestinationImage(id), image);
     assert.deepEqual(store.getCandidateImage(candidateId), candidateImage);
     observer = new DatabaseSync(path);
     try {
-      assert.equal(observer.prepare("PRAGMA user_version").get().user_version, 19);
+      assert.equal(observer.prepare("PRAGMA user_version").get().user_version, 20);
       assert.deepEqual(observer.prepare("PRAGMA foreign_key_check").all(), []);
     } finally { observer.close(); }
   } finally { store?.close(); }

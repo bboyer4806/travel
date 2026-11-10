@@ -1,7 +1,8 @@
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 import test from "node:test";
-import { createStore, ValidationError } from "../src/lib/store.ts";
+import { ValidationError } from "../src/lib/store.ts";
+import { createOwnedStore } from "./owned-store.mjs";
 
 const edits = [
   { weatherHighF: 70, weatherLowF: 40, weatherPeriod: "November", weatherRainfall: "Light rain", weatherSource: "Climate notes" },
@@ -11,7 +12,7 @@ const edits = [
 ];
 
 for (const edit of edits) test(`focused ${Object.keys(edit)[0]} save preserves newer destination and connection details`, t => {
-  const store = createStore(":memory:");
+  const store = createOwnedStore(":memory:");
   t.after(() => store.close());
   const tripId = store.applyMutation({ type: "trip.save", name: "Shared trip", startDate: "2026-11-01", dateLabel: "", homeCity: "Home", travelers: 2, notes: "" }).id;
   const id = store.applyMutation({ type: "destination.save", tripId, city: "Original", stay: "Old stay", notes: "Old notes", nights: 2 }).id;

@@ -6,6 +6,7 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 export async function GET(request: Request, { params }: { params: Promise<{ id: string }> }) {
-  if (!(await currentAccount())) return signedOutResponse();
-  return storedImageResponse(request, (await params).id, getCandidateImage);
+  const account = await currentAccount();
+  if (!account) return signedOutResponse();
+  return storedImageResponse(request, (await params).id, (id) => getCandidateImage(account.id, id));
 }

@@ -5,7 +5,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import test from "node:test";
-import { createStore, ValidationError } from "../src/lib/store.ts";
+import { ValidationError } from "../src/lib/store.ts";
+import { createOwnedStore } from "./owned-store.mjs";
 import { calculateBudget } from "../src/lib/budget.ts";
 
 const webp = new Uint8Array(Buffer.from("UklGRiIAAABXRUJQVlA4IBYAAAAwAQCdASoBAAEADsD+JaQAA3AAAAAA", "base64"));
@@ -41,7 +42,7 @@ function withoutImageVersion(candidate) {
 for (const category of categories) {
   test(`${category} images create, persist, replace, and remove without changing planning details`, (t) => {
     const path = fileDatabase(t);
-    let store = createStore(path);
+    let store = createOwnedStore(path);
     try {
       const tripId = store.applyMutation(tripInput).id;
       const destinationId = store.applyMutation(destinationInput(tripId, { image: replacement })).id;
@@ -81,7 +82,7 @@ for (const category of categories) {
       const before = store.getSnapshot();
       const beforeImage = store.getCandidateImage(candidateId);
       store.close();
-      store = createStore(path);
+      store = createOwnedStore(path);
       assert.deepEqual(store.getSnapshot(), before);
       assert.deepEqual(store.getCandidateImage(candidateId), beforeImage);
       store.applyMutation({ ...input, id: candidateId, notes: candidateBeforeImageEdit.notes, image: null });
@@ -101,7 +102,7 @@ for (const category of categories) {
 
 test("candidate, destination, and trip deletion cascade only to their own candidate images", (t) => {
   const path = fileDatabase(t);
-  const store = createStore(path);
+  const store = createOwnedStore(path);
   const observer = new DatabaseSync(path);
   try {
     const tripId = store.applyMutation(tripInput).id;
@@ -131,7 +132,7 @@ test("candidate, destination, and trip deletion cascade only to their own candid
 });
 
 test("invalid candidate images leave fields, selection, and existing image unchanged", (t) => {
-  const store = createStore(":memory:");
+  const store = createOwnedStore(":memory:");
   t.after(() => store.close());
   const tripId = store.applyMutation(tripInput).id;
   const destinationId = store.applyMutation(destinationInput(tripId)).id;
@@ -164,7 +165,7 @@ test("invalid candidate images leave fields, selection, and existing image uncha
 
 test("image write or removal failures roll back candidate edits and chosen hotel changes", (t) => {
   const path = fileDatabase(t);
-  const store = createStore(path);
+  const store = createOwnedStore(path);
   const observer = new DatabaseSync(path);
   try {
     const tripId = store.applyMutation(tripInput).id;
@@ -198,7 +199,7 @@ test("image write or removal failures roll back candidate edits and chosen hotel
 
 test("schema 4 upgrade preserves destination images and every record, and schema 8 reopens unchanged", (t) => {
   const path = fileDatabase(t);
-  let store = createStore(path);
+  let store = createOwnedStore(path);
   try {
     const tripId = store.applyMutation(tripInput).id;
     const destinationId = store.applyMutation(destinationInput(tripId, { image: webp })).id;
@@ -210,7 +211,7 @@ test("schema 4 upgrade preserves destination images and every record, and schema
     const legacy = new DatabaseSync(path);
     legacy.exec("DROP TABLE candidate_images; PRAGMA user_version = 4;");
     legacy.close();
-    store = createStore(path);
+    store = createOwnedStore(path);
     assert.deepEqual(store.getSnapshot(), before);
     assert.deepEqual(store.getDestinationImage(destinationId), destinationImage);
     for (const candidateId of candidateIds) assert.equal(store.getCandidateImage(candidateId), undefined);
@@ -220,13 +221,13 @@ test("schema 4 upgrade preserves destination images and every record, and schema
     const withImage = store.getSnapshot();
     const candidateImage = store.getCandidateImage(candidateId);
     store.close();
-    store = createStore(path);
+    store = createOwnedStore(path);
     assert.deepEqual(store.getSnapshot(), withImage);
     assert.deepEqual(store.getDestinationImage(destinationId), destinationImage);
     assert.deepEqual(store.getCandidateImage(candidateId), candidateImage);
     const observer = new DatabaseSync(path);
     try {
-      assert.equal(observer.prepare("PRAGMA user_version").get().user_version, 19);
+      assert.equal(observer.prepare("PRAGMA user_version").get().user_version, 20);
       assert.deepEqual(observer.prepare("PRAGMA foreign_key_check").all(), []);
       assert.equal(observer.prepare("PRAGMA table_list").all().find((table) => table.name === "candidate_images").strict, 1);
     } finally {
@@ -236,7 +237,7 @@ test("schema 4 upgrade preserves destination images and every record, and schema
     const resetVersion = new DatabaseSync(path);
     resetVersion.exec("PRAGMA user_version = 4");
     resetVersion.close();
-    store = createStore(path);
+    store = createOwnedStore(path);
     assert.deepEqual(store.getSnapshot(), withImage, "rerunning a migration never replaces existing image metadata");
     assert.deepEqual(store.getCandidateImage(candidateId), candidateImage);
     assert.deepEqual(store.getDestinationImage(destinationId), destinationImage);

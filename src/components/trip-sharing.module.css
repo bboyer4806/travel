@@ -1,0 +1,8 @@
+.description { margin: 0; color: var(--muted); font-size: 12px; line-height: 1.65; }
+.heading { margin: 0 0 8px; font-family: Arial, Helvetica, sans-serif; font-size: 12px; font-weight: 600; }
+.people { display: grid; margin: 0 0 10px; padding: 0; list-style: none; border-top: 1px solid var(--line); }
+.person { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-height: 48px; padding: 8px 0; border-bottom: 1px solid var(--line); }
+.identity { display: grid; min-width: 0; gap: 2px; }
+.name { font-size: 13px; font-weight: 600; overflow-wrap: anywhere; }
+.email { color: var(--muted); font-size: 12px; overflow-wrap: anywhere; }
+.role { flex-shrink: 0; padding: 4px 7px; border-radius: 4px; background: var(--wash); color: var(--muted); font-size: 10px; }

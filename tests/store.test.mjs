@@ -5,7 +5,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import test from "node:test";
-import { createStore, ValidationError } from "../src/lib/store.ts";
+import { ValidationError } from "../src/lib/store.ts";
+import { createOwnedStore } from "./owned-store.mjs";
 import { calculateBudget, formatMoney } from "../src/lib/budget.ts";
 
 const tripInput = (overrides = {}) => ({ type: "trip.save", name: "Japan in spring", dateLabel: "Spring 2027", homeCity: "New York", travelers: 2, notes: "An idea worth exploring.", ...overrides });
@@ -13,7 +14,7 @@ const destinationInput = (tripId, overrides = {}) => ({ type: "destination.save"
 const candidateInput = (destinationId, overrides = {}) => ({ type: "candidate.save", destinationId, category: "hotels", name: "A lovely hotel", price: "200.33", address: "", url: "https://example.com", notes: "", included: true, ...overrides });
 const legInput = (id, overrides = {}) => ({ type: "leg.save", id, method: "Flight", price: "100.01", departure: "Morning", arrival: "Evening", url: "https://example.com/flights", notes: "Two passengers", ...overrides });
 function setup(t) {
-  const store = createStore(":memory:");
+  const store = createOwnedStore(":memory:");
   t.after(() => store.close());
   const { id: tripId } = store.applyMutation(tripInput());
   return { store, tripId };
@@ -186,7 +187,7 @@ test("updates cannot move records into unrelated trips, destinations, or lists",
 
 test("saved trips, routes, and selected ideas survive closing and reopening the database", (t) => {
   const path = fileDatabase(t);
-  let store = createStore(path);
+  let store = createOwnedStore(path);
   try {
     const tripId = store.applyMutation(tripInput()).id;
     const destinationId = store.applyMutation(destinationInput(tripId)).id;
@@ -194,7 +195,7 @@ test("saved trips, routes, and selected ideas survive closing and reopening the 
     store.applyMutation(legInput(legsFor(store, tripId)[0].id));
     const before = store.getSnapshot();
     store.close();
-    store = createStore(path);
+    store = createOwnedStore(path);
     assert.deepEqual(store.getSnapshot(), before);
     store.applyMutation({ type: "trip.delete", id: tripId });
     assert.equal(store.getSnapshot().candidates.length, 0);
@@ -205,7 +206,7 @@ test("saved trips, routes, and selected ideas survive closing and reopening the 
 
 test("a database failure rolls back hotel deselection and every partial mutation", (t) => {
   const path = fileDatabase(t);
-  const store = createStore(path);
+  const store = createOwnedStore(path);
   const observer = new DatabaseSync(path);
   try {
     const tripId = store.applyMutation(tripInput()).id;

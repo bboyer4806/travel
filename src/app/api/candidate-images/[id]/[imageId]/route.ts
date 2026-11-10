@@ -6,8 +6,9 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 export async function GET(request: Request, { params }: { params: Promise<{ id: string; imageId: string }> }) {
-  if (!(await currentAccount())) return signedOutResponse();
+  const account = await currentAccount();
+  if (!account) return signedOutResponse();
   const { id, imageId } = await params;
   if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(imageId)) return new Response(null, { status: 404 });
-  return storedImageResponse(request, id, (candidateId) => getCandidatePhoto(candidateId, imageId));
+  return storedImageResponse(request, id, (candidateId) => getCandidatePhoto(account.id, candidateId, imageId));
 }

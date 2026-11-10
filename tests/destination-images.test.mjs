@@ -5,7 +5,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import test from "node:test";
-import { createStore, ValidationError } from "../src/lib/store.ts";
+import { ValidationError } from "../src/lib/store.ts";
+import { createOwnedStore } from "./owned-store.mjs";
 import { calculateBudget } from "../src/lib/budget.ts";
 
 const webp = new Uint8Array(Buffer.from("UklGRiIAAABXRUJQVlA4IBYAAAAwAQCdASoBAAEADsD+JaQAA3AAAAAA", "base64"));
@@ -30,7 +31,7 @@ function planConnections(store) {
 
 test("destination images persist, replace with new versions, and preserve routes during image-only edits", (t) => {
   const path = fileDatabase(t);
-  let store = createStore(path);
+  let store = createOwnedStore(path);
   try {
     const tripId = store.applyMutation(tripInput).id;
     const destinationId = store.applyMutation(destinationInput(tripId, { image: webp })).id;
@@ -59,7 +60,7 @@ test("destination images persist, replace with new versions, and preserve routes
     const before = store.getSnapshot();
     const beforeImage = store.getDestinationImage(destinationId);
     store.close();
-    store = createStore(path);
+    store = createOwnedStore(path);
     assert.deepEqual(store.getSnapshot(), before);
     assert.deepEqual(store.getDestinationImage(destinationId), beforeImage);
     store.applyMutation(destinationInput(tripId, { id: destinationId, image: null }));
@@ -73,7 +74,7 @@ test("destination images persist, replace with new versions, and preserve routes
 
 test("destination and trip deletion cascade to uploaded images", (t) => {
   const path = fileDatabase(t);
-  const store = createStore(path);
+  const store = createOwnedStore(path);
   const observer = new DatabaseSync(path);
   try {
     const tripId = store.applyMutation(tripInput).id;
@@ -94,7 +95,7 @@ test("destination and trip deletion cascade to uploaded images", (t) => {
 });
 
 test("invalid destination image bytes are rejected before any trip or route data changes", (t) => {
-  const store = createStore(":memory:");
+  const store = createOwnedStore(":memory:");
   t.after(() => store.close());
   const tripId = store.applyMutation(tripInput).id;
   const destinationId = store.applyMutation(destinationInput(tripId, { image: webp })).id;
@@ -121,7 +122,7 @@ test("invalid destination image bytes are rejected before any trip or route data
 
 test("a failed image write rolls back destination edits and all connection changes", (t) => {
   const path = fileDatabase(t);
-  const store = createStore(path);
+  const store = createOwnedStore(path);
   const observer = new DatabaseSync(path);
   try {
     const tripId = store.applyMutation(tripInput).id;
@@ -145,7 +146,7 @@ test("a failed image write rolls back destination edits and all connection chang
 
 test("schema 3 upgrades add image storage without changing destinations, and repeated migration preserves images", (t) => {
   const path = fileDatabase(t);
-  let store = createStore(path);
+  let store = createOwnedStore(path);
   try {
     const tripId = store.applyMutation(tripInput).id;
     const destinationId = store.applyMutation(destinationInput(tripId)).id;
@@ -156,7 +157,7 @@ test("schema 3 upgrades add image storage without changing destinations, and rep
     let legacy = new DatabaseSync(path);
     legacy.exec("DROP TABLE destination_images; PRAGMA user_version = 3;");
     legacy.close();
-    store = createStore(path);
+    store = createOwnedStore(path);
     assert.deepEqual(store.getSnapshot(), before);
     assert.equal(store.getDestinationImage(destinationId), undefined);
     store.applyMutation(destinationInput(tripId, { id: destinationId, image: webp }));
@@ -166,12 +167,12 @@ test("schema 3 upgrades add image storage without changing destinations, and rep
     legacy = new DatabaseSync(path);
     legacy.exec("PRAGMA user_version = 3;");
     legacy.close();
-    store = createStore(path);
+    store = createOwnedStore(path);
     assert.deepEqual(store.getSnapshot(), withImage);
     assert.deepEqual(store.getDestinationImage(destinationId), image);
     const observer = new DatabaseSync(path);
     try {
-      assert.equal(observer.prepare("PRAGMA user_version").get().user_version, 19);
+      assert.equal(observer.prepare("PRAGMA user_version").get().user_version, 20);
       assert.deepEqual(observer.prepare("PRAGMA foreign_key_check").all(), []);
     } finally {
       observer.close();

@@ -7,6 +7,7 @@ export const releases: readonly Release[] = [{
   changes: [
     "Sign in with Google to open Travel. Only Google accounts that have been given access can see or change trips.",
     "See which account you're signed in with in the header, and sign out there. Signing in lasts 30 days from your last visit.",
+    "Share a trip by Google email from its Share button, even with someone who has never used Travel. They see it in their trip list when they sign in and can change everything in it. Only you can delete it or change who has access.",
   ],
 }, {
   version: "1.5",

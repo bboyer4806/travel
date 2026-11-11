@@ -4,7 +4,7 @@ import { DatabaseSync } from "node:sqlite";
 import test from "node:test";
 import { SCHEMA_VERSION, ValidationError } from "../src/lib/store.ts";
 import { createOwnedStore } from "./owned-store.mjs";
-import { fileDatabase } from "./budget-fixtures.mjs";
+import { fileDatabase, destinationEdit } from "./budget-fixtures.mjs";
 import { calculateBudget } from "../src/lib/budget.ts";
 
 const webp = new Uint8Array(Buffer.from("UklGRiIAAABXRUJQVlA4IBYAAAAwAQCdASoBAAEADsD+JaQAA3AAAAAA", "base64"));
@@ -39,10 +39,10 @@ test("destination images persist, replace with new versions, and preserve routes
     planConnections(store);
     const legs = store.getSnapshot().legs;
     const budget = calculateBudget(store.getSnapshot(), tripId);
-    store.applyMutation(destinationInput(tripId, { id: destinationId, notes: "A note added by an older client" }));
+    store.applyMutation(destinationEdit(destinationId, { notes: "A note added by an older client" }));
     assert.deepEqual(store.getDestinationImage(destinationId), initialImage, "omitting image preserves bytes and version");
     assert.deepEqual(store.getSnapshot().legs, legs);
-    store.applyMutation(destinationInput(tripId, { id: destinationId, image: replacement }));
+    store.applyMutation(destinationEdit(destinationId, { image: replacement }));
     const updatedImage = store.getDestinationImage(destinationId);
     assert.notEqual(updatedImage.version, initialImage.version);
     assert.deepEqual(updatedImage.data, replacement);
@@ -56,7 +56,7 @@ test("destination images persist, replace with new versions, and preserve routes
     store = createOwnedStore(path);
     assert.deepEqual(store.getSnapshot(), before);
     assert.deepEqual(store.getDestinationImage(destinationId), beforeImage);
-    store.applyMutation(destinationInput(tripId, { id: destinationId, image: null }));
+    store.applyMutation(destinationEdit(destinationId, { image: null }));
     assert.equal(store.getDestinationImage(destinationId), undefined);
     assert.equal(store.getSnapshot().destinations[0].imageVersion, null);
     assert.deepEqual(store.getSnapshot().legs, legs, "removing an image also leaves every connection unchanged");
@@ -65,7 +65,7 @@ test("destination images persist, replace with new versions, and preserve routes
   }
 });
 
-test("destination and trip deletion cascade to uploaded images", (t) => {
+test("destination photos stay when a trip stops visiting the destination or is deleted", (t) => {
   const path = fileDatabase(t);
   const store = createOwnedStore(path);
   const observer = new DatabaseSync(path);
@@ -73,13 +73,12 @@ test("destination and trip deletion cascade to uploaded images", (t) => {
     const tripId = store.applyMutation(tripInput).id;
     const first = store.applyMutation(destinationInput(tripId, { image: webp })).id;
     const second = store.applyMutation(destinationInput(tripId, { city: "Paris", image: replacement })).id;
-    store.applyMutation({ type: "destination.delete", id: first });
-    assert.equal(store.getDestinationImage(first), undefined);
-    assert.ok(store.getDestinationImage(second));
-    assert.equal(observer.prepare("SELECT count(*) AS count FROM destination_images").get().count, 1);
+    const photos = [store.getDestinationImage(first), store.getDestinationImage(second)];
+    store.applyMutation({ type: "stop.remove", id: first });
+    assert.deepEqual(store.getDestinationImage(first), photos[0], "a destination keeps its photos after leaving a trip");
     store.applyMutation({ type: "trip.delete", id: tripId });
-    assert.equal(store.getDestinationImage(second), undefined);
-    assert.equal(observer.prepare("SELECT count(*) AS count FROM destination_images").get().count, 0);
+    assert.deepEqual([store.getDestinationImage(first), store.getDestinationImage(second)], photos, "deleting the trip keeps its destinations' photos");
+    assert.equal(observer.prepare("SELECT count(*) AS count FROM destination_images").get().count, 2);
     assert.deepEqual(observer.prepare("PRAGMA foreign_key_check").all(), []);
   } finally {
     observer.close();
@@ -102,13 +101,13 @@ test("invalid destination image bytes are rejected before any trip or route data
   const oversized = new Uint8Array(2 * 1024 * 1024 + 1);
   oversized.set(webp);
   for (const image of ["https://example.com/image.webp", [...webp], { data: webp }, new Uint16Array(20), new Uint8Array(), webp.subarray(0, 11), wrongRiff, wrongWebp, oversized]) {
-    assert.throws(() => store.applyMutation(destinationInput(tripId, { id: destinationId, city: "Berlin", notes: "Should not be saved", image })), ValidationError);
+    assert.throws(() => store.applyMutation(destinationEdit(destinationId, { city: "Berlin", notes: "Should not be saved", image })), ValidationError);
     assert.deepEqual(store.getSnapshot(), before);
     assert.deepEqual(store.getDestinationImage(destinationId), beforeImage);
   }
   const boundary = new Uint8Array(2 * 1024 * 1024);
   boundary.set(webp);
-  store.applyMutation(destinationInput(tripId, { id: destinationId, image: boundary }));
+  store.applyMutation(destinationEdit(destinationId, { image: boundary }));
   assert.equal(store.getDestinationImage(destinationId).data.byteLength, boundary.byteLength);
   assert.deepEqual(store.getSnapshot().legs, before.legs);
 });
@@ -124,7 +123,7 @@ test("a failed image write rolls back destination edits and all connection chang
     const before = store.getSnapshot();
     const beforeImage = store.getDestinationImage(destinationId);
     observer.exec("CREATE TRIGGER reject_image BEFORE INSERT ON destination_images BEGIN SELECT RAISE(ABORT, 'Injected image failure'); END;");
-    assert.throws(() => store.applyMutation(destinationInput(tripId, { id: destinationId, city: "Paris", notes: "Unsaved", image: replacement })), /Injected image failure/);
+    assert.throws(() => store.applyMutation(destinationEdit(destinationId, { city: "Paris", notes: "Unsaved", image: replacement })), /Injected image failure/);
     assert.deepEqual(store.getSnapshot(), before);
     assert.deepEqual(store.getDestinationImage(destinationId), beforeImage);
     const destinationCount = before.destinations.length;
@@ -153,7 +152,7 @@ test("schema 3 upgrades add image storage without changing destinations, and rep
     store = createOwnedStore(path);
     assert.deepEqual(store.getSnapshot(), before);
     assert.equal(store.getDestinationImage(destinationId), undefined);
-    store.applyMutation(destinationInput(tripId, { id: destinationId, image: webp }));
+    store.applyMutation(destinationEdit(destinationId, { image: webp }));
     const withImage = store.getSnapshot();
     const image = store.getDestinationImage(destinationId);
     store.close();

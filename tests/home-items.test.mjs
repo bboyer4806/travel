@@ -180,7 +180,7 @@ test("home items survive database reopening with their exact amounts, notes, and
   } finally { store.close(); }
 });
 
-test("deleting a trip cascades only its home items, while destination changes preserve them", (t) => {
+test("deleting a trip cascades only its home items, while removing a destination preserves them", (t) => {
   const path = fileDatabase(t);
   const store = createOwnedStore(path);
   const observer = new DatabaseSync(path);
@@ -192,7 +192,7 @@ test("deleting a trip cascades only its home items, while destination changes pr
     const otherId = store.applyMutation(homeInput(otherTripId, { price: "27.01" })).id;
     const otherItem = item(store, otherId);
     const otherBudget = calculateBudget(store.getSnapshot(), otherTripId);
-    store.applyMutation({ type: "destination.delete", id: destinationId });
+    store.applyMutation({ type: "stop.remove", id: destinationId });
     assert.ok(ownedIds.every((id) => item(store, id)), "home tasks belong to the trip, not a destination");
     store.applyMutation(tripInput({ id: tripId, homeCity: "New York", name: "Revised trip" }));
     assert.ok(ownedIds.every((id) => item(store, id)));

@@ -4,8 +4,8 @@ import { backup, DatabaseSync } from "node:sqlite";
 import { randomUUID } from "node:crypto";
 import { addNights, backfillDates, churchDateEligible, churchSundayDates, formatCalendarDate, sequenceDates } from "../src/lib/trip-dates.ts";
 import { ValidationError } from "../src/lib/store.ts";
-import { createOwnedStore } from "./owned-store.mjs";
-import { setup, tripInput, destinationInput, destination, fileDatabase, candidateInput } from "./budget-fixtures.mjs";
+import { createOwnedStore, UNDO_SCHEMA_21 } from "./owned-store.mjs";
+import { setup, tripInput, destinationInput, destination, fileDatabase, candidateInput, destinationEdit, stopEdit, stop } from "./budget-fixtures.mjs";
 
 test("automatic sequence, calendar boundaries, same-day and unknown lengths", () => {
   const stops = [{ id: "Paris", nights: 3 }, { id: "Rome", nights: 2 }];
@@ -50,21 +50,21 @@ test("church Sunday dates follow start, nights and order edits without changing 
   const second = store.applyMutation(destinationInput(tripId, { city: "Rome", nights: 1 })).id;
   store.applyMutation({ type: "church.save", destinationId: second, name: "Chapel", address: "", denomination: "", url: "", massTimes: [{ id: randomUUID(), day: "Sunday", time: "9:00 AM" }] });
   const churches = store.getSnapshot().churches;
-  const sundays = id => churchSundayDates(destination(store, id));
+  const sundays = id => churchSundayDates(stop(store, id));
   assert.equal(sundays(second), null);
   store.applyMutation(tripInput({ id: tripId, startDate: "2027-06-05" }));
   assert.deepEqual(sundays(first), ["2027-06-06"]);
   assert.deepEqual(sundays(second), ["2027-06-13"]);
-  store.applyMutation(destinationInput(tripId, { id: first, city: "Paris", nights: 14 }));
+  store.applyMutation(stopEdit(first, { city: "Paris", nights: 14 }));
   assert.deepEqual(sundays(first), ["2027-06-06", "2027-06-13"]);
   assert.deepEqual(sundays(second), ["2027-06-20"]);
-  store.applyMutation({ type: "destination.move", id: second, direction: "up" });
+  store.applyMutation({ type: "stop.move", id: second, direction: "up" });
   assert.deepEqual(sundays(second), ["2027-06-06"]);
   assert.deepEqual(sundays(first), ["2027-06-06", "2027-06-13", "2027-06-20"]);
   store.applyMutation(tripInput({ id: tripId, startDate: "2027-06-06" }));
   assert.deepEqual(sundays(second), ["2027-06-06"]);
   assert.deepEqual(sundays(first), ["2027-06-13", "2027-06-20"]);
-  store.applyMutation(destinationInput(tripId, { id: second, city: "Rome", nights: null }));
+  store.applyMutation(stopEdit(second, { city: "Rome", nights: null }));
   assert.equal(sundays(second), null);
   assert.equal(sundays(first), null);
   assert.deepEqual(store.getSnapshot().churches, churches);
@@ -79,18 +79,18 @@ test("night/order/start edits recalculate the entire affected sequence and prese
   store.applyMutation(candidateInput(second,"activities"));
   const items=store.getSnapshot().candidates;
   assert.equal(store.getSnapshot().trips[0].endDate,"2027-06-06");
-  store.applyMutation(destinationInput(tripId,{id:first,city:"Paris",nights:4}));
-  assert.equal(destination(store,second).arrivalDate,"2027-06-05");
-  store.applyMutation({type:"destination.move",id:second,direction:"up"});
-  assert.equal(destination(store,second).arrivalDate,"2027-06-01");
-  assert.equal(destination(store,first).arrivalDate,"2027-06-03");
+  store.applyMutation(stopEdit(first, {city:"Paris",nights:4}));
+  assert.equal(stop(store, second).arrivalDate,"2027-06-05");
+  store.applyMutation({type:"stop.move",id:second,direction:"up"});
+  assert.equal(stop(store, second).arrivalDate,"2027-06-01");
+  assert.equal(stop(store, first).arrivalDate,"2027-06-03");
   store.applyMutation(tripInput({id:tripId,startDate:"2028-02-28"}));
-  assert.equal(destination(store,first).arrivalDate,"2028-03-01");
-  store.applyMutation({type:"destination.delete",id:first});
-  assert.equal(destination(store,third).arrivalDate,"2028-03-01");
-  store.applyMutation(destinationInput(tripId,{id:second,city:"Rome",nights:null}));
-  assert.equal(destination(store,second).arrivalDate,null);
-  assert.equal(destination(store,third).arrivalDate,null);
+  assert.equal(stop(store, first).arrivalDate,"2028-03-01");
+  store.applyMutation({type:"stop.remove",id:first});
+  assert.equal(stop(store, third).arrivalDate,"2028-03-01");
+  store.applyMutation(stopEdit(second, {city:"Rome",nights:null}));
+  assert.equal(stop(store, second).arrivalDate,null);
+  assert.equal(stop(store, third).arrivalDate,null);
   assert.equal(store.getSnapshot().trips[0].endDate,null);
   assert.deepEqual(store.getSnapshot().candidates,items);
 });
@@ -101,7 +101,7 @@ test("server rejects date overrides, invalid start/nights and overflow atomicall
   const id=store.applyMutation(destinationInput(tripId,{nights:1})).id;
   const before=store.getSnapshot();
   for(const fields of [{nights:-1},{nights:1.5},{nights:"3"},{nights:NaN},{nights:3652059},{nights:2},{arrivalDate:"2027-06-01"},{departureDate:null}]) {
-    assert.throws(()=>store.applyMutation(destinationInput(tripId,{id,...fields})),ValidationError);
+    assert.throws(()=>store.applyMutation(destinationEdit(id, {...fields})),ValidationError);
     assert.deepEqual(store.getSnapshot(),before);
   }
   for(const fields of [{startDate:"2027-02-29"},{startDate:"0000-01-01"},{startDate:"9999-12-31"},{startDate:42},{endDate:"2027-06-04"}]) {
@@ -113,8 +113,8 @@ test("server rejects date overrides, invalid start/nights and overflow atomicall
 test("church placement uses inclusive Sundays and respects hiding through every date change",t=>{
   const {store,tripId}=setup(t);
   const first=store.applyMutation(destinationInput(tripId,{nights:1})).id;
-  const second=store.applyMutation(destinationInput(tripId,{nights:0})).id;
-  const visible=id=>destination(store,id).churchEnabled && churchDateEligible(destination(store,id));
+  const second=store.applyMutation(destinationInput(tripId,{city:"Lyon",nights:0})).id;
+  const visible=id=>destination(store,id).churchEnabled && churchDateEligible(stop(store,id));
   assert.equal(visible(first),true); assert.equal(visible(second),true,"unknown dates show Church");
   store.applyMutation(tripInput({id:tripId,startDate:"2027-06-05"}));
   assert.equal(visible(first),true); assert.equal(visible(second),true,"shared Sunday counts at both endpoints");
@@ -126,7 +126,7 @@ test("church placement uses inclusive Sundays and respects hiding through every 
   store.applyMutation({type:"destination.churchVisibility",id:second,enabled:true});
   store.applyMutation(tripInput({id:tripId,startDate:"2027-06-01"}));
   assert.equal(visible(second),false,"manual enabling cannot override a known Sunday-free stay");
-  store.applyMutation(destinationInput(tripId,{id:first,nights:20})); assert.equal(visible(first),true);
+  store.applyMutation(stopEdit(first, {nights:20})); assert.equal(visible(first),true);
   assert.equal(store.getSnapshot().churches[0].id,churchId);
 });
 
@@ -154,6 +154,7 @@ for (const consistent of [true,false]) test(`schema 14 date backfill, originals,
   const old=store.getSnapshot();
   store.close();
   let db=new DatabaseSync(path);
+  db.exec(UNDO_SCHEMA_21);
   db.prepare("UPDATE destinations SET arrivalDate=?,departureDate=? WHERE id=?").run("2027-06-01","2027-06-04",first);
   db.prepare("UPDATE destinations SET arrivalDate=?,departureDate=? WHERE id=?").run(consistent?"2027-06-04":"2027-06-05","2027-06-06",second);
   db.exec("ALTER TABLE trips DROP COLUMN startDate; ALTER TABLE destinations DROP COLUMN nights; ALTER TABLE destinations DROP COLUMN legacyArrivalDate; ALTER TABLE destinations DROP COLUMN legacyDepartureDate; PRAGMA user_version=14;"); db.close();
@@ -161,17 +162,17 @@ for (const consistent of [true,false]) test(`schema 14 date backfill, originals,
   try {
     const saved=store.getSnapshot();
     assert.equal(saved.trips[0].startDate,consistent?"2027-06-01":null);
-    assert.equal(destination(store,first).nights,consistent?3:null);
-    assert.equal(destination(store,first).legacyArrivalDate,"2027-06-01");
-    assert.equal(destination(store,second).legacyArrivalDate,consistent?"2027-06-04":"2027-06-05");
+    assert.equal(stop(store, first).nights,consistent?3:null);
+    assert.equal(stop(store, first).legacyArrivalDate,"2027-06-01");
+    assert.equal(stop(store, second).legacyArrivalDate,consistent?"2027-06-04":"2027-06-05");
     assert.equal(destination(store,first).hotelNightlyMinor,12345);
     assert.equal(destination(store,first).weatherHighF,0);
     assert.deepEqual(saved.candidates,old.candidates); assert.equal(saved.candidates[0].id,candidateId);
     assert.deepEqual(saved.legs,old.legs); assert.deepEqual(saved.churches,old.churches);
-    assert.equal(saved.trips[0].dateLabel,old.trips[0].dateLabel); assert.equal(destination(store,first).stay,"Stay notes");
+    assert.equal(saved.trips[0].dateLabel,old.trips[0].dateLabel); assert.equal(stop(store, first).stay,"Stay notes");
     store.applyMutation(tripInput({id:tripId,startDate:"2028-02-28"}));
-    store.applyMutation(destinationInput(tripId,{id:first,nights:0}));
-    store.applyMutation(destinationInput(tripId,{id:second,city:"Rome",nights:2}));
+    store.applyMutation(stopEdit(first, {nights:0}));
+    store.applyMutation(stopEdit(second, {city:"Rome",nights:2}));
     store.applyMutation({type:"destination.churchVisibility",id:first,enabled:false});
     const edited=store.getSnapshot();
     store.close(); db=new DatabaseSync(path); db.exec("PRAGMA user_version=14"); db.close();

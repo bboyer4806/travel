@@ -27,23 +27,31 @@ test("scoped trip and destination snapshots omit unrelated data", (t) => {
   store.applyMutation(hotel(tokyo));
 
   const full = store.getSnapshot();
-  const scoped = store.getSnapshot({ tripId: first });
+  const scoped = store.getTripSnapshot(first).data;
   assert.deepEqual(scoped.trips.map((item) => item.id), [first]);
-  assert.deepEqual(scoped.destinations.map((item) => item.id), [rome, paris]);
+  assert.deepEqual(scoped.stops.map((item) => item.id), [rome, paris]);
+  assert.deepEqual(scoped.destinations.map((item) => item.id).sort(), [rome, paris].sort());
   assert.equal(scoped.candidates.length, 2);
   assert.ok(scoped.candidates.every((item) => item.destinationId !== tokyo));
 
-  const category = store.getSnapshot({ tripId: first, destinationId: rome });
+  const category = store.getTripSnapshot(first, rome).data;
   assert.equal(category.trips.length, 1);
-  assert.equal(category.destinations.length, 2, "A category editor still sees its trip route");
+  assert.equal(category.stops.length, 2, "A category editor still sees its trip route");
+  assert.deepEqual(category.destinations.map((item) => item.id), [rome], "only its own destination's research");
   assert.equal(category.candidates.length, 1);
   assert.equal(category.candidates[0].destinationId, rome);
+
+  const place = store.getDestinationSnapshot(rome).data;
+  assert.deepEqual([place.destinations.map((item) => item.id), place.trips.map((item) => item.id), place.stops.map((item) => item.id)], [[rome], [first], [rome]]);
+  assert.equal(place.candidates.length, 1);
+  assert.deepEqual([place.legs, place.homeItems], [[], []], "a destination page sends no trip's connections or At home items");
 
   const home = store.getHomeOverview();
   assert.equal(home.data.trips.length, 2);
   assert.equal(home.data.candidates.length, 0, "Home sends no idea details to the browser");
   assert.equal(home.data.legs.length, 0);
-  assert.equal(Object.keys(home.data.destinations[0]).sort().join(","), "city,id,position,tripId");
+  assert.equal(Object.keys(home.data.destinations[0]).sort().join(","), "city,id");
+  assert.equal(Object.keys(home.data.stops[0]).sort().join(","), "destinationId,id,position,tripId");
   for (const record of full.trips) {
     assert.deepEqual(home.budgets[record.id], calculateBudget(full, record.id));
   }
@@ -61,9 +69,9 @@ test("only the affected trip's schedule changes after mutations", (t) => {
   const second = store.applyMutation(trip("Second", "2027-07-01")).id;
   const firstStop = store.applyMutation(destination(first, "Rome", 2)).id;
   const otherStop = store.applyMutation(destination(second, "Tokyo", 3)).id;
-  const otherDate = store.getSnapshot().destinations.find((item) => item.id === otherStop).arrivalDate;
-  store.applyMutation({ type: "destination.save", id: firstStop, tripId: first, nights: 4 });
-  assert.equal(store.getSnapshot().destinations.find((item) => item.id === otherStop).arrivalDate, otherDate);
+  const otherDate = store.getSnapshot().stops.find((item) => item.id === otherStop).arrivalDate;
+  store.applyMutation({ type: "destination.save", id: firstStop, stopId: firstStop, nights: 4 });
+  assert.equal(store.getSnapshot().stops.find((item) => item.id === otherStop).arrivalDate, otherDate);
   assert.equal(store.getSnapshot().trips.find((item) => item.id === first).endDate, "2027-06-05");
   assert.equal(store.getSnapshot().trips.find((item) => item.id === second).endDate, "2027-07-04");
 });

@@ -3,7 +3,7 @@ import { createHash } from "node:crypto";
 import { DatabaseSync } from "node:sqlite";
 import test from "node:test";
 import { authorizeGoogleSignIn, createStore, SCHEMA_VERSION, ValidationError } from "../src/lib/store.ts";
-import { UNDO_SCHEMA_20 } from "./owned-store.mjs";
+import { UNDO_SCHEMA_20, UNDO_SCHEMA_21 } from "./owned-store.mjs";
 import { fileDatabase } from "./budget-fixtures.mjs";
 
 const google = (subject, email, emailVerified = true, name = null) => ({ subject, email, emailVerified, name });
@@ -102,7 +102,7 @@ test("schema 19 adds accounts and sessions without changing trips, and replay ke
   const { id: tripId } = store.applyMutation(store.authorizeAccount("owner@example.com").id, { type: "trip.save", name: "Lisbon", dateLabel: "Spring", homeCity: "Boston", travelers: 2, notes: "Keep me" });
   store.close();
   let db = new DatabaseSync(path);
-  db.exec(UNDO_SCHEMA_20 + "DROP TABLE sessions; DROP TABLE accounts; PRAGMA user_version = 18;");
+  db.exec(UNDO_SCHEMA_21 + UNDO_SCHEMA_20 + "DROP TABLE sessions; DROP TABLE accounts; PRAGMA user_version = 18;");
   db.close();
 
   store = createStore(path, "owner@example.com");

@@ -5,14 +5,13 @@ import { ChevronDown, Pencil, Plus, Trash2 } from "lucide-react";
 import { ResearchLinks, ResearchLinksEditor } from "@/components/research-links";
 import { ENTRY_REQUIREMENT_FIELDS, type EntryRequirements } from "@/lib/entry-requirements";
 import { formatCalendarDate } from "@/lib/trip-dates";
-import type { ResearchLink } from "@/lib/types";
+import type { ResearchLink, TripStop } from "@/lib/types";
 import styles from "./entry-requirements.module.css";
 
 type PanelProps = {
   requirements: EntryRequirements | null;
-  arrivalDate: string | null;
-  departureDate: string | null;
-  nights: number | null;
+  /** One trip's stay, shown for reference. Outside a trip there is none. */
+  stay?: Pick<TripStop, "arrivalDate" | "departureDate" | "nights">;
   disabled: boolean;
   onEdit: () => void;
   onClear: () => void;
@@ -20,7 +19,7 @@ type PanelProps = {
 
 const reminder = "Manually maintained research. Requirements depend on your passport nationality, purpose of travel, stay length, and circumstances. Verify with official government or embassy sources before travel.";
 
-export function EntryRequirementsPanel({ requirements, arrivalDate, departureDate, nights, disabled, onEdit, onClear }: PanelProps) {
+export function EntryRequirementsPanel({ requirements, stay, disabled, onEdit, onClear }: PanelProps) {
   const [expanded, setExpanded] = useState(false);
   const contentId = useId();
   return <section className={styles.panel} aria-label="Entry requirements">
@@ -36,12 +35,12 @@ export function EntryRequirementsPanel({ requirements, arrivalDate, departureDat
     </div>
     <div id={contentId} className={styles.content} hidden={!expanded}>
       <p className={styles.reminder}>{reminder}</p>
-      <dl className={styles.schedule} aria-label="Current stay for reference">
-        <div><dt>Current arrival</dt><dd>{formatCalendarDate(arrivalDate)}</dd></div>
-        <div><dt>Current departure</dt><dd>{formatCalendarDate(departureDate)}</dd></div>
-        <div><dt>Stay length</dt><dd>{nights === null ? "Nights not set" : `${nights} ${nights === 1 ? "night" : "nights"}`}</dd></div>
+      {stay && <><dl className={styles.schedule} aria-label="Current stay for reference">
+        <div><dt>Current arrival</dt><dd>{formatCalendarDate(stay.arrivalDate)}</dd></div>
+        <div><dt>Current departure</dt><dd>{formatCalendarDate(stay.departureDate)}</dd></div>
+        <div><dt>Stay length</dt><dd>{stay.nights === null ? "Nights not set" : `${stay.nights} ${stay.nights === 1 ? "night" : "nights"}`}</dd></div>
       </dl>
-      <p className={styles.hint}>The current stay is shown for reference. Schedule changes do not update this research.</p>
+      <p className={styles.hint}>This trip&apos;s stay is shown for reference. Schedule changes do not update this research, which every trip visiting this destination shares.</p></>}
       {!requirements ? <p className={styles.empty}>No entry requirements recorded. Missing or unconfirmed information does not mean there are no requirements.</p> : <>
         <dl className={styles.details}>
           {ENTRY_REQUIREMENT_FIELDS.map((field) => <div key={field.name}><dt>{field.label}</dt><dd>{requirements[field.name] || "Not recorded"}</dd></div>)}

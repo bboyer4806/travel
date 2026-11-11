@@ -99,7 +99,7 @@ for (const category of categories) {
   });
 }
 
-test("candidate, destination, and trip deletion cascade only to their own candidate images", (t) => {
+test("candidate deletion removes only its own images, and removing stops or trips keeps them", (t) => {
   const path = fileDatabase(t);
   const store = createOwnedStore(path);
   const observer = new DatabaseSync(path);
@@ -116,14 +116,12 @@ test("candidate, destination, and trip deletion cascade only to their own candid
     assert.ok(store.getCandidatePhoto(activityId, activityPhoto.id));
     assert.ok(store.getCandidatePhoto(restaurantId, restaurantPhoto.id));
     assert.equal(observer.prepare("SELECT count(*) AS count FROM candidate_images").get().count, 2);
-    store.applyMutation({ type: "destination.delete", id: firstDestination });
-    assert.equal(store.getCandidatePhoto(activityId, activityPhoto.id), undefined);
-    assert.ok(store.getCandidatePhoto(restaurantId, restaurantPhoto.id));
-    assert.equal(observer.prepare("SELECT count(*) AS count FROM candidate_images").get().count, 1);
+    store.applyMutation({ type: "stop.remove", id: firstDestination });
     store.applyMutation({ type: "trip.delete", id: tripId });
-    assert.equal(store.getCandidatePhoto(restaurantId, restaurantPhoto.id), undefined);
-    assert.equal(observer.prepare("SELECT count(*) AS count FROM candidate_images").get().count, 0);
-    assert.equal(observer.prepare("SELECT count(*) AS count FROM destination_images").get().count, 0);
+    assert.ok(store.getCandidatePhoto(activityId, activityPhoto.id));
+    assert.ok(store.getCandidatePhoto(restaurantId, restaurantPhoto.id));
+    assert.equal(observer.prepare("SELECT count(*) AS count FROM candidate_images").get().count, 2);
+    assert.equal(observer.prepare("SELECT count(*) AS count FROM destination_images").get().count, 2);
     assert.deepEqual(observer.prepare("PRAGMA foreign_key_check").all(), []);
   } finally {
     observer.close();

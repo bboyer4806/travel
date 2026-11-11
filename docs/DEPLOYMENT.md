@@ -29,7 +29,7 @@ pnpm build
 bash scripts/smoke-container.sh
 ```
 
-The container smoke script needs Docker and Bash. It builds the image, then checks persistent storage across container replacement, rendered pages and Server Actions, sign-in enforcement, trip isolation, photo routes, and the refusal to start without the storage marker or the sign-in settings. The Docker image must be tested on a Docker-capable machine or CI; a local Next build alone does not prove the container or host mount works.
+The container smoke script needs Docker and Bash. It builds the image, then checks persistent storage across container replacement, rendered pages and Server Actions, sign-in enforcement, trip and destination isolation, photo routes, and the refusal to start without the storage marker or the sign-in settings. The Docker image must be tested on a Docker-capable machine or CI; a local Next build alone does not prove the container or host mount works.
 
 - After the checks pass, a push to `main` builds the image, pushes it to GitHub's container registry tagged with its commit SHA, requires a verified [off-host backup](#travel-15-encrypted-off-host-backups-to-windows-11), and then deploys the image to Dokku (`.github/workflows/deploy.yml`). A failed check or backup stops the deployment.
 - Retain the existing DOKKU_SSH_KEY and DOKKU_HOST secrets, and the TRAVEL_BACKUP_HOST_SSH_KEY and TRAVEL_BACKUP_KNOWN_HOSTS secrets the backup step uses.
@@ -79,6 +79,26 @@ Each trip has one owner, and owners share trips with other Google accounts from 
 2. **Back up.** The deployment workflow takes and verifies its encrypted off-host backup before deploying. Also take an on-host online backup with a unique name (see [Backup](#backup)) as the schema 19 rollback point, and keep it until the upgrade is verified.
 
 3. **Verify after deployment.** Confirm `/api/health` returns HTTP 200. Sign in as the owner and confirm every existing trip, price and photo is intact, with **Share** and the delete button on each trip page. Share one trip with a second Google account you control, sign in as it in another browser, and confirm only that trip is listed, marked **Shared by**, that you can edit it, and that its page has neither **Share** nor delete. As the owner, remove that account in the Share dialog, then confirm the second browser's next reload of the trip's URL shows "This page has moved on." and its list no longer has the trip. Nothing in the trip should have changed.
+
+## Shared destinations (TRA-105)
+
+Each owner's destinations become shared by their trips, one per city, and appear in **Destinations** (see [README](../README.md#destinations)). No new settings are needed. The upgrade to [schema 21](#schema-21-shared-destinations-tra-105) combines each owner's destinations for the same city and clears the values they disagree on, so rehearse it against production data first.
+
+1. **Back up.** The deployment workflow takes and verifies its encrypted off-host backup before deploying. Also take an on-host online backup with a unique name (see [Backup](#backup)) as the schema 20 rollback point, and keep it until the upgrade is verified.
+
+2. **Rehearse.** Away from production, upgrade a copy of the verified production backup with this build, from the repository root, naming the designated owner's email:
+
+   ```sh
+   node --input-type=module --eval 'import { createStore } from "./src/lib/store.ts"; createStore(process.argv[1], process.argv[2]).close();' /path/to/copy.sqlite '<owner Google email>'
+   ```
+
+   Expect `user_version` 21, one destination per owner and city, as many rows in `trip_stops` as there were destinations, every travel connection, idea, church and photo kept, at most one entry requirements record per destination, and clean `integrity_check` and `foreign_key_check`. Each combined destination has more than one stop; list them with this query on the upgraded copy, and note their amounts, methods and selections, which may need entering again:
+
+   ```sql
+   SELECT destinations.city, count(*) AS stops FROM destinations JOIN trip_stops ON trip_stops.destinationId = destinations.id GROUP BY destinations.id HAVING count(*) > 1;
+   ```
+
+3. **Verify after deployment.** Confirm `/api/health` returns HTTP 200. Sign in as the owner and confirm each trip lists its destinations in the same order, with the same nights, dates, stay notes and connections, and that **Destinations** lists each city once, with the ideas, photos and churches of every destination combined into it. Re-enter any cleared values the rehearsal found. Sign in as someone a trip is shared with and confirm **Destinations** lists only the destinations of trips shared with them, marked **Shared by** the owner.
 
 ## Deployment safeguards (TRA-98)
 
@@ -162,7 +182,7 @@ Prefer fixing forward. Rolling back an image does not reverse a database schema 
 
 ## Schema history
 
-The schema version is SQLite's `user_version`; the current schema is 20, `SCHEMA_VERSION` in `src/lib/store.ts`. At every start, `createStore` in `src/lib/store.ts` upgrades an older database in one transaction, through each version in turn. Each upgrade checks what already exists, so running it again on a database that already has its changes (a replay) keeps saved data. The notes below are in schema order. **Superseded** marks behavior that a later schema replaced; the current behavior is in [README.md](../README.md).
+The schema version is SQLite's `user_version`; the current schema is 21, `SCHEMA_VERSION` in `src/lib/store.ts`. At every start, `createStore` in `src/lib/store.ts` upgrades an older database in one transaction, through each version in turn. Each upgrade checks what already exists, so running it again on a database that already has its changes (a replay) keeps saved data. The notes below are in schema order. **Superseded** marks behavior that a later schema replaced; the current behavior is in [README.md](../README.md).
 
 ### Schema 1: first shared planner
 The first release creates the `trips`, `destinations`, `legs` and `candidates` tables, with prices in integer USD cents for the whole party. Anyone with the URL can view and edit every trip. The schema 1 build sets `user_version` to 1 at every start and does not refuse a newer database, so later upgrades check what already exists as well as the version: redeploying a newer build after a rollback to schema 1 cannot repeat an `ALTER TABLE` or replace saved links.
@@ -223,10 +243,14 @@ Church details, visibility, and gallery images use the existing persistent SQLit
 
 **Superseded by [schema 15](#schema-15-travel-12-schedule-inputs-and-usd-validation):** the saved visibility is a show or hide choice that date changes keep, and new destinations start shown. The dates separately decide whether the section can appear.
 
+**Superseded by [schema 21](#schema-21-shared-destinations-tra-105):** destinations are no longer deleted, so their churches and photos stay when a destination leaves a trip or its trip is deleted.
+
 ### Schema 15: Travel 1.2 schedule inputs and USD validation
 Rehearse the upgrade against a copy of production data, including galleries, weather, churches, routes, and all budget source modes. On October 29, 2026, schema 15 was rehearsed against a server-side copy of the verified schema 14 production backup. All nine tables retained their rows and existing fields (original dates retained in legacy columns), and integrity and foreign-key checks passed. Both existing trips had incomplete schedules requiring review; no dates were guessed. Production data stayed on the server.
 
 Schema 15 adds trip startDate, destination nights, and preserved legacy arrival/departure columns. Only consistent complete chains supply a trip start; individually valid non-conflicting date pairs can supply nights. Conflicting or incomplete chains remain visibly incomplete until reviewed. Effective dates are recalculated from the new inputs. Original dates remain stored separately, stay notes are never parsed, and replay preserves subsequent edits. Existing Church visibility choices remain saved, including hidden sections; date eligibility now controls whether a section can appear.
+
+**Superseded by [schema 21](#schema-21-shared-destinations-tra-105):** nights, calculated dates and preserved original dates belong to each trip's stop at a destination.
 
 All currencies must be USD. Startup checks stored currency fields inside the migration transaction and aborts on any unexpected non-USD value without conversion or relabeling. Investigate against the backup and resolve the source information deliberately before deploying; do not bulk relabel amounts. Existing USD cents are unchanged. General hotel rates multiply nights; daily food and miscellaneous use nights with a one-day minimum for zero-night stops. Selected hotel prices and fixed amounts remain whole-stay costs.
 
@@ -242,6 +266,8 @@ Rehearse against a copy of the current database before deployment. Schema 17 rep
 
 Schema 18 creates a destination-owned entry-requirements table. Existing destinations start without a record. Manual research, sources, and last checked dates are included in the same SQLite backup; destination and trip deletion cascade to these records. Replaying this migration preserves existing records. Neither migration changes budgets, schedules, routes, candidate/church galleries, or other trip information.
 
+**Superseded by [schema 21](#schema-21-shared-destinations-tra-105):** entry requirements stay with their destination when it leaves a trip or its trip is deleted.
+
 Next.js and its ESLint configuration are pinned to 16.4.5 for this implementation. Explicit output tracing includes Sharp's platform libraries from pnpm's package layout, including the DLLs needed by local Windows standalone previews. The production rehearsal, deployment and release verification were completed on November 4, 2026; see [Travel 1.4 release validation](travel-1.4-validation.md).
 
 ### Schema 19: Google Sign In accounts and sessions
@@ -255,6 +281,21 @@ Trip sharing upgrades the database to schema 20 in the startup transaction. `tri
 **Rehearsal, November 10, 2026.** In an isolated environment, the schema 19 build from `main` wrote a production-like database: 2 trips, 3 destinations, 5 connections, 9 ideas, 3 churches, 18 photos, entry requirements, At home items, and the owner's bound account and session. `scripts/backup.mjs` backed it up, and the backup matched the live file. The TRA-104 build then upgraded the live file: every existing table kept its row count, the full snapshot and every photo's bytes and version were unchanged, home budgets were unchanged, every trip belonged to the designated owner, the owner stayed signed in, and `integrity_check` and `foreign_key_check` passed. Replaying the upgrade changed nothing. The schema 19 build refused the upgraded file without modifying it, and after the stopped-app restore of the backup it opened the schema 19 data unchanged, with the owner's session. A rehearsal against a copy of the verified production backup is still required before deployment, as for earlier schemas.
 
 Restoring the pre-upgrade backup loses ownership, shares, accounts authorized by sharing, and every later edit. **Never lower `user_version` to run an older build on a schema 20 database: schema 19 builds have no trip isolation, so every account a trip was shared with could see and change every trip.**
+
+### Schema 21: shared destinations (TRA-105)
+Shared destinations upgrade the database to schema 21 in the startup transaction. A destination no longer belongs to one trip: it has an owner (`ownerId`, referencing `accounts`) and a `cityKey`, its saved city name with letter case, extra spaces and Unicode form made uniform, and a unique index allows one destination per owner and city. A new `trip_stops` table holds each trip's visits: the trip, the destination, the position, stay notes, nights, calculated dates and preserved original dates. Travel connections in `legs` now join stops. Triggers refuse a stop at a destination its trip's owner doesn't own, and a destination can't be deleted while a stop visits it. Deleting a trip deletes its stops, connections, shares and At home items, never its destinations; ideas, photos, churches and entry requirements stay with their destination.
+
+Each existing destination becomes a stop with the same ID, so its connections, order, stay notes, nights, dates and page links keep working. Destinations with the same owner, the trip's owner, and the same city key are combined into the one from the oldest trip (by creation time, then position), which keeps its ID and city text:
+- Every idea, photo, church and note is kept. Ideas and photos continue in trip order, and the first main photo stays main.
+- Each amount and its currency, budgeting method and Church visibility is kept when the destinations agree or only one set it. One they set differently is cleared: the amount is removed, the method returns to itemized, and Church is shown.
+- In each idea list, selections (included ideas and the chosen hotel) are kept when only one of the destinations had any, and cleared when more than one did. Must do markers are kept.
+- The first typical weather recorded and the first entry requirements with content are kept. Any other weather or entry requirements are added to the notes as text, naming the trip they were recorded in.
+
+Rebuilding tables that others refer to requires SQLite's foreign keys to be off, which is only possible outside a transaction, so startup now turns them off for upgrades and back on after committing. Before committing any upgrade it runs `foreign_key_check`; if a saved item would be left without its trip or destination, startup fails with "This upgrade would leave saved items without the trip or destination they belong to." and nothing changes. A replay finds destinations already shared and changes nothing. The new tables and columns are in the same online backups.
+
+**Rehearsal, November 11, 2026.** In an isolated environment, the schema 20 build from `main` wrote a database with 4 trips for 2 accounts, 9 destinations with 7 distinct owner and city pairs (including one city twice in a trip, one city in two accounts' trips, and `Paris, Texas` beside `Paris, France`), 13 connections, 5 ideas, 2 churches, 5 photos and 2 entry requirements records. `scripts/backup.mjs` backed it up, and the TRA-105 build upgraded the live file: 7 destinations and 9 stops, every connection, idea and church kept, every photo's bytes and version unchanged, 1 entry requirements record with the other's text in the notes, and `integrity_check` and `foreign_key_check` clean. Replaying the upgrade changed nothing. The schema 20 build refused the upgraded file without modifying it, and opened a copy of the backup with its 9 destinations. A rehearsal against a copy of the verified production backup is still required before deployment, as for earlier schemas.
+
+Restoring the pre-upgrade backup separates the destinations again and loses every later edit; values cleared when destinations were combined can only be recovered from that backup. Schema 20 builds expect every destination to belong to one trip and can't read shared destinations.
 
 ## Feedback and release notes
 Configure server-only JIRA_URL (HTTPS Jira base URL), JIRA_EMAIL, and JIRA_API_TOKEN with permission to create Tasks in TRA. Use the host's secret configuration; never put credentials in source, image layers, client variables, or logs. Preserve the browser Host and Origin headers through the proxy; the feedback endpoint compares them and ignores forwarded-host claims. The HttpOnly feedback cookie is Secure for HTTPS origins.

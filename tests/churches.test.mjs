@@ -4,9 +4,9 @@ import { DatabaseSync } from "node:sqlite";
 import test from "node:test";
 import { containsSunday } from "../src/lib/destination-duration.ts";
 import { SCHEMA_VERSION, ValidationError } from "../src/lib/store.ts";
-import { createOwnedStore } from "./owned-store.mjs";
+import { createOwnedStore, UNDO_SCHEMA_21 } from "./owned-store.mjs";
 import { calculateBudget, calculateDestinationBudget } from "../src/lib/budget.ts";
-import { fileDatabase, setup } from "./budget-fixtures.mjs";
+import { fileDatabase, setup, stopEdit, stop } from "./budget-fixtures.mjs";
 
 const tripInput = (overrides = {}) => ({ type: "trip.save", name: "Church planning", dateLabel: "May 2027", homeCity: "New York", travelers: 2, notes: "", ...overrides });
 const destinationInput = (tripId, overrides = {}) => ({ type: "destination.save", tripId, city: "Rome", stay: "Spring", notes: "", ...overrides });
@@ -43,8 +43,8 @@ test("editing a destination's details or nights keeps its hidden Church section 
     [{ nights: null, hotelNightlyAmount: "150" }, null],
     [{ nights: 0 }, "2027-05-01"],
   ]) {
-    store.applyMutation(destinationInput(tripId, { id: destinationId, ...fields }));
-    assert.equal(destination(store, destinationId).departureDate, departureDate, "calculated departure");
+    store.applyMutation(stopEdit(destinationId, { ...fields }));
+    assert.equal(stop(store, destinationId).departureDate, departureDate, "calculated departure");
     assert.equal(destination(store, destinationId).churchEnabled, false, `still hidden after ${JSON.stringify(fields)}`);
   }
   assert.deepEqual(store.getSnapshot().churches, churches, "churches, Mass times and photos are unchanged");
@@ -177,18 +177,17 @@ test("gallery limits include saved photos and failed additions preserve all chur
 test("churches never change candidate counts, selections, trip budgets or destination budgets", (t) => {
   const { store, tripId } = setup(t, tripInput());
   const destinationId = store.applyMutation(destinationInput(tripId)).id;
-  store.applyMutation(destinationInput(tripId, {
-    id: destinationId, nights: 3,
+  store.applyMutation(stopEdit(destinationId, { nights: 3,
     miscDailyAmount: "0", hotelNightlyAmount: "100",
     activitiesBudgetMode: "general", activitiesGeneralAmount: "20",
     foodBudgetMode: "daily", foodDailyAmount: "30", shoppingAmount: "12.34",
-    weatherHighF: 70, weatherLowF: 40, weatherRainfall: "Low", weatherPeriod: "May", weatherSource: "Local archive",
-  }));
+    weatherHighF: 70, weatherLowF: 40, weatherRainfall: "Low", weatherPeriod: "May", weatherSource: "Local archive", }));
   for (const category of ["hotels", "activities", "restaurants"]) store.applyMutation({ type: "candidate.save", destinationId, category, name: category, price: category === "hotels" ? "0" : "", address: "", url: "", notes: "", included: true, gallery: { add: [photo()], remove: [] } });
   store.applyMutation({ type: "homeItem.save", tripId, name: "Mail hold", price: "", notes: "", completed: false });
   store.applyMutation({type:"destination.churchVisibility",id:destinationId,enabled:false});
   const before = store.getSnapshot();
-  const budget = calculateBudget(before, tripId), destinationBudget = calculateDestinationBudget(before, destinationId);
+  const visitIn = (snapshot) => ({ ...snapshot.destinations.find((item) => item.id === destinationId), nights: snapshot.stops.find((item) => item.id === destinationId).nights });
+  const budget = calculateBudget(before, tripId), destinationBudget = calculateDestinationBudget(before, visitIn(before));
   const first = store.applyMutation(churchInput(destinationId, { gallery: { add: [photo()], remove: [] } })).id;
   store.applyMutation(churchInput(destinationId, { name: "Chapel", massTimes: [mass()] }));
   store.applyMutation(churchInput(destinationId, { id: first, name: "Updated church" }));
@@ -198,26 +197,27 @@ test("churches never change candidate counts, selections, trip budgets or destin
   const after = store.getSnapshot();
   assert.deepEqual({ ...after, churches: [] }, before);
   assert.deepEqual(calculateBudget(after, tripId), budget);
-  assert.deepEqual(calculateDestinationBudget(after, destinationId), destinationBudget);
+  assert.deepEqual(calculateDestinationBudget(after, visitIn(after)), destinationBudget);
 });
 
-test("deleting churches, destinations and trips cascades their church images without touching other trips", (t) => {
+test("deleting a church removes its photos; removing its destination from a trip or deleting the trip keeps both", (t) => {
   const { store, tripId } = setup(t, tripInput());
   const destinationId = store.applyMutation(destinationInput(tripId)).id;
   const otherTrip = store.applyMutation(tripInput({ name: "Other trip" })).id;
-  const otherDestination = store.applyMutation(destinationInput(otherTrip)).id;
+  const otherDestination = store.applyMutation(destinationInput(otherTrip, { city: "Milan" })).id;
   const first = photo(), second = photo(), third = photo();
   const id = store.applyMutation(churchInput(destinationId, { gallery: { add: [first], remove: [] } })).id;
+  const kept = store.applyMutation(churchInput(destinationId, { name: "Kept", gallery: { add: [third], remove: [] } })).id;
   const otherId = store.applyMutation(churchInput(otherDestination, { gallery: { add: [second], remove: [] } })).id;
-  store.applyMutation({ type: "destination.delete", id: destinationId });
+  store.applyMutation({ type: "church.delete", id, destinationId });
   assert.equal(church(store, id), undefined);
   assert.equal(store.getChurchPhoto(id, first.id), undefined);
-  assert.ok(store.getChurchPhoto(otherId, second.id));
-  const newDestination = store.applyMutation(destinationInput(tripId)).id;
-  const newId = store.applyMutation(churchInput(newDestination, { gallery: { add: [third], remove: [] } })).id;
-  store.applyMutation({ type: "trip.delete", id: tripId });
-  assert.equal(store.getChurchPhoto(newId, third.id), undefined);
-  assert.equal(store.getSnapshot().churches.length, 1);
+  assert.ok(store.getChurchPhoto(kept, third.id));
+  store.applyMutation({ type: "stop.remove", id: destinationId });
+  store.applyMutation({ type: "trip.delete", id: otherTrip });
+  // Churches belong to their destination, which outlives every trip that visits it.
+  assert.deepEqual(store.getSnapshot().churches.map((item) => item.id).sort(), [kept, otherId].sort());
+  assert.ok(store.getChurchPhoto(kept, third.id));
   assert.ok(store.getChurchPhoto(otherId, second.id));
 });
 
@@ -233,9 +233,9 @@ test("schema 13 upgrade initializes Sunday visibility, preserves prior data and 
       foodBudgetMode: "daily", foodDailyAmount: "20", shoppingAmount: "12.34",
       weatherHighF: 70.5, weatherLowF: 40, weatherRainfall: "Some rain", weatherPeriod: "May", weatherSource: "Historical averages",
     })).id;
-    const weekdayId = store.applyMutation(destinationInput(tripId, { nights: 5 })).id;
-    const partialId = store.applyMutation(destinationInput(tripId, { nights: null })).id;
-    const unknownId = store.applyMutation(destinationInput(tripId)).id;
+    const weekdayId = store.applyMutation(destinationInput(tripId, { city: "Milan", nights: 5 })).id;
+    const partialId = store.applyMutation(destinationInput(tripId, { city: "Naples", nights: null })).id;
+    const unknownId = store.applyMutation(destinationInput(tripId, { city: "Turin" })).id;
     const hotelPhoto = photo();
     const candidateId = store.applyMutation({ type: "candidate.save", destinationId: id, category: "hotels", name: "Saved hotel", price: "123.45", address: "Main street", url: "", notes: "", included: true, gallery: { add: [hotelPhoto], remove: [] } }).id;
     store.applyMutation({ type: "homeItem.save", tripId, name: "House sitting", price: "23.95", notes: "Leave a key", completed: true });
@@ -244,7 +244,7 @@ test("schema 13 upgrade initializes Sunday visibility, preserves prior data and 
     const destinationImage = store.getDestinationImage(id), candidateImage = store.getCandidatePhoto(candidateId, hotelPhoto.id);
     store.close(); store = null;
     let observer = new DatabaseSync(path);
-    try { observer.exec("DROP TABLE church_images; DROP TABLE churches; ALTER TABLE destinations DROP COLUMN churchEnabled; PRAGMA user_version = 13;"); }
+    try { observer.exec(UNDO_SCHEMA_21 + "DROP TABLE church_images; DROP TABLE churches; ALTER TABLE destinations DROP COLUMN churchEnabled; PRAGMA user_version = 13;"); }
     finally { observer.close(); }
     store = createOwnedStore(path);
     assert.deepEqual(store.getSnapshot(), before);

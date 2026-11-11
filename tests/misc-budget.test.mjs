@@ -16,6 +16,14 @@ test("daily food and miscellaneous use zero = one full day, otherwise nights, in
   assert.deepEqual(calculateFoodEstimate({nights,foodDailyMinor:amount,foodCurrency:"USD"}),{days,dailyMinor:amount,currency:"USD",subtotalMinor:subtotal});
  }
 });
+test("miscellaneous and food subtotals too large to stay exact are unknown, never inexact money",()=>{
+ for(const [nights,amount] of [[3,Number.MAX_SAFE_INTEGER],[exactNights+1,largestAmountMinor]]) {
+  assert.equal(calculateMiscellaneous({nights,miscDailyMinor:amount,miscCurrency:"USD"}).subtotalMinor,null);
+  assert.equal(calculateFoodEstimate({nights,foodDailyMinor:amount,foodCurrency:"USD"}).subtotalMinor,null);
+ }
+ assert.equal(calculateMiscellaneous({nights:exactNights,miscDailyMinor:largestAmountMinor,miscCurrency:"USD"}).subtotalMinor,exactNights*largestAmountMinor);
+ assert.equal(calculateFoodEstimate({nights:exactNights,foodDailyMinor:largestAmountMinor,foodCurrency:"USD"}).subtotalMinor,exactNights*largestAmountMinor);
+});
 test("all USD categories reconcile exactly once, isolate trips, and retain active-source semantics",t=>{
  const {store,tripId}=setup(t);
  const id=store.applyMutation(destinationInput(tripId,{nights:3,hotelNightlyAmount:"100",miscDailyAmount:"10",foodBudgetMode:"daily",foodDailyAmount:"40",activitiesBudgetMode:"general",activitiesGeneralAmount:"50",shoppingAmount:"25"})).id;

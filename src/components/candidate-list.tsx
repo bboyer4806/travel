@@ -2,7 +2,7 @@ import { ArrowDown, ArrowUp, Check, MapPin, Pencil, Plus, Star, Trash2 } from "l
 import { useEffect, useRef } from "react";
 import { CandidateGallery } from "./candidate-gallery";
 import { ResearchLinks } from "./research-links";
-import { formatMoney } from "@/lib/budget";
+import { formatCurrency } from "@/lib/money";
 import type { Candidate, Category, Destination, Mutation } from "@/lib/types";
 
 const singular = { hotels: "hotel", activities: "activity", restaurants: "restaurant" };
@@ -58,7 +58,7 @@ export default function CandidateList({ items, category, destination, busy, onEd
         {item.notes && <p className="idea-notes">{item.notes}</p>}
         <ResearchLinks links={item.links ?? []} />
         <div className="idea-bottom">
-          <div><span className={item.priceCents === null ? "idea-price unknown" : "idea-price"}>{item.priceCents === null ? "Not estimated" : formatMoney(item.priceCents)}</span>
+          <div><span className={item.priceCents === null ? "idea-price unknown" : "idea-price"}>{item.priceCents === null ? "Not estimated" : formatCurrency(item.priceCents, "USD")}</span>
             <small>{category === "hotels" ? "entire stay · whole party" : category === "restaurants" ? "one meal · whole party" : "whole party"}</small></div>
           <button className={item.included ? "button selected-button small" : "button secondary small"} disabled={busy} aria-pressed={item.included}
             onClick={(event) => change({ type: "candidate.include", id: item.id, included: !item.included }, "Budget selection saved.", event.currentTarget)}>

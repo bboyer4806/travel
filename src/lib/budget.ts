@@ -2,14 +2,8 @@ import type { FoodBudgetMode, ActivitiesBudgetMode, Budget, Candidate, Destinati
 import { nightsToBudgetDays } from "./destination-duration.ts";
 
 type MiscellaneousInput = Pick<Destination, "nights" | "miscDailyMinor" | "miscCurrency">;
-export interface MiscellaneousBudget {
-  days: number | null;
-  dailyMinor: number | null;
-  currency: string | null;
-  subtotalMinor: number | null;
-}
 type FoodEstimateInput = Pick<Destination, "nights" | "foodDailyMinor" | "foodCurrency">;
-export interface FoodEstimate {
+export interface DailyAllowance {
   days: number | null;
   dailyMinor: number | null;
   currency: string | null;
@@ -39,23 +33,23 @@ export interface DestinationBudget {
 type CostCategory = "travelCents" | "hotelsCents" | "activitiesCents" | "restaurantsCents" | "homeCents" | "miscellaneous" | "shopping";
 interface Cost { amount: number | null; currency: string | null; category: CostCategory; }
 
-/** Daily spending covers the whole party; a zero-night visit uses one full day. */
-export function calculateMiscellaneous(destination: MiscellaneousInput): MiscellaneousBudget {
-  const days = nightsToBudgetDays(destination.nights);
-  const dailyMinor = destination.miscDailyMinor ?? null;
-  const currency = destination.miscCurrency || null;
-  const subtotalMinor = days === null || dailyMinor === null || currency === null ? null : Math.round(dailyMinor * days);
-  return { days, dailyMinor, currency, subtotalMinor };
-}
-
-/** Same allowance as miscellaneous, never multiplied per traveler. */
-export function calculateFoodEstimate(destination: FoodEstimateInput): FoodEstimate {
-  const days = nightsToBudgetDays(destination.nights);
-  const dailyMinor = destination.foodDailyMinor ?? null;
-  const currency = destination.foodCurrency || null;
+/**
+ * A daily amount for the whole party, never multiplied per traveler: one budget day per night, and one
+ * full day for a zero-night visit. A subtotal too large to stay exact is unknown, never shown inexact.
+ */
+function dailyAllowance(nights: number | null, dailyMinor: number | null, currency: string | null): DailyAllowance {
+  const days = nightsToBudgetDays(nights);
   const subtotal = days === null || dailyMinor === null || currency === null ? null : Math.round(dailyMinor * days);
   const subtotalMinor = subtotal !== null && Number.isSafeInteger(subtotal) ? subtotal : null;
   return { days, dailyMinor, currency, subtotalMinor };
+}
+
+export function calculateMiscellaneous(destination: MiscellaneousInput): DailyAllowance {
+  return dailyAllowance(destination.nights, destination.miscDailyMinor ?? null, destination.miscCurrency || null);
+}
+
+export function calculateFoodEstimate(destination: FoodEstimateInput): DailyAllowance {
+  return dailyAllowance(destination.nights, destination.foodDailyMinor ?? null, destination.foodCurrency || null);
 }
 
 /** One nightly amount covers all rooms and travelers; the entered stay length determines nights. */
@@ -159,6 +153,7 @@ export function calculateBudget(snapshot: Snapshot, tripId: string): Budget {
     hotelsByCurrency: {},
     activitiesByCurrency: {},
     foodByCurrency: {},
+    travelMissingCount: 0,
     foodMissingCount: 0,
     activitiesMissingCount: 0,
     hotelMissingCount: 0,
@@ -185,6 +180,7 @@ export function calculateBudget(snapshot: Snapshot, tripId: string): Budget {
     } else if (cost.amount !== null && cost.currency === "USD") {
       budget[cost.category] += cost.amount;
     }
+    if (cost.category === "travelCents" && (cost.amount === null || cost.currency === null)) budget.travelMissingCount += 1;
     if (cost.category === "restaurantsCents") {
       if (cost.amount === null || cost.currency === null) budget.foodMissingCount += 1;
       else budget.foodByCurrency[cost.currency] = (budget.foodByCurrency[cost.currency] ?? 0) + cost.amount;
@@ -216,10 +212,4 @@ export function calculateBudget(snapshot: Snapshot, tripId: string): Budget {
   budget.totalCents = budget.totalsByCurrency.USD ?? 0;
   budget.complete = budget.missingCount === 0;
   return budget;
-}
-
-const money = new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", minimumFractionDigits: 2, maximumFractionDigits: 2 });
-const wholeMoney = new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 });
-export function formatMoney(cents: number): string {
-  return (cents % 100 === 0 ? wholeMoney : money).format(cents / 100);
 }

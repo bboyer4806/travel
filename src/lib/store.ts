@@ -5,7 +5,8 @@ import { dirname, resolve } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { containsSunday, isValidDate, nightsToBudgetDays } from "./destination-duration.ts";
 import { backfillDates, MAX_NIGHTS, sequenceDates } from "./trip-dates.ts";
-import { parseMinorAmount, SUPPORTED_CURRENCIES } from "./money.ts";
+import { MAX_AMOUNT_CENTS, parseMinorAmount, SUPPORTED_CURRENCIES } from "./money.ts";
+import { formatMegabytes, MAX_CANDIDATE_IMAGES, MAX_DESTINATION_IMAGES, MAX_STORED_IMAGE_BYTES } from "./image-limits.ts";
 import { normalizeEntryRequirements } from "./entry-requirements.ts";
 import { SESSION_DAYS } from "./session-cookie.ts";
 import type { EntryRequirements } from "./entry-requirements.ts";
@@ -19,9 +20,6 @@ type StoredHomeItem = Omit<HomeItem, "completed"> & { completed: number };
 type StoredLeg = Omit<TravelLeg, "itinerary" | "links"> & { itineraryJson: string; linksJson: string };
 type StoredCandidate = Omit<Candidate, "links" | "included" | "mustDo" | "images"> & { linksJson: string; included: number; mustDo: number };
 
-const MAX_IMAGE_BYTES = 2 * 1024 * 1024;
-const MAX_GALLERY_IMAGES = 10;
-const MAX_PRICE_CENTS = 10_000_000_000;
 const CATEGORIES = ["hotels", "activities", "restaurants"] as const;
 const DAY_MS = 24 * 60 * 60 * 1000;
 const SESSION_MS = SESSION_DAYS * DAY_MS;
@@ -107,19 +105,18 @@ function urlField(input: Input, required = false): string {
     throw new ValidationError("Enter a website link starting with https:// or http://.");
   }
 }
-function parsePrice(value: string): number | null {
-  if (!value) return null;
-  if (!/^(?:\d+|\d*\.\d{1,2})$/.test(value)) {
-    throw new ValidationError("Estimated price must be a positive USD amount or zero, with up to two decimal places. Leave it blank if unknown.");
+/** An entered price in cents, or null when blank. Prices follow money.ts's rules and messages, as every amount does. */
+function priceCents(value: string): number | null {
+  try {
+    return parseMinorAmount(value, "USD", "Estimated price");
+  } catch (error) {
+    if (!(error instanceof Error)) throw error;
+    throw new ValidationError(error.message);
   }
-  const [dollars, fraction = ""] = value.split(".");
-  const cents = Number(dollars || "0") * 100 + Number(fraction.padEnd(2, "0"));
-  if (!Number.isSafeInteger(cents) || cents > MAX_PRICE_CENTS) throw new ValidationError("Estimated price must be $100,000,000 or less.");
-  return cents;
 }
 function priceField(input: Input): string {
   const value = textField(input, "price", 32);
-  parsePrice(value);
+  priceCents(value);
   return value;
 }
 function temperatureField(input: Input, key: "weatherHighF" | "weatherLowF"): number | null | undefined {
@@ -221,7 +218,7 @@ function imageField(input: Input, label = "Destination"): Uint8Array | null | un
   const value = input.image;
   if (value === undefined || value === null) return value;
   if (!(value instanceof Uint8Array)) throw new ValidationError(`Choose a valid WebP ${label.toLowerCase()} image.`);
-  if (value.byteLength > MAX_IMAGE_BYTES) throw new ValidationError(`${label} image must be 2 MB or smaller.`);
+  if (value.byteLength > MAX_STORED_IMAGE_BYTES) throw new ValidationError(`${label} image must be ${formatMegabytes(MAX_STORED_IMAGE_BYTES)} or smaller.`);
   if (value.byteLength < 12 || ![82, 73, 70, 70].every((byte, index) => value[index] === byte) || ![87, 69, 66, 80].every((byte, index) => value[index + 8] === byte)) {
     throw new ValidationError(`Choose a valid WebP ${label.toLowerCase()} image.`);
   }
@@ -233,7 +230,8 @@ function galleryField(input: Input, label = "Idea"): CandidateGalleryUpdate | un
   const value = input.gallery;
   if (!value || typeof value !== "object" || Array.isArray(value)) throw new ValidationError("These photo changes are invalid.");
   const gallery = value as Input;
-  if (!Array.isArray(gallery.add) || !Array.isArray(gallery.remove) || gallery.add.length > MAX_GALLERY_IMAGES || gallery.remove.length > MAX_GALLERY_IMAGES) throw new ValidationError(`${label === "Church" ? "A church" : label === "Destination" ? "A destination" : "An idea"} can have up to 10 photos.`);
+  const maxImages = label === "Destination" ? MAX_DESTINATION_IMAGES : MAX_CANDIDATE_IMAGES;
+  if (!Array.isArray(gallery.add) || !Array.isArray(gallery.remove) || gallery.add.length > maxImages || gallery.remove.length > maxImages) throw new ValidationError(`${label === "Church" ? "A church" : label === "Destination" ? "A destination" : "An idea"} can have up to ${maxImages} photos.`);
   const seen = new Set<string>();
   const add = gallery.add.map((photo) => {
     if (!photo || typeof photo !== "object" || Array.isArray(photo)) throw new ValidationError("Choose a valid photo.");
@@ -258,7 +256,7 @@ function destinationGalleryField(input: Input): DestinationGalleryUpdate | undef
   if (!gallery) return undefined;
   const orderValue = (input.gallery as Input).order;
   if (orderValue === undefined) return gallery;
-  if (!Array.isArray(orderValue) || orderValue.length > MAX_GALLERY_IMAGES) throw new ValidationError("A destination can have up to 10 photos.");
+  if (!Array.isArray(orderValue) || orderValue.length > MAX_DESTINATION_IMAGES) throw new ValidationError(`A destination can have up to ${MAX_DESTINATION_IMAGES} photos.`);
   const order = orderValue.map((id) => idField({ id }));
   if (new Set(order.map((id) => id.toLowerCase())).size !== order.length) throw new ValidationError("Each photo must appear once in the photo order.");
   return { ...gallery, order };
@@ -363,7 +361,7 @@ export function createStore(databasePath: string, ownerEmail: string) {
       id TEXT PRIMARY KEY, tripId TEXT NOT NULL REFERENCES trips(id) ON DELETE CASCADE,
       fromId TEXT REFERENCES destinations(id) ON DELETE CASCADE,
       toId TEXT REFERENCES destinations(id) ON DELETE CASCADE,
-      method TEXT NOT NULL DEFAULT '', priceCents INTEGER CHECK(priceCents BETWEEN 0 AND ${MAX_PRICE_CENTS}),
+      method TEXT NOT NULL DEFAULT '', priceCents INTEGER CHECK(priceCents BETWEEN 0 AND ${MAX_AMOUNT_CENTS}),
       departure TEXT NOT NULL DEFAULT '', arrival TEXT NOT NULL DEFAULT '',
       url TEXT NOT NULL DEFAULT '', notes TEXT NOT NULL DEFAULT '',
       CHECK(fromId IS NOT NULL OR toId IS NOT NULL), CHECK(fromId IS NULL OR toId IS NULL OR fromId != toId)
@@ -372,7 +370,7 @@ export function createStore(databasePath: string, ownerEmail: string) {
     CREATE TABLE IF NOT EXISTS candidates (
       id TEXT PRIMARY KEY, destinationId TEXT NOT NULL REFERENCES destinations(id) ON DELETE CASCADE,
       category TEXT NOT NULL CHECK(category IN ('hotels', 'activities', 'restaurants')),
-      name TEXT NOT NULL, priceCents INTEGER CHECK(priceCents BETWEEN 0 AND ${MAX_PRICE_CENTS}),
+      name TEXT NOT NULL, priceCents INTEGER CHECK(priceCents BETWEEN 0 AND ${MAX_AMOUNT_CENTS}),
       address TEXT NOT NULL DEFAULT '', url TEXT NOT NULL DEFAULT '', notes TEXT NOT NULL DEFAULT '',
       included INTEGER NOT NULL DEFAULT 0 CHECK(included IN (0,1))
     ) STRICT;
@@ -442,7 +440,7 @@ export function createStore(databasePath: string, ownerEmail: string) {
         CREATE TABLE IF NOT EXISTS home_items (
           id TEXT PRIMARY KEY, tripId TEXT NOT NULL REFERENCES trips(id) ON DELETE CASCADE,
           name TEXT NOT NULL, notes TEXT NOT NULL DEFAULT '',
-          priceCents INTEGER CHECK(priceCents BETWEEN 0 AND ${MAX_PRICE_CENTS}),
+          priceCents INTEGER CHECK(priceCents BETWEEN 0 AND ${MAX_AMOUNT_CENTS}),
           completed INTEGER NOT NULL DEFAULT 0 CHECK(completed IN (0,1)), createdAt TEXT NOT NULL
         ) STRICT;
         CREATE INDEX IF NOT EXISTS home_items_trip ON home_items(tripId, createdAt, id);
@@ -807,7 +805,7 @@ export function createStore(databasePath: string, ownerEmail: string) {
     }
     const removed = new Set(gallery.remove);
     const remaining = [...current.filter((photo) => !removed.has(photo.id)).map((photo) => photo.id), ...gallery.add.map((photo) => photo.id)];
-    if (remaining.length > MAX_GALLERY_IMAGES) throw new ValidationError("A destination can have up to 10 photos. Remove a photo before adding more.");
+    if (remaining.length > MAX_DESTINATION_IMAGES) throw new ValidationError(`A destination can have up to ${MAX_DESTINATION_IMAGES} photos. Remove a photo before adding more.`);
     const order = gallery.order ?? remaining;
     if (order.length !== remaining.length || order.some((id) => !remaining.includes(id))) throw new ValidationError("The destination photos have changed. Refresh before rearranging them.");
     const main = gallery.mainImageId === undefined ? (currentMain && !removed.has(currentMain) ? currentMain : order[0] ?? null) : gallery.mainImageId;
@@ -844,7 +842,7 @@ export function createStore(databasePath: string, ownerEmail: string) {
     const removed = new Set(gallery.remove);
     const retained = current.filter((photo) => !removed.has(photo.id));
     const finalIds = [...retained.map((photo) => photo.id), ...gallery.add.map((photo) => photo.id)];
-    if (finalIds.length > MAX_GALLERY_IMAGES) throw new ValidationError(`${label} can have up to 10 photos. Remove a photo before adding more.`);
+    if (finalIds.length > MAX_CANDIDATE_IMAGES) throw new ValidationError(`${label} can have up to ${MAX_CANDIDATE_IMAGES} photos. Remove a photo before adding more.`);
     const main = gallery.mainImageId === undefined ? (currentMain && !removed.has(currentMain) ? currentMain : finalIds[0] ?? null) : gallery.mainImageId;
     if ((main === null && finalIds.length > 0) || (main !== null && !finalIds.includes(main))) throw new ValidationError("Choose a main photo from the remaining photos. Refresh if the gallery has changed.");
     for (const id of gallery.remove) db.prepare(`DELETE FROM ${table} WHERE ${ownerColumn} = ? AND id = ?`).run(ownerId, id);
@@ -945,9 +943,9 @@ export function createStore(databasePath: string, ownerEmail: string) {
         const id = input.id ?? randomUUID();
         if (input.id) {
           homeItemForTrip(id, input.tripId);
-          db.prepare("UPDATE home_items SET name = ?, priceCents = ?, notes = ?, completed = ? WHERE id = ? AND tripId = ?").run(input.name, parsePrice(input.price), input.notes, Number(input.completed), id, input.tripId);
+          db.prepare("UPDATE home_items SET name = ?, priceCents = ?, notes = ?, completed = ? WHERE id = ? AND tripId = ?").run(input.name, priceCents(input.price), input.notes, Number(input.completed), id, input.tripId);
         } else {
-          db.prepare("INSERT INTO home_items(id,tripId,name,priceCents,notes,completed,createdAt) VALUES(?,?,?,?,?,?,?)").run(id, input.tripId, input.name, parsePrice(input.price), input.notes, Number(input.completed), new Date().toISOString());
+          db.prepare("INSERT INTO home_items(id,tripId,name,priceCents,notes,completed,createdAt) VALUES(?,?,?,?,?,?,?)").run(id, input.tripId, input.name, priceCents(input.price), input.notes, Number(input.completed), new Date().toISOString());
         }
         return id;
       }
@@ -979,7 +977,7 @@ export function createStore(databasePath: string, ownerEmail: string) {
         let miscDailyMinor = before?.miscDailyMinor ?? null;
         if (input.miscDailyAmount !== undefined) {
           try {
-            miscDailyMinor = parseMinorAmount(input.miscDailyAmount, miscCurrency);
+            miscDailyMinor = parseMinorAmount(input.miscDailyAmount, miscCurrency, "Daily miscellaneous amount");
           } catch (error) {
             throw new ValidationError(error instanceof Error ? error.message : "Enter a valid daily miscellaneous amount.");
           }
@@ -1123,7 +1121,7 @@ export function createStore(databasePath: string, ownerEmail: string) {
         const before = existing<StoredLeg>("legs", input.id);
         const itineraryJson = input.itinerary === undefined ? before.itineraryJson : JSON.stringify(input.itinerary);
         const links = savedLinks(input, before);
-        db.prepare("UPDATE legs SET method = ?, priceCents = ?, departure = ?, arrival = ?, url = ?, notes = ?, itineraryJson = ?, linksJson = ? WHERE id = ?").run(input.method, parsePrice(input.price), input.departure, input.arrival, links[0]?.url ?? "", input.notes, itineraryJson, JSON.stringify(links), input.id);
+        db.prepare("UPDATE legs SET method = ?, priceCents = ?, departure = ?, arrival = ?, url = ?, notes = ?, itineraryJson = ?, linksJson = ? WHERE id = ?").run(input.method, priceCents(input.price), input.departure, input.arrival, links[0]?.url ?? "", input.notes, itineraryJson, JSON.stringify(links), input.id);
         return input.id;
       }
       case "leg.clear":
@@ -1143,10 +1141,10 @@ export function createStore(databasePath: string, ownerEmail: string) {
         if (input.category === "hotels" && mustDo) throw new ValidationError("Must do is available for activities and restaurants only.");
         if (input.included && input.category === "hotels") clearHotelSelection(input.destinationId);
         if (input.id) {
-          db.prepare("UPDATE candidates SET name = ?, priceCents = ?, address = ?, url = ?, notes = ?, included = ?, mustDo = ?, linksJson = ? WHERE id = ?").run(input.name, parsePrice(input.price), input.address, url, input.notes, Number(input.included), mustDo, JSON.stringify(links), id);
+          db.prepare("UPDATE candidates SET name = ?, priceCents = ?, address = ?, url = ?, notes = ?, included = ?, mustDo = ?, linksJson = ? WHERE id = ?").run(input.name, priceCents(input.price), input.address, url, input.notes, Number(input.included), mustDo, JSON.stringify(links), id);
         } else {
           const position = Number(db.prepare("SELECT coalesce(max(position), -1) + 1 AS position FROM candidates WHERE destinationId = ? AND category = ?").get(input.destinationId, input.category)!.position);
-          db.prepare("INSERT INTO candidates(id,destinationId,category,name,priceCents,address,url,notes,included,mustDo,position,linksJson) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)").run(id, input.destinationId, input.category, input.name, parsePrice(input.price), input.address, url, input.notes, Number(input.included), mustDo, position, JSON.stringify(links));
+          db.prepare("INSERT INTO candidates(id,destinationId,category,name,priceCents,address,url,notes,included,mustDo,position,linksJson) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)").run(id, input.destinationId, input.category, input.name, priceCents(input.price), input.address, url, input.notes, Number(input.included), mustDo, position, JSON.stringify(links));
         }
         saveGallery("candidate", id, input.gallery, input.image);
         return id;

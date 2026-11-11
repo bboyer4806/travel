@@ -5,7 +5,8 @@ import test from "node:test";
 import { ValidationError } from "../src/lib/store.ts";
 import { createOwnedStore } from "./owned-store.mjs";
 import { fileDatabase, setup } from "./budget-fixtures.mjs";
-import { calculateBudget, formatMoney } from "../src/lib/budget.ts";
+import { calculateBudget } from "../src/lib/budget.ts";
+import { formatCurrency } from "../src/lib/money.ts";
 
 const tripInput = (overrides = {}) => ({ type: "trip.save", name: "Japan in spring", dateLabel: "Spring 2027", homeCity: "New York", travelers: 2, notes: "An idea worth exploring.", ...overrides });
 const destinationInput = (tripId, overrides = {}) => ({ type: "destination.save", tripId, city: "Tokyo", stay: "4 nights", notes: "", ...overrides });
@@ -101,15 +102,15 @@ test("budget totals use selected ideas, exact cents, and whole-party transport c
   store.applyMutation(candidateInput(destinationId, { category: "restaurants", name: "Lunch", price: "40.01" }));
   store.applyMutation(candidateInput(destinationId, { category: "activities", name: "Maybe later", price: "", included: false }));
   const budget = calculateBudget(store.getSnapshot(), tripId);
-  assert.deepEqual(budget, { totalCents: 36060, travelCents: 12026, hotelsCents: 20033, activitiesCents: 0, restaurantsCents: 4001, homeCents: 0, totalsByCurrency: { USD: 36060 }, miscellaneousByCurrency: {}, shoppingByCurrency: {}, hotelsByCurrency: { USD: 20033 }, hotelMissingCount: 0, activitiesByCurrency: { USD: 0 }, activitiesMissingCount: 0, foodByCurrency: { USD: 4001 }, foodMissingCount: 0, miscMissingCount: 1, knownCount: 5, missingCount: 1, complete: false });
+  assert.deepEqual(budget, { totalCents: 36060, travelCents: 12026, hotelsCents: 20033, activitiesCents: 0, restaurantsCents: 4001, homeCents: 0, totalsByCurrency: { USD: 36060 }, miscellaneousByCurrency: {}, shoppingByCurrency: {}, hotelsByCurrency: { USD: 20033 }, hotelMissingCount: 0, activitiesByCurrency: { USD: 0 }, activitiesMissingCount: 0, foodByCurrency: { USD: 4001 }, foodMissingCount: 0, travelMissingCount: 0, miscMissingCount: 1, knownCount: 5, missingCount: 1, complete: false });
   store.applyMutation({ type: "candidate.include", id: alternativeId, included: true });
   assert.equal(store.getSnapshot().candidates.find((item) => item.id === hotelId).included, false);
   assert.equal(store.getSnapshot().candidates.filter((item) => item.category === "hotels" && item.included).length, 1);
   assert.equal(calculateBudget(store.getSnapshot(), tripId).hotelsCents, 999900);
   store.applyMutation(candidateInput(destinationId, { id: hotelId, included: true }));
   assert.equal(store.getSnapshot().candidates.find((item) => item.id === alternativeId).included, false);
-  assert.equal(formatMoney(36060), "$360.60");
-  assert.equal(formatMoney(0), "$0");
+  assert.equal(formatCurrency(36060, "USD"), "$360.60");
+  assert.equal(formatCurrency(0, "USD"), "$0");
 });
 
 test("incomplete budgets distinguish unknown values from a known zero", (t) => {
@@ -127,6 +128,29 @@ test("incomplete budgets distinguish unknown values from a known zero", (t) => {
   store.applyMutation(tripInput({ id: tripId, homeCity: "" }));
   assert.equal(calculateBudget(store.getSnapshot(), tripId).missingCount, 5);
   assert.equal(calculateBudget(store.getSnapshot(), tripId).complete, false);
+});
+
+test("the budget counts each travel connection without a price, as the trip page lists them", (t) => {
+  const { store, tripId } = setup(t, tripInput());
+  const budget = () => calculateBudget(store.getSnapshot(), tripId);
+  const unpriced = () => legsFor(store, tripId).filter((leg) => leg.priceCents === null).length;
+  assert.equal(budget().travelMissingCount, 0, "a trip without destinations has no connections");
+  const first = store.applyMutation(destinationInput(tripId)).id;
+  store.applyMutation(destinationInput(tripId, { city: "Osaka" }));
+  const route = legsFor(store, tripId);
+  assert.equal(budget().travelMissingCount, 3);
+  store.applyMutation(legInput(route[0].id, { price: "0" }));
+  store.applyMutation(legInput(route[1].id));
+  assert.equal(budget().travelMissingCount, 1, "a zero price is known");
+  assert.equal(budget().travelCents, 10001);
+  store.applyMutation(legInput(route[2].id, { price: "20.25" }));
+  assert.equal(budget().travelMissingCount, 0);
+  assert.equal(budget().travelCents, 12026);
+  store.applyMutation({ type: "leg.clear", id: route[1].id });
+  assert.equal(budget().travelMissingCount, unpriced());
+  store.applyMutation({ type: "destination.delete", id: first });
+  assert.equal(budget().travelMissingCount, 1, "a new, unpriced connection replaces the removed stop's two");
+  assert.equal(budget().travelMissingCount, unpriced());
 });
 
 test("runtime validation rejects malformed values without modifying saved information", (t) => {

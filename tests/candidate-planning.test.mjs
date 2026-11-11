@@ -1,13 +1,12 @@
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
-import { mkdtempSync, rmSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { basename, join, resolve, sep } from "node:path";
+import { join } from "node:path";
 import { spawnSync } from "node:child_process";
 import { DatabaseSync } from "node:sqlite";
 import test from "node:test";
 import { ValidationError } from "../src/lib/store.ts";
 import { createOwnedStore } from "./owned-store.mjs";
+import { fileDatabase } from "./budget-fixtures.mjs";
 import { calculateBudget } from "../src/lib/budget.ts";
 
 const tripInput = { type: "trip.save", name: "Planning priorities", dateLabel: "", homeCity: "Home", travelers: 2, notes: "" };
@@ -19,15 +18,6 @@ function seed(store) {
   const tripId = store.applyMutation(tripInput).id;
   const destinationId = store.applyMutation({ type: "destination.save", tripId, city: "Paris", stay: "", notes: "", nights: 3 }).id;
   return { tripId, destinationId };
-}
-function fileDatabase(t) {
-  const folder = mkdtempSync(join(tmpdir(), "travel-priorities-test-"));
-  t.after(() => {
-    const target = resolve(folder);
-    assert.ok(target.startsWith(resolve(tmpdir()) + sep) && basename(target).startsWith("travel-priorities-test-"));
-    rmSync(target, { recursive: true, force: true });
-  });
-  return join(folder, "travel.sqlite");
 }
 
 for (const category of ["hotels", "activities", "restaurants"]) {

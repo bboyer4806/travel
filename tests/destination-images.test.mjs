@@ -1,12 +1,10 @@
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
-import { mkdtempSync, rmSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import test from "node:test";
 import { ValidationError } from "../src/lib/store.ts";
 import { createOwnedStore } from "./owned-store.mjs";
+import { fileDatabase } from "./budget-fixtures.mjs";
 import { calculateBudget } from "../src/lib/budget.ts";
 
 const webp = new Uint8Array(Buffer.from("UklGRiIAAABXRUJQVlA4IBYAAAAwAQCdASoBAAEADsD+JaQAA3AAAAAA", "base64"));
@@ -14,11 +12,6 @@ const replacement = new Uint8Array(webp);
 replacement[replacement.length - 1] = 1;
 const tripInput = { type: "trip.save", name: "Image test", dateLabel: "Next spring", homeCity: "Boston", travelers: 2, notes: "" };
 const destinationInput = (tripId, overrides = {}) => ({ type: "destination.save", tripId, city: "Vienna", stay: "4 nights", notes: "", ...overrides });
-function fileDatabase(t) {
-  const folder = mkdtempSync(join(tmpdir(), "travel-image-test-"));
-  t.after(() => rmSync(folder, { recursive: true, force: true }));
-  return join(folder, "travel.sqlite");
-}
 function planConnections(store) {
   for (const leg of store.getSnapshot().legs) {
     store.applyMutation({

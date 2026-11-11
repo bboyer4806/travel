@@ -88,7 +88,8 @@ raises the newer-version guard. Add a rollback note for the new version to `docs
 ## Tests
 
 - Tests are `tests/*.test.mjs` using `node:test`. They import TypeScript libraries directly and
-  use in-memory or temporary on-disk databases (see `fileDatabase` in `tests/store.test.mjs`).
+  use in-memory or temporary on-disk databases from the shared `setup` and `fileDatabase` in
+  `tests/budget-fixtures.mjs`; import those rather than copying them into a test file.
   Planning tests use `createOwnedStore` from `tests/owned-store.mjs`, which reads and writes as the
   designated owner; access tests call `createStore(path, ownerEmail)` with several accounts, as
   `tests/sharing.test.mjs` does.

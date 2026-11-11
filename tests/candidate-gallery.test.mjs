@@ -1,12 +1,10 @@
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
-import { mkdtempSync, rmSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import test from "node:test";
 import { ValidationError } from "../src/lib/store.ts";
 import { createOwnedStore } from "./owned-store.mjs";
+import { fileDatabase } from "./budget-fixtures.mjs";
 import { calculateBudget } from "../src/lib/budget.ts";
 
 const webp = new Uint8Array(Buffer.from("UklGRiIAAABXRUJQVlA4IBYAAAAwAQCdASoBAAEADsD+JaQAA3AAAAAA", "base64"));
@@ -16,11 +14,6 @@ const photo = (data = webp) => ({ id: randomUUID(), data });
 const tripInput = { type: "trip.save", name: "Photo research", dateLabel: "Spring", homeCity: "Boston", travelers: 2, notes: "" };
 const destinationInput = (tripId, city = "Vienna") => ({ type: "destination.save", tripId, city, stay: "3 nights", notes: "" });
 const ideaInput = (destinationId, overrides = {}) => ({ type: "candidate.save", destinationId, category: "hotels", name: "An idea", price: "275.50", address: "City center", url: "https://example.com", notes: "Keep these details", included: true, ...overrides });
-function databasePath(t) {
-  const folder = mkdtempSync(join(tmpdir(), "travel-gallery-test-"));
-  t.after(() => rmSync(folder, { recursive: true, force: true }));
-  return join(folder, "travel.sqlite");
-}
 function seed(store) {
   const tripId = store.applyMutation(tripInput).id;
   const destinationId = store.applyMutation(destinationInput(tripId)).id;
@@ -37,7 +30,7 @@ function planningFields(item) {
 
 for (const category of ["hotels", "activities", "restaurants"]) {
   test(`${category} galleries persist multiple photos and main selection without changing planning details`, (t) => {
-    const path = databasePath(t);
+    const path = fileDatabase(t);
     let store = createOwnedStore(path);
     try {
       const { tripId, destinationId } = seed(store);
@@ -184,7 +177,7 @@ test("the ten-photo limit counts retained photos and permits removal plus replac
 });
 
 test("a failure after the first gallery write rolls back additions, removals, and planning changes", (t) => {
-  const path = databasePath(t);
+  const path = fileDatabase(t);
   const store = createOwnedStore(path);
   const observer = new DatabaseSync(path);
   try {
@@ -210,7 +203,7 @@ test("a failure after the first gallery write rolls back additions, removals, an
 });
 
 test("schema 5 photos migrate with their exact bytes and versions, and repeated migration preserves galleries", (t) => {
-  const path = databasePath(t);
+  const path = fileDatabase(t);
   let store = createOwnedStore(path);
   try {
     const { tripId, destinationId } = seed(store);
@@ -257,7 +250,7 @@ test("schema 5 photos migrate with their exact bytes and versions, and repeated 
 });
 
 test("deleting an idea, destination, or trip removes every owned gallery photo only", (t) => {
-  const path = databasePath(t);
+  const path = fileDatabase(t);
   const store = createOwnedStore(path);
   const observer = new DatabaseSync(path);
   try {

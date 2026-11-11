@@ -1,12 +1,10 @@
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
-import { mkdtempSync, rmSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import test from "node:test";
 import { ValidationError } from "../src/lib/store.ts";
 import { createOwnedStore } from "./owned-store.mjs";
+import { fileDatabase } from "./budget-fixtures.mjs";
 import { calculateBudget } from "../src/lib/budget.ts";
 
 const webp = new Uint8Array(Buffer.from("UklGRiIAAABXRUJQVlA4IBYAAAAwAQCdASoBAAEADsD+JaQAA3AAAAAA", "base64"));
@@ -17,11 +15,6 @@ const tripInput = { type: "trip.save", name: "Ideas with images", dateLabel: "Ne
 const destinationInput = (tripId, overrides = {}) => ({ type: "destination.save", tripId, city: "Vienna", stay: "4 nights", notes: "Stay downtown", ...overrides });
 const candidateInput = (destinationId, overrides = {}) => ({ type: "candidate.save", destinationId, category: "hotels", name: "An idea", price: "200.33", address: "City center", url: "https://example.com/booking", notes: "Worth considering", included: true, ...overrides });
 const linksInput = () => [{ id: randomUUID(), url: "https://example.com/booking", description: "Booking options" }, { id: randomUUID(), url: "https://example.com/review", description: "Research notes" }];
-function fileDatabase(t) {
-  const folder = mkdtempSync(join(tmpdir(), "travel-candidate-image-test-"));
-  t.after(() => rmSync(folder, { recursive: true, force: true }));
-  return join(folder, "travel.sqlite");
-}
 function planConnections(store) {
   for (const leg of store.getSnapshot().legs) {
     store.applyMutation({

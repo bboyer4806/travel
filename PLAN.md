@@ -204,3 +204,7 @@ This narrows the TRA-103 access rule: an authorized account now sees only the tr
 - Shared accounts get full editing access to the trip's content, including photos. Only the owner deletes the trip, shares it, or removes access, from an owner-only Share dialog that lists current access and reports each result. No view-only or custom roles, ownership transfers, public links, real-time collaboration, or sharing management by editors.
 - Removing access takes effect on the next request without changing trip data or the account's authorization. Pages, metadata, Server Actions, nested items and photo routes enforce access on the server, resolving each item's trip from saved data; an inaccessible trip is indistinguishable from a missing one.
 - Schema 20 adds trip ownership and a `trip_shares` table, with database triggers that keep every trip owned. Backup, rollback and the upgrade rehearsal are in [deployment](docs/DEPLOYMENT.md).
+
+## Added scope: November 11, 2026, collapsible typical weather (TRA-111)
+- Each destination card's Typical weather section starts collapsed on every page load and expands or collapses on its own from a keyboard and touch accessible heading control. The heading and Edit typical weather stay visible and working in both states.
+- Expanding shows the existing temperatures, period, rainfall notes, source, and explanation. Toggling stays in the page: it never changes saved weather, makes no server request, and is not remembered between visits. No changes to weather data, the editor, or other destination sections.

@@ -1,7 +1,7 @@
 "use client";
 
-import { useState } from "react";
-import { Pencil } from "lucide-react";
+import { useId, useState } from "react";
+import { ChevronDown, Pencil } from "lucide-react";
 import type { TypicalWeather } from "@/lib/types";
 import styles from "./typical-weather.module.css";
 
@@ -13,17 +13,21 @@ function sourceLink(source: string): string | undefined {
 }
 
 export function TypicalWeatherPanel({ weather, disabled, onEdit }: { weather: TypicalWeather; disabled: boolean; onEdit: () => void }) {
+  const [expanded, setExpanded] = useState(false);
+  const detailsId = useId();
   const href = sourceLink(weather.weatherSource);
   return <section className={styles.panel} aria-label="Typical weather">
-    <div className="section-heading"><h4>Typical weather</h4><button className="button secondary small" disabled={disabled} onClick={onEdit}><Pencil size={15} />Edit typical weather</button></div>
-    <p className="helper">Manually recorded typical weather or historical averages.</p>
-    <dl className={styles.details}>
-      <div><dt>Typical high (°F)</dt><dd>{weather.weatherHighF === null ? "Not provided" : `${weather.weatherHighF} °F`}</dd></div>
-      <div><dt>Typical low (°F)</dt><dd>{weather.weatherLowF === null ? "Not provided" : `${weather.weatherLowF} °F`}</dd></div>
-      <div><dt>Month or travel period</dt><dd>{weather.weatherPeriod || "Not provided"}</dd></div>
-      <div><dt>Rainfall notes</dt><dd>{weather.weatherRainfall || "Not provided"}</dd></div>
-      <div><dt>Source</dt><dd>{href ? <a href={href} target="_blank" rel="noopener noreferrer">{weather.weatherSource}</a> : weather.weatherSource || "Not provided"}</dd></div>
-    </dl>
+    <div className="section-heading"><h4><button type="button" className={styles.toggle} aria-expanded={expanded} aria-controls={detailsId} onClick={() => setExpanded((open) => !open)}>Typical weather<ChevronDown size={18} aria-hidden="true" /></button></h4><button className="button secondary small" disabled={disabled} onClick={onEdit}><Pencil size={15} />Edit typical weather</button></div>
+    <div id={detailsId} hidden={!expanded}>
+      <p className="helper">Manually recorded typical weather or historical averages.</p>
+      <dl className={styles.details}>
+        <div><dt>Typical high (°F)</dt><dd>{weather.weatherHighF === null ? "Not provided" : `${weather.weatherHighF} °F`}</dd></div>
+        <div><dt>Typical low (°F)</dt><dd>{weather.weatherLowF === null ? "Not provided" : `${weather.weatherLowF} °F`}</dd></div>
+        <div><dt>Month or travel period</dt><dd>{weather.weatherPeriod || "Not provided"}</dd></div>
+        <div><dt>Rainfall notes</dt><dd>{weather.weatherRainfall || "Not provided"}</dd></div>
+        <div><dt>Source</dt><dd>{href ? <a href={href} target="_blank" rel="noopener noreferrer">{weather.weatherSource}</a> : weather.weatherSource || "Not provided"}</dd></div>
+      </dl>
+    </div>
   </section>;
 }
 

@@ -1,14 +1,14 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import { randomUUID } from "node:crypto";
-import { copyFileSync, mkdtempSync, rmSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { copyFileSync } from "node:fs";
 import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import test from "node:test";
 import { calculateBudget } from "../src/lib/budget.ts";
 import { createStore, ValidationError } from "../src/lib/store.ts";
 import { UNDO_SCHEMA_20 } from "./owned-store.mjs";
+import { fileDatabase } from "./budget-fixtures.mjs";
 
 const OWNER = "owner@example.com";
 const NOT_AVAILABLE = { name: "ValidationError", message: "This item no longer exists or isn't shared with you. Please refresh and try again." };
@@ -16,12 +16,6 @@ const webp = new Uint8Array([82, 73, 70, 70, 4, 0, 0, 0, 87, 69, 66, 80]);
 const photo = () => ({ id: randomUUID(), data: webp });
 const google = (subject, email, name = null) => ({ subject, email, emailVerified: true, name });
 const requirements = () => ({ passportNationality: "United States", travelPurpose: "Tourism", travelerCircumstances: "Two adults", visaRequirements: "None for short stays", passportValidity: "Three months", requiredDocuments: "Return ticket", transitRequirements: "None", notes: "Checked", sources: [{ id: randomUUID(), url: "https://example.gov/entry", description: "Entry guidance" }], lastCheckedDate: "2026-11-03" });
-
-function fileDatabase(t) {
-  const folder = mkdtempSync(join(tmpdir(), "travel-sharing-test-"));
-  t.after(() => rmSync(folder, { recursive: true, force: true }));
-  return join(folder, "travel.sqlite");
-}
 
 /** The designated owner, someone a trip will be shared with, and someone it never is. */
 function setup(t, path = ":memory:") {

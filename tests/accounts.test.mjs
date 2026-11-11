@@ -1,20 +1,13 @@
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
-import { mkdtempSync, rmSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import test from "node:test";
 import { authorizeGoogleSignIn, createStore, ValidationError } from "../src/lib/store.ts";
 import { UNDO_SCHEMA_20 } from "./owned-store.mjs";
+import { fileDatabase } from "./budget-fixtures.mjs";
 
 const google = (subject, email, emailVerified = true, name = null) => ({ subject, email, emailVerified, name });
 const DAY = 24 * 60 * 60 * 1000;
-function fileDatabase(t) {
-  const folder = mkdtempSync(join(tmpdir(), "travel-accounts-test-"));
-  t.after(() => rmSync(folder, { recursive: true, force: true }));
-  return join(folder, "travel.sqlite");
-}
 const rows = (path, sql) => {
   const db = new DatabaseSync(path, { readOnly: true });
   try { return db.prepare(sql).all().map((row) => ({ ...row })); }

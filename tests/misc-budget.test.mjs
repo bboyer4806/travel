@@ -1,7 +1,12 @@
 import assert from "node:assert/strict";
+import { randomUUID } from "node:crypto";
 import test from "node:test";
-import { calculateBudget, calculateDestinationBudget, calculateFoodEstimate, calculateMiscellaneous } from "../src/lib/budget.ts";
-import { setup, tripInput, destinationInput, candidateInput } from "./budget-fixtures.mjs";
+import { calculateBudget, calculateDestinationBudget, calculateFoodEstimate, calculateHotelEstimate, calculateMiscellaneous } from "../src/lib/budget.ts";
+import { setup, tripInput, destinationInput, candidateInput, destination } from "./budget-fixtures.mjs";
+
+// The largest amount the store accepts, in cents, and the most nights it can multiply while the subtotal stays exact.
+const largestAmountMinor = 10_000_000_000;
+const exactNights = Math.floor(Number.MAX_SAFE_INTEGER / largestAmountMinor);
 
 test("daily food and miscellaneous use zero = one full day, otherwise nights, including unknown dates",()=>{
  for(const nights of [0,1,3,null]) for(const amount of [null,0,101,10000]) {
@@ -33,4 +38,31 @@ test("all USD categories reconcile exactly once, isolate trips, and retain activ
  store.applyMutation(destinationInput(tripId,{id,stay:"Several months"})); assert.equal(budget().totalCents,54704);
  store.applyMutation(destinationInput(tripId,{id,nights:null}));
  assert.equal(budget().totalCents,9704); assert.equal(budget().missingCount,3);
+});
+for (const [label, amount, message, subtotal] of [
+ ["miscellaneous", "miscDailyAmount", /miscellaneous subtotal is too large/, (item) => calculateMiscellaneous(item).subtotalMinor],
+ ["food", "foodDailyAmount", /food subtotal is too large/, (item) => calculateFoodEstimate(item).subtotalMinor],
+ ["hotel", "hotelNightlyAmount", /hotel estimate is too large/, (item) => calculateHotelEstimate(item).subtotalMinor],
+]) test(`destination saves reject a ${label} subtotal too large to stay exact, keeping saved data`, t => {
+ const { store, tripId } = setup(t);
+ const tooLarge = { name: "ValidationError", message };
+ const empty = store.getSnapshot();
+ assert.throws(() => store.applyMutation(destinationInput(tripId, { nights: exactNights + 1, [amount]: "100000000" })), tooLarge);
+ assert.deepEqual(store.getSnapshot(), empty, "no partial destination is created");
+ const id = store.applyMutation(destinationInput(tripId, { nights: exactNights, [amount]: "100000000" })).id;
+ assert.equal(subtotal(destination(store, id)), exactNights * largestAmountMinor, "the largest exact subtotal is accepted");
+ const saved = store.getSnapshot();
+ assert.throws(() => store.applyMutation(destinationInput(tripId, { id, nights: exactNights + 1 })), tooLarge);
+ assert.deepEqual(store.getSnapshot(), saved, "a rejected nights edit keeps the saved destination");
+});
+test("budgets for an unknown trip or destination count one missing estimate and are never complete", t => {
+ const { store, tripId } = setup(t);
+ store.applyMutation(destinationInput(tripId, { nights: 3, hotelNightlyAmount: "100", miscDailyAmount: "10" }));
+ const snapshot = store.getSnapshot();
+ assert.deepEqual(calculateDestinationBudget(snapshot, randomUUID()), { totalsByCurrency: {}, knownCount: 0, missingCount: 1, complete: false });
+ const budget = calculateBudget(snapshot, randomUUID());
+ assert.equal(budget.missingCount, 1);
+ assert.equal(budget.knownCount, 0);
+ assert.equal(budget.complete, false);
+ assert.deepEqual(budget.totalsByCurrency, {});
 });

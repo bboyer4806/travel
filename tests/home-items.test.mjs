@@ -1,12 +1,10 @@
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
-import { mkdtempSync, rmSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import test from "node:test";
 import { ValidationError } from "../src/lib/store.ts";
 import { createOwnedStore } from "./owned-store.mjs";
+import { fileDatabase, setup } from "./budget-fixtures.mjs";
 import { calculateBudget } from "../src/lib/budget.ts";
 
 const tripInput = (overrides = {}) => ({ type: "trip.save", name: "Spring trip", dateLabel: "Spring 2027", homeCity: "Boston", travelers: 2, notes: "", ...overrides });
@@ -17,17 +15,6 @@ const webp = new Uint8Array(Buffer.from("UklGRiIAAABXRUJQVlA4IBYAAAAwAQCdASoBAAE
 const otherWebp = new Uint8Array(webp);
 otherWebp[otherWebp.length - 1] = 1;
 const item = (store, id) => store.getSnapshot().homeItems.find((entry) => entry.id === id);
-function setup(t) {
-  const store = createOwnedStore(":memory:");
-  t.after(() => store.close());
-  const tripId = store.applyMutation(tripInput()).id;
-  return { store, tripId };
-}
-function databasePath(t) {
-  const folder = mkdtempSync(join(tmpdir(), "travel-home-items-test-"));
-  t.after(() => rmSync(folder, { recursive: true, force: true }));
-  return join(folder, "travel.sqlite");
-}
 function pricedTrip(store, tripId) {
   const destinationId = store.applyMutation(destinationInput(tripId)).id;
   store.applyMutation(candidateInput(destinationId));
@@ -38,7 +25,7 @@ function pricedTrip(store, tripId) {
 }
 
 test("home tasks and expenses support creating, editing, completing, reopening, and deleting", (t) => {
-  const { store, tripId } = setup(t);
+  const { store, tripId } = setup(t, tripInput());
   assert.deepEqual(store.getSnapshot().homeItems, []);
   const taskId = store.applyMutation(homeInput(tripId, { name: "  Stop the mail  ", notes: "  Submit a hold request  " })).id;
   const task = item(store, taskId);
@@ -69,7 +56,7 @@ test("home tasks and expenses support creating, editing, completing, reopening, 
 });
 
 test("home budget totals distinguish optional tasks, known zero, and exact cents without depending on completion", (t) => {
-  const { store, tripId } = setup(t);
+  const { store, tripId } = setup(t, tripInput());
   pricedTrip(store, tripId);
   const baseline = calculateBudget(store.getSnapshot(), tripId);
   assert.equal(baseline.complete, false, "miscellaneous spending still needs an estimate");
@@ -95,7 +82,7 @@ test("home budget totals distinguish optional tasks, known zero, and exact cents
 });
 
 test("home expenses count before destinations are planned without hiding missing travel estimates", (t) => {
-  const { store, tripId } = setup(t);
+  const { store, tripId } = setup(t, tripInput());
   const baseline = calculateBudget(store.getSnapshot(), tripId);
   store.applyMutation(homeInput(tripId, { price: "50.25" }));
   store.applyMutation(homeInput(tripId, { name: "Lock the windows" }));
@@ -104,7 +91,7 @@ test("home expenses count before destinations are planned without hiding missing
 });
 
 test("every home-item mutation verifies trip ownership and rejects stale or nonexistent records", (t) => {
-  const { store, tripId } = setup(t);
+  const { store, tripId } = setup(t, tripInput());
   const otherTripId = store.applyMutation(tripInput({ name: "Other trip" })).id;
   const id = store.applyMutation(homeInput(tripId, { price: "50" })).id;
   const otherId = store.applyMutation(homeInput(otherTripId, { name: "Arrange garden care", completed: true })).id;
@@ -135,7 +122,7 @@ test("every home-item mutation verifies trip ownership and rejects stale or none
 });
 
 test("invalid home-item values leave existing tasks, trip details, and budgets unchanged", (t) => {
-  const { store, tripId } = setup(t);
+  const { store, tripId } = setup(t, tripInput());
   pricedTrip(store, tripId);
   const id = store.applyMutation(homeInput(tripId, { price: "75.25" })).id;
   const before = store.getSnapshot();
@@ -168,7 +155,7 @@ test("invalid home-item values leave existing tasks, trip details, and budgets u
 });
 
 test("home items survive database reopening with their exact amounts, notes, and completion state", (t) => {
-  const path = databasePath(t);
+  const path = fileDatabase(t);
   let store = createOwnedStore(path);
   try {
     const tripId = store.applyMutation(tripInput()).id;
@@ -194,7 +181,7 @@ test("home items survive database reopening with their exact amounts, notes, and
 });
 
 test("deleting a trip cascades only its home items, while destination changes preserve them", (t) => {
-  const path = databasePath(t);
+  const path = fileDatabase(t);
   const store = createOwnedStore(path);
   const observer = new DatabaseSync(path);
   try {
@@ -220,7 +207,7 @@ test("deleting a trip cascades only its home items, while destination changes pr
 });
 
 test("storage failures roll back home-item edits, deletions, and trip cascades", (t) => {
-  const path = databasePath(t);
+  const path = fileDatabase(t);
   const store = createOwnedStore(path);
   const observer = new DatabaseSync(path);
   try {
@@ -249,7 +236,7 @@ test("storage failures roll back home-item edits, deletions, and trip cascades",
 });
 
 test("schema 6 migration adds home items while preserving trips, research, itineraries, and photo galleries", (t) => {
-  const path = databasePath(t);
+  const path = fileDatabase(t);
   let store = createOwnedStore(path);
   try {
     const tripId = store.applyMutation(tripInput()).id;

@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { calculateFoodBudget } from "../src/lib/budget.ts";
+import { calculateFoodBudget, calculateFoodEstimate } from "../src/lib/budget.ts";
 import { setup, destination, destinationInput, candidateInput, validateMoney, verifyPersistence } from "./budget-fixtures.mjs";
 
 test("food methods preserve general estimates, items and selections without double-counting", (t)=>{
@@ -33,4 +33,5 @@ test("food amount and mode validation is atomic",t=>{
   const {store,tripId}=setup(t); const before=store.getSnapshot();
   assert.throws(()=>store.applyMutation(destinationInput(tripId,{foodBudgetMode:"invalid"}))); assert.deepEqual(store.getSnapshot(),before);
 });
+test("an unsafe food subtotal is never displayed as exact money",()=>assert.equal(calculateFoodEstimate({nights:3,foodDailyMinor:Number.MAX_SAFE_INTEGER,foodCurrency:"USD"}).subtotalMinor,null));
 test("food persists and upgrades additively with migration replay",t=>verifyPersistence(t,"foodDailyAmount","foodDailyMinor","foodCurrency",10,["foodBudgetMode","foodDailyMinor","foodCurrency"],{foodBudgetMode:"daily"}));

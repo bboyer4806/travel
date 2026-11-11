@@ -1,13 +1,11 @@
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
-import { mkdtempSync, rmSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import test from "node:test";
 import { calculateBudget, calculateDestinationBudget } from "../src/lib/budget.ts";
 import { ValidationError } from "../src/lib/store.ts";
 import { createOwnedStore } from "./owned-store.mjs";
+import { fileDatabase, setup } from "./budget-fixtures.mjs";
 
 const tripInput = (overrides = {}) => ({ type: "trip.save", name: "Weather planning", dateLabel: "2027", homeCity: "Boston", travelers: 2, notes: "", ...overrides });
 const destinationInput = (tripId, overrides = {}) => ({ type: "destination.save", tripId, city: "Reykjavik", stay: "A few nights", notes: "", ...overrides });
@@ -17,19 +15,9 @@ const dates = { nights: 3 };
 const webp = new Uint8Array(Buffer.from("UklGRiIAAABXRUJQVlA4IBYAAAAwAQCdASoBAAEADsD+JaQAA3AAAAAA", "base64"));
 const destination = (store, id) => store.getSnapshot().destinations.find((item) => item.id === id);
 const weather = (store, id) => Object.fromEntries(Object.keys(emptyWeather).map((key) => [key, destination(store, id)[key]]));
-function setup(t) {
-  const store = createOwnedStore(":memory:");
-  t.after(() => store.close());
-  return { store, tripId: store.applyMutation(tripInput()).id };
-}
-function fileDatabase(t) {
-  const folder = mkdtempSync(join(tmpdir(), "travel-typical-weather-test-"));
-  t.after(() => rmSync(folder, { recursive: true, force: true }));
-  return join(folder, "travel.sqlite");
-}
 
 test("optional weather defaults to missing, preserves zero, and accepts partial negative and decimal temperatures", (t) => {
-  const { store, tripId } = setup(t);
+  const { store, tripId } = setup(t, tripInput());
   const id = store.applyMutation(destinationInput(tripId)).id;
   assert.deepEqual(weather(store, id), emptyWeather);
   for (const [fields, expected] of [
@@ -78,7 +66,7 @@ test("weather save, edit, per-field omission, and clearing survive closing and r
 });
 
 test("invalid weather types, text lengths, and high/low combinations reject the entire save", (t) => {
-  const { store, tripId } = setup(t);
+  const { store, tripId } = setup(t, tripInput());
   const id = store.applyMutation(destinationInput(tripId, { ...winterWeather, image: webp })).id;
   const before = store.getSnapshot();
   const image = store.getDestinationImage(id);
@@ -108,7 +96,7 @@ test("invalid weather types, text lengths, and high/low combinations reject the 
 });
 
 test("date changes and other destination editors preserve manually entered weather and its recorded period", (t) => {
-  const { store, tripId } = setup(t);
+  const { store, tripId } = setup(t, tripInput());
   const id = store.applyMutation(destinationInput(tripId, { ...dates, ...winterWeather })).id;
   for (const fields of [
     { nights: 3 },
@@ -129,7 +117,7 @@ test("date changes and other destination editors preserve manually entered weath
 });
 
 test("weather edits leave existing destination data, routes, choices, and separated currency budgets unchanged", (t) => {
-  const { store, tripId } = setup(t);
+  const { store, tripId } = setup(t, tripInput());
   const id = store.applyMutation(destinationInput(tripId, {
     ...dates, hotelNightlyAmount: "100", hotelCurrency: "USD", miscDailyAmount: "10", miscCurrency: "USD",
     activitiesBudgetMode: "general", activitiesGeneralAmount: "20", activitiesCurrency: "USD",

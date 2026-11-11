@@ -1,12 +1,10 @@
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
-import { mkdtempSync, rmSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import test from "node:test";
 import { ValidationError } from "../src/lib/store.ts";
 import { createOwnedStore } from "./owned-store.mjs";
+import { fileDatabase, setup } from "./budget-fixtures.mjs";
 import { calculateBudget } from "../src/lib/budget.ts";
 
 const tripInput = (overrides = {}) => ({ type: "trip.save", name: "Europe", dateLabel: "Fall 2027", homeCity: "New York", travelers: 2, notes: "A possible trip", ...overrides });
@@ -16,16 +14,6 @@ const candidateInput = (destinationId, overrides = {}) => ({ type: "candidate.sa
 const stopInput = (overrides = {}) => ({ id: randomUUID(), kind: "layover", place: "London Heathrow", arrival: "10:30", departure: "13:15", notes: "Change terminals", ...overrides });
 const linkInput = (overrides = {}) => ({ id: randomUUID(), url: "https://example.com/research", description: "A useful option", ...overrides });
 const legsFor = (store, tripId) => store.getSnapshot().legs.filter((leg) => leg.tripId === tripId);
-function setup(t) {
-  const store = createOwnedStore(":memory:");
-  t.after(() => store.close());
-  return { store, tripId: store.applyMutation(tripInput()).id };
-}
-function fileDatabase(t) {
-  const folder = mkdtempSync(join(tmpdir(), "travel-route-test-"));
-  t.after(() => rmSync(folder, { recursive: true, force: true }));
-  return join(folder, "travel.sqlite");
-}
 function legacyDatabase(path, version) {
   const db = new DatabaseSync(path);
   db.exec(`
@@ -138,7 +126,7 @@ test("a future database version is rejected without modifying its schema", (t) =
 });
 
 test("return and departing city edits clear only connections whose effective endpoint changes", (t) => {
-  const { store, tripId } = setup(t);
+  const { store, tripId } = setup(t, tripInput());
   store.applyMutation(destinationInput(tripId));
   store.applyMutation(destinationInput(tripId, { city: "Paris" }));
   const route = legsFor(store, tripId);
@@ -237,7 +225,7 @@ test("return cities, ordered itineraries, and multiple links survive edits and d
 });
 
 test("destination route changes preserve unaffected itineraries and links and clear obsolete ones", (t) => {
-  const { store, tripId } = setup(t);
+  const { store, tripId } = setup(t, tripInput());
   store.applyMutation(destinationInput(tripId));
   const b = store.applyMutation(destinationInput(tripId, { city: "Paris" })).id;
   const c = store.applyMutation(destinationInput(tripId, { city: "London" })).id;
@@ -264,7 +252,7 @@ test("destination route changes preserve unaffected itineraries and links and cl
 
 for (const kind of ["leg", "candidate"]) {
   test(`legacy ${kind} URL edits preserve other research links and descriptions`, (t) => {
-    const { store, tripId } = setup(t);
+    const { store, tripId } = setup(t, tripInput());
     const destinationId = store.applyMutation(destinationInput(tripId)).id;
     const id = kind === "leg" ? legsFor(store, tripId)[0].id : store.applyMutation(candidateInput(destinationId)).id;
     const input = (overrides = {}) => kind === "leg" ? legInput(id, overrides) : candidateInput(destinationId, { id, ...overrides });
@@ -288,7 +276,7 @@ for (const kind of ["leg", "candidate"]) {
 }
 
 test("return city and itinerary validation rejects malformed input atomically and accepts field limits", (t) => {
-  const { store, tripId } = setup(t);
+  const { store, tripId } = setup(t, tripInput());
   store.applyMutation(destinationInput(tripId));
   const leg = legsFor(store, tripId)[0];
   const stop = stopInput();
@@ -319,7 +307,7 @@ test("return city and itinerary validation rejects malformed input atomically an
 });
 
 test("research link validation rejects invalid URLs and malformed arrays before making any changes", (t) => {
-  const { store, tripId } = setup(t);
+  const { store, tripId } = setup(t, tripInput());
   const destinationId = store.applyMutation(destinationInput(tripId)).id;
   const legId = legsFor(store, tripId)[0].id;
   store.applyMutation(candidateInput(destinationId));

@@ -1,12 +1,10 @@
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
-import { mkdtempSync, rmSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import test from "node:test";
 import { ValidationError } from "../src/lib/store.ts";
 import { createOwnedStore } from "./owned-store.mjs";
+import { fileDatabase } from "./budget-fixtures.mjs";
 import { calculateBudget } from "../src/lib/budget.ts";
 import { storedImageResponse } from "../src/lib/stored-image-response.ts";
 
@@ -15,11 +13,6 @@ const photo = () => ({ id: randomUUID(), data: new Uint8Array(webp) });
 const tripInput = { type: "trip.save", name: "Gallery trip", dateLabel: "Next spring", homeCity: "Boston", travelers: 2, notes: "", startDate: "2027-05-01" };
 const destinationInput = (tripId, overrides = {}) => ({ type: "destination.save", tripId, city: "Vienna", nights: 4, stay: "Near the station", notes: "Walk the old town", ...overrides });
 const destination = (store, id) => store.getSnapshot().destinations.find((item) => item.id === id);
-function databasePath(t) {
-  const folder = mkdtempSync(join(tmpdir(), "travel-destination-gallery-"));
-  t.after(() => rmSync(folder, { recursive: true, force: true }));
-  return join(folder, "travel.sqlite");
-}
 function plan(store) {
   const tripId = store.applyMutation(tripInput).id;
   const id = store.applyMutation(destinationInput(tripId)).id;
@@ -28,7 +21,7 @@ function plan(store) {
 }
 
 test("destination photo add, primary selection, reorder and fallback persist without altering planning data", (t) => {
-  const path = databasePath(t);
+  const path = fileDatabase(t);
   let store = createOwnedStore(path);
   try {
     const { tripId, id } = plan(store);
@@ -113,7 +106,7 @@ test("concurrent adds survive ordinary edits and stale reorder fails without dis
 });
 
 test("gallery write failures roll back removals, additions, destination changes and route changes", (t) => {
-  const path = databasePath(t);
+  const path = fileDatabase(t);
   const store = createOwnedStore(path);
   const observer = new DatabaseSync(path);
   try {
@@ -131,7 +124,7 @@ test("gallery write failures roll back removals, additions, destination changes 
 });
 
 test("schema 16 single images migrate unchanged and replay preserves galleries and primary choice", (t) => {
-  const path = databasePath(t);
+  const path = fileDatabase(t);
   let store = createOwnedStore(path);
   try {
     const { tripId, id } = plan(store);

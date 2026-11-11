@@ -19,22 +19,31 @@ The startup script requires the marker and writable storage. Without them startu
 
 ## Deployment and checks
 
-- GitHub Actions checks lint, TypeScript, tests, and a production build.
-- Main pushes run these checks before building/pushing the image and deploying through the existing workflow.
-- Retain the existing DOKKU_SSH_KEY and DOKKU_HOST secrets.
+Every pull request runs these checks from `.github/workflows/check.yml`, and every push to `main` runs them again before deploying:
+
+```sh
+pnpm lint
+pnpm typecheck
+pnpm test
+pnpm build
+bash scripts/smoke-container.sh
+```
+
+The container smoke script needs Docker and Bash. It builds the image, then checks persistent storage across container replacement, rendered pages and Server Actions, sign-in enforcement, trip isolation, photo routes, and the refusal to start without the storage marker or the sign-in settings. The Docker image must be tested on a Docker-capable machine or CI; a local Next build alone does not prove the container or host mount works.
+
+- After the checks pass, a push to `main` builds the image, pushes it to GitHub's container registry tagged with its commit SHA, requires a verified [off-host backup](#travel-15-encrypted-off-host-backups-to-windows-11), and then deploys the image to Dokku (`.github/workflows/deploy.yml`). A failed check or backup stops the deployment.
+- Retain the existing DOKKU_SSH_KEY and DOKKU_HOST secrets, and the TRAVEL_BACKUP_HOST_SSH_KEY and TRAVEL_BACKUP_KNOWN_HOSTS secrets the backup step uses.
 - The image still exposes port 80, preserving the existing domain/proxy setup.
 - Keep the proxy request-body limit at least 16 MiB. Next.js permits 16 MiB request bodies, allowing 15 MiB of new photo files per save plus form fields and multipart overhead. Individual files remain limited to 5 MiB. The travel host currently computes a 20 MiB Nginx limit (`client_max_body_size 20m`).
 - Keep one web instance: shared SQLite on one server is the v1 deployment model.
 - Confirm /api/health returns HTTP 200. Create a temporary trip, restart the app, and verify the trip remains before considering persistence verified.
 - The container refuses to start without the Google Sign In settings below, so a deployment without them fails instead of running unprotected.
 
-The Docker image must be tested on a Docker-capable machine or CI; a local Next build alone does not prove the container or host mount works.
-
 ## Google Sign In (TRA-103)
 
 Travel signs in with Google the same way as Budget and Meals: a hand-written OpenID Connect code flow with PKCE and sessions in Travel's own SQLite database. Only authorized accounts can sign in: the designated initial owner, and people a trip owner shares a trip with ([TRA-104](#trip-sharing-tra-104)). Authorizations and sessions live in the `accounts` and `sessions` tables, so backups include them.
 
-**Deployment order.** TRA-103 merged and deployed on its own; TRA-104 follows. Until TRA-104 ships, only the owner can sign in. Brian is currently Travel's only user, so that window is acceptable.
+**Deployment order.** TRA-103 deployed on its own on November 10, 2026, and TRA-104 followed the same day. In between, only the owner could sign in.
 
 1. **Identify the initial owner.** Choose the Google account that will own existing trips. Its email is the only authorization created by configuration; nobody gains access by signing in first.
 
@@ -135,87 +144,119 @@ Never restore over an actively running database. Test recovery before relying on
 
 ## Rollback
 
-Keep the persistent mount attached. Deploy the previous known-good image tag using the normal Dokku process. Back up data before any future schema migration; rolling back an image does not reverse database schema changes.
+Prefer fixing forward. Rolling back an image does not reverse a database schema upgrade, and every build since schema 3 refuses to open a database with a newer schema ("This database was created by a newer version of the travel app."). This procedure applies to every schema; the [schema history](#schema-history) adds only what is specific to one.
 
-The route and research-link update upgrades the database to schema 3. Older images cannot show or edit the new return-city, itinerary, or multiple-link fields. If a rollback requires restoring the pre-upgrade backup, follow the stopped-app restore procedure above and preserve the current database first; restoring an earlier snapshot also removes later edits. Recheck the schema and saved trip details after any rollback or redeployment.
+1. **Back up before a schema upgrade.** The deployment workflow takes a verified off-host backup before every deployment. Before deploying a schema change, also take and verify an on-host online backup with a unique name (see [Backup](#backup)), and keep it until the upgrade is verified. It is the rollback point.
+2. **Deploy the previous image.** Keep the persistent mount attached. Deploy the previous known-good image tag using the normal Dokku process; the deployment workflow tags each image with its commit SHA (`ghcr.io/bboyer4806/travel:<commit SHA>`) and deploys it with `dokku git:from-image`. If that build knows the database's schema, nothing else changes.
+3. **Restore only when the schema requires it.** If the previous build refuses the upgraded database, either deploy a build that knows the current schema, or restore the pre-upgrade backup with the stopped-app [restore procedure](#restore) and deploy a build for the backup's schema. Preserve the upgraded database and its -wal/-shm sidecars first. Restoring an older backup loses every change made after it was taken.
+4. **Never lower `user_version`** to make an older build open a newer database. An older build does not know the newer data, and on a schema 20 database a schema 19 build has no trip isolation (see [schema 20](#schema-20-trip-ownership-and-sharing-tra-104)).
+5. **Verify.** Check /api/health, sign in, and recheck the schema and saved trip details after any rollback or redeployment.
 
-The destination-image update upgrades the database to schema 4 with a separate image BLOB table. The persistent database and online backups contain images; no additional storage mount is needed. Back up schema 3 before deploying. The previous app rejects newer database schemas, so image rollback requires a compatible app build or the documented stopped-app restore procedure; restoring a pre-upgrade backup loses later edits.
+## Schema history
 
-Hotel, activity, and restaurant photos upgrade the database to schema 5 with a separate candidate image table. Existing destination images and saved ideas are retained. Back up schema 4 before deployment; candidate images use the same persistent database, upload limits, and backup procedure. Schema 4 app images reject schema 5, so use a compatible build or follow the stopped-app restore procedure for rollback.
+The schema version is SQLite's `user_version`; the current schema is 20. At every start, `createStore` in `src/lib/store.ts` upgrades an older database in one transaction, through each version in turn. Each upgrade checks what already exists, so running it again on a database that already has its changes (a replay) keeps saved data. The notes below are in schema order. **Superseded** marks behavior that a later schema replaced; the current behavior is in [README.md](../README.md).
 
-Photo galleries upgrade the database to schema 6. Each hotel, activity, and restaurant can store up to 10 photos with one main selection. The migration retains the bytes and version of each previous single image and makes it the main photo. Destination images remain unchanged. Back up schema 5 before deployment; all gallery photos and main selections are included in the same online backup. Schema 5 app images reject schema 6, so rollback requires a compatible build or the stopped-app restore procedure. Restore loses edits made since the backup; preserve the current database before restoring.
+### Schema 1: first shared planner
+The first release creates the `trips`, `destinations`, `legs` and `candidates` tables, with prices in integer USD cents for the whole party. Anyone with the URL can view and edit every trip. The schema 1 build sets `user_version` to 1 at every start and does not refuse a newer database, so later upgrades check what already exists as well as the version: redeploying a newer build after a rollback to schema 1 cannot repeat an `ALTER TABLE` or replace saved links.
 
-At-home planning upgrades the database to schema 7 with a separate trip-owned item table. Existing trips, travel plans, and photos are retained. At-home notes, prices, and completion states use the same persistent storage and online backups. Back up the current database before deploying (schema 5 deployments upgrade through schemas 6 and 7 in one transaction). Earlier builds reject schema 7; rollback requires a compatible build or the stopped-app restore procedure above.
+**Superseded:** builds since [schema 3](#schemas-23-return-cities-itineraries-and-research-links) refuse a newer database, and [schema 19](#schema-19-google-sign-in-accounts-and-sessions) requires Google Sign In.
 
-Typical weather upgrades the database to schema 13 with nullable Fahrenheit temperatures and optional rainfall, period, and source text on destinations. Existing data and budget calculations remain unchanged. Back up schema 12 before deployment. All weather fields are included in the same database and online backups. Schema 12 builds reject schema 13; rollback requires a compatible build or the stopped-app restore procedure above. Preserve the current database first; restoring an older backup loses later edits.
+### Schemas 2–3: return cities, itineraries and research links
+The route and research-link update upgrades the database to schema 3. Schema 2 adds an optional return city to trips and an itinerary of stops to travel legs. Schema 3 adds described research links to travel legs and ideas; each existing single link becomes the first of them. Older images cannot show or edit the new return-city, itinerary, or multiple-link fields.
 
-## References
-- [Dokku persistent storage](https://dokku.com/docs/advanced-usage/persistent-storage/)
-- [Node SQLite backup API](https://nodejs.org/docs/latest-v24.x/api/sqlite.html)
+### Schema 4: destination image
+The destination-image update upgrades the database to schema 4 with a separate image BLOB table, one image per destination. The persistent database and online backups contain images; no additional storage mount is needed.
+
+**Superseded by [schema 17](#schemas-1718-travel-14-destination-galleries-and-entry-requirements):** an ordered gallery table replaced this one, and each image became its destination's primary photo.
+
+### Schema 5: idea image
+Hotel, activity, and restaurant photos upgrade the database to schema 5 with a separate candidate image table, one image per idea. Existing destination images and saved ideas are retained. Candidate images use the same persistent database, upload limits, and backup procedure.
+
+**Superseded by [schema 6](#schema-6-idea-photo-galleries):** each idea has a gallery, and its single image became the main photo.
+
+### Schema 6: idea photo galleries
+Photo galleries upgrade the database to schema 6. Each hotel, activity, and restaurant can store up to 10 photos with one main selection. The migration retains the bytes and version of each previous single image and makes it the main photo. Destination images remain unchanged. All gallery photos and main selections are included in the same online backup.
+
+### Schema 7: at-home items
+At-home planning upgrades the database to schema 7 with a separate trip-owned item table. Existing trips, travel plans, and photos are retained. At-home notes, prices, and completion states use the same persistent storage and online backups. A schema 5 database upgrades through schemas 6 and 7 in one transaction.
 
 ### Schema 8: destination dates and miscellaneous spending
-Daily miscellaneous spending upgrades the database to schema 8, adding nullable arrival/departure dates, a daily amount in currency minor units, and a currency to destinations. Existing stay notes remain unchanged; their dates and amounts start unknown. All fields live in the existing persistent SQLite database and online backups. Take a backup before deploying. Schema 7 and earlier app builds reject schema 8, so rollback requires a compatible build or the stopped-app restore procedure above. Preserve the current database first; restoring a pre-upgrade backup loses later edits.
+Daily miscellaneous spending upgrades the database to schema 8, adding nullable arrival/departure dates, a daily amount in currency minor units, and a currency to destinations. Existing stay notes remain unchanged; their dates and amounts start unknown. All fields live in the existing persistent SQLite database and online backups.
+
+**Superseded by [schema 15](#schema-15-travel-12-schedule-inputs-and-usd-validation):** the trip start date and each destination's nights calculate the arrival and departure dates, and the dates entered before then are kept in separate legacy columns. Amounts are USD only; the currency column remains for storage compatibility.
 
 ### Schema 9: nightly hotel estimates
-Nightly hotel estimates upgrade the database to schema 9, adding nullable hotel nightly amounts in currency minor units and their currencies to destinations. Existing destinations begin without a general estimate; selected hotels, dates, miscellaneous settings, and all other data remain intact. Back up before deployment. These fields and hotel selections use the existing database and online backup. Schema 8 and earlier app builds reject schema 9; rollback requires a compatible build or the stopped-app restore procedure above. Preserve the current database before restoring a backup, which loses later edits.
+Nightly hotel estimates upgrade the database to schema 9, adding nullable hotel nightly amounts in currency minor units and their currencies to destinations. Existing destinations begin without a general estimate; selected hotels, dates, miscellaneous settings, and all other data remain intact. These fields and hotel selections use the existing database and online backup.
+
+**Superseded by [schema 15](#schema-15-travel-12-schedule-inputs-and-usd-validation):** amounts are USD only; the currency column remains for storage compatibility.
 
 ### Schema 10: activities budgeting method and general amount
-Activities budgeting upgrades the database to schema 10, adding an explicit method (defaulting to itemized), a nullable general amount in currency minor units, and a nullable currency per destination. Existing activity ideas and selections continue supplying the budget until a user chooses General budget. The upgrade preserves hotel estimates, dates, miscellaneous settings, and all existing data. These fields use the existing SQLite storage and online backups. Take a backup before deployment. Schema 9 and earlier builds reject schema 10; rollback requires a compatible build or the stopped-app restore procedure above. Preserve the current database first; restoring an earlier backup loses subsequent edits.
+Activities budgeting upgrades the database to schema 10, adding an explicit method (defaulting to itemized), a nullable general amount in currency minor units, and a nullable currency per destination. Existing activity ideas and selections continue supplying the budget until a user chooses General budget. The upgrade preserves hotel estimates, dates, miscellaneous settings, and all existing data. These fields use the existing SQLite storage and online backups.
+
+**Superseded by [schema 15](#schema-15-travel-12-schedule-inputs-and-usd-validation):** amounts are USD only; the currency column remains for storage compatibility.
 
 ### Schema 11: daily food budgets and explicit restaurant costing
-Food budgeting upgrades the database to schema 11, adding a method (defaulting to itemized), a nullable daily amount in currency minor units, and a nullable currency per destination. Existing destinations retain their itemized restaurant calculations, entries, and selections; switching methods does not remove entries or the saved daily estimate. Previous dates, budgets, routes, photos, and at-home items remain intact. The new fields use the existing SQLite storage and online backups. Back up before deployment. Schema 10 and earlier builds reject schema 11; rollback requires a compatible build or the stopped-app restore procedure above. Preserve the current database first because restoring an earlier backup loses later edits.
+Food budgeting upgrades the database to schema 11, adding a method (defaulting to itemized), a nullable daily amount in currency minor units, and a nullable currency per destination. Existing destinations retain their itemized restaurant calculations, entries, and selections; switching methods does not remove entries or the saved daily estimate. Previous dates, budgets, routes, photos, and at-home items remain intact. The new fields use the existing SQLite storage and online backups.
+
+**Superseded by [schema 15](#schema-15-travel-12-schedule-inputs-and-usd-validation):** amounts are USD only; the currency column remains for storage compatibility.
 
 ### Schema 12: destination shopping budgets
-Shopping budgets upgrade the database to schema 12, adding a nullable amount in currency minor units and a nullable currency per destination. Existing destinations start with shopping unset, which contributes no cost and preserves their previous budget calculations. Dates, miscellaneous amounts, hotel estimates, activity and food methods, routes, photos, and at-home items remain intact. Shopping fields use the existing SQLite storage and online backups. Take a backup before deployment. Schema 11 and earlier builds reject schema 12; rollback requires a compatible build or the stopped-app restore procedure above. Preserve the current database first because restoring an earlier backup loses later edits.
+Shopping budgets upgrade the database to schema 12, adding a nullable amount in currency minor units and a nullable currency per destination. Existing destinations start with shopping unset, which contributes no cost and preserves their previous budget calculations. Dates, miscellaneous amounts, hotel estimates, activity and food methods, routes, photos, and at-home items remain intact. Shopping fields use the existing SQLite storage and online backups.
+
+**Superseded by [schema 15](#schema-15-travel-12-schedule-inputs-and-usd-validation):** amounts are USD only; the currency column remains for storage compatibility.
+
+### Schema 13: typical weather
+Typical weather upgrades the database to schema 13 with nullable Fahrenheit temperatures and optional rainfall, period, and source text on destinations. Existing data and budget calculations remain unchanged. All weather fields are included in the same database and online backups.
 
 ### Schema 14: optional destination churches and photos
 Church planning upgrades the database to schema 14, adding destination visibility and separate church and church-image tables. On first addition of the visibility column, existing complete date ranges containing Sunday enable the section; otherwise it starts hidden. Replaying the migration preserves saved visibility, churches, Mass times, photos, and main-photo selections. Existing dates, budgets, weather, ideas, routes, and at-home data remain unchanged. Deleting a church removes its photos, and deleting a destination removes its churches and photos.
 
-Church details, visibility, and gallery images use the existing persistent SQLite storage and online backups; no additional mount is needed. Take a schema 13 backup before deployment. Schema 13 and earlier builds reject schema 14, so rollback requires a compatible build or the stopped-app restore procedure above. Preserve the current database first because restoring an older backup loses later edits. The container smoke check verifies saved church details, unknown Mass times, hidden visibility, image bytes and main selection after replacement, and image-route ownership.
+Church details, visibility, and gallery images use the existing persistent SQLite storage and online backups; no additional mount is needed.
+
+**Superseded by [schema 15](#schema-15-travel-12-schedule-inputs-and-usd-validation):** the saved visibility is a show or hide choice that date changes keep, and new destinations start shown. The dates separately decide whether the section can appear.
 
 ### Schema 15: Travel 1.2 schedule inputs and USD validation
-Take and verify an online backup before deployment. Rehearse the upgrade against a copy of production data, including galleries, weather, churches, routes, and all budget source modes. On October 29, 2026, schema 15 was rehearsed against a server-side copy of the verified schema 14 production backup. All nine tables retained their rows and existing fields (original dates retained in legacy columns), and integrity and foreign-key checks passed. Both existing trips had incomplete schedules requiring review; no dates were guessed. Production data stayed on the server.
+Rehearse the upgrade against a copy of production data, including galleries, weather, churches, routes, and all budget source modes. On October 29, 2026, schema 15 was rehearsed against a server-side copy of the verified schema 14 production backup. All nine tables retained their rows and existing fields (original dates retained in legacy columns), and integrity and foreign-key checks passed. Both existing trips had incomplete schedules requiring review; no dates were guessed. Production data stayed on the server.
 
 Schema 15 adds trip startDate, destination nights, and preserved legacy arrival/departure columns. Only consistent complete chains supply a trip start; individually valid non-conflicting date pairs can supply nights. Conflicting or incomplete chains remain visibly incomplete until reviewed. Effective dates are recalculated from the new inputs. Original dates remain stored separately, stay notes are never parsed, and replay preserves subsequent edits. Existing Church visibility choices remain saved, including hidden sections; date eligibility now controls whether a section can appear.
 
 All currencies must be USD. Startup checks stored currency fields inside the migration transaction and aborts on any unexpected non-USD value without conversion or relabeling. Investigate against the backup and resolve the source information deliberately before deploying; do not bulk relabel amounts. Existing USD cents are unchanged. General hotel rates multiply nights; daily food and miscellaneous use nights with a one-day minimum for zero-night stops. Selected hotel prices and fixed amounts remain whole-stay costs.
 
-Earlier images reject schema 15. Rollback requires a compatible build or the stopped-app restore procedure above. Preserve the upgraded database and sidecars first; restoring the pre-upgrade backup loses later edits. The container smoke script checks schema 15, trip start/nights, USD amounts, and persistent galleries/Church data after container replacement.
-
 ### Schema 16: Travel 1.3 idea order and Must do
-Back up before deployment and rehearse against a copy of the current database. Schema 16 adds candidate position and Must do fields. Each destination/category list starts in its previous alphabetical order (case-insensitive name, then ID); existing ideas start unmarked. Initialization runs only when each column is first added, so migration replay preserves later changes. New ideas append to their list; priority and ordering never change prices, inclusion, budget methods, galleries, research links, routes, or other trip data.
+Rehearse against a copy of the current database before deployment. Schema 16 adds candidate position and Must do fields. Each destination/category list starts in its previous alphabetical order (case-insensitive name, then ID); existing ideas start unmarked. Initialization runs only when each column is first added, so migration replay preserves later changes. New ideas append to their list; priority and ordering never change prices, inclusion, budget methods, galleries, research links, routes, or other trip data.
 
 On November 1, 2026, the upgrade was rehearsed against a copy of the verified schema 15 production backup. All nine tables retained their rows and original values, initial alphabetical ordering was preserved, and replay retained subsequent order and Must do edits. Integrity and foreign-key checks passed. The verified backup is retained on the server and, with explicit approval, in the ignored local backups folder. On November 2, the live schema 16 database passed integrity and foreign-key checks, and all three idea pages rendered saved ordering, applicable Must do flags, and Add actions below the list.
 
-The same SQLite database and online backups preserve both fields. The container smoke check verifies stored positions and Must do flags after container replacement alongside existing data and images. Earlier builds reject schema 16; rollback requires a compatible build or the stopped-app restore procedure above. Preserve the upgraded database and sidecars first; restoring a pre-upgrade backup loses subsequent edits.
+The same SQLite database and online backups preserve both fields.
 
 ### Schemas 17–18: Travel 1.4 destination galleries and entry requirements
-
-Take and verify an online backup, then rehearse against a copy of the current database before deployment. Schema 17 replaces the single destination-image table with an ordered gallery table. Each old photo retains its bytes and version and becomes its destination's primary photo at position zero. The table-shape check makes replay preserve later photo additions, ordering, and primary choices. Individual photo IDs and the legacy primary-photo route both enforce destination ownership and requested versions.
+Rehearse against a copy of the current database before deployment. Schema 17 replaces the single destination-image table with an ordered gallery table. Each old photo retains its bytes and version and becomes its destination's primary photo at position zero. The table-shape check makes replay preserve later photo additions, ordering, and primary choices. Individual photo IDs and the legacy primary-photo route both enforce destination ownership and requested versions.
 
 Schema 18 creates a destination-owned entry-requirements table. Existing destinations start without a record. Manual research, sources, and last checked dates are included in the same SQLite backup; destination and trip deletion cascade to these records. Replaying this migration preserves existing records. Neither migration changes budgets, schedules, routes, candidate/church galleries, or other trip information.
 
-The container smoke script verifies schema 18, destination photo bytes/order/primary selection, individual image routes and ownership, and entry-requirements persistence across container replacement, alongside the existing checks. Docker is required to run it; a Next.js build does not validate the container. Next.js and its ESLint configuration are pinned to 16.4.5 for this implementation. Explicit output tracing includes Sharp's platform libraries from pnpm's package layout, including the DLLs needed by local Windows standalone previews. Recheck the dependency audit at release time and report any remaining unrelated tooling advisories.
-
-Schema 16 and earlier builds reject the newer database. Rollback requires a compatible build or the stopped-app restore procedure above. Preserve the upgraded database and sidecars first; restoring a pre-upgrade backup loses later edits. Production migration rehearsal and deployment verification are still required before closing Travel 1.4 and publishing its release notes.
+Next.js and its ESLint configuration are pinned to 16.4.5 for this implementation. Explicit output tracing includes Sharp's platform libraries from pnpm's package layout, including the DLLs needed by local Windows standalone previews. The production rehearsal, deployment and release verification were completed on November 4, 2026; see [Travel 1.4 release validation](travel-1.4-validation.md).
 
 ### Schema 19: Google Sign In accounts and sessions
-Google Sign In upgrades the database to schema 19 with two tables. `accounts` holds each authorized email, the stable Google account identifier bound at that person's first sign-in, their Google display name, and when the email was authorized. `sessions` holds a SHA-256 hash of each browser's session token, its account and its expiry, never the token itself. Trips and all other data are unchanged. Both tables are included in the same online backups, and replaying the migration keeps existing authorizations, bindings and sessions. Take and verify a backup before deployment; the startup authorization of `TRAVEL_OWNER_EMAIL` is the only change at upgrade.
+Google Sign In upgrades the database to schema 19 with two tables. `accounts` holds each authorized email, the stable Google account identifier bound at that person's first sign-in, their Google display name, and when the email was authorized. `sessions` holds a SHA-256 hash of each browser's session token, its account and its expiry, never the token itself. Trips and all other data are unchanged. Both tables are included in the same online backups, and replaying the migration keeps existing authorizations, bindings and sessions. The startup authorization of `TRAVEL_OWNER_EMAIL` is the only change at upgrade.
 
-Schema 18 and earlier builds reject schema 19. Rollback requires a compatible build or the stopped-app restore procedure above; preserve the upgraded database and sidecars first, because restoring an older backup loses later edits and authorizations. **A build from before Google Sign In has no sign-in at all: anyone with the URL could again view and edit every trip.** Prefer fixing forward. If a rollback is unavoidable, keep the app stopped until access is otherwise restricted.
+Restoring a backup from before this schema also loses authorizations. **A build from before Google Sign In has no sign-in at all: anyone with the URL could again view and edit every trip.** If such a rollback is unavoidable, keep the app stopped until access is otherwise restricted.
 
 ### Schema 20: trip ownership and sharing (TRA-104)
 Trip sharing upgrades the database to schema 20 in the startup transaction. `trips` gains an `ownerId` referencing `accounts`, and triggers refuse any trip without an owner, because SQLite can't add a required column that references another table. Every existing trip is assigned to the account of `TRAVEL_OWNER_EMAIL`, which startup authorizes first; who signed in first plays no part. A new `trip_shares` table holds one row per trip and account it is shared with, keyed by both, so an email can't be invited twice. Deleting a trip removes its shares. Removing a share deletes only that row: the account stays authorized and the trip is unchanged. Both tables are in the same online backups. A replay finds every trip owned and changes nothing, even if `TRAVEL_OWNER_EMAIL` has changed since.
 
 **Rehearsal, November 10, 2026.** In an isolated environment, the schema 19 build from `main` wrote a production-like database: 2 trips, 3 destinations, 5 connections, 9 ideas, 3 churches, 18 photos, entry requirements, At home items, and the owner's bound account and session. `scripts/backup.mjs` backed it up, and the backup matched the live file. The TRA-104 build then upgraded the live file: every existing table kept its row count, the full snapshot and every photo's bytes and version were unchanged, home budgets were unchanged, every trip belonged to the designated owner, the owner stayed signed in, and `integrity_check` and `foreign_key_check` passed. Replaying the upgrade changed nothing. The schema 19 build refused the upgraded file without modifying it, and after the stopped-app restore of the backup it opened the schema 19 data unchanged, with the owner's session. A rehearsal against a copy of the verified production backup is still required before deployment, as for earlier schemas.
 
-Schema 19 builds reject schema 20. Rollback requires a compatible build or the stopped-app restore of the pre-upgrade backup above. Preserve the upgraded database and sidecars first: restoring loses ownership, shares, accounts authorized by sharing, and every later edit. **Never lower `user_version` to run an older build on a schema 20 database: schema 19 builds have no trip isolation, so every account a trip was shared with could see and change every trip.** Prefer fixing forward.
+Restoring the pre-upgrade backup loses ownership, shares, accounts authorized by sharing, and every later edit. **Never lower `user_version` to run an older build on a schema 20 database: schema 19 builds have no trip isolation, so every account a trip was shared with could see and change every trip.**
 
-### Feedback and release notes
+## Feedback and release notes
 Configure server-only JIRA_URL (HTTPS Jira base URL), JIRA_EMAIL, and JIRA_API_TOKEN with permission to create Tasks in TRA. Use the host's secret configuration; never put credentials in source, image layers, client variables, or logs. Preserve the browser Host and Origin headers through the proxy; the feedback endpoint compares them and ignores forwarded-host claims. The HttpOnly feedback cookie is Secure for HTTPS origins.
 
 Feedback creates backlog Tasks with label user-feedback, message and page/browser context. Verify one explicitly authorized production submission after deployment and remove any temporary test task as appropriate. Local development and automated tests use the loopback stand-in only. Upstream timeout is 10 seconds, with no automatic retry; an uncertain response can mean the issue was created even though the user sees an error. One-use tokens prevent token replay, while a deliberate retry starts a new attempt.
 
 Abuse guards are in-memory for the single web process: 3 sends per session per hour, 5 globally per minute, and 30 globally per hour; token issuance is limited separately. Tokens expire after 15 minutes and must mature for one second. Limits reset at process restart and are not a substitute for shared limits if the deployment model changes.
 
-At release close, add only actually shipped changes and their actual release date to src/lib/change-log.ts. Version ordering drives the browser-local unread dot; no account or database migration is involved. An empty entry list is intentional until release evidence is available.
+At release close, add only actually shipped changes and their actual release date to src/lib/change-log.ts. Version ordering drives the browser-local unread dot; no account or database migration is involved.
+
+## References
+- [Dokku persistent storage](https://dokku.com/docs/advanced-usage/persistent-storage/)
+- [Node SQLite backup API](https://nodejs.org/docs/latest-v24.x/api/sqlite.html)

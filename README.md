@@ -51,13 +51,25 @@ Each trip has one owner and is private to its owner until shared (TRA-104).
 - **Enforcement.** The server checks the signed-in account against the trip on every page, Server Action and photo request, finding each item's trip from what is saved rather than from what the browser sends. A trip you can't open looks the same as one that doesn't exist.
 
 ## Checks
+CI runs these on every pull request and before every deployment (`.github/workflows/check.yml`):
 ```sh
 pnpm lint
 pnpm typecheck
 pnpm test
 pnpm build
+bash scripts/smoke-container.sh
 ```
-For local production preview, set `TRAVEL_DATABASE_PATH` to an absolute database path before `pnpm start`. The Docker image uses a guarded startup script requiring mounted storage.
+The container smoke script needs Docker and Bash. It builds the image and checks the container, persistent storage, sign-in enforcement and trip isolation, which a Next.js build alone does not verify.
+
+## Local production preview
+`pnpm build` produces Next.js standalone output, the same server the Docker image runs. Next.js warns that `next start`, which `pnpm start` runs, does not work with standalone output. To preview a build, copy in the files the standalone server leaves out, then start it with your `.env.local` settings:
+```sh
+pnpm build
+cp -r public .next/standalone/
+cp -r .next/static .next/standalone/.next/
+TRAVEL_DATABASE_PATH="$PWD/data/travel.sqlite" node --env-file=.env.local .next/standalone/server.js
+```
+Repeat the copies after every build. The standalone server doesn't read `.env.local` itself, so `--env-file` passes your sign-in settings. It runs from `.next/standalone`, so `TRAVEL_DATABASE_PATH` must be absolute; a relative path would create a new, empty database inside the build output. The value on the command line takes precedence over the one in `.env.local`. The Docker image instead starts through `scripts/start.mjs`, which refuses to start without mounted persistent storage.
 
 ## Travel 1.5 responsiveness and backups
 Trip and destination pages fetch only the relevant trip's data. Home-page budgets are computed on the server and reused while searching, and saves refresh the displayed page without returning the entire database to the browser. The unused Next.js image optimizer is disabled; existing photo routes and galleries are unchanged.
@@ -167,7 +179,7 @@ The provider needs no key for this personal, non-commercial app. Its [free-servi
 ## Routes, itineraries, and research links
 Trips return to their departing city by default. Select **Return to a different city** to enter a separate endpoint. Existing trips retain their departure location and default return behavior.
 Each travel connection supports up to 30 ordered layovers or stops, with a place, arrival/departure details, and notes. The connection's estimated price covers the whole itinerary and is counted once in the trip budget.
-Connections and hotel/activity/restaurant ideas support up to 20 research links with optional short descriptions. Existing single links are retained during the additive database upgrade. Older schema versions upgrade to version 18 automatically inside a transaction; take an online backup before deploying this upgrade.
+Connections and hotel/activity/restaurant ideas support up to 20 research links with optional short descriptions. Existing single links are retained during the additive database upgrade. Older schema versions upgrade to the current version automatically inside a transaction; take an online backup before deploying this upgrade.
 ## Images
 Each destination, hotel, activity, restaurant, and church can have up to 10 photos, with one selected as the main photo on its card. Click the thumbnails to view the other photos. Add photos, choose the main photo, or remove individual photos in the editor; removing the main photo selects another remaining photo. Cancel discards photo changes. Existing single idea images become the main photo automatically.
 

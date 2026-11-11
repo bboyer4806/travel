@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, readdirSync, rmSync, existsSync } from "node:fs";
+import { mkdtempSync, readdirSync, rmSync, existsSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve, sep, basename } from "node:path";
 import { spawnSync } from "node:child_process";
@@ -116,5 +116,36 @@ test("backup refuses overwrite, source replacement, and nonexistent source", (t)
   const missing = join(directory, "missing.sqlite");
   assert.notEqual(backup(join(directory, "empty.sqlite"), missing).status, 0);
   assert.equal(existsSync(missing), false);
+  assert.deepEqual(readdirSync(directory).filter((name) => name.startsWith(".travel-backup-")), []);
+});
+
+test("backup reads TRAVEL_DATABASE_PATH from the environment, then .env.local, then .env", (t) => {
+  const directory = mkdtempSync(join(tmpdir(), "travel-backup-test-"));
+  t.after(() => rmSync(directory, { recursive: true, force: true }));
+  for (const name of ["process", "local", "env"]) {
+    const db = new DatabaseSync(join(directory, `${name}.sqlite`));
+    db.exec(`CREATE TABLE notes(value TEXT); INSERT INTO notes VALUES('${name}');`);
+    db.close();
+  }
+  const environment = { ...process.env };
+  delete environment.TRAVEL_DATABASE_PATH;
+  let count = 0;
+  const backup = (extra = {}) => {
+    const target = join(directory, `backup-${++count}.sqlite`);
+    const result = spawnSync(process.execPath, [resolve("scripts/backup.mjs"), target], { cwd: directory, env: { ...environment, ...extra }, encoding: "utf8" });
+    if (result.status !== 0) return { result };
+    const snapshot = new DatabaseSync(target, { readOnly: true });
+    try { return { result, source: snapshot.prepare("SELECT value FROM notes").get().value }; } finally { snapshot.close(); }
+  };
+
+  writeFileSync(join(directory, ".env"), "TRAVEL_DATABASE_PATH=./env.sqlite\n");
+  assert.equal(backup().source, "env");
+  writeFileSync(join(directory, ".env.local"), "TRAVEL_DATABASE_PATH=./local.sqlite\n");
+  assert.equal(backup().source, "local");
+  assert.equal(backup({ TRAVEL_DATABASE_PATH: join(directory, "process.sqlite") }).source, "process");
+
+  writeFileSync(join(directory, ".env.local"), "TRAVEL_DATABASE_PATH=./missing.sqlite\n");
+  assert.notEqual(backup().result.status, 0);
+  assert.equal(existsSync(join(directory, "missing.sqlite")), false);
   assert.deepEqual(readdirSync(directory).filter((name) => name.startsWith(".travel-backup-")), []);
 });

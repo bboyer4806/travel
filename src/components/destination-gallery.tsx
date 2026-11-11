@@ -5,6 +5,7 @@ import { ArrowLeft, ArrowRight, Check, ImagePlus, RotateCcw, Trash2 } from "luci
 import { MAX_DESTINATION_IMAGES, MAX_GALLERY_UPLOAD_BYTES, MAX_IMAGE_UPLOAD_BYTES } from "@/lib/image-limits";
 import { formatSavedDestinationLabel } from "@/lib/destination-label";
 import { createDestinationGalleryDraft, destinationGalleryChanged, moveDestinationPhoto, removeDestinationPhoto, type DestinationGalleryDraft, type DestinationGalleryOwner } from "@/lib/destination-gallery";
+import { randomUuid } from "@/lib/uuid";
 import styles from "./destination-gallery.module.css";
 
 export { createDestinationGalleryDraft, destinationGalleryForm, type DestinationGalleryDraft } from "@/lib/destination-gallery";
@@ -79,7 +80,7 @@ export function DestinationGalleryEditor({ destination, draft, onChange, disable
     else if ([...draft.images.flatMap((image) => image.file ? [image.file] : []), ...files].reduce((total, file) => total + file.size, 0) > MAX_GALLERY_UPLOAD_BYTES) validationError = "Add up to 15 MB of new photos at a time. Save these photos before adding more.";
     if (validationError) { setError(`${validationError} Your previous selections have been kept.`); return; }
     setError("");
-    const added = files.map((file) => ({ id: crypto.randomUUID(), file }));
+    const added = files.map((file) => ({ id: randomUuid(), file }));
     const images = [...draft.images, ...added];
     onChange({ ...draft, images, mainImageId: draft.mainImageId ?? images[0].id });
   }

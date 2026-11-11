@@ -3,6 +3,7 @@
 import { Church as ChurchIcon, ExternalLink, MapPin, Pencil, Plus, Trash2 } from "lucide-react";
 import { CandidateGallery, CandidateGalleryEditor, type CandidateGalleryDraft } from "./candidate-gallery";
 import type { Church, MassTime } from "@/lib/types";
+import { randomUuid } from "@/lib/uuid";
 import styles from "./churches.module.css";
 
 export function ChurchOptions({ items, busy, onAdd, onEdit, onDelete }: {
@@ -48,7 +49,7 @@ export function ChurchEditor({ item, massTimes, onTimesChange, gallery, onGaller
         <label className="field"><span>Mass time ({index + 1})</span><input value={entry.time} onChange={(event) => update(entry.id, "time", event.target.value)} required maxLength={120} placeholder="9:00 AM" /></label>
         <button type="button" className="icon-button" aria-label={`Remove Mass time ${index + 1}`} onClick={() => onTimesChange(massTimes.filter((time) => time.id !== entry.id))}><Trash2 size={16} /></button>
       </div>)}
-      <button type="button" className="button secondary small" disabled={busy || massTimes.length >= 30} onClick={() => onTimesChange([...massTimes, { id: crypto.randomUUID(), day: "", time: "" }])}><Plus size={15} />Add Mass time</button>
+      <button type="button" className="button secondary small" disabled={busy || massTimes.length >= 30} onClick={() => onTimesChange([...massTimes, { id: randomUuid(), day: "", time: "" }])}><Plus size={15} />Add Mass time</button>
     </fieldset>
     <CandidateGalleryEditor candidate={item} subject="church" imageKind="church" draft={gallery} onChange={onGalleryChange} disabled={busy} />
   </>;

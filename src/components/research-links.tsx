@@ -3,6 +3,7 @@
 import { useEffect, useId, useRef } from "react";
 import { ExternalLink, Plus, Trash2 } from "lucide-react";
 import type { ResearchLink } from "@/lib/types";
+import { randomUuid } from "@/lib/uuid";
 import styles from "./research-links.module.css";
 
 const MAX_LINKS = 20;
@@ -32,7 +33,7 @@ export function ResearchLinksEditor({ links, onChange, disabled = false }: Edito
 
   function add() {
     if (disabled || links.length >= MAX_LINKS) return;
-    const linkId = crypto.randomUUID();
+    const linkId = randomUuid();
     pendingFocus.current = linkId;
     onChange([...links, { id: linkId, url: "", description: "" }]);
   }

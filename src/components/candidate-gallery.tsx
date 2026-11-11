@@ -4,6 +4,7 @@ import { useEffect, useId, useRef, useState, type ChangeEvent } from "react";
 import { Check, ImagePlus, RotateCcw, Trash2 } from "lucide-react";
 import { MAX_CANDIDATE_IMAGES, MAX_GALLERY_UPLOAD_BYTES, MAX_IMAGE_UPLOAD_BYTES } from "@/lib/image-limits";
 import type { Candidate } from "@/lib/types";
+import { randomUuid } from "@/lib/uuid";
 import styles from "./candidate-gallery.module.css";
 
 const IMAGE_TYPES = new Set(["image/jpeg", "image/png", "image/webp"]);
@@ -99,7 +100,7 @@ export function CandidateGalleryEditor({ candidate, subject, draft, onChange, di
     else if ([...draft.images.flatMap((image) => image.file ? [image.file] : []), ...files].reduce((total, file) => total + file.size, 0) > MAX_GALLERY_UPLOAD_BYTES) validationError = "Add up to 15 MB of new photos at a time. Save these photos before adding more.";
     if (validationError) { setError(`${validationError} Your previous selections have been kept.`); return; }
     setError("");
-    const added = files.map((file) => ({ id: crypto.randomUUID(), file }));
+    const added = files.map((file) => ({ id: randomUuid(), file }));
     const images = [...draft.images, ...added];
     onChange({ ...draft, images, mainImageId: draft.mainImageId ?? images[0].id });
   }

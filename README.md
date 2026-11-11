@@ -159,7 +159,7 @@ node scripts/jira-feedback-stub.mjs
 # JIRA_API_TOKEN=local-stand-in
 ```
 
-Development refuses non-loopback Jira URLs. The stand-in validates the issue envelope and returns a synthetic issue ID without sending anything externally. Production configuration and a real Jira delivery still require deployment verification.
+Development refuses non-loopback Jira URLs. The stand-in validates the issue envelope and returns a synthetic issue ID without sending anything externally. It accepts any issue the app can send, including messages of 1,000 lines, and counts request size in bytes: a request over 256 KiB gets HTTP 413, and malformed JSON or an invalid issue gets 400. Production configuration and a real Jira delivery still require deployment verification.
 
 ## What's new
 The shared header links to **What's new**. Published entries live in `src/lib/change-log.ts`, newest version first, with release date and concise changes. Travel 1.3 was deployed on November 1, 2026, and verified on November 2, 2026. Add only verified shipped changes and actual release dates at release close; an empty entry list displays **No releases yet**.
@@ -188,7 +188,7 @@ JPEG, PNG, and WebP uploads up to 5 MiB each and 20 megapixels are supported, wi
 Images live in the same persistent SQLite database and are included in online backups. Snapshots carry only photo IDs, versions, and the main selection; image routes serve separate, versioned responses. Image-only edits preserve travel plans, prices, research links, and budget selections.
 
 ## Hosting
-The existing GitHub Actions deployment builds a Node container and deploys it to Dokku at travel.dev.boyersoftware.com after checks pass.
+The existing GitHub Actions deployment builds a Node container and deploys it to Dokku at travel.dev.boyersoftware.com after checks pass. Only `main` deploys, only to the server with the verified SSH host key, and with the 20 MiB request limit photo uploads need; see [deployment safeguards](docs/DEPLOYMENT.md#deployment-safeguards-tra-98).
 **Provision persistent storage before the first app deployment.** See [deployment and recovery instructions](docs/DEPLOYMENT.md).
 This version runs one application instance with SQLite. Google Sign In requires the production settings in [deployment](docs/DEPLOYMENT.md#google-sign-in-tra-103); trip ownership and sharing need no further settings, but the schema 20 upgrade assigns existing trips to `TRAVEL_OWNER_EMAIL` (see [deployment](docs/DEPLOYMENT.md#schema-20-trip-ownership-and-sharing-tra-104)). Live collaboration and conflict resolution are future work.
 
@@ -197,6 +197,7 @@ This version runs one application instance with SQLite. Google Sign In requires 
 pnpm backup ./backups/travel-2026-10-07.sqlite
 ```
 The backup uses SQLite's online backup API, checks integrity, and refuses to overwrite an existing backup.
+It reads `TRAVEL_DATABASE_PATH` from the environment, then `.env.local`, then `.env`, and otherwise backs up `data/travel.sqlite`.
 Store backups outside the repository and keep a copy off the server.
 
 See [PLAN.md](PLAN.md) for the agreed scope and acceptance checks.

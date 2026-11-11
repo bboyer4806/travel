@@ -1,5 +1,5 @@
 import {
-  constants, copyFileSync, mkdirSync, mkdtempSync, rmSync, rmdirSync,
+  constants, copyFileSync, existsSync, mkdirSync, mkdtempSync, rmSync, rmdirSync,
 } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { backup, DatabaseSync } from "node:sqlite";
@@ -8,6 +8,9 @@ if (process.argv.length !== 3) {
   console.error("Usage: node scripts/backup.mjs <new-backup-file.sqlite>");
   process.exitCode = 1;
 } else {
+  // Back up the database the app uses. As in Next.js, a variable already set in the
+  // environment wins over .env.local, which wins over .env; loading never overrides.
+  for (const file of [".env.local", ".env"]) if (existsSync(file)) process.loadEnvFile(file);
   const source = resolve(process.env.TRAVEL_DATABASE_PATH || "data/travel.sqlite");
   const destination = resolve(process.argv[2]);
   if (source === destination) {

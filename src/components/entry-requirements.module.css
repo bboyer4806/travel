@@ -1,6 +1,11 @@
 .panel { border: 1px solid var(--line); border-radius: 12px; padding: 20px; margin: 20px 0; }
-.panel :global(.section-heading) { margin-bottom: 12px; flex-wrap: wrap; gap: 12px; }
+.panel :global(.section-heading) { margin-bottom: 0; flex-wrap: wrap; gap: 12px; }
 .panel h4 { font-size: 20px; margin: 0; }
+.toggle { display: inline-flex; align-items: center; gap: 8px; padding: 0; border: 0; background: none; color: inherit; }
+.toggle:hover { color: var(--orange); }
+.toggle svg { transition: transform .16s; }
+.toggle[aria-expanded="true"] svg { transform: rotate(180deg); }
+.content { margin-top: 12px; }
 .actions { display: flex; align-items: center; flex-wrap: wrap; gap: 12px; }
 .actions :global(.text-button) { display: inline-flex; align-items: center; gap: 5px; }
 .reminder { font-size: 13px; color: var(--ink); line-height: 1.6; }

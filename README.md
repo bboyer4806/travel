@@ -121,6 +121,8 @@ The focused Typical Weather, Shopping, Food, and Activities editors save only th
 ## Entry requirements
 Each destination card has an **Entry requirements** section for manually maintained research. Add or edit passport nationality, purpose of travel, traveler circumstances, visa or electronic authorization requirements, passport validity, entry or health documents, separate transit requirements, and notes. Save official government or immigration links with descriptions and the date you last checked the information. All fields are optional; unrecorded information does not mean no requirements apply.
 
+The section starts collapsed each time the page loads, showing only its **Entry requirements** heading, **Add entry requirements** or **Edit entry requirements**, and **Clear** once requirements are recorded. Select the heading by mouse, touch, or keyboard to show or hide the current stay, recorded requirements, sources, last checked date, and explanatory notes. Each destination's section opens and closes on its own, and adding, editing, and clearing work either way. Showing or hiding changes nothing saved, makes no server request, and is not remembered between visits.
+
 Current calculated arrival, departure, and nights are shown for reference. Schedule changes preserve the research and its last checked date; saving does not automatically mark it checked. Verify requirements with official sources before traveling. Travel does not retrieve requirements, verify eligibility or documents, or monitor changes. **Clear** removes the record after confirmation; Cancel discards an editor draft. Requirements are stored with the destination in schema 18, included in backups, and deleted with their destination or trip.
 
 ## Idea priorities and ordering

@@ -208,3 +208,7 @@ This narrows the TRA-103 access rule: an authorized account now sees only the tr
 ## Added scope: November 11, 2026, collapsible typical weather (TRA-111)
 - Each destination card's Typical weather section starts collapsed on every page load and expands or collapses on its own from a keyboard and touch accessible heading control. The heading and Edit typical weather stay visible and working in both states.
 - Expanding shows the existing temperatures, period, rainfall notes, source, and explanation. Toggling stays in the page: it never changes saved weather, makes no server request, and is not remembered between visits. No changes to weather data, the editor, or other destination sections.
+
+## Added scope: November 11, 2026, collapsible entry requirements (TRA-110)
+- Each destination card's Entry requirements section starts collapsed on every page load and expands or collapses on its own from a keyboard and touch accessible heading control. The heading, Add or Edit entry requirements, and Clear when requirements are recorded stay visible and working in both states.
+- Expanding shows the existing current stay, recorded requirements, sources, last checked date, and explanatory notes. Toggling stays in the page: it never changes saved requirements, makes no server request, and is not remembered between visits. No changes to entry requirements data, fields, validation, adding, editing, clearing, or other destination sections.

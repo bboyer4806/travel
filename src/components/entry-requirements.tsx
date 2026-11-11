@@ -1,6 +1,7 @@
 "use client";
 
-import { Pencil, Plus, Trash2 } from "lucide-react";
+import { useId, useState } from "react";
+import { ChevronDown, Pencil, Plus, Trash2 } from "lucide-react";
 import { ResearchLinks, ResearchLinksEditor } from "@/components/research-links";
 import { ENTRY_REQUIREMENT_FIELDS, type EntryRequirements } from "@/lib/entry-requirements";
 import { formatCalendarDate } from "@/lib/trip-dates";
@@ -20,9 +21,11 @@ type PanelProps = {
 const reminder = "Manually maintained research. Requirements depend on your passport nationality, purpose of travel, stay length, and circumstances. Verify with official government or embassy sources before travel.";
 
 export function EntryRequirementsPanel({ requirements, arrivalDate, departureDate, nights, disabled, onEdit, onClear }: PanelProps) {
+  const [expanded, setExpanded] = useState(false);
+  const contentId = useId();
   return <section className={styles.panel} aria-label="Entry requirements">
     <div className="section-heading">
-      <h4>Entry requirements</h4>
+      <h4><button type="button" className={styles.toggle} aria-expanded={expanded} aria-controls={contentId} onClick={() => setExpanded((open) => !open)}>Entry requirements<ChevronDown size={18} aria-hidden="true" /></button></h4>
       <div className={styles.actions}>
         <button type="button" className="button secondary small" disabled={disabled} onClick={onEdit}>
           {requirements ? <Pencil size={15} aria-hidden="true" /> : <Plus size={15} aria-hidden="true" />}
@@ -31,21 +34,23 @@ export function EntryRequirementsPanel({ requirements, arrivalDate, departureDat
         {requirements && <button type="button" className="text-button" disabled={disabled} onClick={onClear}><Trash2 size={14} aria-hidden="true" />Clear</button>}
       </div>
     </div>
-    <p className={styles.reminder}>{reminder}</p>
-    <dl className={styles.schedule} aria-label="Current stay for reference">
-      <div><dt>Current arrival</dt><dd>{formatCalendarDate(arrivalDate)}</dd></div>
-      <div><dt>Current departure</dt><dd>{formatCalendarDate(departureDate)}</dd></div>
-      <div><dt>Stay length</dt><dd>{nights === null ? "Nights not set" : `${nights} ${nights === 1 ? "night" : "nights"}`}</dd></div>
-    </dl>
-    <p className={styles.hint}>The current stay is shown for reference. Schedule changes do not update this research.</p>
-    {!requirements ? <p className={styles.empty}>No entry requirements recorded. Missing or unconfirmed information does not mean there are no requirements.</p> : <>
-      <dl className={styles.details}>
-        {ENTRY_REQUIREMENT_FIELDS.map((field) => <div key={field.name}><dt>{field.label}</dt><dd>{requirements[field.name] || "Not recorded"}</dd></div>)}
-        <div><dt>Last checked</dt><dd>{requirements.lastCheckedDate ? formatCalendarDate(requirements.lastCheckedDate) : "Not checked / unconfirmed"}</dd></div>
+    <div id={contentId} className={styles.content} hidden={!expanded}>
+      <p className={styles.reminder}>{reminder}</p>
+      <dl className={styles.schedule} aria-label="Current stay for reference">
+        <div><dt>Current arrival</dt><dd>{formatCalendarDate(arrivalDate)}</dd></div>
+        <div><dt>Current departure</dt><dd>{formatCalendarDate(departureDate)}</dd></div>
+        <div><dt>Stay length</dt><dd>{nights === null ? "Nights not set" : `${nights} ${nights === 1 ? "night" : "nights"}`}</dd></div>
       </dl>
-      <div className={styles.sources}><h5>Sources</h5>{requirements.sources.length ? <ResearchLinks links={requirements.sources} /> : <p>Not recorded</p>}</div>
-      <p className={styles.hint}>Missing or unconfirmed information does not mean there are no requirements.</p>
-    </>}
+      <p className={styles.hint}>The current stay is shown for reference. Schedule changes do not update this research.</p>
+      {!requirements ? <p className={styles.empty}>No entry requirements recorded. Missing or unconfirmed information does not mean there are no requirements.</p> : <>
+        <dl className={styles.details}>
+          {ENTRY_REQUIREMENT_FIELDS.map((field) => <div key={field.name}><dt>{field.label}</dt><dd>{requirements[field.name] || "Not recorded"}</dd></div>)}
+          <div><dt>Last checked</dt><dd>{requirements.lastCheckedDate ? formatCalendarDate(requirements.lastCheckedDate) : "Not checked / unconfirmed"}</dd></div>
+        </dl>
+        <div className={styles.sources}><h5>Sources</h5>{requirements.sources.length ? <ResearchLinks links={requirements.sources} /> : <p>Not recorded</p>}</div>
+        <p className={styles.hint}>Missing or unconfirmed information does not mean there are no requirements.</p>
+      </>}
+    </div>
   </section>;
 }
 

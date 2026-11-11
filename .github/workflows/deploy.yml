@@ -3,7 +3,7 @@ name: Deploy
 # Builds on GitHub's runners, pushes the image to GHCR, then has Dokku on the
 # server run it. The Dokku app, its domain and its HTTPS certificate are set up
 # here too. Persistent storage must be provisioned first; see docs/DEPLOYMENT.md. Copy this
-# file, change APP and DOMAIN, add the two secrets, push.
+# file, change APP and DOMAIN, add the secrets docs/DEPLOYMENT.md lists, push.
 on:
   push:
     branches: [main]
@@ -11,8 +11,10 @@ on:
 
 # One deploy at a time. A running deploy is never cancelled; a newer push
 # replaces one still waiting to start, so the latest commit is what goes live.
+# Runs from other branches never deploy, and their own group keeps them from
+# replacing a deploy from main that is waiting to start.
 concurrency:
-  group: deploy
+  group: deploy-${{ github.ref }}
   cancel-in-progress: false
 
 env:
@@ -24,6 +26,9 @@ jobs:
     uses: ./.github/workflows/check.yml
 
   deploy:
+    # Production deploys only from main. A manual run from any other branch
+    # still runs the checks, but never builds, publishes or deploys an image.
+    if: github.ref == 'refs/heads/main'
     needs: checks
     runs-on: ubuntu-latest
     permissions:
@@ -74,25 +79,32 @@ jobs:
         env:
           SSH_KEY: ${{ secrets.DOKKU_SSH_KEY }}
           HOST: ${{ secrets.DOKKU_HOST }}
+          # The verified, pinned host key of DOKKU_HOST, the same one the backup
+          # step trusts; see docs/DEPLOYMENT.md.
+          KNOWN_HOSTS: ${{ secrets.TRAVEL_BACKUP_KNOWN_HOSTS }}
           IMAGE: ghcr.io/${{ github.repository }}:${{ github.sha }}
         run: |
           set -euo pipefail
           : "${SSH_KEY:?Add the DOKKU_SSH_KEY secret under Settings > Secrets and variables > Actions}"
           : "${HOST:?Add the DOKKU_HOST secret under Settings > Secrets and variables > Actions}"
+          : "${KNOWN_HOSTS:?Add the verified host key as the TRAVEL_BACKUP_KNOWN_HOSTS secret; see docs/DEPLOYMENT.md}"
           mkdir -p ~/.ssh
           printf '%s\n' "$SSH_KEY" > ~/.ssh/id_ed25519
-          chmod 600 ~/.ssh/id_ed25519
-          # The runner starts with no known hosts, so trust the key the
-          # server presents now.
-          ssh-keyscan -t ed25519 "$HOST" >> ~/.ssh/known_hosts 2>/dev/null
+          printf '%s\n' "$KNOWN_HOSTS" > ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/id_ed25519 ~/.ssh/known_hosts
 
-          # Dokku runs exactly one command per SSH call.
-          dokku() { ssh -i ~/.ssh/id_ed25519 "dokku@$HOST" "$@"; }
+          # Dokku runs exactly one command per SSH call. Only the pinned host
+          # key is trusted: a server presenting any other key stops the deploy.
+          dokku() { ssh -o BatchMode=yes -o StrictHostKeyChecking=yes -i ~/.ssh/id_ed25519 "dokku@$HOST" "$@"; }
 
           dokku apps:exists "$APP" || dokku apps:create "$APP"
           # Before the first deploy, so Dokku proxies to the port the image
           # exposes rather than its default of 5000.
           dokku domains:set "$APP" "$DOMAIN"
+          # A photo save can send 16 MiB, far over Dokku's 1m default. Set
+          # before deploying: every deploy rebuilds the nginx config, so new
+          # and existing apps both get it.
+          dokku nginx:set "$APP" client-max-body-size 20m
 
           # Re-running a workflow deploys the same image again, which Dokku
           # reports as "No changes detected" with a non-zero exit. Nothing

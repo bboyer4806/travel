@@ -3,6 +3,7 @@
 import { useId, useRef, useState } from "react";
 import { ArrowDown, ArrowUp, MapPin, Plane, Plus, Trash2 } from "lucide-react";
 import type { ItineraryStop } from "@/lib/types";
+import { randomUuid } from "@/lib/uuid";
 
 const MAX_STOPS = 30;
 
@@ -20,7 +21,7 @@ export function ConnectionItineraryEditor({ stops, onChange, disabled = false }:
 
   function addStop(kind: ItineraryStop["kind"]) {
     if (disabled || stops.length >= MAX_STOPS) return;
-    const stop: ItineraryStop = { id: crypto.randomUUID(), kind, place: "", arrival: "", departure: "", notes: "" };
+    const stop: ItineraryStop = { id: randomUuid(), kind, place: "", arrival: "", departure: "", notes: "" };
     focusPlace.current = stop.id;
     onChange([...stops, stop]);
     setAnnouncement(`${kind === "layover" ? "Layover" : "Stop"} added at position ${stops.length + 1}.`);

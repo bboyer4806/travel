@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 import { DatabaseSync } from "node:sqlite";
 import test from "node:test";
-import { ValidationError } from "../src/lib/store.ts";
+import { SCHEMA_VERSION, ValidationError } from "../src/lib/store.ts";
 import { createOwnedStore } from "./owned-store.mjs";
 import { fileDatabase } from "./budget-fixtures.mjs";
 import { calculateBudget } from "../src/lib/budget.ts";
@@ -165,7 +165,7 @@ test("schema 3 upgrades add image storage without changing destinations, and rep
     assert.deepEqual(store.getDestinationImage(destinationId), image);
     const observer = new DatabaseSync(path);
     try {
-      assert.equal(observer.prepare("PRAGMA user_version").get().user_version, 20);
+      assert.equal(observer.prepare("PRAGMA user_version").get().user_version, SCHEMA_VERSION);
       assert.deepEqual(observer.prepare("PRAGMA foreign_key_check").all(), []);
     } finally {
       observer.close();

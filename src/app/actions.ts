@@ -19,12 +19,8 @@ export async function mutatePlanner(input: Mutation, imageForm?: FormData): Prom
       const gallery = await prepareDestinationGallery(imageForm);
       mutation = { ...input, gallery, image: gallery === undefined ? await prepareImage(imageForm) : undefined };
     }
-    else if (input.type === "candidate.save") {
-      const gallery = await prepareCandidateGallery(imageForm);
-      mutation = { ...input, gallery, image: gallery === undefined ? await prepareImage(imageForm) : undefined };
-    }
-    if (input.type === "church.save") {
-      // Only validated multipart uploads can supply church photo bytes.
+    else if (input.type === "candidate.save" || input.type === "church.save") {
+      // Only validated multipart uploads can supply idea and church photo bytes.
       mutation = { ...input, gallery: await prepareCandidateGallery(imageForm) };
     }
     // The store decides what this account may change; the browser never says who is asking.

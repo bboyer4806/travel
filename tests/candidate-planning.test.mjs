@@ -4,7 +4,7 @@ import { join } from "node:path";
 import { spawnSync } from "node:child_process";
 import { DatabaseSync } from "node:sqlite";
 import test from "node:test";
-import { ValidationError } from "../src/lib/store.ts";
+import { SCHEMA_VERSION, ValidationError } from "../src/lib/store.ts";
 import { createOwnedStore } from "./owned-store.mjs";
 import { fileDatabase } from "./budget-fixtures.mjs";
 import { calculateBudget } from "../src/lib/budget.ts";
@@ -149,7 +149,7 @@ test("schema 15 upgrade retains alphabetical lists; replay, reopen and online ba
     assert.deepEqual(Buffer.from(restored.getCandidatePhoto(photoOwner, photoId).data), image);
   } finally { restored.close(); }
   const observer = new DatabaseSync(backupPath);
-  assert.equal(observer.prepare("PRAGMA user_version").get().user_version, 20);
+  assert.equal(observer.prepare("PRAGMA user_version").get().user_version, SCHEMA_VERSION);
   assert.equal(observer.prepare("PRAGMA integrity_check").get().integrity_check, "ok");
   assert.deepEqual(observer.prepare("PRAGMA foreign_key_check").all(), []);
   observer.close();

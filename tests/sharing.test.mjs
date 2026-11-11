@@ -6,7 +6,7 @@ import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import test from "node:test";
 import { calculateBudget } from "../src/lib/budget.ts";
-import { createStore, ValidationError } from "../src/lib/store.ts";
+import { createStore, SCHEMA_VERSION, ValidationError } from "../src/lib/store.ts";
 import { UNDO_SCHEMA_20 } from "./owned-store.mjs";
 import { fileDatabase } from "./budget-fixtures.mjs";
 
@@ -59,12 +59,11 @@ function readsAs(store, accountId, trip) {
     destinationName: store.getDestinationName(accountId, trip.tripId, trip.lisbon) !== undefined,
     destinationImage: store.getDestinationImage(accountId, trip.lisbon) !== undefined,
     destinationPhoto: store.getDestinationPhoto(accountId, trip.lisbon, trip.photos.destination) !== undefined,
-    candidateImage: store.getCandidateImage(accountId, trip.hotel) !== undefined,
     candidatePhoto: store.getCandidatePhoto(accountId, trip.hotel, trip.photos.candidate) !== undefined,
     churchPhoto: store.getChurchPhoto(accountId, trip.church, trip.photos.church) !== undefined,
   };
 }
-const everything = (value) => ({ home: value, page: value, category: value, tripName: value, destinationName: value, destinationImage: value, destinationPhoto: value, candidateImage: value, candidatePhoto: value, churchPhoto: value });
+const everything = (value) => ({ home: value, page: value, category: value, tripName: value, destinationName: value, destinationImage: value, destinationPhoto: value, candidatePhoto: value, churchPhoto: value });
 
 test("a new trip belongs to whoever creates it, and only its owner can open it until it is shared", (t) => {
   const { store, owner, editor, outsider } = setup(t);
@@ -337,7 +336,7 @@ test("schema 20 gives every existing trip to the designated owner, never to whoe
   }
   db = new DatabaseSync(path, { readOnly: true });
   try {
-    assert.equal(db.prepare("PRAGMA user_version").get().user_version, 20);
+    assert.equal(db.prepare("PRAGMA user_version").get().user_version, SCHEMA_VERSION);
     assert.equal(db.prepare("PRAGMA integrity_check").get().integrity_check, "ok");
     assert.deepEqual(db.prepare("PRAGMA foreign_key_check").all(), []);
     assert.deepEqual(db.prepare("SELECT DISTINCT ownerId FROM trips").all().map((row) => row.ownerId), [owner]);

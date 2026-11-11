@@ -13,11 +13,6 @@ export function stayNights(arrivalDate: string | null | undefined, departureDate
   return days < 0 ? null : days;
 }
 
-export function budgetDays(arrivalDate: string | null | undefined, departureDate: string | null | undefined): number | null {
-  const nights = stayNights(arrivalDate, departureDate);
-  return nightsToBudgetDays(nights);
-}
-
 export function nightsToBudgetDays(nights: number | null | undefined): number | null {
   return nights == null || !Number.isInteger(nights) || nights < 0 ? null : Math.max(1, nights);
 }

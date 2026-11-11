@@ -36,16 +36,16 @@ test("all USD categories reconcile exactly once, isolate trips, and retain activ
  for(const price of ["2.02","","0"]) store.applyMutation({type:"homeItem.save",tripId,name:"Task",price,notes:"",completed:true});
  const budget=()=>calculateBudget(store.getSnapshot(),tripId);
  assert.deepEqual(calculateDestinationBudget(store.getSnapshot(),id).totalsByCurrency,{USD:52500});
- assert.equal(budget().totalCents,54704); assert.equal(budget().complete,true);
+ assert.equal(budget().totalsByCurrency.USD,54704); assert.equal(budget().complete,true);
  assert.equal(budget().travelCents,2002); assert.equal(budget().homeCents,202);
  store.applyMutation(destinationInput(tripId,{id,nights:0}));
- assert.equal(budget().totalCents,14704); // $0 hotel + $40 food + $10 misc + $50 activities + $25 shopping + travel/home
- store.applyMutation(destinationInput(tripId,{id,nights:1})); assert.equal(budget().totalCents,24704);
- store.applyMutation(destinationInput(tripId,{id,nights:3})); assert.equal(budget().totalCents,54704);
- store.applyMutation(tripInput({id:tripId,travelers:999,startDate:"2028-02-28"})); assert.equal(budget().totalCents,54704);
- store.applyMutation(destinationInput(tripId,{id,stay:"Several months"})); assert.equal(budget().totalCents,54704);
+ assert.equal(budget().totalsByCurrency.USD,14704); // $0 hotel + $40 food + $10 misc + $50 activities + $25 shopping + travel/home
+ store.applyMutation(destinationInput(tripId,{id,nights:1})); assert.equal(budget().totalsByCurrency.USD,24704);
+ store.applyMutation(destinationInput(tripId,{id,nights:3})); assert.equal(budget().totalsByCurrency.USD,54704);
+ store.applyMutation(tripInput({id:tripId,travelers:999,startDate:"2028-02-28"})); assert.equal(budget().totalsByCurrency.USD,54704);
+ store.applyMutation(destinationInput(tripId,{id,stay:"Several months"})); assert.equal(budget().totalsByCurrency.USD,54704);
  store.applyMutation(destinationInput(tripId,{id,nights:null}));
- assert.equal(budget().totalCents,9704); assert.equal(budget().missingCount,3);
+ assert.equal(budget().totalsByCurrency.USD,9704); assert.equal(budget().missingCount,3);
 });
 for (const [label, amount, message, subtotal] of [
  ["miscellaneous", "miscDailyAmount", /miscellaneous subtotal is too large/, (item) => calculateMiscellaneous(item).subtotalMinor],

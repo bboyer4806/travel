@@ -88,7 +88,8 @@ The schema version is SQLite `user_version` (see `createStore` in `src/lib/store
 authorizes the designated owner it is given at every start). A schema
 change adds the next `if (version < N)` block inside the startup transaction, keeps older
 databases upgrading, tolerates a block that already ran (as the `hasColumn` checks do), and
-raises the newer-version guard. In the schema history of `docs/DEPLOYMENT.md`, update the current
+raises `SCHEMA_VERSION` to N. The newer-version guard, tests and the container smoke test read
+that constant; older blocks keep their own numbers. In the schema history of `docs/DEPLOYMENT.md`, update the current
 schema and add a note for the new version, with only what its rollback adds to the shared procedure.
 
 ## Tests

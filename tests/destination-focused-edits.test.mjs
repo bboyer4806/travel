@@ -6,9 +6,9 @@ import { createOwnedStore } from "./owned-store.mjs";
 
 const edits = [
   { weatherHighF: 70, weatherLowF: 40, weatherPeriod: "November", weatherRainfall: "Light rain", weatherSource: "Climate notes" },
-  { shoppingAmount: "12.34", shoppingCurrency: "USD" },
-  { foodBudgetMode: "daily", foodDailyAmount: "50.25", foodCurrency: "USD" },
-  { activitiesBudgetMode: "general", activitiesGeneralAmount: "125.50", activitiesCurrency: "USD" },
+  { shoppingAmount: "12.34" },
+  { foodBudgetMode: "daily", foodDailyAmount: "50.25" },
+  { activitiesBudgetMode: "general", activitiesGeneralAmount: "125.50" },
 ];
 
 for (const edit of edits) test(`focused ${Object.keys(edit)[0]} save preserves newer destination and connection details`, t => {
@@ -22,7 +22,8 @@ for (const edit of edits) test(`focused ${Object.keys(edit)[0]} save preserves n
   const before = store.getSnapshot();
   store.applyMutation({ type: "destination.save", id, tripId, ...edit });
   const after = store.getSnapshot();
-  const changed = new Set(Object.keys(edit).map(key => ({ shoppingAmount: "shoppingMinor", foodDailyAmount: "foodDailyMinor", activitiesGeneralAmount: "activitiesGeneralMinor" })[key] ?? key));
+  // An entered amount is saved with its USD currency label.
+  const changed = new Set(Object.keys(edit).flatMap(key => ({ shoppingAmount: ["shoppingMinor", "shoppingCurrency"], foodDailyAmount: ["foodDailyMinor", "foodCurrency"], activitiesGeneralAmount: ["activitiesGeneralMinor", "activitiesCurrency"] })[key] ?? [key]));
   for (const [key, value] of Object.entries(before.destinations[0])) {
     if (!changed.has(key)) assert.deepEqual(after.destinations[0][key], value, key);
   }

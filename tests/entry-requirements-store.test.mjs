@@ -6,7 +6,7 @@ import { basename, join, resolve, sep } from "node:path";
 import { spawnSync } from "node:child_process";
 import { DatabaseSync } from "node:sqlite";
 import test from "node:test";
-import { ValidationError } from "../src/lib/store.ts";
+import { SCHEMA_VERSION, ValidationError } from "../src/lib/store.ts";
 import { createOwnedStore } from "./owned-store.mjs";
 import { calculateBudget } from "../src/lib/budget.ts";
 
@@ -59,6 +59,6 @@ test("schema 18 upgrade, replay, reopen, online backup and cascade preserve requ
   store = createOwnedStore(backup); assert.deepEqual(store.getSnapshot(), saved);
   store.applyMutation({ type: "destination.delete", id }); store.close();
   db = new DatabaseSync(backup); assert.equal(db.prepare("SELECT count(*) AS n FROM destination_entry_requirements").get().n, 0);
-  assert.equal(db.prepare("PRAGMA user_version").get().user_version, 20);
+  assert.equal(db.prepare("PRAGMA user_version").get().user_version, SCHEMA_VERSION);
   assert.equal(db.prepare("PRAGMA integrity_check").get().integrity_check, "ok"); assert.deepEqual(db.prepare("PRAGMA foreign_key_check").all(), []); db.close();
 });

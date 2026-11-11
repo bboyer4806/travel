@@ -3,7 +3,7 @@ import { randomUUID } from "node:crypto";
 import { DatabaseSync } from "node:sqlite";
 import test from "node:test";
 import { calculateBudget, calculateDestinationBudget } from "../src/lib/budget.ts";
-import { ValidationError } from "../src/lib/store.ts";
+import { SCHEMA_VERSION, ValidationError } from "../src/lib/store.ts";
 import { createOwnedStore } from "./owned-store.mjs";
 import { fileDatabase, setup } from "./budget-fixtures.mjs";
 
@@ -102,11 +102,11 @@ test("date changes and other destination editors preserve manually entered weath
     { nights: 3 },
     { nights: null },
     { stay: "Three weeks in summer", notes: "New notes" },
-    { hotelNightlyAmount: "120", hotelCurrency: "USD" },
-    { foodBudgetMode: "daily", foodDailyAmount: "20", foodCurrency: "USD" },
-    { activitiesBudgetMode: "general", activitiesGeneralAmount: "50", activitiesCurrency: "USD" },
-    { shoppingAmount: "12.34", shoppingCurrency: "USD" },
-    { miscDailyAmount: "100", miscCurrency: "USD" },
+    { hotelNightlyAmount: "120" },
+    { foodBudgetMode: "daily", foodDailyAmount: "20" },
+    { activitiesBudgetMode: "general", activitiesGeneralAmount: "50" },
+    { shoppingAmount: "12.34" },
+    { miscDailyAmount: "100" },
     { image: webp }, { image: null },
   ]) {
     store.applyMutation(destinationInput(tripId, { id, ...fields }));
@@ -119,9 +119,9 @@ test("date changes and other destination editors preserve manually entered weath
 test("weather edits leave existing destination data, routes, choices, and separated currency budgets unchanged", (t) => {
   const { store, tripId } = setup(t, tripInput());
   const id = store.applyMutation(destinationInput(tripId, {
-    ...dates, hotelNightlyAmount: "100", hotelCurrency: "USD", miscDailyAmount: "10", miscCurrency: "USD",
-    activitiesBudgetMode: "general", activitiesGeneralAmount: "20", activitiesCurrency: "USD",
-    foodBudgetMode: "daily", foodDailyAmount: "30", foodCurrency: "USD", shoppingAmount: "12.34", shoppingCurrency: "USD", image: webp,
+    ...dates, hotelNightlyAmount: "100", miscDailyAmount: "10",
+    activitiesBudgetMode: "general", activitiesGeneralAmount: "20",
+    foodBudgetMode: "daily", foodDailyAmount: "30", shoppingAmount: "12.34", image: webp,
   })).id;
   store.applyMutation({ type: "candidate.save", destinationId: id, category: "activities", name: "Museum", price: "999", address: "", url: "", notes: "Preserve this idea", included: true });
   for (const leg of store.getSnapshot().legs) store.applyMutation({ type: "leg.save", id: leg.id, method: "Flight", price: "100", departure: "Morning", arrival: "Evening", url: "", notes: "Booked" });
@@ -146,17 +146,18 @@ test("schema 12 upgrade defaults weather to missing and preserves old data; migr
   try {
     const tripId = store.applyMutation(tripInput()).id;
     const id = store.applyMutation(destinationInput(tripId, {
-      ...dates, image: webp, hotelNightlyAmount: "125.25", hotelCurrency: "USD", miscDailyAmount: "10.01", miscCurrency: "USD",
-      activitiesBudgetMode: "general", activitiesGeneralAmount: "55.55", activitiesCurrency: "USD",
-      foodBudgetMode: "daily", foodDailyAmount: "20", foodCurrency: "USD", shoppingAmount: "12.34", shoppingCurrency: "USD",
+      ...dates, image: webp, hotelNightlyAmount: "125.25", miscDailyAmount: "10.01",
+      activitiesBudgetMode: "general", activitiesGeneralAmount: "55.55",
+      foodBudgetMode: "daily", foodDailyAmount: "20", shoppingAmount: "12.34",
     })).id;
-    const candidateId = store.applyMutation({ type: "candidate.save", destinationId: id, category: "hotels", name: "Saved hotel", price: "123.45", address: "Main street", url: "", notes: "", included: true, image: webp, links: [{ id: randomUUID(), url: "https://example.com/hotel", description: "Booking" }] }).id;
+    const hotelPhoto = { id: randomUUID(), data: webp };
+    const candidateId = store.applyMutation({ type: "candidate.save", destinationId: id, category: "hotels", name: "Saved hotel", price: "123.45", address: "Main street", url: "", notes: "", included: true, gallery: { add: [hotelPhoto], remove: [] }, links: [{ id: randomUUID(), url: "https://example.com/hotel", description: "Booking" }] }).id;
     store.applyMutation({ type: "homeItem.save", tripId, name: "House sitting", price: "23.95", notes: "Leave a key", completed: true });
     for (const leg of store.getSnapshot().legs) store.applyMutation({ type: "leg.save", id: leg.id, method: "Flight", price: "100", departure: "Morning", arrival: "Evening", url: "", notes: "Booked", itinerary: [{ id: randomUUID(), kind: "layover", place: "London", arrival: "10:00", departure: "12:00", notes: "" }] });
     const before = store.getSnapshot();
     const budget = calculateBudget(before, tripId);
     const image = store.getDestinationImage(id);
-    const candidateImage = store.getCandidateImage(candidateId);
+    const candidateImage = store.getCandidatePhoto(candidateId, hotelPhoto.id);
     store.close(); store = null;
     let observer = new DatabaseSync(path);
     try {
@@ -168,13 +169,13 @@ test("schema 12 upgrade defaults weather to missing and preserves old data; migr
     assert.deepEqual(weather(store, id), emptyWeather);
     assert.deepEqual(calculateBudget(store.getSnapshot(), tripId), budget);
     assert.deepEqual(store.getDestinationImage(id), image);
-    assert.deepEqual(store.getCandidateImage(candidateId), candidateImage);
+    assert.deepEqual(store.getCandidatePhoto(candidateId, hotelPhoto.id), candidateImage);
     store.applyMutation(destinationInput(tripId, { id, ...winterWeather }));
     const saved = store.getSnapshot();
     store.close(); store = null;
     observer = new DatabaseSync(path);
     try {
-      assert.equal(observer.prepare("PRAGMA user_version").get().user_version, 20);
+      assert.equal(observer.prepare("PRAGMA user_version").get().user_version, SCHEMA_VERSION);
       const columns = observer.prepare("PRAGMA table_info(destinations)").all();
       for (const name of ["weatherHighF", "weatherLowF"]) {
         assert.equal(columns.find((column) => column.name === name).type, "REAL");
@@ -197,10 +198,10 @@ test("schema 12 upgrade defaults weather to missing and preserves old data; migr
     assert.deepEqual(weather(store, id), { ...winterWeather, weatherSource: "" });
     assert.deepEqual(calculateBudget(store.getSnapshot(), tripId), budget);
     assert.deepEqual(store.getDestinationImage(id), image);
-    assert.deepEqual(store.getCandidateImage(candidateId), candidateImage);
+    assert.deepEqual(store.getCandidatePhoto(candidateId, hotelPhoto.id), candidateImage);
     observer = new DatabaseSync(path);
     try {
-      assert.equal(observer.prepare("PRAGMA user_version").get().user_version, 20);
+      assert.equal(observer.prepare("PRAGMA user_version").get().user_version, SCHEMA_VERSION);
       assert.deepEqual(observer.prepare("PRAGMA foreign_key_check").all(), []);
     } finally { observer.close(); }
   } finally { store?.close(); }

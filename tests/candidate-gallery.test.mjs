@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 import { DatabaseSync } from "node:sqlite";
 import test from "node:test";
-import { ValidationError } from "../src/lib/store.ts";
+import { SCHEMA_VERSION, ValidationError } from "../src/lib/store.ts";
 import { createOwnedStore } from "./owned-store.mjs";
 import { fileDatabase } from "./budget-fixtures.mjs";
 import { calculateBudget } from "../src/lib/budget.ts";
@@ -22,7 +22,6 @@ function seed(store) {
 function candidate(store, id) { return store.getSnapshot().candidates.find((item) => item.id === id); }
 function planningFields(item) {
   const fields = { ...item };
-  delete fields.imageVersion;
   delete fields.images;
   delete fields.mainImageId;
   return fields;
@@ -41,8 +40,6 @@ for (const category of ["hotels", "activities", "restaurants"]) {
       const saved = candidate(store, id);
       assert.deepEqual(saved.images.map((item) => item.id), [first.id, second.id]);
       assert.equal(saved.mainImageId, second.id);
-      assert.equal(saved.imageVersion, saved.images[1].version);
-      assert.deepEqual(store.getCandidateImage(id), store.getCandidatePhoto(id, second.id));
       assert.deepEqual(store.getCandidatePhoto(id, first.id).data, first.data);
       assert.deepEqual(store.getCandidatePhoto(id, second.id).data, second.data);
       assert.ok(saved.images.every((item) => Object.keys(item).sort().join(",") === "id,version"), "snapshots contain metadata, never photo bytes");
@@ -51,7 +48,6 @@ for (const category of ["hotels", "activities", "restaurants"]) {
       store.applyMutation({ ...input, id, gallery: { add: [], remove: [], mainImageId: first.id } });
       const switched = candidate(store, id);
       assert.equal(switched.mainImageId, first.id);
-      assert.equal(switched.imageVersion, switched.images[0].version);
       assert.deepEqual(switched.images, saved.images, "main selection does not regenerate photo versions");
       assert.deepEqual(switched.images.map((item) => store.getCandidatePhoto(id, item.id)), originalPhotos);
       assert.deepEqual(planningFields(switched), planningFields(saved));
@@ -84,34 +80,13 @@ test("incremental gallery edits retain concurrently added photos and choose a fa
   assert.equal(candidate(store, id).mainImageId, second.id);
   store.applyMutation({ ...input, id, gallery: { add: [], remove: [second.id] } });
   assert.equal(candidate(store, id).mainImageId, third.id);
-  assert.deepEqual(store.getCandidateImage(id).data, alternative);
+  assert.deepEqual(store.getCandidatePhoto(id, third.id).data, alternative);
   assert.equal(store.getCandidatePhoto(id, first.id), undefined);
   assert.equal(store.getCandidatePhoto(id, second.id), undefined);
   store.applyMutation({ ...input, id, gallery: { add: [], remove: [third.id, fourth.id], mainImageId: null } });
   assert.deepEqual(candidate(store, id).images, []);
   assert.equal(candidate(store, id).mainImageId, null);
-  assert.equal(candidate(store, id).imageVersion, null);
-  assert.equal(store.getCandidateImage(id), undefined);
-});
-
-test("legacy single-photo edits replace or remove only the main photo", (t) => {
-  const store = createOwnedStore(":memory:");
-  t.after(() => store.close());
-  const { destinationId } = seed(store);
-  const first = photo(), second = photo();
-  const input = ideaInput(destinationId);
-  const id = store.applyMutation({ ...input, gallery: { add: [first, second], remove: [], mainImageId: second.id } }).id;
-  const beforeFirst = store.getCandidatePhoto(id, first.id);
-  const beforeMain = store.getCandidatePhoto(id, second.id);
-  store.applyMutation({ ...input, id, image: alternative });
-  assert.deepEqual(candidate(store, id).images.map((item) => item.id), [first.id, second.id]);
-  assert.deepEqual(store.getCandidatePhoto(id, first.id), beforeFirst);
-  assert.notEqual(store.getCandidatePhoto(id, second.id).version, beforeMain.version);
-  assert.deepEqual(store.getCandidatePhoto(id, second.id).data, alternative);
-  store.applyMutation({ ...input, id, image: null });
-  assert.deepEqual(candidate(store, id).images, [{ id: first.id, version: beforeFirst.version }]);
-  assert.equal(candidate(store, id).mainImageId, first.id);
-  assert.deepEqual(store.getCandidateImage(id), beforeFirst);
+  assert.equal(store.getCandidatePhoto(id, third.id), undefined);
 });
 
 test("gallery ownership, stale edits, duplicate IDs, and main-photo checks fail atomically", (t) => {
@@ -188,12 +163,12 @@ test("a failure after the first gallery write rolls back additions, removals, an
     const id = store.applyMutation({ ...input, gallery: { add: [existingPhoto], remove: [] } }).id;
     const first = photo(), rejected = photo();
     const before = store.getSnapshot();
-    const original = store.getCandidateImage(id);
+    const original = store.getCandidatePhoto(id, existingPhoto.id);
     const budget = calculateBudget(before, tripId);
     observer.exec(`CREATE TRIGGER reject_second_gallery_photo BEFORE INSERT ON candidate_images WHEN NEW.id = '${rejected.id}' BEGIN SELECT RAISE(ABORT, 'Injected gallery failure'); END;`);
     assert.throws(() => store.applyMutation({ ...input, id, name: "Unsaved", included: true, gallery: { add: [first, rejected], remove: [existingPhoto.id], mainImageId: rejected.id } }), /Injected gallery failure/);
     assert.deepEqual(store.getSnapshot(), before);
-    assert.deepEqual(store.getCandidateImage(id), original);
+    assert.deepEqual(store.getCandidatePhoto(id, existingPhoto.id), original);
     assert.equal(store.getCandidatePhoto(id, first.id), undefined);
     assert.equal(store.getCandidatePhoto(id, rejected.id), undefined);
     assert.deepEqual(calculateBudget(store.getSnapshot(), tripId), budget);
@@ -208,10 +183,11 @@ test("schema 5 photos migrate with their exact bytes and versions, and repeated 
   try {
     const { tripId, destinationId } = seed(store);
     const input = ideaInput(destinationId);
-    const id = store.applyMutation({ ...input, image: alternative }).id;
+    const single = photo(alternative);
+    const id = store.applyMutation({ ...input, gallery: { add: [single], remove: [] } }).id;
     store.applyMutation({ ...destinationInput(tripId), id: destinationId, image: webp });
     const before = store.getSnapshot();
-    const original = store.getCandidateImage(id);
+    const original = store.getCandidatePhoto(id, single.id);
     const destinationPhoto = store.getDestinationImage(destinationId);
     store.close();
     const legacy = new DatabaseSync(path);
@@ -219,7 +195,6 @@ test("schema 5 photos migrate with their exact bytes and versions, and repeated 
     legacy.prepare("INSERT INTO candidate_images(candidateId,version,data) VALUES(?,?,?)").run(id, original.version, original.data);
     legacy.close();
     store = createOwnedStore(path);
-    assert.deepEqual(store.getCandidateImage(id), original);
     assert.deepEqual(store.getCandidatePhoto(id, id), original);
     assert.deepEqual(candidate(store, id).images, [{ id, version: original.version }]);
     assert.equal(candidate(store, id).mainImageId, id);
@@ -233,7 +208,7 @@ test("schema 5 photos migrate with their exact bytes and versions, and repeated 
     const extraImage = store.getCandidatePhoto(id, extra.id);
     store.close();
     const reset = new DatabaseSync(path);
-    assert.equal(reset.prepare("PRAGMA user_version").get().user_version, 20);
+    assert.equal(reset.prepare("PRAGMA user_version").get().user_version, SCHEMA_VERSION);
     reset.exec("PRAGMA user_version=5");
     reset.close();
     store = createOwnedStore(path);
@@ -242,7 +217,7 @@ test("schema 5 photos migrate with their exact bytes and versions, and repeated 
     assert.deepEqual(store.getCandidatePhoto(id, extra.id), extraImage);
     const observer = new DatabaseSync(path);
     try {
-      assert.equal(observer.prepare("PRAGMA user_version").get().user_version, 20);
+      assert.equal(observer.prepare("PRAGMA user_version").get().user_version, SCHEMA_VERSION);
       assert.deepEqual(observer.prepare("PRAGMA foreign_key_check").all(), []);
       assert.equal(observer.prepare("SELECT count(*) AS count FROM candidate_images WHERE candidateId=? AND isMain=1").get(id).count, 1);
     } finally { observer.close(); }
@@ -256,20 +231,22 @@ test("deleting an idea, destination, or trip removes every owned gallery photo o
   try {
     const { tripId, destinationId } = seed(store);
     const otherDestinationId = store.applyMutation(destinationInput(tripId, "Paris")).id;
-    const ids = [destinationId, destinationId, otherDestinationId].map((owner, index) => store.applyMutation(ideaInput(owner, { category: ["hotels", "activities", "restaurants"][index], gallery: { add: [photo(), photo()], remove: [] } })).id);
+    const galleries = [[photo(), photo()], [photo(), photo()], [photo(), photo()]];
+    const ids = [destinationId, destinationId, otherDestinationId].map((owner, index) => store.applyMutation(ideaInput(owner, { category: ["hotels", "activities", "restaurants"][index], gallery: { add: galleries[index], remove: [] } })).id);
+    const mainPhoto = (index) => store.getCandidatePhoto(ids[index], galleries[index][0].id);
     const count = () => observer.prepare("SELECT count(*) AS count FROM candidate_images").get().count;
     assert.equal(count(), 6);
     store.applyMutation({ type: "candidate.delete", id: ids[0] });
     assert.equal(count(), 4);
-    assert.equal(store.getCandidateImage(ids[0]), undefined);
-    assert.ok(store.getCandidateImage(ids[1]));
+    assert.equal(mainPhoto(0), undefined);
+    assert.ok(mainPhoto(1));
     store.applyMutation({ type: "destination.delete", id: destinationId });
     assert.equal(count(), 2);
-    assert.equal(store.getCandidateImage(ids[1]), undefined);
-    assert.ok(store.getCandidateImage(ids[2]));
+    assert.equal(mainPhoto(1), undefined);
+    assert.ok(mainPhoto(2));
     store.applyMutation({ type: "trip.delete", id: tripId });
     assert.equal(count(), 0);
-    assert.equal(store.getCandidateImage(ids[2]), undefined);
+    assert.equal(mainPhoto(2), undefined);
     assert.deepEqual(observer.prepare("PRAGMA foreign_key_check").all(), []);
   } finally { observer.close(); store.close(); }
 });

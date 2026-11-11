@@ -2,6 +2,15 @@ export interface Release { version: string; date: string; changes: readonly stri
 
 // Add only verified, deployed changes and their actual release dates at release close.
 export const releases: readonly Release[] = [{
+  version: "1.7",
+  date: "2026-11-11",
+  changes: [
+    "Open Destinations in the header to see every city you've researched, with its hotels, activities, restaurants, photos, notes, weather, entry requirements, and Church, and the trips that visit it.",
+    "Edit a destination once and every trip that visits it shows the change. Each trip keeps its own order, nights, dates, and travel connections, and removing a destination from a trip keeps its research.",
+    "Keep destination cards compact: Budget, Entry requirements, and Typical weather start collapsed. Collapsed, Budget still shows each category's amount with its page or editor, and the destination estimate.",
+    "See the same message wherever an amount isn't valid.",
+  ],
+}, {
   version: "1.6",
   date: "2026-11-10",
   changes: [

@@ -119,6 +119,8 @@ Schema 16 preserves each existing list's alphabetical order on its first upgrade
 ## Typical weather
 Each destination card on the main trip page shows **Typical weather** with **Edit typical weather**. Category detail pages do not repeat it. Enter optional high and low temperatures in °F, rainfall notes, the month or period described, and a source name or link. These are manually recorded typical conditions; there is no automatic lookup or Celsius conversion.
 
+The section starts collapsed each time the page loads, showing only its **Typical weather** heading and **Edit typical weather**. Select the heading by mouse, touch, or keyboard to show or hide the temperatures, period, rainfall notes, source, and explanation. Each destination's section opens and closes on its own, and **Edit typical weather** works either way. Showing or hiding changes nothing saved, makes no server request, and is not remembered between visits.
+
 Negative and decimal Fahrenheit values are accepted; high must be at least low when both are supplied. Missing values show **Not provided** and zero shows **0 °F**. Clear individual fields or use **Clear all weather fields** and save. Weather and its recorded period persist independently of schedule and budget changes.
 
 ## Church

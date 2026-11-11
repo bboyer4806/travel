@@ -1,5 +1,5 @@
 import { ImageValidationError, prepareImage } from "./image-upload.ts";
-import { MAX_CANDIDATE_IMAGES, MAX_GALLERY_UPLOAD_BYTES } from "./image-limits.ts";
+import { formatMegabytes, MAX_CANDIDATE_IMAGES, MAX_GALLERY_UPLOAD_BYTES } from "./image-limits.ts";
 import type { CandidateGalleryUpdate } from "./types";
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -49,7 +49,7 @@ export async function prepareCandidateGallery(form?: FormData): Promise<Candidat
     return { id, file: values[0] };
   });
   if (files.reduce((total, { file }) => total + file.size, 0) > MAX_GALLERY_UPLOAD_BYTES) {
-    throw new ImageValidationError("Add up to 15 MB of new photos at a time. Save these photos before adding more.");
+    throw new ImageValidationError(`Add up to ${formatMegabytes(MAX_GALLERY_UPLOAD_BYTES)} of new photos at a time. Save these photos before adding more.`);
   }
   const add: CandidateGalleryUpdate["add"] = [];
   for (const { id, file } of files) {

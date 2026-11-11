@@ -2,10 +2,8 @@
 
 import { useEffect, useId, useRef, useState, type ChangeEvent } from "react";
 import { ImagePlus, RotateCcw, Trash2 } from "lucide-react";
+import { formatMegabytes, IMAGE_UPLOAD_TYPES, MAX_IMAGE_UPLOAD_BYTES } from "@/lib/image-limits";
 import styles from "./planner-image.module.css";
-
-const MAX_IMAGE_BYTES = 5 * 1024 * 1024;
-const IMAGE_TYPES = new Set(["image/jpeg", "image/png", "image/webp"]);
 
 type ImageSubject = "destination" | "hotel" | "activity" | "restaurant";
 const subjectLabels: Record<ImageSubject, string> = { destination: "Destination", hotel: "Hotel", activity: "Activity", restaurant: "Restaurant" };
@@ -54,7 +52,7 @@ export function PlannerImageEditor({ existingSrc, file, removeExisting, onChange
     const selected = event.currentTarget.files?.[0];
     event.currentTarget.value = "";
     if (disabled || !selected) return;
-    if (!IMAGE_TYPES.has(selected.type.toLowerCase())) {
+    if (!IMAGE_UPLOAD_TYPES.includes(selected.type.toLowerCase())) {
       setError("Choose a JPEG, PNG, or WebP image. Your previous selection has been kept.");
       return;
     }
@@ -62,8 +60,8 @@ export function PlannerImageEditor({ existingSrc, file, removeExisting, onChange
       setError("This image file is empty. Choose another image. Your previous selection has been kept.");
       return;
     }
-    if (selected.size > MAX_IMAGE_BYTES) {
-      setError("Choose an image up to 5 MB. Your previous selection has been kept.");
+    if (selected.size > MAX_IMAGE_UPLOAD_BYTES) {
+      setError(`Choose an image up to ${formatMegabytes(MAX_IMAGE_UPLOAD_BYTES)}. Your previous selection has been kept.`);
       return;
     }
     setError("");
@@ -84,8 +82,8 @@ export function PlannerImageEditor({ existingSrc, file, removeExisting, onChange
 
   return <fieldset className={styles.editor} disabled={disabled} aria-describedby={`${id}-hint`}>
     <legend>{label} <span className={styles.optional}>(optional)</span></legend>
-    <p id={`${id}-hint`} className={styles.hint}>Add a photo to this {subject}. JPEG, PNG, or WebP, up to 5 MB.</p>
-    <input ref={input} id={id} type="file" accept="image/jpeg,image/png,image/webp" onChange={choose}
+    <p id={`${id}-hint`} className={styles.hint}>Add a photo to this {subject}. JPEG, PNG, or WebP, up to {formatMegabytes(MAX_IMAGE_UPLOAD_BYTES)}.</p>
+    <input ref={input} id={id} type="file" accept={IMAGE_UPLOAD_TYPES.join(",")} onChange={choose}
       disabled={disabled} hidden aria-label={label} aria-describedby={`${id}-hint${error ? ` ${id}-error` : ""}`} />
     {hasImage && <div className={styles.preview}>
       {file ? <UploadPreview file={file} subject={subject} /> : existingSrc && <PlannerImage src={existingSrc} name={`Current ${subject} image`} />}

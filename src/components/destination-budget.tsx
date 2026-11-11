@@ -5,7 +5,7 @@ import { formatCalendarDate, sequenceDates } from "@/lib/trip-dates";
 import { useState } from "react";
 import type { FoodBudgetMode, ActivitiesBudgetMode, Candidate, Destination, Snapshot, Trip } from "@/lib/types";
 import { calculateFoodBudget, calculateFoodEstimate, calculateActivitiesBudget, calculateAccommodation, calculateDestinationBudget, calculateHotelEstimate, calculateMiscellaneous } from "@/lib/budget";
-import { formatCurrency, minorAmountValue, parseMinorAmount } from "@/lib/money";
+import { formatCurrency, MAX_AMOUNT_DOLLARS, minorAmountValue, parseMinorAmount } from "@/lib/money";
 
 export function CurrencyTotals({ totals, empty = "Not estimated" }: { totals: Record<string, number>; empty?: string }) {
   const entries = Object.entries(totals).sort(([a], [b]) => a.localeCompare(b));
@@ -65,7 +65,7 @@ export function ActivitiesBudgetEditor({ destination, disabled }: { destination?
     <legend>Activities budget</legend>
     <div className="form-grid">
       <label className="field wide"><span>Activities budgeting method</span><select name="activitiesBudgetMode" value={mode} onChange={(event) => setMode(event.target.value as ActivitiesBudgetMode)}><option value="itemized">Itemized activity costs</option><option value="general">General budget</option></select><small>Switching keeps your general amount and all activity ideas and selections.</small></label>
-      <label className="field"><span>General activities amount ($)</span><input name="activitiesGeneralAmount" type="number" min="0" max="100000000" step="0.01" value={amount} onChange={(event) => setAmount(event.target.value)} placeholder="Not estimated" /><small>Total for the whole party for the entire stay. Zero is accepted; leave blank if unknown.</small></label>
+      <label className="field"><span>General activities amount ($)</span><input name="activitiesGeneralAmount" type="number" min="0" max={MAX_AMOUNT_DOLLARS} step="0.01" value={amount} onChange={(event) => setAmount(event.target.value)} placeholder="Not estimated" /><small>Total for the whole party for the entire stay. Zero is accepted; leave blank if unknown.</small></label>
     </div>
     <div aria-live="polite"><p className="helper">{error || (mode === "general" ? "General budget contribution: " + (minor !== null && currency ? formatCurrency(minor, currency) : "Not estimated") + ". Individual activity costs are excluded." : "Included activity costs supply the budget. The general amount stays saved for later.")}</p></div>
     <p className="helper">Editing activities does not switch methods. Dates and traveler count never multiply the general amount.</p>
@@ -102,7 +102,7 @@ export function FoodBudgetEditor({ destination, nights = destination?.nights ?? 
     <legend>Food budget</legend>
     <div className="form-grid">
       <label className="field wide"><span>Food budgeting method</span><select name="foodBudgetMode" value={mode} onChange={(event) => setMode(event.target.value as FoodBudgetMode)}><option value="itemized">Itemized restaurant costs</option><option value="daily">Daily food budget</option></select><small>Switching keeps your daily amount and all restaurant ideas and selections.</small></label>
-      <label className="field"><span>Daily food amount ($)</span><input name="foodDailyAmount" type="number" min="0" max="100000000" step="0.01" value={amount} onChange={(event) => setAmount(event.target.value)} placeholder="Not estimated" /><small>For the whole party each day. Zero is accepted; leave blank if unknown.</small></label>
+      <label className="field"><span>Daily food amount ($)</span><input name="foodDailyAmount" type="number" min="0" max={MAX_AMOUNT_DOLLARS} step="0.01" value={amount} onChange={(event) => setAmount(event.target.value)} placeholder="Not estimated" /><small>For the whole party each day. Zero is accepted; leave blank if unknown.</small></label>
     </div>
     <div aria-live="polite">
       {error ? <p className="helper">{error}</p> : <FoodEstimateSummary destination={{ nights, foodDailyMinor, foodCurrency: currency || null }} />}
@@ -123,7 +123,7 @@ export function ShoppingBudgetEditor({ destination, disabled }: { destination?: 
   return <fieldset className="destination-budget-editor wide" disabled={disabled}>
     <legend>Shopping budget</legend>
     <div className="form-grid">
-      <label className="field"><span>Shopping amount ($, optional)</span><input name="shoppingAmount" type="number" min="0" max="100000000" step="0.01" value={amount} onChange={(event) => setAmount(event.target.value)} placeholder="Not set" /><small>Total for the whole party for the entire stay. Zero is accepted; leave blank to add no shopping cost.</small></label>
+      <label className="field"><span>Shopping amount ($, optional)</span><input name="shoppingAmount" type="number" min="0" max={MAX_AMOUNT_DOLLARS} step="0.01" value={amount} onChange={(event) => setAmount(event.target.value)} placeholder="Not set" /><small>Total for the whole party for the entire stay. Zero is accepted; leave blank to add no shopping cost.</small></label>
     </div>
     <div aria-live="polite"><p className="helper">{error || "Shopping contribution: " + (minor !== null && currency ? formatCurrency(minor, currency) : "Not set")}</p></div>
     <p className="helper">Counted once, separately from miscellaneous spending. Dates and traveler count never multiply this amount.</p>
@@ -169,7 +169,7 @@ export function DestinationBudgetEditor({ destination, selectedHotel, disabled, 
   catch (error) { hotelError = error instanceof Error ? error.message : "Enter a valid nightly amount."; }
   let dailyMinor: number | null = null;
   let previewError = "";
-  try { dailyMinor = parseMinorAmount(amount.trim(), currency || null); }
+  try { dailyMinor = parseMinorAmount(amount.trim(), currency || null, "Daily miscellaneous amount"); }
   catch (error) { previewError = error instanceof Error ? error.message : "Enter a valid daily amount."; }
 
   return <fieldset className="destination-budget-editor wide" disabled={disabled}>
@@ -178,12 +178,12 @@ export function DestinationBudgetEditor({ destination, selectedHotel, disabled, 
     <div className="form-grid">
       <label className="field wide"><span>Nights</span><input name="nights" type="number" min="0" max="3652058" step="1" value={nightInput} onChange={(event) => setNightInput(event.target.value)} placeholder="Unknown" /><small>Zero is a same-day visit. Leave blank if undecided.</small></label>
       <div className="wide" aria-live="polite"><DestinationDates destination={{ ...dates, nights, legacyArrivalDate: destination?.legacyArrivalDate ?? null, legacyDepartureDate: destination?.legacyDepartureDate ?? null }} />{dateError && <p className="form-error">{dateError}</p>}</div>
-      <label className="field"><span>Nightly hotel amount ($)</span><input name="hotelNightlyAmount" type="number" min="0" max="100000000" step="0.01" value={hotelAmount} onChange={(event) => setHotelAmount(event.target.value)} placeholder="Not estimated" /><small>General estimate for all rooms and travelers per night. Leave blank if unknown.</small></label>
+      <label className="field"><span>Nightly hotel amount ($)</span><input name="hotelNightlyAmount" type="number" min="0" max={MAX_AMOUNT_DOLLARS} step="0.01" value={hotelAmount} onChange={(event) => setHotelAmount(event.target.value)} placeholder="Not estimated" /><small>General estimate for all rooms and travelers per night. Leave blank if unknown.</small></label>
       <div className="wide" aria-live="polite">
         {hotelError ? <p className="helper">{hotelError}</p> : <HotelEstimateSummary destination={{ nights, hotelNightlyMinor, hotelCurrency: hotelCurrency || null }} />}
         <p className="helper">{selectedHotel ? "Selected hotel: " + selectedHotel.name + ". Its whole-stay price stays in the budget; this general estimate is saved for when no hotel is selected." : "The general stay estimate is included until you select a hotel. A same-day visit has zero nights."}</p>
       </div>
-      <label className="field"><span>Daily miscellaneous amount ($)</span><input name="miscDailyAmount" type="number" min="0" max="100000000" step="0.01" value={amount} onChange={(event) => setAmount(event.target.value)} placeholder="Not estimated" /><small>For the whole party. Zero is accepted; leave blank if unknown.</small></label>
+      <label className="field"><span>Daily miscellaneous amount ($)</span><input name="miscDailyAmount" type="number" min="0" max={MAX_AMOUNT_DOLLARS} step="0.01" value={amount} onChange={(event) => setAmount(event.target.value)} placeholder="Not estimated" /><small>For the whole party. Zero is accepted; leave blank if unknown.</small></label>
     </div>
     <div aria-live="polite">
       {previewError ? <p className="helper">{previewError}</p> : <MiscellaneousSummary destination={{ nights, miscDailyMinor: dailyMinor, miscCurrency: currency || null }} />}

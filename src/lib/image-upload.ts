@@ -1,8 +1,8 @@
 import sharp from "sharp";
 
-import { MAX_IMAGE_UPLOAD_BYTES, MAX_STORED_IMAGE_BYTES } from "./image-limits.ts";
+import { formatMegabytes, IMAGE_UPLOAD_TYPES, MAX_IMAGE_UPLOAD_BYTES, MAX_STORED_IMAGE_BYTES } from "./image-limits.ts";
 
-const ALLOWED_TYPES = new Set(["image/jpeg", "image/png", "image/webp"]);
+/** The formats sharp reports once it decodes each of IMAGE_UPLOAD_TYPES. */
 const ALLOWED_FORMATS = new Set(["jpeg", "png", "webp"]);
 
 export class ImageValidationError extends Error {}
@@ -13,11 +13,11 @@ export async function prepareImage(form?: FormData): Promise<Uint8Array | null |
   if (!(form instanceof FormData)) throw new ImageValidationError("Choose an image and try again.");
   const file = form.get("image");
   if (file === null) return form.get("removeImage") === "true" ? null : undefined;
-  if (!(file instanceof File) || !ALLOWED_TYPES.has(file.type)) {
+  if (!(file instanceof File) || !IMAGE_UPLOAD_TYPES.includes(file.type)) {
     throw new ImageValidationError("Choose a JPEG, PNG, or WebP image.");
   }
   if (file.size === 0) throw new ImageValidationError("That image is empty. Choose another image.");
-  if (file.size > MAX_IMAGE_UPLOAD_BYTES) throw new ImageValidationError("Choose an image smaller than 5 MB.");
+  if (file.size > MAX_IMAGE_UPLOAD_BYTES) throw new ImageValidationError(`Choose an image smaller than ${formatMegabytes(MAX_IMAGE_UPLOAD_BYTES)}.`);
 
   try {
     const source = sharp(Buffer.from(await file.arrayBuffer()), {

@@ -2,12 +2,11 @@
 
 import { useEffect, useId, useRef, useState, type ChangeEvent } from "react";
 import { Check, ImagePlus, RotateCcw, Trash2 } from "lucide-react";
-import { MAX_CANDIDATE_IMAGES, MAX_GALLERY_UPLOAD_BYTES, MAX_IMAGE_UPLOAD_BYTES } from "@/lib/image-limits";
+import { formatMegabytes, IMAGE_UPLOAD_TYPES, MAX_CANDIDATE_IMAGES, MAX_GALLERY_UPLOAD_BYTES, MAX_IMAGE_UPLOAD_BYTES } from "@/lib/image-limits";
 import type { Candidate } from "@/lib/types";
 import { randomUuid } from "@/lib/uuid";
 import styles from "./candidate-gallery.module.css";
 
-const IMAGE_TYPES = new Set(["image/jpeg", "image/png", "image/webp"]);
 type ImageSubject = "hotel" | "activity" | "restaurant" | "church";
 type GalleryOwner = Pick<Candidate, "id" | "name" | "images" | "mainImageId">;
 type ImageKind = "candidate" | "church";
@@ -94,10 +93,10 @@ export function CandidateGalleryEditor({ candidate, subject, draft, onChange, di
     if (disabled || !files.length) return;
     let validationError = "";
     if (draft.images.length + files.length > MAX_CANDIDATE_IMAGES) validationError = `Keep up to ${MAX_CANDIDATE_IMAGES} photos. Remove a photo before adding more.`;
-    else if (files.some((file) => !IMAGE_TYPES.has(file.type.toLowerCase()))) validationError = "Choose JPEG, PNG, or WebP photos.";
+    else if (files.some((file) => !IMAGE_UPLOAD_TYPES.includes(file.type.toLowerCase()))) validationError = "Choose JPEG, PNG, or WebP photos.";
     else if (files.some((file) => file.size === 0)) validationError = "One of these files is empty. Choose another photo.";
-    else if (files.some((file) => file.size > MAX_IMAGE_UPLOAD_BYTES)) validationError = "Choose photos up to 5 MB each.";
-    else if ([...draft.images.flatMap((image) => image.file ? [image.file] : []), ...files].reduce((total, file) => total + file.size, 0) > MAX_GALLERY_UPLOAD_BYTES) validationError = "Add up to 15 MB of new photos at a time. Save these photos before adding more.";
+    else if (files.some((file) => file.size > MAX_IMAGE_UPLOAD_BYTES)) validationError = `Choose photos up to ${formatMegabytes(MAX_IMAGE_UPLOAD_BYTES)} each.`;
+    else if ([...draft.images.flatMap((image) => image.file ? [image.file] : []), ...files].reduce((total, file) => total + file.size, 0) > MAX_GALLERY_UPLOAD_BYTES) validationError = `Add up to ${formatMegabytes(MAX_GALLERY_UPLOAD_BYTES)} of new photos at a time. Save these photos before adding more.`;
     if (validationError) { setError(`${validationError} Your previous selections have been kept.`); return; }
     setError("");
     const added = files.map((file) => ({ id: randomUuid(), file }));
@@ -114,8 +113,8 @@ export function CandidateGalleryEditor({ candidate, subject, draft, onChange, di
 
   return <fieldset className={styles.editor} disabled={disabled} aria-describedby={`${id}-hint`}>
     <legend>{subjectLabels[subject]} photos <span className={styles.optional}>(optional)</span></legend>
-    <p id={`${id}-hint`} className={styles.hint}>Add up to {MAX_CANDIDATE_IMAGES} photos. Choose one main photo to show first.<br />JPEG, PNG, or WebP, up to 5 MB each and 15 MB of new photos per save.</p>
-    <input ref={input} id={id} type="file" multiple accept="image/jpeg,image/png,image/webp" onChange={choose} disabled={disabled} hidden aria-label={`Choose ${subject} photos`} aria-describedby={`${id}-hint${error ? ` ${id}-error` : ""}`} />
+    <p id={`${id}-hint`} className={styles.hint}>Add up to {MAX_CANDIDATE_IMAGES} photos. Choose one main photo to show first.<br />JPEG, PNG, or WebP, up to {formatMegabytes(MAX_IMAGE_UPLOAD_BYTES)} each and {formatMegabytes(MAX_GALLERY_UPLOAD_BYTES)} of new photos per save.</p>
+    <input ref={input} id={id} type="file" multiple accept={IMAGE_UPLOAD_TYPES.join(",")} onChange={choose} disabled={disabled} hidden aria-label={`Choose ${subject} photos`} aria-describedby={`${id}-hint${error ? ` ${id}-error` : ""}`} />
     {draft.images.length > 0 && <div className={styles.editGrid}>
       {draft.images.map((image, photoIndex) => <div key={image.id} className={styles.editPhoto}>
         <div className={styles.preview}>

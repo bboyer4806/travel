@@ -86,6 +86,8 @@ Schema 15 preserves original arrival/departure values separately. It backfills o
 ## Budget rules
 Every price is in **USD**, for the entire traveling party, with at most two decimal places. Currency selectors have been removed. Existing USD amounts retain their exact cents. Startup stops on unexpected non-USD records without converting or relabeling them; review those records before deployment.
 
+Every amount follows the same rules, from destination budgets to the estimated prices of ideas, travel connections and at-home tasks: zero or more, at most two decimal places, and no more than $100,000,000. An amount outside them is refused with the same message in every field, naming that field. A subtotal too large to calculate exactly shows as not estimated, never as an inexact amount.
+
 The estimate sums every travel leg, one selected hotel or the general nightly estimate per destination, the selected activities and food methods, miscellaneous spending, shopping, and entered at-home expenses. Alternatives stay saved without contributing. Missing required amounts remain visibly unknown; zero is known. At-home and shopping amounts are optional: blank adds no cost and does not make a complete estimate partial.
 
 Changing a destination, departing city, or effective return city clears only affected travel plans, including links and itinerary. Reordering destinations keeps unchanged connections.

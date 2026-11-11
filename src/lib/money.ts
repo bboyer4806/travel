@@ -1,6 +1,9 @@
 export const SUPPORTED_CURRENCIES: string[] = ["USD"];
 const supportedCurrencies = new Set(SUPPORTED_CURRENCIES);
-const MAX_MAJOR_AMOUNT = 100_000_000;
+/** The largest amount anyone can enter, in dollars. Amount inputs offer it as their maximum. */
+export const MAX_AMOUNT_DOLLARS = 100_000_000;
+/** The same limit in cents, the unit amounts are saved in. Saved prices' database constraints enforce it. */
+export const MAX_AMOUNT_CENTS = MAX_AMOUNT_DOLLARS * 100;
 
 export function currencyDigits(currency: string): number {
   if (!supportedCurrencies.has(currency)) throw new Error("All amounts must be entered in USD.");
@@ -8,15 +11,21 @@ export function currencyDigits(currency: string): number {
   return new Intl.NumberFormat("en-US", { style: "currency", currency }).resolvedOptions().maximumFractionDigits!;
 }
 
-export function parseMinorAmount(value: string, currency: string | null, label = "Daily miscellaneous amount"): number | null {
+/**
+ * An entered amount in minor units, or null when blank. Every amount, from prices to daily budgets,
+ * follows these rules and messages; `label` names the field in them.
+ */
+export function parseMinorAmount(value: string, currency: string | null, label: string): number | null {
   const amount = value.trim();
   if (!amount) return null;
-  const digits = currencyDigits(currency || "USD");
+  const code = currency || "USD";
+  const digits = currencyDigits(code);
   const pattern = digits === 0 ? /^\d+$/ : new RegExp(`^(?:\\d+|\\d*\\.\\d{1,${digits}})$`);
-  if (!pattern.test(amount)) throw new Error(`${label} must be positive or zero, with up to ${digits} decimal places for ${currency}. Leave it blank if unknown.`);
+  if (!pattern.test(amount)) throw new Error(`${label} must be a positive ${code} amount or zero, with up to ${digits} decimal places. Leave it blank if unknown.`);
   const [major, fraction = ""] = amount.split(".");
   const minor = Number(major || "0") * 10 ** digits + Number(fraction.padEnd(digits, "0"));
-  if (!Number.isSafeInteger(minor) || minor > MAX_MAJOR_AMOUNT * 10 ** digits) throw new Error(`${label} must be 100,000,000 or less.`);
+  const max = MAX_AMOUNT_DOLLARS * 10 ** digits;
+  if (!Number.isSafeInteger(minor) || minor > max) throw new Error(`${label} must be ${formatCurrency(max, code)} or less.`);
   return minor;
 }
 

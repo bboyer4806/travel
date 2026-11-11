@@ -102,11 +102,11 @@ test("budget totals use selected ideas, exact cents, and whole-party transport c
   store.applyMutation(candidateInput(destinationId, { category: "restaurants", name: "Lunch", price: "40.01" }));
   store.applyMutation(candidateInput(destinationId, { category: "activities", name: "Maybe later", price: "", included: false }));
   const budget = calculateBudget(store.getSnapshot(), tripId);
-  assert.deepEqual(budget, { totalCents: 36060, travelCents: 12026, hotelsCents: 20033, activitiesCents: 0, restaurantsCents: 4001, homeCents: 0, totalsByCurrency: { USD: 36060 }, miscellaneousByCurrency: {}, shoppingByCurrency: {}, hotelsByCurrency: { USD: 20033 }, hotelMissingCount: 0, activitiesByCurrency: { USD: 0 }, activitiesMissingCount: 0, foodByCurrency: { USD: 4001 }, foodMissingCount: 0, travelMissingCount: 0, miscMissingCount: 1, knownCount: 5, missingCount: 1, complete: false });
+  assert.deepEqual(budget, { travelCents: 12026, homeCents: 0, totalsByCurrency: { USD: 36060 }, miscellaneousByCurrency: {}, shoppingByCurrency: {}, hotelsByCurrency: { USD: 20033 }, hotelMissingCount: 0, activitiesByCurrency: { USD: 0 }, activitiesMissingCount: 0, foodByCurrency: { USD: 4001 }, foodMissingCount: 0, travelMissingCount: 0, miscMissingCount: 1, knownCount: 5, missingCount: 1, complete: false });
   store.applyMutation({ type: "candidate.include", id: alternativeId, included: true });
   assert.equal(store.getSnapshot().candidates.find((item) => item.id === hotelId).included, false);
   assert.equal(store.getSnapshot().candidates.filter((item) => item.category === "hotels" && item.included).length, 1);
-  assert.equal(calculateBudget(store.getSnapshot(), tripId).hotelsCents, 999900);
+  assert.deepEqual(calculateBudget(store.getSnapshot(), tripId).hotelsByCurrency, { USD: 999900 });
   store.applyMutation(candidateInput(destinationId, { id: hotelId, included: true }));
   assert.equal(store.getSnapshot().candidates.find((item) => item.id === alternativeId).included, false);
   assert.equal(formatCurrency(36060, "USD"), "$360.60");

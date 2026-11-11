@@ -14,7 +14,7 @@ export function CurrencyTotals({ totals, empty = "Not estimated" }: { totals: Re
 }
 
 function dayLabel(days: number | null) {
-  return days === null ? "Duration unknown" : (days === 0.5 ? "½" : String(days)) + (days === 1 ? " budget day" : " budget days");
+  return days === null ? "Duration unknown" : String(days) + (days === 1 ? " budget day" : " budget days");
 }
 
 function MiscellaneousSummary({ destination }: { destination: Pick<Destination, "nights" | "miscDailyMinor" | "miscCurrency"> }) {

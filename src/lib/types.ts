@@ -14,7 +14,7 @@ export interface CandidateImage { id: string; version: string; }
 export interface DestinationPhotos { images: CandidateImage[]; mainImageId: string | null; }
 export interface DestinationGalleryUpdate { add: { id: string; data: Uint8Array }[]; remove: string[]; mainImageId?: string | null; order?: string[]; }
 export interface CandidateGalleryUpdate { add: { id: string; data: Uint8Array }[]; remove: string[]; mainImageId?: string | null; }
-export interface Candidate { id: string; destinationId: string; category: Category; position: number; mustDo: boolean; name: string; priceCents: number | null; address: string; url: string; notes: string; included: boolean; links: ResearchLink[]; imageVersion: string | null; images: CandidateImage[]; mainImageId: string | null; }
+export interface Candidate { id: string; destinationId: string; category: Category; position: number; mustDo: boolean; name: string; priceCents: number | null; address: string; url: string; notes: string; included: boolean; links: ResearchLink[]; images: CandidateImage[]; mainImageId: string | null; }
 export interface MassTime { id: string; day: string; time: string; }
 export interface Church { id: string; destinationId: string; name: string; address: string; denomination: string; url: string; massTimes: MassTime[]; images: CandidateImage[]; mainImageId: string | null; }
 export interface Snapshot { churches: Church[]; trips: Trip[]; homeItems: HomeItem[]; destinations: Destination[]; legs: TravelLeg[]; candidates: Candidate[]; }
@@ -26,7 +26,7 @@ export type Mutation =
  | { type: "homeItem.save"; id?: string; tripId: string; name: string; price: string; notes: string; completed: boolean }
  | { type: "homeItem.delete"; id: string; tripId: string }
  | { type: "homeItem.complete"; id: string; tripId: string; completed: boolean }
- | { type: "destination.save"; id?: string; tripId: string; city?: string; stay?: string; nights?: number | null; miscDailyAmount?: string; miscCurrency?: string | null; hotelNightlyAmount?: string; hotelCurrency?: string | null; activitiesBudgetMode?: ActivitiesBudgetMode; activitiesGeneralAmount?: string; activitiesCurrency?: string | null; foodBudgetMode?: FoodBudgetMode; foodDailyAmount?: string; foodCurrency?: string | null; shoppingAmount?: string; shoppingCurrency?: string | null; weatherHighF?: number | null; weatherLowF?: number | null; weatherRainfall?: string; weatherPeriod?: string; weatherSource?: string; notes?: string; image?: Uint8Array | null; gallery?: DestinationGalleryUpdate }
+ | { type: "destination.save"; id?: string; tripId: string; city?: string; stay?: string; nights?: number | null; miscDailyAmount?: string; hotelNightlyAmount?: string; activitiesBudgetMode?: ActivitiesBudgetMode; activitiesGeneralAmount?: string; foodBudgetMode?: FoodBudgetMode; foodDailyAmount?: string; shoppingAmount?: string; weatherHighF?: number | null; weatherLowF?: number | null; weatherRainfall?: string; weatherPeriod?: string; weatherSource?: string; notes?: string; image?: Uint8Array | null; gallery?: DestinationGalleryUpdate }
  | { type: "destination.delete"; id: string }
  | { type: "destination.entryRequirements"; id: string; tripId: string; requirements: EntryRequirements | null }
  | { type: "destination.churchVisibility"; id: string; enabled: boolean }
@@ -35,7 +35,7 @@ export type Mutation =
  | { type: "destination.move"; id: string; direction: "up" | "down" }
  | { type: "leg.save"; id: string; method: string; price: string; departure: string; arrival: string; url: string; notes: string; itinerary?: ItineraryStop[]; links?: ResearchLink[] }
  | { type: "leg.clear"; id: string }
- | { type: "candidate.save"; id?: string; destinationId: string; category: Category; name: string; price: string; address: string; url: string; notes: string; included: boolean; mustDo?: boolean; links?: ResearchLink[]; image?: Uint8Array | null; gallery?: CandidateGalleryUpdate }
+ | { type: "candidate.save"; id?: string; destinationId: string; category: Category; name: string; price: string; address: string; url: string; notes: string; included: boolean; mustDo?: boolean; links?: ResearchLink[]; gallery?: CandidateGalleryUpdate }
  | { type: "candidate.move"; id: string; direction: "up" | "down" }
  | { type: "candidate.mustDo"; id: string; mustDo: boolean }
  | { type: "candidate.delete"; id: string }
@@ -49,4 +49,4 @@ export interface GoogleIdentity { subject: string; email: string; emailVerified:
 export interface TripMember { email: string; name: string | null; }
 /** What the signed-in account may do with a trip. Only its owner sees, and changes, who it is shared with. */
 export type TripAccess = { role: "owner"; owner: TripMember; sharedWith: TripMember[] } | { role: "editor"; owner: TripMember };
-export interface Budget { shoppingByCurrency: Record<string, number>; travelMissingCount: number; foodByCurrency: Record<string, number>; foodMissingCount: number; activitiesByCurrency: Record<string, number>; activitiesMissingCount: number; hotelsByCurrency: Record<string, number>; hotelMissingCount: number; totalsByCurrency: Record<string, number>; miscellaneousByCurrency: Record<string, number>; miscMissingCount: number; totalCents: number; homeCents: number; travelCents: number; hotelsCents: number; activitiesCents: number; restaurantsCents: number; knownCount: number; missingCount: number; complete: boolean; }
+export interface Budget { shoppingByCurrency: Record<string, number>; travelMissingCount: number; foodByCurrency: Record<string, number>; foodMissingCount: number; activitiesByCurrency: Record<string, number>; activitiesMissingCount: number; hotelsByCurrency: Record<string, number>; hotelMissingCount: number; totalsByCurrency: Record<string, number>; miscellaneousByCurrency: Record<string, number>; miscMissingCount: number; homeCents: number; travelCents: number; knownCount: number; missingCount: number; complete: boolean; }

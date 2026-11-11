@@ -21,7 +21,6 @@ export function createOwnedStore(path) {
     getHomeOverview: () => store.getHomeOverview(owner),
     getDestinationImage: (id) => store.getDestinationImage(owner, id),
     getDestinationPhoto: (destinationId, imageId) => store.getDestinationPhoto(owner, destinationId, imageId),
-    getCandidateImage: (id) => store.getCandidateImage(owner, id),
     getCandidatePhoto: (candidateId, imageId) => store.getCandidatePhoto(owner, candidateId, imageId),
     getChurchPhoto: (churchId, imageId) => store.getChurchPhoto(owner, churchId, imageId),
   };

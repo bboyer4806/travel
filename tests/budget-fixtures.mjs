@@ -28,8 +28,9 @@ export function validateMoney(t, amount, minor, currency, extra = {}) {
       assert.deepEqual(store.getSnapshot(), before, "no partial destination or change is saved");
     }
   }
+  // Currency is not an input: one an older client still sends never changes an amount or labels it non-USD.
   for (const value of ["EUR", "JPY", "KWD", "XYZ", null, ""]) {
-    assert.throws(() => store.applyMutation(destinationInput(tripId, { id, [currency]: value })), ValidationError);
+    store.applyMutation(destinationInput(tripId, { id, [currency]: value }));
     assert.deepEqual(store.getSnapshot(), before);
   }
   const otherTrip = store.applyMutation(tripInput({ name: "Other" })).id;
@@ -42,9 +43,9 @@ export function validateMoney(t, amount, minor, currency, extra = {}) {
   store.applyMutation(destinationInput(tripId, { id, [amount]: " \t " }));
   const cleared = { ...known, destinations: known.destinations.map((item) => (item.id === id ? { ...item, [minor]: null } : item)) };
   assert.deepEqual(store.getSnapshot(), cleared, "whitespace clears only this amount");
-  store.applyMutation(destinationInput(tripId, { id, [amount]: "", [currency]: null }));
+  store.applyMutation(destinationInput(tripId, { id, [amount]: "" }));
   assert.equal(destination(store, id)[minor], null);
-  assert.equal(destination(store, id)[currency], null);
+  assert.equal(destination(store, id)[currency], "USD", "a cleared amount keeps the USD label the editor has always saved with it");
 }
 
 export function verifyPersistence(t, amount, minor, currency, version, columns, extra = {}) {

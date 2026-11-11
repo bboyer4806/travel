@@ -5,6 +5,8 @@ set -euo pipefail
 image="travel-check"
 container="travel-check"
 volume="travel-check-storage"
+# The schema version this build upgrades every database to. The checks run in the container, which has no source.
+schema_version="$(node --input-type=module --eval 'import { SCHEMA_VERSION } from "./src/lib/store.ts"; console.log(SCHEMA_VERSION);')"
 cleanup() {
   if [ "$?" -ne 0 ]; then docker logs "$container" || true; fi
   docker rm -f "$container" travel-check-refusal >/dev/null 2>&1 || true
@@ -25,7 +27,7 @@ start() {
 }
 
 start
-docker exec -i "$container" node --input-type=module <<'JS'
+docker exec -i -e SCHEMA_VERSION="$schema_version" "$container" node --input-type=module <<'JS'
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
 import { DatabaseSync } from 'node:sqlite';
@@ -54,7 +56,7 @@ const images = [
   Buffer.from('UklGRh4AAABXRUJQVlA4TBEAAAAvAUAAAAfQtSZVrP+BiOh/AAA=', 'base64'),
   Buffer.from('UklGRh4AAABXRUJQVlA4TBEAAAAvAUAAAAdQwjaXpf+BiOh/AAA=', 'base64'),
 ];
-assert.equal(db.prepare('PRAGMA user_version').get().user_version, 20);
+assert.equal(db.prepare('PRAGMA user_version').get().user_version, Number(process.env.SCHEMA_VERSION));
 // TRAVEL_OWNER_EMAIL is authorized at startup, before anyone signs in.
 assert.deepEqual(db.prepare('SELECT email, googleSubject FROM accounts').all().map(row => ({...row})), [{ email: 'owner@example.test', googleSubject: null }]);
 db.exec('PRAGMA foreign_keys = ON; BEGIN IMMEDIATE;');
@@ -115,7 +117,7 @@ JS
 # Replace the container, keeping the explicitly mounted volume.
 docker rm -f "$container" >/dev/null
 start
-docker exec -i "$container" node --input-type=module <<'JS'
+docker exec -i -e SCHEMA_VERSION="$schema_version" "$container" node --input-type=module <<'JS'
 import assert from 'node:assert/strict';
 import { DatabaseSync } from 'node:sqlite';
 const destinationId = '22222222-2222-4222-8222-222222222222';
@@ -139,7 +141,7 @@ const images = [
 ];
 const db = new DatabaseSync('/data/travel.sqlite');
 try {
-  assert.equal(db.prepare('PRAGMA user_version').get().user_version, 20);
+  assert.equal(db.prepare('PRAGMA user_version').get().user_version, Number(process.env.SCHEMA_VERSION));
   assert.deepEqual(db.prepare('SELECT email, googleSubject, name FROM accounts ORDER BY email').all().map(row => ({...row})), [
     { email: 'editor@example.test', googleSubject: 'smoke-editor-subject', name: 'Smoke editor' },
     { email: 'outsider@example.test', googleSubject: 'smoke-outsider-subject', name: 'Smoke outsider' },
@@ -230,7 +232,8 @@ for (const [index, expected] of images.entries()) {
   assert.equal((await fetch(base + 'destination-images/11111111-1111-4111-8111-111111111111/' + photoId, options())).status, 404, 'Destination photo ownership must be enforced');
 }
 for (const [index, candidate] of candidates.entries()) {
-  await verifyImage('candidate-images/' + candidate.id, candidate.version, images[1]);
+  const legacyRoute = await fetch(base + 'candidate-images/' + candidate.id + '?v=' + candidate.version, options());
+  assert.equal(legacyRoute.status, 404, 'The removed single-image idea route must not serve photos');
   for (const [position, expected] of images.entries()) {
     const photoId = `90000000-0000-4000-8000-${String(index * 2 + position + 1).padStart(12, '0')}`;
     const version = position === 1 ? candidate.version : 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
@@ -250,19 +253,13 @@ for (const [position, expected] of images.entries()) {
   assert.equal(wrongOwner.status, 404, 'A church photo must only be served under its own church');
   const wrongCandidateRoute = await fetch(base + 'candidate-images/' + churches[0].id + '/' + photoId + '?v=' + version, options());
   assert.equal(wrongCandidateRoute.status, 404, 'Church photos must not be returned by candidate gallery routes');
-  const wrongMainRoute = await fetch(base + 'candidate-images/' + churches[0].id + '?v=' + version, options());
-  assert.equal(wrongMainRoute.status, 404, 'Church main photos must not be returned by candidate routes');
 }
 const wrongChurchRoute = await fetch(base + 'church-images/' + candidates[0].id + '/90000000-0000-4000-8000-000000000001?v=aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa', options());
 assert.equal(wrongChurchRoute.status, 404, 'Candidate photos must not be returned by church routes');
 const missingChurchPhoto = await fetch(base + 'church-images/' + churches[0].id + '/55555555-5555-4555-8555-555555555555?v=' + imageVersion, options());
 assert.equal(missingChurchPhoto.status, 404);
-const wrongRoute = await fetch(base + 'candidate-images/' + destinationId + '?v=' + imageVersion, options());
-assert.equal(wrongRoute.status, 404, 'Destination photos must not be returned by the candidate route');
-for (const route of ['destination-images', 'candidate-images']) {
-  const missingImage = await fetch(base + route + '/55555555-5555-4555-8555-555555555555?v=' + imageVersion, options());
-  assert.equal(missingImage.status, 404);
-}
+const missingImage = await fetch(base + 'destination-images/55555555-5555-4555-8555-555555555555?v=' + imageVersion, options());
+assert.equal(missingImage.status, 404);
 const missingPhoto = await fetch(base + 'candidate-images/' + candidates[0].id + '/55555555-5555-4555-8555-555555555555?v=' + imageVersion, options());
 assert.equal(missingPhoto.status, 404);
 JS
@@ -330,7 +327,6 @@ async function mutation(input, headers = owner) {
 const pages = ["/", "/trips/container-smoke", "/trips/container-smoke/destinations/22222222-2222-4222-8222-222222222222/hotels", "/whats-new"];
 const dataRoutes = ["/api/destination-images/22222222-2222-4222-8222-222222222222?v=33333333-3333-4333-8333-333333333333",
   "/api/destination-images/22222222-2222-4222-8222-222222222222/a2000000-0000-4000-8000-000000000001?v=33333333-3333-4333-8333-333333333333",
-  "/api/candidate-images/66666666-6666-4666-8666-666666666666?v=bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
   "/api/candidate-images/66666666-6666-4666-8666-666666666666/90000000-0000-4000-8000-000000000002?v=bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
   "/api/church-images/b1000000-0000-4000-8000-000000000001/b3000000-0000-4000-8000-000000000002?v=b4000000-0000-4000-8000-000000000001",
   "/api/locations?q=Vienna"];
@@ -361,7 +357,7 @@ async function assertHidden(label, headers) {
     assert.ok(body.includes("This page has moved on."), `${label} ${path} must be not found`);
     assert.ok(!body.includes("Persistence test") && !body.includes("Vienna"), `${label} ${path} must not include trip data`);
   }
-  for (const path of dataRoutes.slice(0, 5)) {
+  for (const path of dataRoutes.slice(0, 4)) {
     const response = await get(path, headers);
     assert.equal(response.status, 404, `${label} ${path} must not be served`);
     assert.ok(!response.headers.get("content-type")?.startsWith("image/"), `${label} ${path} must not return image bytes`);
@@ -395,7 +391,7 @@ try {
     assert.match(body, /Persistence test/, `The editor can open ${path}`);
     assert.ok(!body.includes(">Share<") && !body.includes('aria-label="Delete trip"'), `The editor can't share or delete from ${path}`);
   }
-  for (const path of dataRoutes.slice(0, 5)) assert.equal((await get(path, editor)).status, 200, `The editor can load ${path}`);
+  for (const path of dataRoutes.slice(0, 4)) assert.equal((await get(path, editor)).status, 200, `The editor can load ${path}`);
   await assertHidden("outsider", outsider);
 
   const saved = await mutation(trip);

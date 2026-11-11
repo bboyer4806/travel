@@ -152,22 +152,22 @@ export default function PlannerApp({ initialData, initialBudgets, access, tripId
       }
       case "destination": {
         const imageForm = destinationGalleryForm(destinationGallery, editor.item);
-        if (trip) void perform({ type: "destination.save", id: editor.item?.id, tripId: trip.id, city: text("city"), stay: text("stay"), notes: text("notes"), nights: text("nights") === "" ? null : Number(text("nights")), miscDailyAmount: text("miscDailyAmount"), miscCurrency: "USD", hotelNightlyAmount: text("hotelNightlyAmount"), hotelCurrency: "USD", activitiesBudgetMode: text("activitiesBudgetMode") as ActivitiesBudgetMode, activitiesGeneralAmount: text("activitiesGeneralAmount"), activitiesCurrency: "USD", foodBudgetMode: text("foodBudgetMode") as FoodBudgetMode, foodDailyAmount: text("foodDailyAmount"), foodCurrency: "USD", shoppingAmount: text("shoppingAmount"), shoppingCurrency: "USD" }, "Destination saved. Review any new travel connections.", undefined, imageForm);
+        if (trip) void perform({ type: "destination.save", id: editor.item?.id, tripId: trip.id, city: text("city"), stay: text("stay"), notes: text("notes"), nights: text("nights") === "" ? null : Number(text("nights")), miscDailyAmount: text("miscDailyAmount"), hotelNightlyAmount: text("hotelNightlyAmount"), activitiesBudgetMode: text("activitiesBudgetMode") as ActivitiesBudgetMode, activitiesGeneralAmount: text("activitiesGeneralAmount"), foodBudgetMode: text("foodBudgetMode") as FoodBudgetMode, foodDailyAmount: text("foodDailyAmount"), shoppingAmount: text("shoppingAmount") }, "Destination saved. Review any new travel connections.", undefined, imageForm);
         break;
       }
       case "shoppingBudget": {
         const item = editor.item;
-        void perform({ type: "destination.save", id: item.id, tripId: item.tripId, shoppingAmount: text("shoppingAmount"), shoppingCurrency: "USD" }, "Shopping budget saved.");
+        void perform({ type: "destination.save", id: item.id, tripId: item.tripId, shoppingAmount: text("shoppingAmount") }, "Shopping budget saved.");
         break;
       }
       case "foodBudget": {
         const item = editor.item;
-        void perform({ type: "destination.save", id: item.id, tripId: item.tripId, foodBudgetMode: text("foodBudgetMode") as FoodBudgetMode, foodDailyAmount: text("foodDailyAmount"), foodCurrency: "USD" }, "Food budget saved.");
+        void perform({ type: "destination.save", id: item.id, tripId: item.tripId, foodBudgetMode: text("foodBudgetMode") as FoodBudgetMode, foodDailyAmount: text("foodDailyAmount") }, "Food budget saved.");
         break;
       }
       case "activitiesBudget": {
         const item = editor.item;
-        void perform({ type: "destination.save", id: item.id, tripId: item.tripId, activitiesBudgetMode: text("activitiesBudgetMode") as ActivitiesBudgetMode, activitiesGeneralAmount: text("activitiesGeneralAmount"), activitiesCurrency: "USD" }, "Activities budget saved.");
+        void perform({ type: "destination.save", id: item.id, tripId: item.tripId, activitiesBudgetMode: text("activitiesBudgetMode") as ActivitiesBudgetMode, activitiesGeneralAmount: text("activitiesGeneralAmount") }, "Activities budget saved.");
         break;
       }
       case "homeItem": {

@@ -3,7 +3,7 @@ import { randomUUID } from "node:crypto";
 import { DatabaseSync } from "node:sqlite";
 import test from "node:test";
 import { containsSunday } from "../src/lib/destination-duration.ts";
-import { ValidationError } from "../src/lib/store.ts";
+import { SCHEMA_VERSION, ValidationError } from "../src/lib/store.ts";
 import { createOwnedStore } from "./owned-store.mjs";
 import { calculateBudget, calculateDestinationBudget } from "../src/lib/budget.ts";
 import { fileDatabase, setup } from "./budget-fixtures.mjs";
@@ -179,12 +179,12 @@ test("churches never change candidate counts, selections, trip budgets or destin
   const destinationId = store.applyMutation(destinationInput(tripId)).id;
   store.applyMutation(destinationInput(tripId, {
     id: destinationId, nights: 3,
-    miscDailyAmount: "0", miscCurrency: "USD", hotelNightlyAmount: "100", hotelCurrency: "USD",
-    activitiesBudgetMode: "general", activitiesGeneralAmount: "20", activitiesCurrency: "USD",
-    foodBudgetMode: "daily", foodDailyAmount: "30", foodCurrency: "USD", shoppingAmount: "12.34", shoppingCurrency: "USD",
+    miscDailyAmount: "0", hotelNightlyAmount: "100",
+    activitiesBudgetMode: "general", activitiesGeneralAmount: "20",
+    foodBudgetMode: "daily", foodDailyAmount: "30", shoppingAmount: "12.34",
     weatherHighF: 70, weatherLowF: 40, weatherRainfall: "Low", weatherPeriod: "May", weatherSource: "Local archive",
   }));
-  for (const category of ["hotels", "activities", "restaurants"]) store.applyMutation({ type: "candidate.save", destinationId, category, name: category, price: category === "hotels" ? "0" : "", address: "", url: "", notes: "", included: true, image: webp });
+  for (const category of ["hotels", "activities", "restaurants"]) store.applyMutation({ type: "candidate.save", destinationId, category, name: category, price: category === "hotels" ? "0" : "", address: "", url: "", notes: "", included: true, gallery: { add: [photo()], remove: [] } });
   store.applyMutation({ type: "homeItem.save", tripId, name: "Mail hold", price: "", notes: "", completed: false });
   store.applyMutation({type:"destination.churchVisibility",id:destinationId,enabled:false});
   const before = store.getSnapshot();
@@ -228,19 +228,20 @@ test("schema 13 upgrade initializes Sunday visibility, preserves prior data and 
     const tripId = store.applyMutation(tripInput({startDate:"2027-05-01"})).id;
     const id = store.applyMutation(destinationInput(tripId, {
       nights: 2, image: webp,
-      miscDailyAmount: "0", miscCurrency: "USD", hotelNightlyAmount: "125.25", hotelCurrency: "USD",
-      activitiesBudgetMode: "general", activitiesGeneralAmount: "55.55", activitiesCurrency: "USD",
-      foodBudgetMode: "daily", foodDailyAmount: "20", foodCurrency: "USD", shoppingAmount: "12.34", shoppingCurrency: "USD",
+      miscDailyAmount: "0", hotelNightlyAmount: "125.25",
+      activitiesBudgetMode: "general", activitiesGeneralAmount: "55.55",
+      foodBudgetMode: "daily", foodDailyAmount: "20", shoppingAmount: "12.34",
       weatherHighF: 70.5, weatherLowF: 40, weatherRainfall: "Some rain", weatherPeriod: "May", weatherSource: "Historical averages",
     })).id;
     const weekdayId = store.applyMutation(destinationInput(tripId, { nights: 5 })).id;
     const partialId = store.applyMutation(destinationInput(tripId, { nights: null })).id;
     const unknownId = store.applyMutation(destinationInput(tripId)).id;
-    const candidateId = store.applyMutation({ type: "candidate.save", destinationId: id, category: "hotels", name: "Saved hotel", price: "123.45", address: "Main street", url: "", notes: "", included: true, image: webp }).id;
+    const hotelPhoto = photo();
+    const candidateId = store.applyMutation({ type: "candidate.save", destinationId: id, category: "hotels", name: "Saved hotel", price: "123.45", address: "Main street", url: "", notes: "", included: true, gallery: { add: [hotelPhoto], remove: [] } }).id;
     store.applyMutation({ type: "homeItem.save", tripId, name: "House sitting", price: "23.95", notes: "Leave a key", completed: true });
     for (const hidden of [weekdayId,partialId,unknownId]) store.applyMutation({type:"destination.churchVisibility",id:hidden,enabled:false});
     const before = store.getSnapshot(), budget = calculateBudget(before, tripId);
-    const destinationImage = store.getDestinationImage(id), candidateImage = store.getCandidateImage(candidateId);
+    const destinationImage = store.getDestinationImage(id), candidateImage = store.getCandidatePhoto(candidateId, hotelPhoto.id);
     store.close(); store = null;
     let observer = new DatabaseSync(path);
     try { observer.exec("DROP TABLE church_images; DROP TABLE churches; ALTER TABLE destinations DROP COLUMN churchEnabled; PRAGMA user_version = 13;"); }
@@ -251,7 +252,7 @@ test("schema 13 upgrade initializes Sunday visibility, preserves prior data and 
     for (const other of [weekdayId, partialId, unknownId]) assert.equal(destination(store, other).churchEnabled, false);
     assert.deepEqual(calculateBudget(store.getSnapshot(), tripId), budget);
     assert.deepEqual(store.getDestinationImage(id), destinationImage);
-    assert.deepEqual(store.getCandidateImage(candidateId), candidateImage);
+    assert.deepEqual(store.getCandidatePhoto(candidateId, hotelPhoto.id), candidateImage);
     const picture = photo();
     const churchId = store.applyMutation(churchInput(id, { massTimes: [mass(), mass("2027-05-09", "11 AM")], gallery: { add: [picture], remove: [] } })).id;
     store.applyMutation({ type: "destination.churchVisibility", id, enabled: false });
@@ -260,7 +261,7 @@ test("schema 13 upgrade initializes Sunday visibility, preserves prior data and 
     store.close(); store = null;
     observer = new DatabaseSync(path);
     try {
-      assert.equal(observer.prepare("PRAGMA user_version").get().user_version, 20);
+      assert.equal(observer.prepare("PRAGMA user_version").get().user_version, SCHEMA_VERSION);
       observer.exec("PRAGMA user_version = 13;");
     } finally { observer.close(); }
     store = createOwnedStore(path);
@@ -269,7 +270,7 @@ test("schema 13 upgrade initializes Sunday visibility, preserves prior data and 
     assert.deepEqual(calculateBudget(store.getSnapshot(), tripId), budget);
     observer = new DatabaseSync(path);
     try {
-      assert.equal(observer.prepare("PRAGMA user_version").get().user_version, 20);
+      assert.equal(observer.prepare("PRAGMA user_version").get().user_version, SCHEMA_VERSION);
       assert.deepEqual(observer.prepare("PRAGMA foreign_key_check").all(), []);
     } finally { observer.close(); }
   } finally { store?.close(); }

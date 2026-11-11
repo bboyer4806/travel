@@ -164,7 +164,8 @@ test("legacy image changes affect only primary and destination gallery deletion 
   const { tripId, id } = plan(store);
   const photos = [photo(), photo()];
   store.applyMutation({ type: "destination.save", tripId, id, gallery: { add: photos, remove: [], mainImageId: photos[1].id } });
-  const candidateId = store.applyMutation({ type: "candidate.save", destinationId: id, category: "hotels", name: "Hotel", price: "", address: "", url: "", notes: "", included: false, gallery: { add: [photo()], remove: [] } }).id;
+  const candidatePhoto = photo();
+  const candidateId = store.applyMutation({ type: "candidate.save", destinationId: id, category: "hotels", name: "Hotel", price: "", address: "", url: "", notes: "", included: false, gallery: { add: [candidatePhoto], remove: [] } }).id;
   const candidate = store.getSnapshot().candidates[0];
   const first = store.getDestinationPhoto(id, photos[0].id);
   const originalMain = store.getDestinationImage(id);
@@ -178,7 +179,7 @@ test("legacy image changes affect only primary and destination gallery deletion 
   const otherId = store.applyMutation(destinationInput(tripId, { city: "Paris", gallery: { add: [otherPhoto], remove: [] } })).id;
   store.applyMutation({ type: "destination.delete", id });
   assert.equal(store.getDestinationPhoto(id, photos[0].id), undefined);
-  assert.equal(store.getCandidateImage(candidateId), undefined);
+  assert.equal(store.getCandidatePhoto(candidateId, candidatePhoto.id), undefined);
   assert.ok(store.getDestinationPhoto(otherId, otherPhoto.id));
   store.applyMutation({ type: "trip.delete", id: tripId });
   assert.equal(store.getDestinationPhoto(otherId, otherPhoto.id), undefined);

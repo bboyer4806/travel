@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import { DatabaseSync } from "node:sqlite";
 import test from "node:test";
-import { authorizeGoogleSignIn, createStore, ValidationError } from "../src/lib/store.ts";
+import { authorizeGoogleSignIn, createStore, SCHEMA_VERSION, ValidationError } from "../src/lib/store.ts";
 import { UNDO_SCHEMA_20 } from "./owned-store.mjs";
 import { fileDatabase } from "./budget-fixtures.mjs";
 
@@ -113,7 +113,7 @@ test("schema 19 adds accounts and sessions without changing trips, and replay ke
   store.close();
 
   db = new DatabaseSync(path);
-  assert.equal(db.prepare("PRAGMA user_version").get().user_version, 20);
+  assert.equal(db.prepare("PRAGMA user_version").get().user_version, SCHEMA_VERSION);
   db.exec("PRAGMA user_version = 18;");
   db.close();
   store = createStore(path, "owner@example.com");
@@ -122,7 +122,7 @@ test("schema 19 adds accounts and sessions without changing trips, and replay ke
   assert.equal(store.getSnapshot().trips.length, 1);
   db = new DatabaseSync(path, { readOnly: true });
   try {
-    assert.equal(db.prepare("PRAGMA user_version").get().user_version, 20);
+    assert.equal(db.prepare("PRAGMA user_version").get().user_version, SCHEMA_VERSION);
     assert.equal(db.prepare("PRAGMA integrity_check").get().integrity_check, "ok");
     assert.deepEqual(db.prepare("PRAGMA foreign_key_check").all(), []);
     // Duplicate emails are impossible even outside the store's own checks.

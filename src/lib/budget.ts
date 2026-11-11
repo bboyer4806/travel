@@ -30,7 +30,7 @@ export interface DestinationBudget {
   complete: boolean;
 }
 
-type CostCategory = "travelCents" | "hotelsCents" | "activitiesCents" | "restaurantsCents" | "homeCents" | "miscellaneous" | "shopping";
+type CostCategory = "travel" | "hotels" | "activities" | "food" | "home" | "miscellaneous" | "shopping";
 interface Cost { amount: number | null; currency: string | null; category: CostCategory; }
 
 /**
@@ -74,11 +74,11 @@ export function calculateAccommodation(snapshot: Snapshot, destination: Destinat
 function activityCosts(snapshot: Snapshot, destination: Destination): Cost[] {
   // Only an explicit destination edit switches sources. Dates and party size are irrelevant.
   if (destination.activitiesBudgetMode === "general") {
-    return [{ amount: destination.activitiesGeneralMinor ?? null, currency: destination.activitiesCurrency || null, category: "activitiesCents" }];
+    return [{ amount: destination.activitiesGeneralMinor ?? null, currency: destination.activitiesCurrency || null, category: "activities" }];
   }
   return snapshot.candidates
     .filter((item) => item.destinationId === destination.id && item.category === "activities" && item.included)
-    .map((item) => ({ amount: item.priceCents, currency: "USD", category: "activitiesCents" }));
+    .map((item) => ({ amount: item.priceCents, currency: "USD", category: "activities" }));
 }
 
 export function calculateActivitiesBudget(snapshot: Snapshot, destination: Destination): DestinationBudget & { mode: ActivitiesBudgetMode } {
@@ -91,11 +91,11 @@ export function calculateActivitiesBudget(snapshot: Snapshot, destination: Desti
 function foodCosts(snapshot: Snapshot, destination: Destination): Cost[] {
   if (destination.foodBudgetMode === "daily") {
     const estimate = calculateFoodEstimate(destination);
-    return [{ amount: estimate.subtotalMinor, currency: estimate.currency, category: "restaurantsCents" }];
+    return [{ amount: estimate.subtotalMinor, currency: estimate.currency, category: "food" }];
   }
   return snapshot.candidates
     .filter((item) => item.destinationId === destination.id && item.category === "restaurants" && item.included)
-    .map((item) => ({ amount: item.priceCents, currency: "USD", category: "restaurantsCents" }));
+    .map((item) => ({ amount: item.priceCents, currency: "USD", category: "food" }));
 }
 
 export function calculateFoodBudget(snapshot: Snapshot, destination: Destination): DestinationBudget & { mode: FoodBudgetMode } {
@@ -107,7 +107,7 @@ export function calculateFoodBudget(snapshot: Snapshot, destination: Destination
 
 function destinationCosts(snapshot: Snapshot, destination: Destination): Cost[] {
   const accommodation = calculateAccommodation(snapshot, destination);
-  const costs: Cost[] = [{ amount: accommodation.totalMinor, currency: accommodation.currency, category: "hotelsCents" }];
+  const costs: Cost[] = [{ amount: accommodation.totalMinor, currency: accommodation.currency, category: "hotels" }];
   costs.push(...foodCosts(snapshot, destination));
   costs.push(...activityCosts(snapshot, destination));
   // Shopping is optional and already covers the whole party's entire stay.
@@ -138,15 +138,11 @@ export function calculateDestinationBudget(snapshot: Snapshot, destinationId: st
   return budget;
 }
 
-/** Currencies stay separate; legacy *Cents fields contain only the USD portions. */
+/** Currencies stay separate. Travel and at-home costs are always USD, so they are totaled in cents. */
 export function calculateBudget(snapshot: Snapshot, tripId: string): Budget {
   const budget: Budget = {
-    totalCents: 0,
     homeCents: 0,
     travelCents: 0,
-    hotelsCents: 0,
-    activitiesCents: 0,
-    restaurantsCents: 0,
     totalsByCurrency: {},
     miscellaneousByCurrency: {},
     shoppingByCurrency: {},
@@ -177,19 +173,18 @@ export function calculateBudget(snapshot: Snapshot, tripId: string): Budget {
       else budget.miscellaneousByCurrency[cost.currency] = (budget.miscellaneousByCurrency[cost.currency] ?? 0) + cost.amount;
     } else if (cost.category === "shopping") {
       if (cost.amount !== null && cost.currency !== null) budget.shoppingByCurrency[cost.currency] = (budget.shoppingByCurrency[cost.currency] ?? 0) + cost.amount;
-    } else if (cost.amount !== null && cost.currency === "USD") {
-      budget[cost.category] += cost.amount;
-    }
-    if (cost.category === "travelCents" && (cost.amount === null || cost.currency === null)) budget.travelMissingCount += 1;
-    if (cost.category === "restaurantsCents") {
+    } else if (cost.category === "home") {
+      if (cost.amount !== null) budget.homeCents += cost.amount;
+    } else if (cost.category === "travel") {
+      if (cost.amount === null || cost.currency === null) budget.travelMissingCount += 1;
+      else budget.travelCents += cost.amount;
+    } else if (cost.category === "food") {
       if (cost.amount === null || cost.currency === null) budget.foodMissingCount += 1;
       else budget.foodByCurrency[cost.currency] = (budget.foodByCurrency[cost.currency] ?? 0) + cost.amount;
-    }
-    if (cost.category === "activitiesCents") {
+    } else if (cost.category === "activities") {
       if (cost.amount === null || cost.currency === null) budget.activitiesMissingCount += 1;
       else budget.activitiesByCurrency[cost.currency] = (budget.activitiesByCurrency[cost.currency] ?? 0) + cost.amount;
-    }
-    if (cost.category === "hotelsCents") {
+    } else if (cost.category === "hotels") {
       if (cost.amount === null || cost.currency === null) budget.hotelMissingCount += 1;
       else budget.hotelsByCurrency[cost.currency] = (budget.hotelsByCurrency[cost.currency] ?? 0) + cost.amount;
     }
@@ -199,7 +194,7 @@ export function calculateBudget(snapshot: Snapshot, tripId: string): Budget {
     const route: (string | null)[] = [null, ...destinations.map((item) => item.id), null];
     for (let index = 1; index < route.length; index += 1) {
       const leg = snapshot.legs.find((item) => item.tripId === tripId && item.fromId === route[index - 1] && item.toId === route[index]);
-      add({ amount: leg?.priceCents ?? null, currency: "USD", category: "travelCents" });
+      add({ amount: leg?.priceCents ?? null, currency: "USD", category: "travel" });
     }
   }
   for (const destination of destinations) {
@@ -207,9 +202,8 @@ export function calculateBudget(snapshot: Snapshot, tripId: string): Budget {
   }
   // A blank home-item price is an optional task without a cost, not a missing estimate.
   for (const item of snapshot.homeItems) {
-    if (item.tripId === tripId && item.priceCents !== null) add({ amount: item.priceCents, currency: "USD", category: "homeCents" });
+    if (item.tripId === tripId && item.priceCents !== null) add({ amount: item.priceCents, currency: "USD", category: "home" });
   }
-  budget.totalCents = budget.totalsByCurrency.USD ?? 0;
   budget.complete = budget.missingCount === 0;
   return budget;
 }

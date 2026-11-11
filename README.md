@@ -124,7 +124,9 @@ Daily mode excludes restaurant costs. Itemized mode counts only included restaur
 Use the edit control beside **Shopping**, or edit the destination, to enter an optional whole-stay amount. It is counted once, separately from miscellaneous spending. **Not set** adds no cost and is not a missing estimate. Zero is an intentional known amount. Clear the amount to remove its contribution.
 
 ## Destination controls
-Hotels, Activities, and Restaurants links sit beside their budget headings and show saved-idea counts. The destination editor has one **Save** in its sticky header, with pending state and save errors kept in view; Cancel discards the draft.
+Each destination's **Budget** starts collapsed each time the page loads. It always lists Accommodation, Activities, Food, Shopping, and Miscellaneous with their amounts and the page or editor that changes each: **Hotels**, **Activities**, and **Restaurants** links with saved-idea counts, **Edit shopping budget**, and **Edit miscellaneous budget**, which opens the destination editor. Activities or Food with some included prices missing show **Partial estimate**. On a trip's page, the stay's nights, arrival, and departure sit above it and the destination estimate below. Select the **Budget** heading by mouse, touch, or keyboard to show or hide each category's calculations, breakdowns, and notes. Each destination's budget opens and closes on its own, and its links and edit controls work either way. Showing or hiding changes nothing saved, makes no server request, and is not remembered between visits.
+
+The destination editor has one **Save** in its sticky header, with pending state and save errors kept in view; Cancel discards the draft.
 
 The focused Typical Weather, Shopping, Food, and Activities editors save only their own fields. If someone changes the city, stay notes, schedule, or other destination details while one is open, those newer details and saved travel connections are preserved. Intentionally renaming a city in the main destination editor still clears its affected connections.
 

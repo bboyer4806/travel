@@ -14,9 +14,9 @@ const ideaInput = (destinationId, category, name, overrides = {}) => ({ type: "c
 const image = Buffer.from("UklGRh4AAABXRUJQVlA4TBEAAAAvAUAAAAfQtSZVrP+BiOh/AAA=", "base64");
 const list = (store, destinationId, category) => store.getSnapshot().candidates.filter(item => item.destinationId === destinationId && item.category === category);
 const ids = (store, destinationId, category) => list(store, destinationId, category).map(item => item.id);
-function seed(store) {
+function seed(store, city = "Paris") {
   const tripId = store.applyMutation(tripInput).id;
-  const destinationId = store.applyMutation({ type: "destination.save", tripId, city: "Paris", stay: "", notes: "", nights: 3 }).id;
+  const destinationId = store.applyMutation({ type: "destination.save", tripId, city, stay: "", notes: "", nights: 3 }).id;
   return { tripId, destinationId };
 }
 
@@ -25,7 +25,7 @@ for (const category of ["hotels", "activities", "restaurants"]) {
     const store = createOwnedStore(":memory:");
     t.after(() => store.close());
     const { tripId, destinationId } = seed(store);
-    const otherDestination = seed(store).destinationId;
+    const otherDestination = seed(store, "Lyon").destinationId;
     store.applyMutation(ideaInput(otherDestination, category, "Other trip"));
     for (const other of ["hotels", "activities", "restaurants"].filter(value => value !== category)) {
       store.applyMutation(ideaInput(destinationId, other, "Other category"));
@@ -83,7 +83,7 @@ test("Must do can be saved, toggled and cleared independently of budgets and ord
     assert.equal(list(store, destinationId, category)[1].mustDo, true);
     store.applyMutation(ideaInput(destinationId, category, "Renamed", { id: otherId, mustDo: false, included: true }));
     assert.equal(list(store, destinationId, category)[1].mustDo, false);
-    store.applyMutation({ type: "destination.save", tripId, id: destinationId, city: "Paris", stay: "", notes: "", activitiesBudgetMode: "general", activitiesGeneralAmount: "40", foodBudgetMode: "daily", foodDailyAmount: "30" });
+    store.applyMutation({ type: "destination.save", id: destinationId, stopId: destinationId, city: "Paris", stay: "", notes: "", activitiesBudgetMode: "general", activitiesGeneralAmount: "40", foodBudgetMode: "daily", foodDailyAmount: "30" });
     const generalBudget = calculateBudget(store.getSnapshot(), tripId);
     store.applyMutation({ type: "candidate.mustDo", id, mustDo: true });
     assert.deepEqual(calculateBudget(store.getSnapshot(), tripId), generalBudget);

@@ -633,6 +633,42 @@ button svg,a svg {
   color:var(--muted);
   margin-top:4px
 }
+.destination-name h3 a:hover {
+  color:var(--orange)
+}
+.destination-full-name {
+  font-size:11px;
+  color:var(--muted);
+  margin-top:6px;
+  overflow-wrap:anywhere
+}
+.destination-trips {
+  list-style:none;
+  margin:22px 0 0;
+  padding:16px 0 0;
+  border-top:1px solid #d4ddcb;
+  display:grid;
+  gap:14px;
+  font-size:12px
+}
+.destination-trips li {
+  display:grid;
+  gap:4px;
+  overflow-wrap:anywhere
+}
+.destination-trips a {
+  font-weight:600
+}
+.destination-trips a:hover {
+  color:var(--orange)
+}
+.destination-trips span {
+  color:var(--muted);
+  font-size:11px
+}
+.destination-trips strong {
+  color:var(--ink)
+}
 .destination-tools {
   display:flex;
   gap:0;

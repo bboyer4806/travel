@@ -77,8 +77,9 @@ db.prepare('INSERT INTO trip_shares(tripId,accountId,sharedAt) VALUES(?,?,?)').r
 db.prepare("UPDATE trips SET startDate = '2027-05-10' WHERE id = 'container-smoke'").run();
 db.prepare('INSERT INTO home_items(id,tripId,name,priceCents,notes,completed,createdAt) VALUES(?,?,?,?,?,?,?)').run('a1000000-0000-4000-8000-000000000001','container-smoke','House sitting',23950,'Give sitter a key',1,'2026-10-12T12:00:00.000Z');
 db.prepare('INSERT INTO home_items(id,tripId,name,priceCents,notes,completed,createdAt) VALUES(?,?,?,?,?,?,?)').run('a1000000-0000-4000-8000-000000000002','container-smoke','Pause mail',null,'Arrange before leaving',0,'2026-10-12T12:01:00.000Z');
-db.prepare('INSERT INTO destinations(id,tripId,city,stay,notes,position,arrivalDate,departureDate,miscDailyMinor,miscCurrency,hotelNightlyMinor,hotelCurrency) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)').run(destinationId, 'container-smoke', 'Vienna', 'Spring visit', '', 0, '2027-05-10', '2027-05-13', 3250, 'USD', 17525, 'USD');
-db.prepare('UPDATE destinations SET nights = 3 WHERE id = ?').run(destinationId);
+// The owner's shared destination, and the trip's stop there, which shares its ID as each destination's first stop does.
+db.prepare('INSERT INTO destinations(id,ownerId,city,cityKey,notes,miscDailyMinor,miscCurrency,hotelNightlyMinor,hotelCurrency) VALUES(?,?,?,?,?,?,?,?,?)').run(destinationId, owner, 'Vienna', 'vienna', '', 3250, 'USD', 17525, 'USD');
+db.prepare('INSERT INTO trip_stops(id,tripId,destinationId,position,stay,nights,arrivalDate,departureDate) VALUES(?,?,?,?,?,?,?,?)').run(destinationId, 'container-smoke', destinationId, 0, 'Spring visit', 3, '2027-05-10', '2027-05-13');
 db.prepare("UPDATE destinations SET activitiesBudgetMode = 'general', activitiesGeneralMinor = 22550, activitiesCurrency = 'USD' WHERE id = ?").run(destinationId);
 db.prepare("UPDATE destinations SET foodBudgetMode = 'daily', foodDailyMinor = 8025, foodCurrency = 'USD' WHERE id = ?").run(destinationId);
 db.prepare("UPDATE destinations SET shoppingMinor = 12550, shoppingCurrency = 'USD' WHERE id = ?").run(destinationId);
@@ -151,13 +152,13 @@ try {
   assert.equal(db.prepare("SELECT accounts.email FROM trips JOIN accounts ON accounts.id = trips.ownerId WHERE trips.id = 'container-smoke'").get().email, 'owner@example.test', 'Ownership must persist');
   assert.deepEqual(db.prepare('SELECT tripId, accountId FROM trip_shares').all().map(row => ({...row})), [{ tripId: 'container-smoke', accountId: 'e1000000-0000-4000-8000-000000000001' }], 'Sharing must persist');
   assert.equal(db.prepare('SELECT startDate FROM trips WHERE id = ?').get('container-smoke').startDate, '2027-05-10');
-  assert.equal(db.prepare('SELECT nights FROM destinations WHERE id = ?').get(destinationId).nights, 3);
+  assert.deepEqual({ ...db.prepare('SELECT tripId,destinationId,position,stay,nights,arrivalDate,departureDate FROM trip_stops WHERE id = ?').get(destinationId) }, { tripId: 'container-smoke', destinationId, position: 0, stay: 'Spring visit', nights: 3, arrivalDate: '2027-05-10', departureDate: '2027-05-13' });
   const homeItems = db.prepare('SELECT name,priceCents,notes,completed,createdAt FROM home_items WHERE tripId = ? ORDER BY createdAt').all('container-smoke').map(row => ({...row}));
   assert.deepEqual(homeItems, [
     {name:'House sitting',priceCents:23950,notes:'Give sitter a key',completed:1,createdAt:'2026-10-12T12:00:00.000Z'},
     {name:'Pause mail',priceCents:null,notes:'Arrange before leaving',completed:0,createdAt:'2026-10-12T12:01:00.000Z'},
   ]);
-  assert.deepEqual({ ...db.prepare('SELECT stay,arrivalDate,departureDate,miscDailyMinor,miscCurrency,hotelNightlyMinor,hotelCurrency FROM destinations WHERE id = ?').get(destinationId) }, { stay: 'Spring visit', arrivalDate: '2027-05-10', departureDate: '2027-05-13', miscDailyMinor: 3250, miscCurrency: 'USD', hotelNightlyMinor: 17525, hotelCurrency: 'USD' });
+  assert.deepEqual({ ...db.prepare('SELECT accounts.email,city,cityKey,miscDailyMinor,miscCurrency,hotelNightlyMinor,hotelCurrency FROM destinations JOIN accounts ON accounts.id = destinations.ownerId WHERE destinations.id = ?').get(destinationId) }, { email: 'owner@example.test', city: 'Vienna', cityKey: 'vienna', miscDailyMinor: 3250, miscCurrency: 'USD', hotelNightlyMinor: 17525, hotelCurrency: 'USD' });
   assert.deepEqual({ ...db.prepare('SELECT activitiesBudgetMode,activitiesGeneralMinor,activitiesCurrency FROM destinations WHERE id = ?').get(destinationId) }, { activitiesBudgetMode: 'general', activitiesGeneralMinor: 22550, activitiesCurrency: 'USD' });
   assert.deepEqual({ ...db.prepare('SELECT foodBudgetMode,foodDailyMinor,foodCurrency FROM destinations WHERE id = ?').get(destinationId) }, { foodBudgetMode: 'daily', foodDailyMinor: 8025, foodCurrency: 'USD' });
   assert.deepEqual({ ...db.prepare('SELECT shoppingMinor,shoppingCurrency FROM destinations WHERE id = ?').get(destinationId) }, { shoppingMinor: 12550, shoppingCurrency: 'USD' });
@@ -324,7 +325,10 @@ async function mutation(input, headers = owner) {
   assert.equal(results.length, 1, "Server Action must return one parseable operation result");
   return results[0];
 }
-const pages = ["/", "/trips/container-smoke", "/trips/container-smoke/destinations/22222222-2222-4222-8222-222222222222/hotels", "/whats-new"];
+// The seeded trip's pages, and its destination's pages in Destinations.
+const tripPages = ["/trips/container-smoke", "/trips/container-smoke/destinations/22222222-2222-4222-8222-222222222222/hotels"];
+const destinationPages = ["/destinations/22222222-2222-4222-8222-222222222222", "/destinations/22222222-2222-4222-8222-222222222222/hotels"];
+const pages = ["/", "/destinations", ...tripPages, ...destinationPages, "/whats-new"];
 const dataRoutes = ["/api/destination-images/22222222-2222-4222-8222-222222222222?v=33333333-3333-4333-8333-333333333333",
   "/api/destination-images/22222222-2222-4222-8222-222222222222/a2000000-0000-4000-8000-000000000001?v=33333333-3333-4333-8333-333333333333",
   "/api/candidate-images/66666666-6666-4666-8666-666666666666/90000000-0000-4000-8000-000000000002?v=bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
@@ -347,12 +351,16 @@ async function assertRefused(label, headers) {
   const feedback = await fetch(origin + "/api/feedback", { method: "POST", headers: { ...headers, "Content-Type": "application/json", Origin: origin }, body: JSON.stringify({ action: "open" }), signal: signal() });
   assert.equal(feedback.status, 401, `${label} feedback must be refused`);
 }
-// Signed in, but the trip isn't theirs: it is missing from their list, its pages are not found, and its photos aren't served.
+// Signed in, but the trip isn't theirs: it and its destination are missing from their lists, their pages are not
+// found, and their photos aren't served.
 async function assertHidden(label, headers) {
   const list = await get("/", headers);
   assert.equal(list.status, 200, `${label} home page`);
   assert.ok(!(await list.text()).includes("Persistence test"), `${label} must not see the trip in their list`);
-  for (const path of pages.slice(1, 3)) {
+  const destinations = await get("/destinations", headers);
+  assert.equal(destinations.status, 200, `${label} Destinations`);
+  assert.ok(!(await destinations.text()).includes("Vienna"), `${label} must not see the destination in Destinations`);
+  for (const path of [...tripPages, ...destinationPages]) {
     const body = await (await get(path, headers)).text();
     assert.ok(body.includes("This page has moved on."), `${label} ${path} must be not found`);
     assert.ok(!body.includes("Persistence test") && !body.includes("Vienna"), `${label} ${path} must not include trip data`);
@@ -379,12 +387,16 @@ try {
 
   // The owner's trip pages offer Share and Delete. Someone it is shared with opens the same trip, its
   // ideas and its photos, without either; someone it isn't shared with finds nothing.
-  const ownerPage = await (await get(pages[1], owner)).text();
+  const ownerPage = await (await get(tripPages[0], owner)).text();
   assert.ok(ownerPage.includes(">Share<") && ownerPage.includes('aria-label="Delete trip"'), "The owner can share and delete the trip");
+  assert.match(await (await get("/destinations", owner)).text(), /Vienna/, "The owner's destination appears in Destinations");
   const editorList = await (await get("/", editor)).text();
   assert.match(editorList, /Persistence test/, "A shared trip appears in its recipient's list");
   assert.match(editorList, /Shared by Smoke Owner/);
-  for (const path of pages.slice(1, 3)) {
+  const editorDestinations = await (await get("/destinations", editor)).text();
+  assert.match(editorDestinations, /Vienna/, "A shared trip's destination appears in its recipient's Destinations");
+  assert.match(editorDestinations, /Shared by Smoke Owner/);
+  for (const path of [...tripPages, ...destinationPages]) {
     const response = await get(path, editor);
     assert.equal(response.status, 200, `editor ${path}`);
     const body = await response.text();
@@ -416,6 +428,11 @@ try {
   assert.deepEqual(await mutation({ type: "trip.share", tripId: saved.id, email: "outsider@example.test" }, editor), { ok: false, error: "Only the trip's owner can share it." });
   assert.deepEqual(await mutation({ type: "trip.unshare", tripId: saved.id, email: "first-timer@example.test" }, editor), { ok: false, error: "Only the trip's owner can remove someone's access." });
   assert.deepEqual(await mutation(edit("Outsider"), outsider), notAvailable);
+  // A destination is shared by every trip that visits it: someone a visiting trip is shared with may change it, nobody else.
+  const destinationEdit = (destinationNotes) => ({ type: "destination.save", id: "22222222-2222-4222-8222-222222222222", notes: destinationNotes });
+  assert.deepEqual(await mutation(destinationEdit("Outsider"), outsider), notAvailable);
+  assert.deepEqual(await mutation(destinationEdit("Edited from Destinations"), editor), { ok: true, id: "22222222-2222-4222-8222-222222222222" });
+  assert.equal(db.prepare("SELECT notes FROM destinations WHERE id = ?").get("22222222-2222-4222-8222-222222222222").notes, "Edited from Destinations");
   assert.deepEqual(await mutation({ type: "trip.unshare", tripId: saved.id, email: "editor@example.test" }), { ok: true, id: saved.id });
   assert.deepEqual(await mutation(edit("Editor, after removal"), editor), notAvailable, "Removing access ends it at once");
   const revoked = await (await get("/trips/" + saved.id, editor)).text();

@@ -4,7 +4,7 @@ import { DatabaseSync } from "node:sqlite";
 import test from "node:test";
 import { SCHEMA_VERSION, ValidationError } from "../src/lib/store.ts";
 import { createOwnedStore } from "./owned-store.mjs";
-import { fileDatabase, setup } from "./budget-fixtures.mjs";
+import { fileDatabase, setup, destinationEdit } from "./budget-fixtures.mjs";
 import { calculateBudget } from "../src/lib/budget.ts";
 
 const tripInput = (overrides = {}) => ({ type: "trip.save", name: "Europe", dateLabel: "Fall 2027", homeCity: "New York", travelers: 2, notes: "A possible trip", ...overrides });
@@ -58,7 +58,9 @@ function legacyDatabase(path, version) {
     homeItems: [],
     churches: [],
     trips: db.prepare("SELECT * FROM trips").all().map((row) => ({ ...row, startDate: null, endDate: null, returnCity: version === 2 ? "Boston" : null })),
-    destinations: db.prepare("SELECT * FROM destinations").all().map((row) => ({ ...row, nights: null, legacyArrivalDate: null, legacyDepartureDate: null, imageVersion: null, arrivalDate: null, departureDate: null, miscDailyMinor: null, miscCurrency: null, hotelNightlyMinor: null, hotelCurrency: null, activitiesBudgetMode: "itemized", activitiesGeneralMinor: null, activitiesCurrency: null, foodBudgetMode: "itemized", foodDailyMinor: null, foodCurrency: null, shoppingMinor: null, shoppingCurrency: null, weatherHighF: null, weatherLowF: null, weatherRainfall: "", weatherPeriod: "", weatherSource: "", churchEnabled: false })),
+    // Each destination becomes a shared one, visited by a stop with its ID that keeps the trip's own details.
+    destinations: db.prepare("SELECT * FROM destinations").all().map((row) => ({ id: row.id, city: row.city, notes: row.notes, imageVersion: null, miscDailyMinor: null, miscCurrency: null, hotelNightlyMinor: null, hotelCurrency: null, activitiesBudgetMode: "itemized", activitiesGeneralMinor: null, activitiesCurrency: null, foodBudgetMode: "itemized", foodDailyMinor: null, foodCurrency: null, shoppingMinor: null, shoppingCurrency: null, weatherHighF: null, weatherLowF: null, weatherRainfall: "", weatherPeriod: "", weatherSource: "", churchEnabled: false })),
+    stops: db.prepare("SELECT * FROM destinations").all().map((row) => ({ id: row.id, tripId: row.tripId, destinationId: row.id, position: row.position, stay: row.stay, nights: null, arrivalDate: null, departureDate: null, legacyArrivalDate: null, legacyDepartureDate: null })),
     legs: db.prepare("SELECT * FROM legs ORDER BY fromId IS NOT NULL").all().map((row) => ({ ...row, itinerary: [] })),
     candidates: db.prepare("SELECT * FROM candidates").all().map((row) => ({ ...row, included: row.included === 1, mainImageId: null, images: [] })),
   };
@@ -231,7 +233,7 @@ test("destination route changes preserve unaffected itineraries and links and cl
   const c = store.applyMutation(destinationInput(tripId, { city: "London" })).id;
   for (const leg of legsFor(store, tripId)) store.applyMutation(legInput(leg.id, { itinerary: [stopInput()], links: [linkInput()] }));
   let before = legsFor(store, tripId);
-  store.applyMutation(destinationInput(tripId, { id: b, city: "Lyon" }));
+  store.applyMutation(destinationEdit(b, { city: "Lyon" }));
   let after = legsFor(store, tripId);
   assert.deepEqual(after[0], before[0]);
   assert.deepEqual(after[1].itinerary, []);
@@ -241,11 +243,11 @@ test("destination route changes preserve unaffected itineraries and links and cl
   assert.deepEqual(after[3], before[3]);
   for (const leg of after) store.applyMutation(legInput(leg.id, { itinerary: [stopInput()], links: [linkInput()] }));
   before = legsFor(store, tripId);
-  store.applyMutation({ type: "destination.move", id: c, direction: "up" });
+  store.applyMutation({ type: "stop.move", id: c, direction: "up" });
   after = legsFor(store, tripId);
   assert.deepEqual(after[0], before[0]);
   assert.ok(after.slice(1).every((leg) => leg.itinerary.length === 0 && leg.links.length === 0));
-  store.applyMutation({ type: "destination.delete", id: c });
+  store.applyMutation({ type: "stop.remove", id: c });
   assert.deepEqual(legsFor(store, tripId)[0], before[0]);
   assert.equal(legsFor(store, tripId).length, 3);
 });

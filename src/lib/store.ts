@@ -13,7 +13,7 @@ import { normalizeHealthSafety } from "./health-safety.ts";
 import { SESSION_DAYS } from "./session-cookie.ts";
 import type { EntryRequirements } from "./entry-requirements.ts";
 import type { HealthSafety } from "./health-safety.ts";
-import type { DestinationGalleryUpdate } from "./types";
+import type { DestinationFields, DestinationGalleryUpdate } from "./types";
 import type { AuthorizedAccount, DestinationAccess, GoogleIdentity, TripAccess, TripMember, TripStop } from "./types";
 import type { FoodBudgetMode, ActivitiesBudgetMode, Candidate, CandidateImage, CandidateGalleryUpdate, Category, Church, MassTime, Destination, HomeItem, StoredImage, ItineraryStop, Mutation, ResearchLink, Snapshot, TravelLeg, Trip } from "./types";
 
@@ -54,6 +54,7 @@ const OWNER_ONLY: Partial<Record<Mutation["type"], string>> = {
   "trip.delete": "Only the trip's owner can delete it.",
   "trip.share": "Only the trip's owner can share it.",
   "trip.unshare": "Only the trip's owner can remove someone's access.",
+  "destination.delete": "Only the destination's owner can delete it.",
 };
 
 export class ValidationError extends Error {
@@ -305,6 +306,7 @@ function validate(input: unknown): Mutation {
     case "stop.remove":
     case "candidate.delete":
     case "leg.clear":
+    case "destination.delete":
       return { type: value.type, id: idField(value) };
     case "trip.share":
     case "trip.unshare":
@@ -330,6 +332,8 @@ function validate(input: unknown): Mutation {
       if (stopId === undefined && (fields.stay !== undefined || fields.nights !== undefined)) throw new ValidationError("Stay notes and nights belong to a trip. Change them from the trip's page.");
       return { type: value.type, id: idField(value), stopId, ...fields };
     }
+    case "destination.create":
+      return { type: value.type, city: textField(value, "city", 120, true) };
     case "destination.entryRequirements": {
       let requirements: EntryRequirements | null;
       try { requirements = normalizeEntryRequirements(value.requirements); }
@@ -1207,7 +1211,7 @@ export function createStore(databasePath: string, ownerEmail: string) {
   }
   type DestinationSave = Extract<Mutation, { type: "destination.save" }>;
   /** A destination's columns after a save: the fields it sends, and the saved values of the rest. */
-  function destinationColumns(input: DestinationSave, before?: StoredDestination) {
+  function destinationColumns(input: DestinationFields, before?: StoredDestination) {
     const misc = destinationAmount(input.miscDailyAmount, "Daily miscellaneous amount", before?.miscDailyMinor, before?.miscCurrency);
     const hotel = destinationAmount(input.hotelNightlyAmount, "Nightly hotel amount", before?.hotelNightlyMinor, before?.hotelCurrency);
     const activities = destinationAmount(input.activitiesGeneralAmount, "General activities amount", before?.activitiesGeneralMinor, before?.activitiesCurrency);
@@ -1235,6 +1239,10 @@ export function createStore(databasePath: string, ownerEmail: string) {
     const saved = db.prepare("SELECT city FROM destinations WHERE ownerId = ? AND cityKey = ? AND id != ?").get(ownerId, cityKey, id);
     if (saved) throw new ValidationError(`“${saved.city as string}” is already a saved destination. ${message}`);
   }
+  function insertDestination(id: string, ownerId: string, columns: ReturnType<typeof destinationColumns>) {
+    const row = { id, ownerId, ...columns };
+    db.prepare(`INSERT INTO destinations(${Object.keys(row).join(",")}) VALUES(${Object.keys(row).map(() => "?").join(",")})`).run(...Object.values(row));
+  }
   /** A new destination, as a trip's last stop. It belongs to the trip's owner, whoever on the trip adds it. */
   function addDestination(input: Extract<DestinationSave, { id?: undefined }>): string {
     const trip = existing<Trip & { ownerId: string }>("trips", input.tripId);
@@ -1244,11 +1252,22 @@ export function createStore(databasePath: string, ownerEmail: string) {
     claimCity(trip.ownerId, columns.cityKey, id, "Adding a saved destination to a trip isn't available yet.");
     const nights = input.nights ?? null;
     checkSubtotals([nights], columns.miscDailyMinor, columns.hotelNightlyMinor, columns.foodDailyMinor);
-    const row = { id, ownerId: trip.ownerId, ...columns };
-    db.prepare(`INSERT INTO destinations(${Object.keys(row).join(",")}) VALUES(${Object.keys(row).map(() => "?").join(",")})`).run(...Object.values(row));
+    insertDestination(id, trip.ownerId, columns);
     db.prepare("INSERT INTO trip_stops(id,tripId,destinationId,position,stay,nights) VALUES(?,?,?,?,?,?)").run(id, trip.id, id, orderedStops(trip.id).length, input.stay ?? "", nights);
     reconcileRoute(trip.id);
     saveDestinationGallery(id, input.gallery, input.image);
+    return id;
+  }
+  /**
+   * A new destination outside any trip, belonging to the account that creates it. Each owner has one destination per
+   * city, so a city the account already has opens that destination, unchanged.
+   */
+  function createDestination(ownerId: string, city: string): string {
+    const columns = destinationColumns({ city });
+    const saved = db.prepare("SELECT id FROM destinations WHERE ownerId = ? AND cityKey = ?").get(ownerId, columns.cityKey);
+    if (saved) return saved.id as string;
+    const id = randomUUID();
+    insertDestination(id, ownerId, columns);
     return id;
   }
   /** Changes a destination everywhere it is used, and with a stop, that trip's stay notes and nights too. */
@@ -1330,6 +1349,18 @@ export function createStore(databasePath: string, ownerEmail: string) {
         return input.id;
       case "destination.save":
         return input.id === undefined ? addDestination(input) : saveDestination(input);
+      case "destination.create":
+        return createDestination(accountId, input.city);
+      case "destination.delete": {
+        const before = existing<StoredDestination>("destinations", input.id);
+        // A destination a trip visits keeps everything saved for it.
+        if (db.prepare("SELECT 1 FROM trip_stops WHERE destinationId = ?").get(input.id)) {
+          throw new ValidationError(`“${before.city}” is in a trip, so it can't be deleted. Remove it from every trip that visits it first.`);
+        }
+        // Its ideas, churches, photos, entry requirements and health and safety research go with it.
+        db.prepare("DELETE FROM destinations WHERE id = ?").run(input.id);
+        return;
+      }
       case "destination.entryRequirements": {
         existing<StoredDestination>("destinations", input.id);
         if (input.requirements === null) {
@@ -1470,7 +1501,10 @@ export function createStore(databasePath: string, ownerEmail: string) {
       case "destination.save":
         if (input.id === undefined) return { trip: tripOf("trips", input.tripId) };
         return input.stopId === undefined ? { destination: destinationOf("destinations", input.id) } : { trip: tripOf("trip_stops", input.stopId) };
-      case "destination.churchVisibility": case "destination.entryRequirements": case "destination.healthSafety": return { destination: destinationOf("destinations", input.id) };
+      case "destination.churchVisibility": case "destination.entryRequirements": case "destination.healthSafety": case "destination.delete": return { destination: destinationOf("destinations", input.id) };
+      // Creating a destination outside a trip changes no saved trip or destination, so nothing places it; authorize
+      // lets an account create its own, as it does a new trip.
+      case "destination.create": return { destination: undefined };
       case "church.save": return { destination: input.id ? destinationOf("churches", input.id) : destinationOf("destinations", input.destinationId) };
       case "church.delete": return { destination: destinationOf("churches", input.id) };
       case "candidate.save": return { destination: input.id ? destinationOf("candidates", input.id) : destinationOf("destinations", input.destinationId) };
@@ -1478,11 +1512,12 @@ export function createStore(databasePath: string, ownerEmail: string) {
     }
   }
   /**
-   * Owners and the accounts they shared a trip with may change it and the destinations it visits; deleting a trip and
-   * changing who has it are for its owner.
+   * Owners and the accounts they shared a trip with may change it and the destinations it visits; deleting a trip or
+   * destination and changing who has a trip are for its owner.
    */
   function authorize(accountId: string, input: Mutation): void {
-    if (input.type === "trip.save" && input.id === undefined) return;
+    // A new trip, and a destination created outside a trip, belong to the account that creates them.
+    if ((input.type === "trip.save" && input.id === undefined) || input.type === "destination.create") return;
     const scope = mutationScope(input);
     const role = "trip" in scope ? tripRole(accountId, scope.trip) : destinationRole(accountId, scope.destination);
     if (!role) throw new ValidationError(NOT_AVAILABLE);

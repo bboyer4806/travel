@@ -41,7 +41,7 @@ export function TypicalWeatherEditor({ weather, disabled }: { weather: TypicalWe
     <legend>Typical weather / historical averages</legend>
     <p className="helper">All fields are optional. Leave a field blank to clear it. Temperatures are in Fahrenheit; negative values are accepted.</p>
     <div className="form-grid">
-      <label className="field"><span>Typical high (°F)</span><input name="weatherHighF" type="number" step="any" value={high} onChange={(event) => setHigh(event.target.value)} placeholder="Not provided" autoFocus /></label>
+      <label className="field"><span>Typical high (°F)</span><input name="weatherHighF" type="number" step="any" value={high} onChange={(event) => setHigh(event.target.value)} placeholder="Not provided" /></label>
       <label className="field"><span>Typical low (°F)</span><input name="weatherLowF" type="number" step="any" value={low} onChange={(event) => setLow(event.target.value)} placeholder="Not provided" /></label>
       <label className="field wide"><span>Month or travel period</span><input name="weatherPeriod" value={period} onChange={(event) => setPeriod(event.target.value)} maxLength={120} placeholder="e.g. January or late December–early January" /><small>Changing destination dates keeps this recorded period and the weather values.</small></label>
       <label className="field wide"><span>Rainfall notes</span><textarea name="weatherRainfall" value={rainfall} onChange={(event) => setRainfall(event.target.value)} maxLength={4000} rows={3} placeholder="Not provided" /></label>

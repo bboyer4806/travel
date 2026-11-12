@@ -68,7 +68,7 @@ export function EntryRequirementsEditor({ requirements, sources, onSourcesChange
     <div className="form-grid">
       {ENTRY_REQUIREMENT_FIELDS.map((field, index) => <label className={index < 2 ? "field" : "field wide"} key={field.name}>
         <span>{field.label}</span>
-        {index < 2 ? <input name={field.name} defaultValue={requirements?.[field.name] ?? ""} maxLength={field.maxLength} autoFocus={index === 0} placeholder={index === 0 ? "e.g. United States" : "e.g. Tourism"} /> :
+        {index < 2 ? <input name={field.name} defaultValue={requirements?.[field.name] ?? ""} maxLength={field.maxLength} placeholder={index === 0 ? "e.g. United States" : "e.g. Tourism"} /> :
           <textarea name={field.name} defaultValue={requirements?.[field.name] ?? ""} maxLength={field.maxLength} rows={3} placeholder="Not recorded" />}
         {field.name === "travelerCircumstances" && <small>For example, residency, dual nationality, or traveling with children. This notebook is shared; avoid passport numbers or other sensitive document details.</small>}
       </label>)}

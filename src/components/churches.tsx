@@ -37,7 +37,7 @@ export function ChurchEditor({ item, massTimes, onTimesChange, gallery, onGaller
 }) {
   const update = (id: string, field: "day" | "time", value: string) => onTimesChange(massTimes.map((entry) => entry.id === id ? { ...entry, [field]: value } : entry));
   return <>
-    <label className="field wide"><span>Name</span><input name="name" defaultValue={item?.name} required maxLength={160} autoFocus disabled={busy} placeholder="Church name" /></label>
+    <label className="field wide"><span>Name</span><input name="name" defaultValue={item?.name} required maxLength={160} disabled={busy} placeholder="Church name" /></label>
     <label className="field wide"><span>Location or address (optional)</span><input name="address" defaultValue={item?.address} maxLength={500} disabled={busy} placeholder="Street address or neighborhood" /></label>
     <label className="field wide"><span>Denomination (optional)</span><input name="denomination" defaultValue={item?.denomination} maxLength={160} disabled={busy} placeholder="For example, Roman Catholic" /></label>
     <label className="field wide"><span>Website (optional)</span><input name="url" type="url" defaultValue={item?.url} maxLength={2048} disabled={busy} placeholder="https://" /></label>

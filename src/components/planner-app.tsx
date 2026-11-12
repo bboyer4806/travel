@@ -96,11 +96,12 @@ function Notes({ name = "notes", value = "" }: { name?: string; value?: string }
 }
 /**
  * An editor: the title and X at the top, then `children`, a form whose fields scroll above its Cancel and Save footer.
+ * Opening it focuses its first field. Editors don't use `autoFocus`: React runs it before `showModal()`, while the fields can't take focus.
  * Send feedback is inside the dialog so it shows above the backdrop; opening it leaves this editor and its draft open.
  */
 function Dialog({ title, children, busy, onClose }: { title: string; children: ReactNode; busy: boolean; onClose: () => void }) {
   const ref = useRef<HTMLDialogElement>(null);
-  useEffect(() => { const dialog = ref.current; const opener = document.activeElement instanceof HTMLElement ? document.activeElement : null; dialog?.showModal(); return () => { dialog?.close(); if (opener?.isConnected) opener.focus(); }; }, []);
+  useEffect(() => { const dialog = ref.current; const opener = document.activeElement instanceof HTMLElement ? document.activeElement : null; dialog?.showModal(); dialog?.querySelector<HTMLElement>("input:not([type=hidden]), select, textarea")?.focus(); return () => { dialog?.close(); if (opener?.isConnected) opener.focus(); }; }, []);
   return <dialog ref={ref} className="editor-dialog" aria-labelledby="editor-title" onCancel={(event) => { event.preventDefault(); if (!busy) onClose(); }}>
     <div className="dialog-heading"><h2 id="editor-title">{title}</h2><button className="icon-button" aria-label="Close" onClick={onClose} disabled={busy}><X size={20} /></button></div>{children}<FeedbackButton />
   </dialog>;
@@ -438,7 +439,7 @@ export default function PlannerApp({ initialData, initialBudgets, access = {}, d
     {editor && <Dialog title={pageTitle} busy={busy} onClose={close}><form id="planner-editor" onSubmit={submit}><div className="form-grid dialog-body">
       {editor.kind === "delete" && <p className="delete-description wide">{editor.description} This cannot be undone.</p>}
       {editor.kind === "trip" && <>
-        <Field label="Trip name" wide><input name="name" defaultValue={editor.item?.name} required maxLength={120} placeholder="A long weekend in the mountains" autoFocus /></Field>
+        <Field label="Trip name" wide><input name="name" defaultValue={editor.item?.name} required maxLength={120} placeholder="A long weekend in the mountains" /></Field>
         <Field label="General date" hint="Exact dates can wait."><input name="dateLabel" defaultValue={editor.item?.dateLabel} maxLength={120} placeholder="Spring 2027, or sometime soon" /></Field>
         <Field label="Trip start date" hint="Destination dates and the trip end are calculated from this date and each stay’s nights."><input name="startDate" type="date" min="0001-01-01" max="9999-12-31" defaultValue={editor.item?.startDate ?? ""} /></Field>
         <p className="helper wide">Trip end (calculated after saving): {formatCalendarDate(editor.item?.endDate)}</p>
@@ -447,13 +448,13 @@ export default function PlannerApp({ initialData, initialBudgets, access = {}, d
       </>}
       {editor.kind === "destination" && <>
         {editor.item && <p className="helper wide">The city, budget amounts, photos, and notes are shared by every trip that visits this destination.{editor.stop && " Stay notes and nights are for this trip only."}</p>}
-        <LocationField compactDestination label="City or destination" name="city" defaultValue={editor.item?.city} required autoFocus disabled={busy} placeholder="Start typing a city, e.g. Vienna" helpText="Choose a suggestion or enter any destination." hint={editor.item ? "Changing the city changes it in every trip that visits this destination, and clears travel details for its incoming and outgoing connections." : undefined} />
+        <LocationField compactDestination label="City or destination" name="city" defaultValue={editor.item?.city} required disabled={busy} placeholder="Start typing a city, e.g. Vienna" helpText="Choose a suggestion or enter any destination." hint={editor.item ? "Changing the city changes it in every trip that visits this destination, and clears travel details for its incoming and outgoing connections." : undefined} />
         {trip && (!editor.item || editor.stop) && <Field label="Stay notes" hint="For this trip only." wide><input name="stay" defaultValue={editor.stop?.stay} maxLength={120} placeholder="3 nights, or sometime in May" /></Field>}
         <DestinationBudgetEditor stay={trip && (!editor.item || editor.stop) ? { trip, stops, stop: editor.stop } : undefined} destination={editor.item} selectedHotel={selectedHotel(editor.item?.id)} disabled={busy} />
         <DestinationGalleryEditor destination={editor.item} draft={destinationGallery} onChange={setDestinationGallery} disabled={busy} />
         <Notes value={editor.item?.notes} />
       </>}
-      {editor.kind === "newDestination" && <LocationField compactDestination label="City or destination" name="city" required autoFocus disabled={busy} placeholder="Start typing a city, e.g. Vienna" helpText="Choose a suggestion or enter any destination." hint="If you already have this destination, its page opens instead." />}
+      {editor.kind === "newDestination" && <LocationField compactDestination label="City or destination" name="city" required disabled={busy} placeholder="Start typing a city, e.g. Vienna" helpText="Choose a suggestion or enter any destination." hint="If you already have this destination, its page opens instead." />}
       {editor.kind === "church" && <ChurchEditor item={editor.item} massTimes={massTimes} onTimesChange={setMassTimes} gallery={candidateGallery} onGalleryChange={setCandidateGallery} busy={busy} />}
       {editor.kind === "entryRequirements" && <EntryRequirementsEditor requirements={editor.item.entryRequirements} sources={researchLinks} onSourcesChange={setResearchLinks} disabled={busy} />}
       {editor.kind === "healthSafety" && <HealthSafetyEditor healthSafety={editor.item.healthSafety} contacts={emergencyContacts} onContactsChange={setEmergencyContacts} sources={researchLinks} onSourcesChange={setResearchLinks} disabled={busy} />}
@@ -466,7 +467,7 @@ export default function PlannerApp({ initialData, initialBudgets, access = {}, d
       {editor.kind === "activitiesBudget" && <ActivitiesBudgetEditor destination={editor.item} disabled={busy} />}
       {editor.kind === "leg" && <>
         <p className="form-route wide">{legName(editor.item.fromId, "from")} <ArrowRight size={16} /> {legName(editor.item.toId, "to")}</p>
-        <Field label="Transportation" wide><input name="method" defaultValue={editor.item.method} maxLength={120} autoFocus placeholder="Flight, train, rental car…" /></Field>
+        <Field label="Transportation" wide><input name="method" defaultValue={editor.item.method} maxLength={120} placeholder="Flight, train, rental car…" /></Field>
         <Field label="Estimated price (USD)" wide hint="Total for the whole party for the full connection, including itinerary stops. Leave blank if unknown."><input name="price" type="number" min="0" max={MAX_AMOUNT_DOLLARS} step="0.01" defaultValue={minorAmountValue(editor.item.priceCents, "USD")} placeholder="Not estimated" /></Field>
         <Field label="Departure"><input name="departure" defaultValue={editor.item.departure} maxLength={120} placeholder="Date, time, or general plan" /></Field>
         <Field label="Arrival"><input name="arrival" defaultValue={editor.item.arrival} maxLength={120} placeholder="Date, time, or general plan" /></Field>
@@ -474,7 +475,7 @@ export default function PlannerApp({ initialData, initialBudgets, access = {}, d
         <ConnectionItineraryEditor stops={itinerary} onChange={setItinerary} disabled={busy} />
       </>}
       {editor.kind === "homeItem" && <>
-        <Field label="Name" wide><input name="name" defaultValue={editor.item?.name} required maxLength={160} placeholder="House sitting, babysitting, or another task" autoFocus disabled={busy} /></Field>
+        <Field label="Name" wide><input name="name" defaultValue={editor.item?.name} required maxLength={160} placeholder="House sitting, babysitting, or another task" disabled={busy} /></Field>
         <Field label="Estimated price (USD, optional)" wide hint="Add the total cost for this trip, or leave blank if there is no cost to add. You can add a price later."><input name="price" type="number" min="0" max={MAX_AMOUNT_DOLLARS} step="0.01" defaultValue={minorAmountValue(editor.item?.priceCents, "USD")} placeholder="No price added" disabled={busy} /></Field>
         <Field label="Notes" wide><textarea name="notes" defaultValue={editor.item?.notes} maxLength={8000} rows={3} placeholder="Contacts, arrangements, or anything to remember" disabled={busy} /></Field>
         <label className="checkbox-field wide"><input name="completed" type="checkbox" defaultChecked={editor.item?.completed ?? false} disabled={busy} /><span>Completed<small>Any price stays in the trip estimate when this item is complete.</small></span></label>
@@ -482,7 +483,7 @@ export default function PlannerApp({ initialData, initialBudgets, access = {}, d
       {editor.kind === "share" && trip && tripAccess?.role === "owner" && <TripSharing access={tripAccess} busy={busy}
         onRemove={(member) => void perform({ type: "trip.unshare", tripId: trip.id, email: member.email }, member.email + " can no longer open this trip.")} />}
       {editor.kind === "candidate" && category && <>
-        <Field label="Name" wide><input name="name" defaultValue={editor.item?.name} required maxLength={160} autoFocus placeholder={"Name of the " + singular[category]} /></Field>
+        <Field label="Name" wide><input name="name" defaultValue={editor.item?.name} required maxLength={160} placeholder={"Name of the " + singular[category]} /></Field>
         <Field label="Estimated price (USD)" wide hint={priceNotes[category] + " Leave blank if unknown."}><input name="price" type="number" min="0" max={MAX_AMOUNT_DOLLARS} step="0.01" defaultValue={minorAmountValue(editor.item?.priceCents, "USD")} placeholder="Not estimated" /></Field>
         <Field label="Address or neighborhood" wide><input name="address" defaultValue={editor.item?.address} maxLength={500} placeholder="Optional" /></Field>
         <CandidateGalleryEditor candidate={editor.item} subject={singular[category]} draft={candidateGallery} onChange={setCandidateGallery} disabled={busy} />

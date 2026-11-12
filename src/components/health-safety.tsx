@@ -73,7 +73,7 @@ export function HealthSafetyEditor({ healthSafety, contacts, onContactsChange, s
     <p className={styles.reminder}>{reminder}</p>
     <p className={styles.hint}>All fields are optional. Leave anything you have not researched blank.</p>
     <div className="form-grid">
-      <label className="field"><span>{levelField.label}</span><input name={levelField.name} defaultValue={healthSafety?.[levelField.name] ?? ""} maxLength={levelField.maxLength} autoFocus placeholder="e.g. Level 2: Exercise increased caution" /></label>
+      <label className="field"><span>{levelField.label}</span><input name={levelField.name} defaultValue={healthSafety?.[levelField.name] ?? ""} maxLength={levelField.maxLength} placeholder="e.g. Level 2: Exercise increased caution" /></label>
       <label className="field"><span>Last checked date</span><input name="lastCheckedDate" type="date" min="0001-01-01" max="9999-12-31" defaultValue={healthSafety?.lastCheckedDate ?? ""} /><small>Enter the date you verified the information. Saving does not set it automatically.</small></label>
       {researchFields.map((field) => <label className="field wide" key={field.name}>
         <span>{field.label}</span>

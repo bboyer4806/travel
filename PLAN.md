@@ -254,3 +254,10 @@ This narrows the TRA-103 access rule: an authorized account now sees only the tr
 - Each Edit control inside a destination section opens an editor titled for that section with only its fields. Hotels' **Edit estimate & nights** opens the trip stay's nights and the general nightly hotel estimate, with previews of the stay's dates and estimate; in Destinations, **Edit nightly estimate** opens the nightly estimate alone. **Edit miscellaneous budget** opens the daily miscellaneous amount with its subtotal preview, and a trip Restaurants page's **Edit destination nights** opens the stay's nights with a preview of its dates. Activities, Food, and Shopping keep their editors, and **Edit destination** and each trip destination card's edit control still open the complete destination editor.
 - Saving a section's editor changes only its fields, as the existing focused editors do, with their Save, Cancel, validation, and error handling. Changed nights recalculate dates and budget totals with the existing rules.
 - Not included: redesigning the complete destination editor, budget calculation changes, schema or stored data changes, and changes to trip, transportation, idea, or other forms outside destination budget editing.
+
+## Added scope: November 12, 2026, edit modal buttons (TRA-114)
+This replaces TRA-62's destination Save in a sticky header.
+
+- Every edit modal keeps its X in the top-right corner of the header, and **Cancel** on the left and its one Save or confirming action on the right in a footer that stays at the bottom while the fields scroll. Pending state and save errors stay in view above those buttons. The header has no Save or Send feedback.
+- The standard **Send feedback** button stays in the bottom-right corner above an open editor's backdrop, and the editor ends above it on every screen size so neither covers the other. Feedback opens over the editor without closing it; closing or sending it returns to the editor with its entries and focus.
+- Not included: changes to feedback submission, form fields, validation rules, saving, or dialogs other than the edit modals.

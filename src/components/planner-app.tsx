@@ -94,11 +94,15 @@ function Field({ label, hint, children, wide = false }: { label: string; hint?: 
 function Notes({ name = "notes", value = "" }: { name?: string; value?: string }) {
   return <Field label="Notes" wide><textarea name={name} defaultValue={value} maxLength={8000} rows={3} placeholder="Anything worth remembering…" /></Field>;
 }
-function Dialog({ title, children, busy, onClose, stickySave, error }: { title: string; children: ReactNode; busy: boolean; onClose: () => void; stickySave?: boolean; error: string }) {
+/**
+ * An editor: the title and X at the top, then `children`, a form whose fields scroll above its Cancel and Save footer.
+ * Send feedback is inside the dialog so it shows above the backdrop; opening it leaves this editor and its draft open.
+ */
+function Dialog({ title, children, busy, onClose }: { title: string; children: ReactNode; busy: boolean; onClose: () => void }) {
   const ref = useRef<HTMLDialogElement>(null);
   useEffect(() => { const dialog = ref.current; const opener = document.activeElement instanceof HTMLElement ? document.activeElement : null; dialog?.showModal(); return () => { dialog?.close(); if (opener?.isConnected) opener.focus(); }; }, []);
   return <dialog ref={ref} className="editor-dialog" aria-labelledby="editor-title" onCancel={(event) => { event.preventDefault(); if (!busy) onClose(); }}>
-    <div className={stickySave ? "dialog-heading sticky-heading" : "dialog-heading"}><div className="dialog-title-row"><h2 id="editor-title">{title}</h2><div className="heading-actions"><FeedbackButton compact />{stickySave && <button className="button primary" type="submit" form="planner-editor" disabled={busy}>{busy ? "Saving…" : "Save changes"}</button>}<button className="icon-button" aria-label="Close" onClick={onClose} disabled={busy}><X size={20} /></button></div></div>{error && stickySave && <p className="form-error" role="alert">{error}</p>}</div>{children}
+    <div className="dialog-heading"><h2 id="editor-title">{title}</h2><button className="icon-button" aria-label="Close" onClick={onClose} disabled={busy}><X size={20} /></button></div>{children}<FeedbackButton />
   </dialog>;
 }
 
@@ -431,7 +435,7 @@ export default function PlannerApp({ initialData, initialBudgets, access = {}, d
       {error && !editor && <div role="alert" className="error-banner">{error}</div>}
     </main>
     <footer className="site-footer"><span><Compass size={15} />For the trips still taking shape.</span><span>Shared editing · whole-party estimates</span></footer>
-    {editor && <Dialog title={pageTitle} busy={busy} onClose={close} stickySave={editor.kind === "destination"} error={error}><form id="planner-editor" onSubmit={submit}><div className="form-grid">
+    {editor && <Dialog title={pageTitle} busy={busy} onClose={close}><form id="planner-editor" onSubmit={submit}><div className="form-grid dialog-body">
       {editor.kind === "delete" && <p className="delete-description wide">{editor.description} This cannot be undone.</p>}
       {editor.kind === "trip" && <>
         <Field label="Trip name" wide><input name="name" defaultValue={editor.item?.name} required maxLength={120} placeholder="A long weekend in the mountains" autoFocus /></Field>
@@ -486,6 +490,6 @@ export default function PlannerApp({ initialData, initialBudgets, access = {}, d
         {category !== "hotels" && <label className="checkbox-field wide"><input name="mustDo" type="checkbox" defaultChecked={editor.item?.mustDo ?? false} disabled={busy} /><span>Must do<small>A planning priority. Budget inclusion and list order stay separate.</small></span></label>}
         <label className="checkbox-field wide"><input name="included" type="checkbox" defaultChecked={editor.item?.included ?? false} /><span>{category === "hotels" ? "Choose this hotel for the budget" : category === "activities" ? "Include in itemized activity costs" : "Include in itemized restaurant costs"}<small>{category === "hotels" ? "Replaces the general estimate or other chosen hotel. Your general estimate stays saved." : category === "activities" ? "Applies only in Itemized activity costs mode. This does not change your budgeting method." : "Applies only in Itemized restaurant costs mode. This does not change your budgeting method."}</small></span></label>
       </>}
-    </div>{error && editor.kind !== "destination" && <p className="form-error" role="alert">{error}</p>}<div className="dialog-actions"><button type="button" className="button secondary" onClick={close} disabled={busy}>Cancel</button>{editor.kind !== "destination" && <button className={editor.kind === "delete" ? "button danger" : "button primary"} type="submit" disabled={busy}>{busy ? "Saving…" : editor.kind === "delete" ? (editor.mutation.type === "leg.clear" ? "Clear travel plan" : editor.mutation.type === "destination.entryRequirements" ? "Clear entry requirements" : editor.mutation.type === "destination.healthSafety" ? "Clear health and safety" : editor.mutation.type === "stop.remove" ? "Remove from trip" : "Delete") : editor.kind === "trip" && !editor.item ? "Create trip" : editor.kind === "newDestination" ? "Create destination" : editor.kind === "share" ? "Share" : "Save changes"}</button>}</div></form></Dialog>}
+    </div><div className="dialog-footer">{error && <p className="form-error" role="alert">{error}</p>}<div className="dialog-actions"><button type="button" className="button secondary" onClick={close} disabled={busy}>Cancel</button><button className={editor.kind === "delete" ? "button danger" : "button primary"} type="submit" disabled={busy}>{busy ? "Saving…" : editor.kind === "delete" ? (editor.mutation.type === "leg.clear" ? "Clear travel plan" : editor.mutation.type === "destination.entryRequirements" ? "Clear entry requirements" : editor.mutation.type === "destination.healthSafety" ? "Clear health and safety" : editor.mutation.type === "stop.remove" ? "Remove from trip" : "Delete") : editor.kind === "trip" && !editor.item ? "Create trip" : editor.kind === "newDestination" ? "Create destination" : editor.kind === "share" ? "Share" : "Save changes"}</button></div></div></form></Dialog>}
   </div>;
 }

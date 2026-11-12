@@ -37,6 +37,8 @@ Use targeted checks while iterating. Before pushing, run the checks from
 CI also runs `bash scripts/smoke-container.sh`, which needs Docker and Bash and checks the
 container, persistent storage, sign-in enforcement and trip and destination isolation. A Next.js build alone does
 not verify those.
+After building, CI runs `node scripts/review-errors-smoke.mjs` against disposable databases and
+fixture sessions to check production HTTP errors, recovery and cross-bundle save validation.
 Fix regressions caused by your change; report unrelated baseline failures and blocked checks.
 Repeat passing checks when subsequent changes affect their coverage or required gates demand it.
 

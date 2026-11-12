@@ -117,7 +117,7 @@ for (const [label, firstPath] of [
   try {
     assert.equal((await server.request(firstPath)).status, 200, `${label} initialization must succeed.`);
     assert.deepEqual(await server.mutation({ ...tripInput, name: " " }), { ok: false, error: "Please enter name." }, `${label} must preserve cross-bundle validation messages.`);
-    assert.deepEqual(await server.mutation({ type: "destination.delete", id: missingId }), {
+    assert.deepEqual(await server.mutation({ type: "trip.delete", id: missingId }), {
       ok: false, error: "This item no longer exists or isn't shared with you. Please refresh and try again.",
     }, `${label} must preserve current stale-record access messages.`);
     const saved = await server.mutation({ ...tripInput, name: `${label} valid save` });
@@ -126,13 +126,16 @@ for (const [label, firstPath] of [
     assert.equal((await server.mutation({ type: "trip.delete", id: saved.id })).ok, true);
 
     if (label === "page-first") {
-      const validPaths = ["/", `/trips/${tripId}`, `/trips/${tripId}/destinations/${destinationId}/hotels`];
+      const validPaths = ["/", `/trips/${tripId}`, `/trips/${tripId}/destinations/${destinationId}/hotels`, "/destinations", `/destinations/${destinationId}`, `/destinations/${destinationId}/hotels`];
       for (const path of validPaths) assert.equal((await server.request(path)).status, 200, path);
       for (const path of [
         `/trips/${missingId}`,
         `/trips/${tripId}/destinations/${missingId}/hotels`,
         `/trips/${otherTripId}/destinations/${destinationId}/hotels`,
         `/trips/${tripId}/destinations/${destinationId}/unsupported`,
+        `/destinations/${missingId}`,
+        `/destinations/${missingId}/hotels`,
+        `/destinations/${destinationId}/unsupported`,
       ]) {
         const response = await server.request(path);
         assert.equal(response.status, 404, path);

@@ -71,7 +71,7 @@ bash scripts/smoke-container.sh
 ```
 The container smoke script needs Docker and Bash. It builds the image and checks the container, persistent storage, sign-in enforcement and trip and destination isolation, which a Next.js build alone does not verify.
 
-After building, `node scripts/review-errors-smoke.mjs` checks production page status codes, failure recovery, and save validation with health-, image-, and page-first store initialization. It creates disposable databases and logs under `test-results`, using fixture sessions without contacting Google.
+After building, CI also runs `node scripts/review-errors-smoke.mjs` to check production page status codes, failure recovery, and save validation with health-, image-, and page-first store initialization. It creates disposable databases and logs under `test-results`, using fixture sessions without contacting Google. You can run the same command locally.
 
 ## Local production preview
 `pnpm build` produces Next.js standalone output, the same server the Docker image runs. Next.js warns that `next start`, which `pnpm start` runs, does not work with standalone output. To preview a build, copy in the files the standalone server leaves out, then start it with your `.env.local` settings:

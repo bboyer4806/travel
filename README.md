@@ -75,6 +75,8 @@ The container smoke script needs Docker and Bash. It builds the image and checks
 
 After building, CI also runs `node scripts/review-errors-smoke.mjs` to check production page status codes, failure recovery, and save validation with health-, image-, and page-first store initialization. It creates disposable databases and logs under `test-results`, using fixture sessions without contacting Google. You can run the same command locally.
 
+CI then installs Playwright's headless Chromium and runs `node scripts/editor-focus-smoke.mjs`, which opens editors at desktop and phone sizes with its own disposable database and fixture session. It checks that each editor opens on its first field and each confirmation on the X, that a saved city opens without suggestions, and that closing an editor or Send feedback returns focus to where it was. To run it locally after `pnpm build`, first install the matching browser with `pnpm exec playwright install chromium`.
+
 ## Local production preview
 `pnpm build` produces Next.js standalone output, the same server the Docker image runs. Next.js warns that `next start`, which `pnpm start` runs, does not work with standalone output. To preview a build, copy in the files the standalone server leaves out, then start it with your `.env.local` settings:
 ```sh

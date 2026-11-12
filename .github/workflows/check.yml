@@ -27,5 +27,9 @@ jobs:
       - run: pnpm build
       - name: Verify production error responses and validation
         run: node scripts/review-errors-smoke.mjs
+      - name: Install Chromium for the editor focus check
+        run: pnpm exec playwright install --with-deps --only-shell chromium
+      - name: Verify editor focus in desktop and phone browsers
+        run: node scripts/editor-focus-smoke.mjs
       - name: Verify container and persistent storage
         run: bash scripts/smoke-container.sh

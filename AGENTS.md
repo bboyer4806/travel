@@ -39,6 +39,9 @@ container, persistent storage, sign-in enforcement and trip and destination isol
 not verify those.
 After building, CI runs `node scripts/review-errors-smoke.mjs` against disposable databases and
 fixture sessions to check production HTTP errors, recovery and cross-bundle save validation.
+It then runs `node scripts/editor-focus-smoke.mjs`, which opens editors in Playwright's Chromium at
+desktop and phone sizes to check where focus goes as they open and close. Install the browser once
+with `pnpm exec playwright install chromium` to run it locally.
 Fix regressions caused by your change; report unrelated baseline failures and blocked checks.
 Repeat passing checks when subsequent changes affect their coverage or required gates demand it.
 

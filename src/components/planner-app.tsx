@@ -20,10 +20,11 @@ import { ConnectionItinerary, ConnectionItineraryEditor } from "@/components/con
 import { ResearchLinks, ResearchLinksEditor } from "@/components/research-links";
 import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState, type FormEvent, type ReactNode } from "react";
-import { ArrowDown, ArrowLeft, ArrowRight, ArrowUp, BedDouble, Binoculars, CalendarDays, CheckCircle2, Compass, MapPin, MoreHorizontal, Pencil, Plane, Plus, Search, Share2, Trash2, UserPlus, Users, Utensils, Wallet, X } from "lucide-react";
+import { ArrowDown, ArrowLeft, ArrowRight, ArrowUp, BedDouble, Bike, Binoculars, Bus, CalendarDays, Car, CheckCircle2, Compass, Footprints, MapPin, MoreHorizontal, Pencil, Plane, Plus, Route, Search, Share2, Ship, TrainFront, Trash2, UserPlus, Users, Utensils, Wallet, X, type LucideIcon } from "lucide-react";
 import TripSharing, { memberLabel } from "@/components/trip-sharing";
 import { mutatePlanner } from "@/app/actions";
 import { formatSavedDestinationLabel } from "@/lib/destination-label";
+import { transportationIcons, type TransportationIcon } from "@/lib/transportation-methods";
 import { calculateBudget, calculateDestinationBudget, tripVisits } from "@/lib/budget";
 import { formatCurrency, MAX_AMOUNT_DOLLARS, minorAmountValue } from "@/lib/money";
 import { ShoppingBudgetEditor, FoodBudgetEditor, FoodSummary, ActivitiesBudgetEditor, ActivitiesSummary, AccommodationSummary, CurrencyTotals, DestinationBudget, DestinationBudgetEditor } from "@/components/destination-budget";
@@ -51,6 +52,16 @@ const categories: Category[] = ["hotels", "activities", "restaurants"];
 const labels = { hotels: "Hotels", activities: "Activities", restaurants: "Restaurants" };
 const singular = { hotels: "hotel", activities: "activity", restaurants: "restaurant" } as const;
 const categoryIcons = { hotels: BedDouble, activities: Binoculars, restaurants: Utensils };
+const transportation: Record<TransportationIcon, { Icon: LucideIcon; label: string }> = {
+  airplane: { Icon: Plane, label: "Airplane" },
+  train: { Icon: TrainFront, label: "Train" },
+  car: { Icon: Car, label: "Car" },
+  bus: { Icon: Bus, label: "Bus" },
+  boat: { Icon: Ship, label: "Boat" },
+  walking: { Icon: Footprints, label: "Walking" },
+  bicycle: { Icon: Bike, label: "Bicycle" },
+  route: { Icon: Route, label: "Unknown transportation" },
+};
 const descriptions = {
   hotels: "Find a place to make yourself at home.",
   activities: "Collect the things you would love to do.",
@@ -65,6 +76,12 @@ function displayPrice(cents: number | null) { return cents === null ? "Not estim
 function BudgetValue({ budget }: { budget: Budget }) {
   return <><strong>{<CurrencyTotals totals={budget.totalsByCurrency} />}</strong>
     <span className={budget.complete ? "estimate-status complete" : "estimate-status"}>{budget.complete ? "Estimated total" : budget.knownCount ? "Partial estimate" : "Add a few prices to begin"}</span></>;
+}
+/** A connection's icons: one for each kind of transportation its saved text names, in the order entered. */
+function TransportationIcons({ method }: { method: string }) {
+  const icons = transportationIcons(method);
+  return <span className="route-dot" role="img" aria-label={icons.map((icon) => transportation[icon].label).join(", ")}>
+    {icons.map((icon) => { const { Icon } = transportation[icon]; return <Icon key={icon} size={16} aria-hidden="true" />; })}</span>;
 }
 function Field({ label, hint, children, wide = false }: { label: string; hint?: string; children: ReactNode; wide?: boolean }) {
   return <label className={wide ? "field wide" : "field"}><span>{label}</span>{children}{hint && <small>{hint}</small>}</label>;
@@ -351,7 +368,7 @@ export default function PlannerApp({ initialData, initialBudgets, access = {}, d
             {visits.length > 0 && <p className="helper">A destination’s ideas, research, photos, selections, and budget amounts are shared with every trip that visits it, and with Destinations. Each trip keeps its own nights, dates, stay notes, and travel connections.</p>}
           </section>
           <section className="travel-section"><div className="section-heading"><div><p className="eyebrow">GETTING THERE & BACK</p><h2>Between the places</h2></div><Plane size={25} strokeWidth={1.3} /></div>
-            {visits.length === 0 ? <p className="section-description">Your travel connections will appear once you add a destination.</p> : <div className="travel-list">{tripLegs.map((leg) => <article className="travel-card" key={leg.id}><span className="route-dot"><Plane size={16} /></span><div className="travel-content"><h3>{legName(leg.fromId, "from")} <ArrowRight size={15} /> {legName(leg.toId, "to")}</h3><p>{leg.method || "Travel details to be decided"}{leg.departure && " · " + leg.departure}{leg.arrival && " → " + leg.arrival}</p>{leg.notes && <p className="preserve-lines">{leg.notes}</p>}<ResearchLinks links={leg.links ?? []} /><ConnectionItinerary stops={leg.itinerary ?? []} /><span className={leg.priceCents === null ? "price unknown" : "price"}>{displayPrice(leg.priceCents)}{leg.priceCents === null && " · Needs estimate"}</span></div><div className="travel-tools"><button className="text-button" aria-label={"Edit travel from " + legName(leg.fromId, "from") + " to " + legName(leg.toId, "to")} onClick={() => open({ kind: "leg", item: leg })}><Pencil size={14} />Edit</button>{(leg.method || leg.priceCents !== null || leg.notes || leg.url || leg.departure || leg.arrival || (leg.itinerary?.length ?? 0) > 0 || (leg.links?.length ?? 0) > 0) && <button className="text-button muted" onClick={() => confirmDelete({ type: "leg.clear", id: leg.id }, "Clear this travel plan?", "The connection will remain in your route, with its price, travel details, links, and itinerary cleared.")}>Clear</button>}</div></article>)}</div>}
+            {visits.length === 0 ? <p className="section-description">Your travel connections will appear once you add a destination.</p> : <div className="travel-list">{tripLegs.map((leg) => <article className="travel-card" key={leg.id}><TransportationIcons method={leg.method} /><div className="travel-content"><h3>{legName(leg.fromId, "from")} <ArrowRight size={15} /> {legName(leg.toId, "to")}</h3><p>{leg.method || "Travel details to be decided"}{leg.departure && " · " + leg.departure}{leg.arrival && " → " + leg.arrival}</p>{leg.notes && <p className="preserve-lines">{leg.notes}</p>}<ResearchLinks links={leg.links ?? []} /><ConnectionItinerary stops={leg.itinerary ?? []} /><span className={leg.priceCents === null ? "price unknown" : "price"}>{displayPrice(leg.priceCents)}{leg.priceCents === null && " · Needs estimate"}</span></div><div className="travel-tools"><button className="text-button" aria-label={"Edit travel from " + legName(leg.fromId, "from") + " to " + legName(leg.toId, "to")} onClick={() => open({ kind: "leg", item: leg })}><Pencil size={14} />Edit</button>{(leg.method || leg.priceCents !== null || leg.notes || leg.url || leg.departure || leg.arrival || (leg.itinerary?.length ?? 0) > 0 || (leg.links?.length ?? 0) > 0) && <button className="text-button muted" onClick={() => confirmDelete({ type: "leg.clear", id: leg.id }, "Clear this travel plan?", "The connection will remain in your route, with its price, travel details, links, and itinerary cleared.")}>Clear</button>}</div></article>)}</div>}
           </section>
           <HomeItems items={data.homeItems.filter((item) => item.tripId === trip.id)} busy={busy}
             onAdd={() => open({ kind: "homeItem" })}

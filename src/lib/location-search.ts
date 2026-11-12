@@ -23,6 +23,11 @@ const MAX_RESULTS = 8;
 const CACHE_TTL_MS = 10 * 60 * 1000;
 const MAX_CACHE_ENTRIES = 200;
 const MAX_PENDING_SEARCHES = 8;
+const MINUTE_MS = 60_000;
+const HOUR_MS = 60 * MINUTE_MS;
+const DAY_MS = 24 * HOUR_MS;
+const MAX_CLIENT_REQUESTS = 20;
+const MAX_CLIENT_PENDING = 2;
 const UNAVAILABLE = "City suggestions are unavailable. You can still enter your city.";
 
 function object(value: unknown): value is Record<string, unknown> {
@@ -80,6 +85,31 @@ export function createLocationSearch({
 } = {}) {
   const cache = new Map<string, { expiresAt: number; locations: LocationSuggestion[] }>();
   const pending = new Map<string, Promise<LocationSuggestion[]>>();
+  let attempts: number[] = [];
+  const clients = new Map<string, { attempts: number[]; pending: number }>();
+  let cooldownUntil = 0;
+
+  function reserve(clientId: string) {
+    const time = now();
+    attempts = attempts.filter((attempt) => attempt > time - DAY_MS);
+    for (const [id, client] of clients) {
+      client.attempts = client.attempts.filter((attempt) => attempt > time - MINUTE_MS);
+      if (!client.attempts.length && !client.pending) clients.delete(id);
+    }
+    const client = clients.get(clientId) ?? { attempts: [], pending: 0 };
+    if (time < cooldownUntil || pending.size >= MAX_PENDING_SEARCHES ||
+      client.pending >= MAX_CLIENT_PENDING || client.attempts.length >= MAX_CLIENT_REQUESTS ||
+      attempts.length >= 8000 || attempts.filter((attempt) => attempt > time - HOUR_MS).length >= 2500 ||
+      attempts.filter((attempt) => attempt > time - MINUTE_MS).length >= 300) {
+      throw new LocationSearchError(UNAVAILABLE, 503);
+    }
+    // Only the request that starts an upstream lookup consumes capacity.
+    attempts.push(time);
+    client.attempts.push(time);
+    client.pending++;
+    clients.set(clientId, client);
+    return client;
+  }
 
   async function lookup(query: string): Promise<LocationSuggestion[]> {
     const controller = new AbortController();
@@ -97,6 +127,7 @@ export function createLocationSearch({
         redirect: "error",
       });
       if (!response.ok) {
+        if (response.status === 429) cooldownUntil = Math.max(cooldownUntil, now() + MINUTE_MS);
         throw new LocationSearchError(UNAVAILABLE, response.status === 429 ? 503 : 502);
       }
       return normalizeResults(await response.json());
@@ -111,7 +142,7 @@ export function createLocationSearch({
     }
   }
 
-  return async function searchLocations(rawQuery: string | null): Promise<LocationSuggestion[]> {
+  return async function searchLocations(rawQuery: string | null, clientId = "anonymous"): Promise<LocationSuggestion[]> {
     const query = (rawQuery ?? "").trim().replace(/\s+/g, " ");
     if (query.length > MAX_QUERY_LENGTH || /\p{Cc}/u.test(query)) {
       throw new LocationSearchError("Enter a city using 120 characters or fewer.", 400);
@@ -123,7 +154,7 @@ export function createLocationSearch({
     cache.delete(key);
     const existing = pending.get(key);
     if (existing) return existing;
-    if (pending.size >= MAX_PENDING_SEARCHES) throw new LocationSearchError(UNAVAILABLE, 503);
+    const client = reserve(clientId);
 
     const request = lookup(query);
     pending.set(key, request);
@@ -134,6 +165,7 @@ export function createLocationSearch({
       return locations;
     } finally {
       pending.delete(key);
+      client.pending--;
     }
   };
 }

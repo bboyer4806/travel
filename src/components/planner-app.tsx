@@ -8,6 +8,8 @@ import HomeItems from "@/components/home-items";
 import { ChurchSundays } from "@/components/church-sundays";
 import { EntryRequirementsPanel, EntryRequirementsEditor } from "@/components/entry-requirements";
 import { entryRequirementsFromForm } from "@/lib/entry-requirements";
+import { HealthSafetyPanel, HealthSafetyEditor } from "@/components/health-safety";
+import { healthSafetyFromForm, type EmergencyContact } from "@/lib/health-safety";
 import { ChurchOptions, ChurchEditor } from "@/components/churches";
 import { TypicalWeatherPanel, TypicalWeatherEditor } from "@/components/typical-weather";
 import { DestinationGallery, DestinationGalleryEditor, createDestinationGalleryDraft, destinationGalleryForm, type DestinationGalleryDraft } from "@/components/destination-gallery";
@@ -34,6 +36,7 @@ type Editor =
   | { kind: "shoppingBudget"; item: Destination }
   | { kind: "weather"; item: Destination }
   | { kind: "entryRequirements"; item: Destination }
+  | { kind: "healthSafety"; item: Destination }
   | { kind: "activitiesBudget"; item: Destination }
   | { kind: "foodBudget"; item: Destination; nights: number | null }
   | { kind: "leg"; item: TravelLeg }
@@ -95,6 +98,7 @@ export default function PlannerApp({ initialData, initialBudgets, access = {}, d
   const [itinerary, setItinerary] = useState<ItineraryStop[]>([]);
   const [massTimes, setMassTimes] = useState<MassTime[]>([]);
   const [researchLinks, setResearchLinks] = useState<ResearchLink[]>([]);
+  const [emergencyContacts, setEmergencyContacts] = useState<EmergencyContact[]>([]);
   const [destinationGallery, setDestinationGallery] = useState<DestinationGalleryDraft>(() => createDestinationGalleryDraft());
   const [candidateGallery, setCandidateGallery] = useState<CandidateGalleryDraft>(() => createCandidateGalleryDraft());
   const [error, setError] = useState("");
@@ -123,6 +127,7 @@ export default function PlannerApp({ initialData, initialBudgets, access = {}, d
     if (value.kind === "leg") setItinerary(value.item.itinerary ?? []);
     if (value.kind === "leg" || value.kind === "candidate") setResearchLinks(value.item?.links ?? []);
     if (value.kind === "entryRequirements") setResearchLinks(value.item.entryRequirements?.sources ?? []);
+    if (value.kind === "healthSafety") { setResearchLinks(value.item.healthSafety?.sources ?? []); setEmergencyContacts(value.item.healthSafety?.emergencyContacts ?? []); }
     if (value.kind === "church") setMassTimes(value.item?.massTimes ?? []);
     setDestinationGallery(createDestinationGalleryDraft(value.kind === "destination" ? value.item : undefined));
     setCandidateGallery(createCandidateGalleryDraft(value.kind === "candidate" || value.kind === "church" ? value.item : undefined));
@@ -155,6 +160,10 @@ export default function PlannerApp({ initialData, initialBudgets, access = {}, d
       case "trip": void perform({ type: "trip.save", id: editor.item?.id, name: text("name"), startDate: text("startDate") || null, dateLabel: text("dateLabel"), homeCity: text("homeCity"), returnCity: fields.has("differentReturn") ? text("returnCity") : null, travelers: Number(text("travelers")), notes: text("notes") }); break;
       case "entryRequirements": {
         void perform({ type: "destination.entryRequirements", id: editor.item.id, requirements: entryRequirementsFromForm(fields, researchLinks) }, "Entry requirements saved.");
+        break;
+      }
+      case "healthSafety": {
+        void perform({ type: "destination.healthSafety", id: editor.item.id, healthSafety: healthSafetyFromForm(fields, emergencyContacts, researchLinks) }, "Health and safety saved.");
         break;
       }
       case "weather": {
@@ -212,6 +221,7 @@ export default function PlannerApp({ initialData, initialBudgets, access = {}, d
   const pageTitle = editor?.kind === "delete" ? editor.title : editor?.kind === "trip" ? (editor.item ? "Edit trip" : "A new adventure")
     : editor?.kind === "church" ? (editor.item ? "Edit church" : "Add a church")
     : editor?.kind === "entryRequirements" ? "Edit entry requirements"
+    : editor?.kind === "healthSafety" ? "Edit health and safety"
     : editor?.kind === "weather" ? "Edit typical weather"
     : editor?.kind === "destination" ? (editor.item ? "Edit destination: " + formatSavedDestinationLabel(editor.item.city) : "Add a destination")
     : editor?.kind === "shoppingBudget" ? "Edit shopping budget"
@@ -268,6 +278,7 @@ export default function PlannerApp({ initialData, initialBudgets, access = {}, d
         <article className="destination-card" id={"destination-" + place.id}><DestinationGallery destination={place} />
           <DestinationBudget snapshot={data} visit={{ ...place, nights: null }} onShoppingEdit={() => open({ kind: "shoppingBudget", item: place })} onMiscellaneousEdit={() => open({ kind: "destination", item: place })} />
           <EntryRequirementsPanel requirements={place.entryRequirements} disabled={busy} onEdit={() => open({ kind: "entryRequirements", item: place })} onClear={() => confirmDelete({ type: "destination.entryRequirements", id: place.id, requirements: null }, "Clear entry requirements?", "This removes the recorded requirements, sources, and last checked date for " + label + ", in every trip that visits it.")} />
+          <HealthSafetyPanel healthSafety={place.healthSafety} disabled={busy} onEdit={() => open({ kind: "healthSafety", item: place })} onClear={() => confirmDelete({ type: "destination.healthSafety", id: place.id, healthSafety: null }, "Clear health and safety?", "This removes the recorded advisories, precautions, safety guidance, emergency contacts, sources, and last checked date for " + label + ", in every trip that visits it.")} />
           <TypicalWeatherPanel weather={place} disabled={busy} onEdit={() => open({ kind: "weather", item: place })} />
           {renderChurch(place)}
         </article>
@@ -326,6 +337,7 @@ export default function PlannerApp({ initialData, initialBudgets, access = {}, d
                 {visit.notes && <p className="destination-notes">{visit.notes}</p>}
                 <DestinationBudget snapshot={data} visit={visit} stop={visitStop} onShoppingEdit={() => open({ kind: "shoppingBudget", item: visit })} onMiscellaneousEdit={() => open({ kind: "destination", item: visit, stop: visitStop })} />
                 <EntryRequirementsPanel requirements={visit.entryRequirements} stay={visitStop} disabled={busy} onEdit={() => open({ kind: "entryRequirements", item: visit })} onClear={() => confirmDelete({ type: "destination.entryRequirements", id: visit.id, requirements: null }, "Clear entry requirements?", "This removes the recorded requirements, sources, and last checked date for " + label + ", in every trip that visits it.")} />
+                <HealthSafetyPanel healthSafety={visit.healthSafety} disabled={busy} onEdit={() => open({ kind: "healthSafety", item: visit })} onClear={() => confirmDelete({ type: "destination.healthSafety", id: visit.id, healthSafety: null }, "Clear health and safety?", "This removes the recorded advisories, precautions, safety guidance, emergency contacts, sources, and last checked date for " + label + ", in every trip that visits it.")} />
                 <TypicalWeatherPanel weather={visit} disabled={busy} onEdit={() => open({ kind: "weather", item: visit })} />
                 {renderChurch(visit, visitStop)}
               </article>; })}</div>}
@@ -397,6 +409,7 @@ export default function PlannerApp({ initialData, initialBudgets, access = {}, d
       </>}
       {editor.kind === "church" && <ChurchEditor item={editor.item} massTimes={massTimes} onTimesChange={setMassTimes} gallery={candidateGallery} onGalleryChange={setCandidateGallery} busy={busy} />}
       {editor.kind === "entryRequirements" && <EntryRequirementsEditor requirements={editor.item.entryRequirements} sources={researchLinks} onSourcesChange={setResearchLinks} disabled={busy} />}
+      {editor.kind === "healthSafety" && <HealthSafetyEditor healthSafety={editor.item.healthSafety} contacts={emergencyContacts} onContactsChange={setEmergencyContacts} sources={researchLinks} onSourcesChange={setResearchLinks} disabled={busy} />}
       {editor.kind === "weather" && <TypicalWeatherEditor weather={editor.item} disabled={busy} />}
       {editor.kind === "shoppingBudget" && <ShoppingBudgetEditor destination={editor.item} disabled={busy} />}
       {editor.kind === "foodBudget" && <FoodBudgetEditor destination={editor.item} nights={editor.nights} disabled={busy} />}
@@ -427,6 +440,6 @@ export default function PlannerApp({ initialData, initialBudgets, access = {}, d
         {category !== "hotels" && <label className="checkbox-field wide"><input name="mustDo" type="checkbox" defaultChecked={editor.item?.mustDo ?? false} disabled={busy} /><span>Must do<small>A planning priority. Budget inclusion and list order stay separate.</small></span></label>}
         <label className="checkbox-field wide"><input name="included" type="checkbox" defaultChecked={editor.item?.included ?? false} /><span>{category === "hotels" ? "Choose this hotel for the budget" : category === "activities" ? "Include in itemized activity costs" : "Include in itemized restaurant costs"}<small>{category === "hotels" ? "Replaces the general estimate or other chosen hotel. Your general estimate stays saved." : category === "activities" ? "Applies only in Itemized activity costs mode. This does not change your budgeting method." : "Applies only in Itemized restaurant costs mode. This does not change your budgeting method."}</small></span></label>
       </>}
-    </div>{error && editor.kind !== "destination" && <p className="form-error" role="alert">{error}</p>}<div className="dialog-actions"><button type="button" className="button secondary" onClick={close} disabled={busy}>Cancel</button>{editor.kind !== "destination" && <button className={editor.kind === "delete" ? "button danger" : "button primary"} type="submit" disabled={busy}>{busy ? "Saving…" : editor.kind === "delete" ? (editor.mutation.type === "leg.clear" ? "Clear travel plan" : editor.mutation.type === "destination.entryRequirements" ? "Clear entry requirements" : editor.mutation.type === "stop.remove" ? "Remove from trip" : "Delete") : editor.kind === "trip" && !editor.item ? "Create trip" : editor.kind === "share" ? "Share" : "Save changes"}</button>}</div></form></Dialog>}
+    </div>{error && editor.kind !== "destination" && <p className="form-error" role="alert">{error}</p>}<div className="dialog-actions"><button type="button" className="button secondary" onClick={close} disabled={busy}>Cancel</button>{editor.kind !== "destination" && <button className={editor.kind === "delete" ? "button danger" : "button primary"} type="submit" disabled={busy}>{busy ? "Saving…" : editor.kind === "delete" ? (editor.mutation.type === "leg.clear" ? "Clear travel plan" : editor.mutation.type === "destination.entryRequirements" ? "Clear entry requirements" : editor.mutation.type === "destination.healthSafety" ? "Clear health and safety" : editor.mutation.type === "stop.remove" ? "Remove from trip" : "Delete") : editor.kind === "trip" && !editor.item ? "Create trip" : editor.kind === "share" ? "Share" : "Save changes"}</button>}</div></form></Dialog>}
   </div>;
 }

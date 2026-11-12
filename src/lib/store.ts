@@ -9,13 +9,15 @@ import { backfillDates, MAX_NIGHTS, sequenceDates } from "./trip-dates.ts";
 import { MAX_AMOUNT_CENTS, parseMinorAmount } from "./money.ts";
 import { formatMegabytes, MAX_CANDIDATE_IMAGES, MAX_DESTINATION_IMAGES, MAX_STORED_IMAGE_BYTES } from "./image-limits.ts";
 import { ENTRY_REQUIREMENT_FIELDS, normalizeEntryRequirements } from "./entry-requirements.ts";
+import { normalizeHealthSafety } from "./health-safety.ts";
 import { SESSION_DAYS } from "./session-cookie.ts";
 import type { EntryRequirements } from "./entry-requirements.ts";
+import type { HealthSafety } from "./health-safety.ts";
 import type { DestinationGalleryUpdate } from "./types";
 import type { AuthorizedAccount, DestinationAccess, GoogleIdentity, TripAccess, TripMember, TripStop } from "./types";
 import type { FoodBudgetMode, ActivitiesBudgetMode, Candidate, CandidateImage, CandidateGalleryUpdate, Category, Church, MassTime, Destination, HomeItem, StoredImage, ItineraryStop, Mutation, ResearchLink, Snapshot, TravelLeg, Trip } from "./types";
 
-type StoredDestination = Omit<Destination, "churchEnabled" | "images" | "entryRequirements" | "mainImageId" | "imageVersion"> & { churchEnabled: number; ownerId: string; cityKey: string };
+type StoredDestination = Omit<Destination, "churchEnabled" | "images" | "entryRequirements" | "healthSafety" | "mainImageId" | "imageVersion"> & { churchEnabled: number; ownerId: string; cityKey: string };
 type StoredChurch = Omit<Church, "massTimes" | "images"> & { massTimesJson: string };
 type StoredHomeItem = Omit<HomeItem, "completed"> & { completed: number };
 type StoredLeg = Omit<TravelLeg, "itinerary" | "links"> & { itineraryJson: string; linksJson: string };
@@ -334,6 +336,12 @@ function validate(input: unknown): Mutation {
       catch (error) { throw new ValidationError(error instanceof Error ? error.message : "Enter valid entry requirements."); }
       return { type: value.type, id: idField(value), requirements };
     }
+    case "destination.healthSafety": {
+      let healthSafety: HealthSafety | null;
+      try { healthSafety = normalizeHealthSafety(value.healthSafety); }
+      catch (error) { throw new ValidationError(error instanceof Error ? error.message : "Enter valid health and safety information."); }
+      return { type: value.type, id: idField(value), healthSafety };
+    }
     case "destination.churchVisibility":
       return { type: value.type, id: idField(value), enabled: booleanField(value, "enabled") };
     case "church.save":
@@ -363,7 +371,7 @@ function validate(input: unknown): Mutation {
  * The schema this build upgrades every database to, as SQLite's user_version. A schema change adds the next
  * upgrade in createStore and raises this to match; earlier upgrades keep their own numbers.
  */
-export const SCHEMA_VERSION = 21;
+export const SCHEMA_VERSION = 22;
 
 /** A destination as schema 20 saved it, inside one trip, with that trip's owner and name. */
 type TripDestinationRow = Omit<StoredDestination, "cityKey"> & Omit<TripStop, "destinationId"> & { tripName: string };
@@ -831,6 +839,16 @@ export function createStore(databasePath: string, ownerEmail: string) {
         PRAGMA user_version = 21;
       `);
     }
+    if (version < 22) {
+      // Each destination's manually maintained health and safety research (TRA-14). A replay keeps saved records.
+      db.exec(`
+        CREATE TABLE IF NOT EXISTS destination_health_safety (
+          destinationId TEXT PRIMARY KEY REFERENCES destinations(id) ON DELETE CASCADE,
+          healthSafetyJson TEXT NOT NULL
+        ) STRICT;
+        PRAGMA user_version = 22;
+      `);
+    }
     if (version < SCHEMA_VERSION && db.prepare("PRAGMA foreign_key_check").get()) {
       throw new Error("This upgrade would leave saved items without the trip or destination they belong to. Nothing was changed; review the database against a backup before upgrading.");
     }
@@ -886,14 +904,17 @@ export function createStore(databasePath: string, ownerEmail: string) {
   }
   function readDestinations(ids: readonly string[] | null): Destination[] {
     const [where, args] = among("destinations.id", ids);
-    const [requirementsWhere, requirementsArgs] = among("destinationId", ids);
-    const requirements = new Map(db.prepare("SELECT destinationId, requirementsJson FROM destination_entry_requirements" + requirementsWhere).all(...requirementsArgs)
+    // Entry requirements and health and safety research each have at most one record per destination.
+    const [researchWhere, researchArgs] = among("destinationId", ids);
+    const requirements = new Map(db.prepare("SELECT destinationId, requirementsJson FROM destination_entry_requirements" + researchWhere).all(...researchArgs)
       .map((row) => [row.destinationId as string, JSON.parse(row.requirementsJson as string) as EntryRequirements]));
+    const healthSafety = new Map(db.prepare("SELECT destinationId, healthSafetyJson FROM destination_health_safety" + researchWhere).all(...researchArgs)
+      .map((row) => [row.destinationId as string, JSON.parse(row.healthSafetyJson as string) as HealthSafety]));
     const photos = photosOf("destination_images", "destinationId", ids);
     return db.prepare(`SELECT ${DESTINATION_COLUMNS}, destination_images.version AS imageVersion, destination_images.id AS mainImageId FROM destinations
       LEFT JOIN destination_images ON destination_images.destinationId = destinations.id AND destination_images.isMain = 1${where} ORDER BY destinations.city COLLATE NOCASE, destinations.id`).all(...args).map((row) => {
-      const destination = row as unknown as Omit<Destination, "churchEnabled" | "images" | "entryRequirements"> & { churchEnabled: number };
-      return { ...destination, entryRequirements: requirements.get(destination.id) ?? null, churchEnabled: destination.churchEnabled === 1, images: photos.get(destination.id) ?? [] };
+      const destination = row as unknown as Omit<Destination, "churchEnabled" | "images" | "entryRequirements" | "healthSafety"> & { churchEnabled: number };
+      return { ...destination, entryRequirements: requirements.get(destination.id) ?? null, healthSafety: healthSafety.get(destination.id) ?? null, churchEnabled: destination.churchEnabled === 1, images: photos.get(destination.id) ?? [] };
     });
   }
   function readCandidates(destinationIds: readonly string[] | null): Candidate[] {
@@ -1319,6 +1340,16 @@ export function createStore(databasePath: string, ownerEmail: string) {
         }
         return input.id;
       }
+      case "destination.healthSafety": {
+        existing<StoredDestination>("destinations", input.id);
+        if (input.healthSafety === null) {
+          db.prepare("DELETE FROM destination_health_safety WHERE destinationId = ?").run(input.id);
+        } else {
+          db.prepare("INSERT INTO destination_health_safety(destinationId, healthSafetyJson) VALUES(?,?) ON CONFLICT(destinationId) DO UPDATE SET healthSafetyJson = excluded.healthSafetyJson")
+            .run(input.id, JSON.stringify(input.healthSafety));
+        }
+        return input.id;
+      }
       case "destination.churchVisibility":
         existing<Destination>("destinations", input.id);
         db.prepare("UPDATE destinations SET churchEnabled = ? WHERE id = ?").run(Number(input.enabled), input.id);
@@ -1439,7 +1470,7 @@ export function createStore(databasePath: string, ownerEmail: string) {
       case "destination.save":
         if (input.id === undefined) return { trip: tripOf("trips", input.tripId) };
         return input.stopId === undefined ? { destination: destinationOf("destinations", input.id) } : { trip: tripOf("trip_stops", input.stopId) };
-      case "destination.churchVisibility": case "destination.entryRequirements": return { destination: destinationOf("destinations", input.id) };
+      case "destination.churchVisibility": case "destination.entryRequirements": case "destination.healthSafety": return { destination: destinationOf("destinations", input.id) };
       case "church.save": return { destination: input.id ? destinationOf("churches", input.id) : destinationOf("destinations", input.destinationId) };
       case "church.delete": return { destination: destinationOf("churches", input.id) };
       case "candidate.save": return { destination: input.id ? destinationOf("candidates", input.id) : destinationOf("destinations", input.destinationId) };

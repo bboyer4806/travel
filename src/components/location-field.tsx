@@ -116,7 +116,6 @@ export default function LocationField({ name, label, defaultValue = "", hint, di
       aria-controls={expanded ? `${id}-suggestions` : undefined}
       aria-activedescendant={expanded && active >= 0 ? `${id}-option-${active}` : undefined}
       aria-describedby={`${id}-help${hint ? ` ${id}-hint` : ""}`}
-      onFocus={() => { setOpen(true); setActive(-1); }}
       onChange={(event) => {
         const nextValue = event.target.value;
         setValue(nextValue);

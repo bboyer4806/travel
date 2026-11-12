@@ -264,5 +264,6 @@ This replaces TRA-62's destination Save in a sticky header.
 
 ## Added scope: November 12, 2026, editor first-field focus (TRA-116)
 - Opening any editor focuses its first field instead of the X: for example the trip name, **City or destination**, Passport nationality, Travel advisory level, Typical high, a budget amount or method, Nights, or an idea's Name. Closing it still returns focus to the control that opened it.
+- City suggestions open when the person types in a city field or presses the Down or Up arrow, not when the field gets focus. A destination editor that opens on a saved city shows no list, and one Escape closes it.
 - Confirmations without fields, such as removing a destination, are unchanged.
-- Not included: changes to fields or their order, city suggestions, validation, saving, or the Send feedback dialog.
+- Not included: changes to fields or their order, how cities are searched or chosen, validation, saving, or the Send feedback dialog.

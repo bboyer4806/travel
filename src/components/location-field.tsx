@@ -14,13 +14,12 @@ type Props = {
   hint?: string;
   disabled?: boolean;
   required?: boolean;
-  autoFocus?: boolean;
   placeholder?: string;
   helpText?: string;
   compactDestination?: boolean;
 };
 
-export default function LocationField({ name, label, defaultValue = "", hint, disabled, required, autoFocus, compactDestination = false, placeholder = "Start typing a city, e.g. Wooster, OH", helpText = "Choose a suggestion or keep your own city or airport." }: Props) {
+export default function LocationField({ name, label, defaultValue = "", hint, disabled, required, compactDestination = false, placeholder = "Start typing a city, e.g. Wooster, OH", helpText = "Choose a suggestion or keep your own city or airport." }: Props) {
   const id = useId();
   const input = useRef<HTMLInputElement>(null);
   const list = useRef<HTMLUListElement>(null);
@@ -111,7 +110,7 @@ export default function LocationField({ name, label, defaultValue = "", hint, di
     <label htmlFor={id}>{label}</label>
     <div className="location-input">
     {compactDestination && <input type="hidden" name={name} value={storedValue} disabled={disabled} />}
-    <input ref={input} id={id} name={compactDestination ? undefined : name} value={value} disabled={disabled} required={required} autoFocus={autoFocus} maxLength={120}
+    <input ref={input} id={id} name={compactDestination ? undefined : name} value={value} disabled={disabled} required={required} maxLength={120}
       placeholder={placeholder} autoComplete="off" spellCheck={false}
       role="combobox" aria-autocomplete="list" aria-expanded={expanded}
       aria-controls={expanded ? `${id}-suggestions` : undefined}

@@ -27,7 +27,7 @@ export default function TripSharing({ access, busy, onRemove }: {
       {access.sharedWith.length === 0 && <p className={styles.description}>Only you can open this trip.</p>}
     </section>
     <label className="field wide"><span>Share with</span>
-      <input name="email" type="email" required maxLength={254} autoComplete="off" spellCheck={false} placeholder="Their Google account's email address" disabled={busy} autoFocus />
+      <input name="email" type="email" required maxLength={254} autoComplete="off" spellCheck={false} placeholder="Their Google account's email address" disabled={busy} />
       <small>They&apos;ll find this trip in their list when they sign in to Travel with that Google account, even if they never have before.</small></label>
   </>;
 }

@@ -5,7 +5,7 @@ import test from "node:test";
 import { calculateBudget, calculateDestinationBudget } from "../src/lib/budget.ts";
 import { SCHEMA_VERSION, ValidationError } from "../src/lib/store.ts";
 import { createOwnedStore } from "./owned-store.mjs";
-import { fileDatabase, setup } from "./budget-fixtures.mjs";
+import { fileDatabase, setup, destinationEdit, stopEdit } from "./budget-fixtures.mjs";
 
 const tripInput = (overrides = {}) => ({ type: "trip.save", name: "Weather planning", dateLabel: "2027", homeCity: "Boston", travelers: 2, notes: "", ...overrides });
 const destinationInput = (tripId, overrides = {}) => ({ type: "destination.save", tripId, city: "Reykjavik", stay: "A few nights", notes: "", ...overrides });
@@ -29,10 +29,10 @@ test("optional weather defaults to missing, preserves zero, and accepts partial 
     [{ weatherHighF: null }, emptyWeather],
     [{ weatherHighF: 0 }, { ...emptyWeather, weatherHighF: 0 }],
   ]) {
-    store.applyMutation(destinationInput(tripId, { id, ...fields }));
+    store.applyMutation(destinationEdit(id, { ...fields }));
     assert.deepEqual(weather(store, id), expected);
   }
-  const partialId = store.applyMutation(destinationInput(tripId, { weatherLowF: -40 })).id;
+  const partialId = store.applyMutation(destinationInput(tripId, { city: "Akureyri", weatherLowF: -40 })).id;
   assert.deepEqual(weather(store, partialId), { ...emptyWeather, weatherLowF: -40 });
 });
 
@@ -54,7 +54,7 @@ test("weather save, edit, per-field omission, and clearing survive closing and r
       [{ weatherPeriod: "" }, emptyWeather],
     ];
     for (const [fields, expected] of changes) {
-      store.applyMutation(destinationInput(tripId, { id, ...fields }));
+      store.applyMutation(destinationEdit(id, { ...fields }));
       assert.deepEqual(weather(store, id), expected);
       const before = store.getSnapshot();
       store.close(); store = null;
@@ -78,18 +78,18 @@ test("invalid weather types, text lengths, and high/low combinations reject the 
   ];
   for (const fields of invalid) {
     for (const existingId of [undefined, id]) {
-      assert.throws(() => store.applyMutation(destinationInput(tripId, { id: existingId, city: "Must not save", notes: "Must not save", image: null, ...fields })), ValidationError);
+      assert.throws(() => store.applyMutation(destinationEdit(existingId, { city: "Must not save", notes: "Must not save", image: null, ...fields })), ValidationError);
       assert.deepEqual(store.getSnapshot(), before);
       assert.deepEqual(store.getDestinationImage(id), image);
     }
   }
   for (const fields of [{ weatherHighF: -20 }, { weatherLowF: 1 }]) {
-    assert.throws(() => store.applyMutation(destinationInput(tripId, { id, city: "Must not save", ...fields })), ValidationError, "partial updates must validate against the saved counterpart");
+    assert.throws(() => store.applyMutation(destinationEdit(id, { city: "Must not save", ...fields })), ValidationError, "partial updates must validate against the saved counterpart");
     assert.deepEqual(store.getSnapshot(), before);
   }
-  store.applyMutation(destinationInput(tripId, { id, weatherHighF: null, weatherLowF: 1 }));
+  store.applyMutation(destinationEdit(id, { weatherHighF: null, weatherLowF: 1 }));
   assert.equal(destination(store, id).weatherLowF, 1, "clearing the high permits a new low without a stale range constraint");
-  store.applyMutation(destinationInput(tripId, { id, weatherRainfall: "x".repeat(4000), weatherPeriod: "x".repeat(120), weatherSource: "x".repeat(2048) }));
+  store.applyMutation(destinationEdit(id, { weatherRainfall: "x".repeat(4000), weatherPeriod: "x".repeat(120), weatherSource: "x".repeat(2048) }));
   assert.equal(destination(store, id).weatherRainfall.length, 4000);
   assert.equal(destination(store, id).weatherPeriod.length, 120);
   assert.equal(destination(store, id).weatherSource.length, 2048);
@@ -109,7 +109,7 @@ test("date changes and other destination editors preserve manually entered weath
     { miscDailyAmount: "100" },
     { image: webp }, { image: null },
   ]) {
-    store.applyMutation(destinationInput(tripId, { id, ...fields }));
+    store.applyMutation(stopEdit(id, { ...fields }));
     assert.deepEqual(weather(store, id), winterWeather);
   }
   store.applyMutation(tripInput({ id: tripId, travelers: 8, dateLabel: "Summer 2028" }));
@@ -128,13 +128,14 @@ test("weather edits leave existing destination data, routes, choices, and separa
   store.applyMutation({ type: "homeItem.save", tripId, name: "Pause mail", price: "", notes: "", completed: false });
   const before = store.getSnapshot();
   const budget = calculateBudget(before, tripId);
-  const destinationBudget = calculateDestinationBudget(before, id);
+  const visitIn = (snapshot) => ({ ...snapshot.destinations.find((item) => item.id === id), nights: snapshot.stops.find((item) => item.id === id).nights });
+  const destinationBudget = calculateDestinationBudget(before, visitIn(before));
   const image = store.getDestinationImage(id);
   for (const fields of [winterWeather, { weatherHighF: 12.5, weatherSource: "New source" }, emptyWeather]) {
-    store.applyMutation(destinationInput(tripId, { id, ...fields }));
+    store.applyMutation(destinationEdit(id, { ...fields }));
     const after = store.getSnapshot();
     assert.deepEqual(calculateBudget(after, tripId), budget);
-    assert.deepEqual(calculateDestinationBudget(after, id), destinationBudget);
+    assert.deepEqual(calculateDestinationBudget(after, visitIn(after)), destinationBudget);
     assert.deepEqual(store.getDestinationImage(id), image);
     assert.deepEqual({ ...after, destinations: after.destinations.map((item) => ({ ...item, ...emptyWeather })) }, before);
   }
@@ -170,7 +171,7 @@ test("schema 12 upgrade defaults weather to missing and preserves old data; migr
     assert.deepEqual(calculateBudget(store.getSnapshot(), tripId), budget);
     assert.deepEqual(store.getDestinationImage(id), image);
     assert.deepEqual(store.getCandidatePhoto(candidateId, hotelPhoto.id), candidateImage);
-    store.applyMutation(destinationInput(tripId, { id, ...winterWeather }));
+    store.applyMutation(destinationEdit(id, { ...winterWeather }));
     const saved = store.getSnapshot();
     store.close(); store = null;
     observer = new DatabaseSync(path);

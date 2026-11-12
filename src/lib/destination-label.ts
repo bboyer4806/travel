@@ -49,6 +49,14 @@ export function formatDestinationLabel(location: { name: string; region: string;
   return name.length <= MAX_LABEL_LENGTH ? name : "";
 }
 
+/**
+ * Which saved destination a city is. Labels that differ only in letter case, spacing or Unicode form name the
+ * same destination; any other difference, such as the region a suggestion adds, names a different one.
+ */
+export function destinationKey(city: string): string {
+  return city.normalize("NFC").split(",").map(clean).join(",").toLowerCase();
+}
+
 /** Shorten only structured legacy labels; preserve all other user-entered text verbatim. */
 export function formatSavedDestinationLabel(value: string): string {
   const parts = value.split(",");

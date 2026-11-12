@@ -1,15 +1,15 @@
-import type { FoodBudgetMode, ActivitiesBudgetMode, Budget, Candidate, Destination, Snapshot } from "./types";
+import type { FoodBudgetMode, ActivitiesBudgetMode, Budget, Candidate, Destination, DestinationVisit, Snapshot, TripStop } from "./types";
 import { nightsToBudgetDays } from "./destination-duration.ts";
 
-type MiscellaneousInput = Pick<Destination, "nights" | "miscDailyMinor" | "miscCurrency">;
-type FoodEstimateInput = Pick<Destination, "nights" | "foodDailyMinor" | "foodCurrency">;
+type MiscellaneousInput = Pick<DestinationVisit, "nights" | "miscDailyMinor" | "miscCurrency">;
+type FoodEstimateInput = Pick<DestinationVisit, "nights" | "foodDailyMinor" | "foodCurrency">;
 export interface DailyAllowance {
   days: number | null;
   dailyMinor: number | null;
   currency: string | null;
   subtotalMinor: number | null;
 }
-type HotelEstimateInput = Pick<Destination, "nights" | "hotelNightlyMinor" | "hotelCurrency">;
+type HotelEstimateInput = Pick<DestinationVisit, "nights" | "hotelNightlyMinor" | "hotelCurrency">;
 export interface HotelEstimate {
   nights: number | null;
   nightlyMinor: number | null;
@@ -63,7 +63,7 @@ export function calculateHotelEstimate(destination: HotelEstimateInput): HotelEs
 }
 
 /** A chosen hotel always replaces the estimate, including when its price is unknown. */
-export function calculateAccommodation(snapshot: Snapshot, destination: Destination): AccommodationBudget {
+export function calculateAccommodation(snapshot: Snapshot, destination: DestinationVisit): AccommodationBudget {
   const estimate = calculateHotelEstimate(destination);
   const hotel = snapshot.candidates.find((item) => item.destinationId === destination.id && item.category === "hotels" && item.included) ?? null;
   return hotel
@@ -88,7 +88,7 @@ export function calculateActivitiesBudget(snapshot: Snapshot, destination: Desti
   return budget;
 }
 
-function foodCosts(snapshot: Snapshot, destination: Destination): Cost[] {
+function foodCosts(snapshot: Snapshot, destination: DestinationVisit): Cost[] {
   if (destination.foodBudgetMode === "daily") {
     const estimate = calculateFoodEstimate(destination);
     return [{ amount: estimate.subtotalMinor, currency: estimate.currency, category: "food" }];
@@ -98,14 +98,14 @@ function foodCosts(snapshot: Snapshot, destination: Destination): Cost[] {
     .map((item) => ({ amount: item.priceCents, currency: "USD", category: "food" }));
 }
 
-export function calculateFoodBudget(snapshot: Snapshot, destination: Destination): DestinationBudget & { mode: FoodBudgetMode } {
+export function calculateFoodBudget(snapshot: Snapshot, destination: DestinationVisit): DestinationBudget & { mode: FoodBudgetMode } {
   const budget = { mode: destination.foodBudgetMode ?? "itemized", totalsByCurrency: {}, knownCount: 0, missingCount: 0, complete: false };
   for (const cost of foodCosts(snapshot, destination)) addCost(budget, cost);
   budget.complete = budget.missingCount === 0;
   return budget;
 }
 
-function destinationCosts(snapshot: Snapshot, destination: Destination): Cost[] {
+function destinationCosts(snapshot: Snapshot, destination: DestinationVisit): Cost[] {
   const accommodation = calculateAccommodation(snapshot, destination);
   const costs: Cost[] = [{ amount: accommodation.totalMinor, currency: accommodation.currency, category: "hotels" }];
   costs.push(...foodCosts(snapshot, destination));
@@ -128,14 +128,21 @@ function addCost(budget: DestinationBudget, cost: Cost) {
   }
 }
 
-/** Destination costs exclude transportation and at-home arrangements. */
-export function calculateDestinationBudget(snapshot: Snapshot, destinationId: string): DestinationBudget {
+/** One stay's destination costs, with that stay's nights. They exclude transportation and at-home arrangements. */
+export function calculateDestinationBudget(snapshot: Snapshot, visit: DestinationVisit): DestinationBudget {
   const budget: DestinationBudget = { totalsByCurrency: {}, knownCount: 0, missingCount: 0, complete: false };
-  const destination = snapshot.destinations.find((item) => item.id === destinationId);
-  if (!destination) return { ...budget, missingCount: 1 };
-  for (const cost of destinationCosts(snapshot, destination)) addCost(budget, cost);
+  for (const cost of destinationCosts(snapshot, visit)) addCost(budget, cost);
   budget.complete = budget.missingCount === 0;
   return budget;
+}
+
+/** A trip's stops in route order, each with the destination it visits and that stay's nights. */
+export function tripVisits(snapshot: Snapshot, tripId: string): { stop: TripStop; visit: DestinationVisit }[] {
+  return snapshot.stops.filter((stop) => stop.tripId === tripId).sort((a, b) => a.position - b.position).map((stop) => {
+    const destination = snapshot.destinations.find((item) => item.id === stop.destinationId);
+    if (!destination) throw new Error("A trip's stop must come with the destination it visits.");
+    return { stop, visit: { ...destination, nights: stop.nights } };
+  });
 }
 
 /** Currencies stay separate. Travel and at-home costs are always USD, so they are totaled in cents. */
@@ -160,11 +167,9 @@ export function calculateBudget(snapshot: Snapshot, tripId: string): Budget {
   };
   const trip = snapshot.trips.find((item) => item.id === tripId);
   if (!trip) return { ...budget, missingCount: 1 };
-  const destinations = snapshot.destinations
-    .filter((item) => item.tripId === tripId)
-    .sort((a, b) => a.position - b.position);
+  const visits = tripVisits(snapshot, tripId);
   if (!trip.homeCity.trim()) budget.missingCount += 1;
-  if (!destinations.length) budget.missingCount += 1;
+  if (!visits.length) budget.missingCount += 1;
 
   function add(cost: Cost) {
     addCost(budget, cost);
@@ -190,15 +195,15 @@ export function calculateBudget(snapshot: Snapshot, tripId: string): Budget {
     }
   }
 
-  if (destinations.length) {
-    const route: (string | null)[] = [null, ...destinations.map((item) => item.id), null];
+  if (visits.length) {
+    const route: (string | null)[] = [null, ...visits.map(({ stop }) => stop.id), null];
     for (let index = 1; index < route.length; index += 1) {
       const leg = snapshot.legs.find((item) => item.tripId === tripId && item.fromId === route[index - 1] && item.toId === route[index]);
       add({ amount: leg?.priceCents ?? null, currency: "USD", category: "travel" });
     }
   }
-  for (const destination of destinations) {
-    for (const cost of destinationCosts(snapshot, destination)) add(cost);
+  for (const { visit } of visits) {
+    for (const cost of destinationCosts(snapshot, visit)) add(cost);
   }
   // A blank home-item price is an optional task without a cost, not a missing estimate.
   for (const item of snapshot.homeItems) {

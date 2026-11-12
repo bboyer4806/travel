@@ -7,7 +7,7 @@ import { DatabaseSync } from "node:sqlite";
 import test from "node:test";
 import { calculateBudget } from "../src/lib/budget.ts";
 import { createStore, SCHEMA_VERSION, ValidationError } from "../src/lib/store.ts";
-import { UNDO_SCHEMA_20 } from "./owned-store.mjs";
+import { UNDO_SCHEMA_20, UNDO_SCHEMA_21 } from "./owned-store.mjs";
 import { fileDatabase } from "./budget-fixtures.mjs";
 
 const OWNER = "owner@example.com";
@@ -27,18 +27,21 @@ function setup(t, path = ":memory:") {
   return { store, owner, editor, outsider };
 }
 
-/** A trip with something in every part: dates, two destinations and their connections, ideas, a church, entry requirements, an At home item and photos. */
-function plannedTrip(store, accountId, name = "Portugal") {
+/**
+ * A trip with something in every part: dates, two destinations and their connections, ideas, a church, entry
+ * requirements, an At home item and photos. Each account has one destination per city, so one account's trips need different cities.
+ */
+function plannedTrip(store, accountId, name = "Portugal", [firstCity, secondCity] = ["Lisbon", "Porto"]) {
   const change = (input) => store.applyMutation(accountId, input).id;
   const tripId = change({ type: "trip.save", name, startDate: "2027-05-02", dateLabel: "Spring", homeCity: "Boston", travelers: 2, notes: "Trip notes" });
-  const lisbon = change({ type: "destination.save", tripId, city: "Lisbon", stay: "", notes: "", nights: 3, hotelNightlyAmount: "150", gallery: { add: [photo(), photo()], remove: [] } });
-  const porto = change({ type: "destination.save", tripId, city: "Porto", stay: "", notes: "", nights: 2 });
+  const lisbon = change({ type: "destination.save", tripId, city: firstCity, stay: "", notes: "", nights: 3, hotelNightlyAmount: "150", gallery: { add: [photo(), photo()], remove: [] } });
+  const porto = change({ type: "destination.save", tripId, city: secondCity, stay: "", notes: "", nights: 2 });
   const hotel = change({ type: "candidate.save", destinationId: lisbon, category: "hotels", name: "Hotel", price: "400", address: "", url: "", notes: "", included: true, gallery: { add: [photo()], remove: [] } });
   const activity = change({ type: "candidate.save", destinationId: lisbon, category: "activities", name: "Tram 28", price: "20", address: "", url: "", notes: "", included: true });
   const church = change({ type: "church.save", destinationId: lisbon, name: "Sé", address: "", denomination: "", url: "", massTimes: [], gallery: { add: [photo()], remove: [] } });
   const homeItem = change({ type: "homeItem.save", tripId, name: "House sitting", price: "100", notes: "", completed: false });
-  change({ type: "destination.entryRequirements", id: lisbon, tripId, requirements: requirements() });
-  const snapshot = store.getSnapshot({ tripId });
+  change({ type: "destination.entryRequirements", id: lisbon, requirements: requirements() });
+  const snapshot = store.getTripSnapshot(accountId, tripId).data;
   const legs = snapshot.legs.map((leg) => leg.id);
   change({ type: "leg.save", id: legs[0], method: "Flight", price: "900", departure: "", arrival: "", url: "", notes: "" });
   const photos = {
@@ -56,14 +59,17 @@ function readsAs(store, accountId, trip) {
     page: store.getTripSnapshot(accountId, trip.tripId) !== undefined,
     category: store.getTripSnapshot(accountId, trip.tripId, trip.lisbon) !== undefined,
     tripName: store.getTripName(accountId, trip.tripId) !== undefined,
-    destinationName: store.getDestinationName(accountId, trip.tripId, trip.lisbon) !== undefined,
+    stopName: store.getStopName(accountId, trip.tripId, trip.lisbon) !== undefined,
+    destinationList: store.getDestinationsOverview(accountId).data.destinations.some((item) => item.id === trip.lisbon),
+    destinationPage: store.getDestinationSnapshot(accountId, trip.lisbon) !== undefined,
+    destinationName: store.getDestinationName(accountId, trip.lisbon) !== undefined,
     destinationImage: store.getDestinationImage(accountId, trip.lisbon) !== undefined,
     destinationPhoto: store.getDestinationPhoto(accountId, trip.lisbon, trip.photos.destination) !== undefined,
     candidatePhoto: store.getCandidatePhoto(accountId, trip.hotel, trip.photos.candidate) !== undefined,
     churchPhoto: store.getChurchPhoto(accountId, trip.church, trip.photos.church) !== undefined,
   };
 }
-const everything = (value) => ({ home: value, page: value, category: value, tripName: value, destinationName: value, destinationImage: value, destinationPhoto: value, candidatePhoto: value, churchPhoto: value });
+const everything = (value) => ({ home: value, page: value, category: value, tripName: value, stopName: value, destinationList: value, destinationPage: value, destinationName: value, destinationImage: value, destinationPhoto: value, candidatePhoto: value, churchPhoto: value });
 
 test("a new trip belongs to whoever creates it, and only its owner can open it until it is shared", (t) => {
   const { store, owner, editor, outsider } = setup(t);
@@ -81,9 +87,10 @@ test("a new trip belongs to whoever creates it, and only its owner can open it u
   const editorHome = store.getHomeOverview(editor);
   assert.deepEqual(editorHome.data.trips.map((item) => item.id), [ownTrip]);
   assert.deepEqual(Object.keys(editorHome.budgets), [ownTrip]);
-  assert.ok(editorHome.data.destinations.every((stop) => stop.tripId === ownTrip), "The home page sends no other trip's cities");
+  assert.ok(editorHome.data.stops.every((stop) => stop.tripId === ownTrip), "The home page sends no other trip's cities");
   assert.equal(editorHome.access[ownTrip].role, "owner");
-  assert.deepEqual(store.getHomeOverview(outsider), { data: { trips: [], destinations: [], legs: [], candidates: [], homeItems: [], churches: [] }, budgets: {}, access: {} });
+  assert.deepEqual(store.getHomeOverview(outsider), { data: { trips: [], stops: [], destinations: [], legs: [], candidates: [], homeItems: [], churches: [] }, budgets: {}, access: {} });
+  assert.deepEqual(store.getDestinationsOverview(outsider), { data: { trips: [], stops: [], destinations: [], legs: [], candidates: [], homeItems: [], churches: [] }, access: {} });
   // The owner's account ID stays on the server.
   assert.ok(store.getSnapshot().trips.every((item) => !("ownerId" in item)));
 });
@@ -139,16 +146,17 @@ test("people a trip is shared with change everything in it, but only its owner d
   change({ type: "candidate.move", id: activity, direction: "down" });
   change({ type: "church.save", id: church, destinationId: lisbon, name: "Sé de Lisboa", address: "", denomination: "Catholic", url: "", massTimes: [] });
   change({ type: "destination.churchVisibility", id: lisbon, enabled: false });
-  change({ type: "destination.entryRequirements", id: porto, tripId, requirements: requirements() });
-  change({ type: "destination.save", id: porto, tripId, notes: "Port wine", gallery: { add: [portoPhoto], remove: [] } });
+  change({ type: "destination.entryRequirements", id: porto, requirements: requirements() });
+  change({ type: "destination.save", id: porto, notes: "Port wine", gallery: { add: [portoPhoto], remove: [] } });
+  change({ type: "destination.save", id: porto, stopId: porto, stay: "By the river", nights: 4 });
   change({ type: "homeItem.save", tripId, name: "Pet care", price: "50", notes: "", completed: false });
   change({ type: "homeItem.complete", id: homeItem, tripId, completed: true });
   const sintra = change({ type: "destination.save", tripId, city: "Sintra", stay: "", notes: "", nights: 1 });
-  change({ type: "destination.move", id: sintra, direction: "up" });
+  change({ type: "stop.move", id: sintra, direction: "up" });
   change({ type: "candidate.delete", id: activity });
   change({ type: "church.delete", id: church, destinationId: lisbon });
   change({ type: "homeItem.delete", id: homeItem, tripId });
-  change({ type: "destination.delete", id: sintra });
+  change({ type: "stop.remove", id: sintra });
 
   // Both work with the same saved trip, so each sees the other's changes on their next page load.
   const asOwner = store.getTripSnapshot(owner, tripId);
@@ -156,7 +164,7 @@ test("people a trip is shared with change everything in it, but only its owner d
   assert.equal(asOwner.data.trips[0].name, "Portugal together");
   assert.equal(asOwner.data.destinations.find((item) => item.id === porto).notes, "Port wine");
   assert.deepEqual(store.getDestinationPhoto(owner, porto, portoPhoto.id).data, webp);
-  store.applyMutation(owner, { type: "destination.save", id: porto, tripId, notes: "Back to the owner" });
+  store.applyMutation(owner, { type: "destination.save", id: porto, notes: "Back to the owner" });
   assert.equal(store.getTripSnapshot(editor, tripId).data.destinations.find((item) => item.id === porto).notes, "Back to the owner");
 
   const before = store.getSnapshot();
@@ -194,11 +202,12 @@ test("an account a trip isn't shared with can neither read nor change any part o
     { type: "homeItem.complete", id: homeItem, tripId, completed: true },
     { type: "homeItem.delete", id: homeItem, tripId },
     { type: "destination.save", tripId, city: "Mine" },
-    { type: "destination.save", id: lisbon, tripId, notes: "Mine" },
-    { type: "destination.delete", id: lisbon },
-    { type: "destination.move", id: lisbon, direction: "down" },
+    { type: "destination.save", id: lisbon, notes: "Mine" },
+    { type: "destination.save", id: lisbon, stopId: lisbon, nights: 9 },
+    { type: "stop.remove", id: lisbon },
+    { type: "stop.move", id: lisbon, direction: "down" },
     { type: "destination.churchVisibility", id: lisbon, enabled: false },
-    { type: "destination.entryRequirements", id: lisbon, tripId, requirements: null },
+    { type: "destination.entryRequirements", id: lisbon, requirements: null },
     { type: "church.save", destinationId: lisbon, name: "Mine", address: "", denomination: "", url: "", massTimes: [] },
     { type: "church.save", id: church, destinationId: lisbon, name: "Mine", address: "", denomination: "", url: "", massTimes: [] },
     { type: "church.delete", id: church, destinationId: lisbon },
@@ -213,8 +222,6 @@ test("an account a trip isn't shared with can neither read nor change any part o
     // Its own IDs don't open the other trip either, in whichever field they appear.
     { type: "homeItem.save", id: homeItem, tripId: own.tripId, name: "Mine", price: "", notes: "", completed: false },
     { type: "homeItem.delete", id: homeItem, tripId: own.tripId },
-    { type: "destination.save", id: lisbon, tripId: own.tripId, notes: "Mine" },
-    { type: "destination.entryRequirements", id: lisbon, tripId: own.tripId, requirements: null },
     { type: "church.save", id: church, destinationId: own.lisbon, name: "Mine", address: "", denomination: "", url: "", massTimes: [] },
     { type: "church.delete", id: church, destinationId: own.lisbon },
     { type: "candidate.save", id: hotel, destinationId: own.lisbon, category: "hotels", name: "Mine", ...idea },
@@ -224,8 +231,8 @@ test("an account a trip isn't shared with can neither read nor change any part o
   // Nor can it pull the other trip's items into its own, or put its own into the other trip.
   for (const input of [
     { type: "homeItem.save", id: own.homeItem, tripId, name: "Moved", price: "", notes: "", completed: false },
-    { type: "destination.save", id: own.lisbon, tripId, notes: "Moved" },
-    { type: "destination.entryRequirements", id: own.lisbon, tripId, requirements: null },
+    { type: "destination.save", id: own.lisbon, stopId: lisbon, notes: "Moved" },
+    { type: "destination.save", id: lisbon, stopId: own.lisbon, notes: "Moved" },
     { type: "church.save", id: own.church, destinationId: lisbon, name: "Moved", address: "", denomination: "", url: "", massTimes: [] },
     { type: "church.delete", id: own.church, destinationId: lisbon },
     { type: "candidate.save", id: own.hotel, destinationId: lisbon, category: "hotels", name: "Moved", ...idea },
@@ -237,9 +244,10 @@ test("an account a trip isn't shared with can neither read nor change any part o
   // Reads that mix its own IDs with the other trip's find nothing of the other trip.
   const mixed = store.getTripSnapshot(outsider, own.tripId, lisbon);
   assert.ok(mixed.data.trips.every((item) => item.id === own.tripId));
-  assert.ok(mixed.data.destinations.every((item) => item.tripId === own.tripId));
-  assert.deepEqual([mixed.data.candidates, mixed.data.churches], [[], []]);
-  assert.equal(store.getDestinationName(outsider, own.tripId, lisbon), undefined);
+  assert.ok(mixed.data.stops.every((item) => item.tripId === own.tripId));
+  assert.deepEqual([mixed.data.destinations, mixed.data.candidates, mixed.data.churches], [[], [], []]);
+  assert.equal(store.getStopName(outsider, own.tripId, lisbon), undefined);
+  assert.ok(store.getDestinationsOverview(outsider).data.destinations.every((item) => item.id !== lisbon && item.id !== trip.porto));
   assert.equal(store.getDestinationPhoto(outsider, own.lisbon, photos.destination), undefined);
   assert.equal(store.getCandidatePhoto(outsider, own.hotel, photos.candidate), undefined);
   assert.equal(store.getChurchPhoto(outsider, own.church, photos.church), undefined);
@@ -258,7 +266,7 @@ test("removing someone's access ends it at once and changes nothing in the trip"
   assert.deepEqual(store.applyMutation(owner, { type: "trip.unshare", tripId: trip.tripId, email: "Editor@Example.com" }), { id: trip.tripId });
   assert.deepEqual(store.getSnapshot(), before, "Revoking keeps every part of the trip");
   assert.deepEqual(readsAs(store, editor, trip), everything(false));
-  assert.throws(() => store.applyMutation(editor, { type: "destination.save", id: trip.lisbon, tripId: trip.tripId, notes: "Too late" }), NOT_AVAILABLE);
+  assert.throws(() => store.applyMutation(editor, { type: "destination.save", id: trip.lisbon, notes: "Too late" }), NOT_AVAILABLE);
   assert.deepEqual(store.getTripSnapshot(owner, trip.tripId).access.sharedWith, []);
   assert.throws(() => store.applyMutation(owner, { type: "trip.unshare", tripId: trip.tripId, email: "editor@example.com" }), { name: "ValidationError", message: "This trip isn't shared with editor@example.com. Refresh to see who has access." });
 
@@ -295,11 +303,11 @@ test("schema 20 gives every existing trip to the designated owner, never to whoe
   store.authorizeGoogleSignIn(google("early-subject", "early@example.com", "Early"));
   store.createSession(early, Date.now());
   const first = plannedTrip(store, early, "First");
-  const second = plannedTrip(store, early, "Second");
+  const second = plannedTrip(store, early, "Second", ["Faro", "Braga"]);
   const content = store.getSnapshot();
   store.close();
   let db = new DatabaseSync(path);
-  db.exec(UNDO_SCHEMA_20);
+  db.exec(UNDO_SCHEMA_21 + UNDO_SCHEMA_20);
   db.close();
 
   // The pre-upgrade backup is the rollback point.
@@ -340,6 +348,7 @@ test("schema 20 gives every existing trip to the designated owner, never to whoe
     assert.equal(db.prepare("PRAGMA integrity_check").get().integrity_check, "ok");
     assert.deepEqual(db.prepare("PRAGMA foreign_key_check").all(), []);
     assert.deepEqual(db.prepare("SELECT DISTINCT ownerId FROM trips").all().map((row) => row.ownerId), [owner]);
+    assert.deepEqual(db.prepare("SELECT DISTINCT ownerId FROM destinations").all().map((row) => row.ownerId), [owner], "each trip's destinations are its owner's");
     assert.equal(db.prepare("SELECT count(*) AS count FROM trip_shares").get().count, 1);
   } finally {
     db.close();

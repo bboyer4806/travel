@@ -4,7 +4,7 @@ import { DatabaseSync } from "node:sqlite";
 import test from "node:test";
 import { ValidationError } from "../src/lib/store.ts";
 import { createOwnedStore } from "./owned-store.mjs";
-import { fileDatabase, setup } from "./budget-fixtures.mjs";
+import { fileDatabase, setup, destinationEdit, stopEdit } from "./budget-fixtures.mjs";
 import { calculateBudget } from "../src/lib/budget.ts";
 import { formatCurrency } from "../src/lib/money.ts";
 
@@ -36,15 +36,17 @@ test("complete create, edit, clear, and delete flows preserve the trip relations
   assert.equal(store.getSnapshot().candidates.find((item) => item.id === hotelId).priceCents, 25095);
   store.applyMutation({ type: "candidate.delete", id: activityId });
   assert.equal(store.getSnapshot().candidates.length, 2);
-  store.applyMutation(destinationInput(tripId, { id: destinationId, stay: "5 nights", notes: "Stay downtown" }));
+  store.applyMutation(stopEdit(destinationId, { stay: "5 nights", notes: "Stay downtown" }));
   store.applyMutation(tripInput({ id: tripId, name: "Japan 2027", travelers: 3 }));
   assert.equal(store.getSnapshot().trips[0].name, "Japan 2027");
-  assert.equal(store.getSnapshot().destinations[0].stay, "5 nights");
+  assert.equal(store.getSnapshot().stops[0].stay, "5 nights");
+  const { destinations, candidates } = store.getSnapshot();
   store.applyMutation({ type: "trip.delete", id: tripId });
-  assert.deepEqual(store.getSnapshot(), { trips: [], destinations: [], legs: [], candidates: [], homeItems: [], churches: [] });
+  // The destination and its ideas stay in Destinations; only the trip's own parts go.
+  assert.deepEqual(store.getSnapshot(), { trips: [], stops: [], destinations, legs: [], candidates, homeItems: [], churches: [] });
 });
 
-test("route changes retain only unchanged connections, and deleting destinations cascades ideas", (t) => {
+test("route changes retain only unchanged connections, and removing a destination from the trip keeps its ideas", (t) => {
   const { store, tripId } = setup(t, tripInput());
   const a = store.applyMutation(destinationInput(tripId, { city: "Tokyo" })).id;
   const homeToA = legsFor(store, tripId)[0];
@@ -55,23 +57,24 @@ test("route changes retain only unchanged connections, and deleting destinations
   assert.equal(legsFor(store, tripId)[0].priceCents, 10001);
   const oldLegs = legsFor(store, tripId);
   for (const leg of oldLegs) store.applyMutation(legInput(leg.id));
-  store.applyMutation({ type: "destination.move", id: c, direction: "up" });
+  store.applyMutation({ type: "stop.move", id: c, direction: "up" });
   const reordered = legsFor(store, tripId);
   assert.deepEqual(reordered.map((leg) => [leg.fromId, leg.toId]), [[null, a], [a, c], [c, b], [b, null]]);
   assert.equal(reordered[0].id, homeToA.id);
   assert.equal(reordered[0].priceCents, 10001);
   assert.ok(reordered.slice(1).every((leg) => leg.priceCents === null && !oldLegs.some((old) => old.id === leg.id)));
   const stable = store.getSnapshot();
-  store.applyMutation({ type: "destination.move", id: a, direction: "up" });
+  store.applyMutation({ type: "stop.move", id: a, direction: "up" });
   assert.deepEqual(store.getSnapshot(), stable, "moving beyond a route boundary is a no-op");
   store.applyMutation(candidateInput(c));
-  store.applyMutation({ type: "destination.delete", id: c });
+  store.applyMutation({ type: "stop.remove", id: c });
   assert.deepEqual(legsFor(store, tripId).map((leg) => [leg.fromId, leg.toId]), [[null, a], [a, b], [b, null]]);
-  assert.equal(store.getSnapshot().candidates.length, 0);
-  assert.deepEqual(store.getSnapshot().destinations.map((item) => item.position), [0, 1]);
-  store.applyMutation({ type: "destination.delete", id: a });
-  store.applyMutation({ type: "destination.delete", id: b });
+  assert.equal(store.getSnapshot().candidates.length, 1);
+  assert.deepEqual(store.getSnapshot().stops.map((item) => item.position), [0, 1]);
+  store.applyMutation({ type: "stop.remove", id: a });
+  store.applyMutation({ type: "stop.remove", id: b });
   assert.equal(legsFor(store, tripId).length, 0);
+  assert.deepEqual(store.getSnapshot().destinations.map((item) => item.city).sort(), ["Kyoto", "Osaka", "Tokyo"]);
 });
 
 test("home and city changes clear affected transport details; notes edits preserve them", (t) => {
@@ -85,7 +88,7 @@ test("home and city changes clear affected transport details; notes edits preser
   store.applyMutation(tripInput({ id: tripId, homeCity: "Boston" }));
   assert.deepEqual(legsFor(store, tripId).map((leg) => leg.priceCents), [null, 10001, 10001, null]);
   for (const leg of legsFor(store, tripId)) store.applyMutation(legInput(leg.id));
-  store.applyMutation(destinationInput(tripId, { id: b, city: "Nara" }));
+  store.applyMutation(destinationEdit(b, { city: "Nara" }));
   assert.deepEqual(legsFor(store, tripId).map((leg) => leg.priceCents), [10001, null, null, 10001]);
   assert.deepEqual(legsFor(store, tripId).map(pair), [[null, a], [a, b], [b, c], [c, null]].map((route) => JSON.stringify(route)));
 });
@@ -148,7 +151,7 @@ test("the budget counts each travel connection without a price, as the trip page
   assert.equal(budget().travelCents, 12026);
   store.applyMutation({ type: "leg.clear", id: route[1].id });
   assert.equal(budget().travelMissingCount, unpriced());
-  store.applyMutation({ type: "destination.delete", id: first });
+  store.applyMutation({ type: "stop.remove", id: first });
   assert.equal(budget().travelMissingCount, 1, "a new, unpriced connection replaces the removed stop's two");
   assert.equal(budget().travelMissingCount, unpriced());
 });
@@ -185,7 +188,7 @@ test("updates cannot move records into unrelated trips, destinations, or lists",
   const hotelId = store.applyMutation(candidateInput(destinationId)).id;
   const before = store.getSnapshot();
   for (const input of [
-    destinationInput(otherTripId, { id: destinationId }),
+    destinationEdit(destinationId, { stopId: otherDestinationId, notes: "Through another trip's stop" }),
     candidateInput(otherDestinationId, { id: hotelId }),
     candidateInput(destinationId, { id: hotelId, category: "activities" }),
     destinationInput(randomUUID()),
@@ -209,7 +212,7 @@ test("saved trips, routes, and selected ideas survive closing and reopening the 
     store = createOwnedStore(path);
     assert.deepEqual(store.getSnapshot(), before);
     store.applyMutation({ type: "trip.delete", id: tripId });
-    assert.equal(store.getSnapshot().candidates.length, 0);
+    assert.deepEqual([store.getSnapshot().stops.length, store.getSnapshot().destinations.length, store.getSnapshot().candidates.length], [0, 1, 1], "the destination and its ideas outlive the trip");
   } finally {
     store.close();
   }

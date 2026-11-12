@@ -633,6 +633,42 @@ button svg,a svg {
   color:var(--muted);
   margin-top:4px
 }
+.destination-name h3 a:hover {
+  color:var(--orange)
+}
+.destination-full-name {
+  font-size:11px;
+  color:var(--muted);
+  margin-top:6px;
+  overflow-wrap:anywhere
+}
+.destination-trips {
+  list-style:none;
+  margin:22px 0 0;
+  padding:16px 0 0;
+  border-top:1px solid #d4ddcb;
+  display:grid;
+  gap:14px;
+  font-size:12px
+}
+.destination-trips li {
+  display:grid;
+  gap:4px;
+  overflow-wrap:anywhere
+}
+.destination-trips a {
+  font-weight:600
+}
+.destination-trips a:hover {
+  color:var(--orange)
+}
+.destination-trips span {
+  color:var(--muted);
+  font-size:11px
+}
+.destination-trips strong {
+  color:var(--ink)
+}
 .destination-tools {
   display:flex;
   gap:0;
@@ -1830,7 +1866,20 @@ button svg,a svg {
 .misc-breakdown dd { margin: 0; text-align: right; }
 .destination-budget-total { display: flex; justify-content: space-between; gap: 16px; border-top: 1px solid var(--line); padding-top: 12px; font-size: 13px; }
 .destination-budget-total strong { text-align: right; }
-.destination-budget-total small, .budget-breakdown dt small { display: block; color: var(--muted); font-size: 10px; line-height: 1.5; margin-top: 4px; }
+.destination-budget-total small, .budget-breakdown dt small, .budget-category dt small { display: block; color: var(--muted); font-size: 10px; line-height: 1.5; margin-top: 4px; }
+/* TRA-109: each category's amount and page or editor stay in view; the Budget heading shows or hides the breakdowns. */
+.budget-toggle { display: inline-flex; align-items: center; gap: 8px; padding: 0; border: 0; background: none; color: inherit; }
+.budget-toggle:hover { color: var(--orange); }
+.budget-toggle svg { transition: transform .16s; }
+.budget-toggle[aria-expanded="true"] svg { transform: rotate(180deg); }
+.budget-categories { display: grid; margin: 0 0 12px; font-size: 13px; }
+.budget-category { display: grid; grid-template-columns: 8.5em minmax(0, 1fr) auto; grid-template-areas: "name action amount"; align-items: baseline; column-gap: 16px; }
+.budget-category dt { grid-area: name; }
+.budget-category dd { margin: 0; }
+.budget-category-amount { grid-area: amount; text-align: right; font-weight: 600; }
+.budget-category-action { grid-area: action; }
+.budget-category-action a, .budget-category-action button { min-height: 44px; }
+.destination-budget-details h5 { margin: 22px 0 12px; font-size: 15px; }
 .destination-budget-editor { border: 1px solid #d3ddca; border-radius: 10px; padding: 16px; min-width: 0; margin: 0; }
 .destination-budget-editor legend { padding: 0 6px; color: var(--green); font-size: 14px; font-weight: 600; }
 .destination-budget-editor .form-grid { padding: 0; }
@@ -1842,6 +1891,8 @@ button svg,a svg {
 .budget-total .currency-totals { font-size: clamp(22px, 2.5vw, 32px); }
 @media (max-width: 540px) {
   .destination-budget { margin: 0 16px 16px; }
+  .budget-category { grid-template-columns: minmax(0, 1fr) auto; grid-template-areas: "name amount" "action action"; }
+  .budget-category-action a, .budget-category-action button { align-items: flex-start; }
   .destination-budget-total { flex-direction: column; }
   .destination-budget-total strong { text-align: left; }
   .destination-budget-editor .field select { font-size: 16px; }

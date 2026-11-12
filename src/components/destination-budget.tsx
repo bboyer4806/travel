@@ -1,9 +1,10 @@
 "use client";
 
 import Link from "next/link";
+import { ChevronDown } from "lucide-react";
 import { formatCalendarDate, sequenceDates } from "@/lib/trip-dates";
-import { useState } from "react";
-import type { FoodBudgetMode, ActivitiesBudgetMode, Candidate, Destination, Snapshot, Trip } from "@/lib/types";
+import { useId, useState, type ReactNode } from "react";
+import type { FoodBudgetMode, ActivitiesBudgetMode, Candidate, Category, Destination, DestinationVisit, Snapshot, Trip, TripStop } from "@/lib/types";
 import { calculateFoodBudget, calculateFoodEstimate, calculateActivitiesBudget, calculateAccommodation, calculateDestinationBudget, calculateHotelEstimate, calculateMiscellaneous } from "@/lib/budget";
 import { formatCurrency, MAX_AMOUNT_DOLLARS, minorAmountValue, parseMinorAmount } from "@/lib/money";
 
@@ -17,7 +18,7 @@ function dayLabel(days: number | null) {
   return days === null ? "Duration unknown" : String(days) + (days === 1 ? " budget day" : " budget days");
 }
 
-function MiscellaneousSummary({ destination }: { destination: Pick<Destination, "nights" | "miscDailyMinor" | "miscCurrency"> }) {
+function MiscellaneousSummary({ destination }: { destination: Pick<DestinationVisit, "nights" | "miscDailyMinor" | "miscCurrency"> }) {
   const misc = calculateMiscellaneous(destination);
   return <dl className="misc-breakdown">
     <div><dt>Daily miscellaneous</dt><dd>{misc.dailyMinor !== null && misc.currency ? formatCurrency(misc.dailyMinor, misc.currency) : "Not estimated"}</dd></div>
@@ -26,7 +27,7 @@ function MiscellaneousSummary({ destination }: { destination: Pick<Destination, 
   </dl>;
 }
 
-function HotelEstimateSummary({ destination }: { destination: Pick<Destination, "nights" | "hotelNightlyMinor" | "hotelCurrency"> }) {
+function HotelEstimateSummary({ destination }: { destination: Pick<DestinationVisit, "nights" | "hotelNightlyMinor" | "hotelCurrency"> }) {
   const estimate = calculateHotelEstimate(destination);
   return <dl className="misc-breakdown">
     <div><dt>General nightly hotel estimate</dt><dd>{estimate.nightlyMinor !== null && estimate.currency ? formatCurrency(estimate.nightlyMinor, estimate.currency) : "Not estimated"}</dd></div>
@@ -35,7 +36,7 @@ function HotelEstimateSummary({ destination }: { destination: Pick<Destination, 
   </dl>;
 }
 
-export function AccommodationSummary({ snapshot, destination }: { snapshot: Snapshot; destination: Destination }) {
+export function AccommodationSummary({ snapshot, destination }: { snapshot: Snapshot; destination: DestinationVisit }) {
   const accommodation = calculateAccommodation(snapshot, destination);
   return <div className="accommodation-summary">
     <HotelEstimateSummary destination={destination} />
@@ -72,7 +73,7 @@ export function ActivitiesBudgetEditor({ destination, disabled }: { destination?
   </fieldset>;
 }
 
-function FoodEstimateSummary({ destination }: { destination: Pick<Destination, "nights" | "foodDailyMinor" | "foodCurrency"> }) {
+function FoodEstimateSummary({ destination }: { destination: Pick<DestinationVisit, "nights" | "foodDailyMinor" | "foodCurrency"> }) {
   const estimate = calculateFoodEstimate(destination);
   return <dl className="misc-breakdown">
     <div><dt>Saved daily food amount</dt><dd>{estimate.dailyMinor !== null && estimate.currency ? formatCurrency(estimate.dailyMinor, estimate.currency) : "Not estimated"}</dd></div>
@@ -81,7 +82,7 @@ function FoodEstimateSummary({ destination }: { destination: Pick<Destination, "
   </dl>;
 }
 
-export function FoodSummary({ snapshot, destination }: { snapshot: Snapshot; destination: Destination }) {
+export function FoodSummary({ snapshot, destination }: { snapshot: Snapshot; destination: DestinationVisit }) {
   const food = calculateFoodBudget(snapshot, destination);
   return <div className="food-summary">
     <FoodEstimateSummary destination={destination} />
@@ -90,7 +91,8 @@ export function FoodSummary({ snapshot, destination }: { snapshot: Snapshot; des
   </div>;
 }
 
-export function FoodBudgetEditor({ destination, nights = destination?.nights ?? null, disabled }: { destination?: Destination; nights?: number | null; disabled: boolean }) {
+/** `nights` are the stay the preview uses: one trip's, or unknown outside a trip. */
+export function FoodBudgetEditor({ destination, nights, disabled }: { destination?: Destination; nights: number | null; disabled: boolean }) {
   const [mode, setMode] = useState<FoodBudgetMode>(destination?.foodBudgetMode ?? "itemized");
   const currency = "USD";
   const [amount, setAmount] = useState(minorAmountValue(destination?.foodDailyMinor, destination?.foodCurrency));
@@ -108,7 +110,7 @@ export function FoodBudgetEditor({ destination, nights = destination?.nights ?? 
       {error ? <p className="helper">{error}</p> : <FoodEstimateSummary destination={{ nights, foodDailyMinor, foodCurrency: currency || null }} />}
       <p className="helper">{mode === "daily" ? "The daily food subtotal supplies the budget. Itemized restaurant costs are excluded." : "Included restaurant costs supply the budget. The daily amount stays saved for later."}</p>
     </div>
-    <p className="helper">Overnight stays use one budget day per night. A zero-night visit uses one full budget day. Edit destination nights to change the allowance.</p>
+    <p className="helper">Overnight stays use one budget day per night. A zero-night visit uses one full budget day. Each trip&apos;s nights for this destination set its allowance.</p>
     <p className="helper">Restaurant changes never switch methods. Traveler count never multiplies the daily amount.</p>
   </fieldset>;
 }
@@ -130,34 +132,68 @@ export function ShoppingBudgetEditor({ destination, disabled }: { destination?: 
   </fieldset>;
 }
 
-export function DestinationBudget({ snapshot, destination, onShoppingEdit }: { snapshot: Snapshot; destination: Destination; onShoppingEdit: () => void }) {
-  const estimate = calculateDestinationBudget(snapshot, destination.id);
-  const categoryLink = (category: "hotels" | "activities" | "restaurants", title: string) => {
-    const count = snapshot.candidates.filter((item) => item.destinationId === destination.id && item.category === category).length;
-    return <div className="budget-section-heading"><h4>{title}</h4><Link className="text-button" href={"/trips/" + destination.tripId + "/destinations/" + destination.id + "/" + category}>{category === "hotels" ? "Hotels" : category === "activities" ? "Activities" : "Restaurants"} ({count})<span className="sr-only"> for {destination.city}</span> →</Link></div>;
+/** One budget category at a glance: its name, its amount, and the page or editor that changes it. */
+function BudgetCategory({ name, amount, partial = false, action }: { name: string; amount: ReactNode; partial?: boolean; action: ReactNode }) {
+  return <div className="budget-category"><dt>{name}{partial && <small>Partial estimate</small>}</dt><dd className="budget-category-amount">{amount}</dd><dd className="budget-category-action">{action}</dd></div>;
+}
+
+/**
+ * A destination's budget. In a trip, `stop` gives that stay's dates and nights, and its links open the trip's idea
+ * pages. Outside a trip there are no nights, so the duration-based subtotals and the destination estimate wait for one.
+ * Dates, each category's amount with its page or editor, and the destination estimate always show. The Budget heading
+ * shows or hides the breakdowns, which start hidden on every page load; toggling saves nothing.
+ */
+export function DestinationBudget({ snapshot, visit, stop, onShoppingEdit, onMiscellaneousEdit }: { snapshot: Snapshot; visit: DestinationVisit; stop?: TripStop; onShoppingEdit: () => void; onMiscellaneousEdit: () => void }) {
+  const [expanded, setExpanded] = useState(false);
+  const detailsId = useId();
+  const accommodation = calculateAccommodation(snapshot, visit);
+  const activities = calculateActivitiesBudget(snapshot, visit);
+  const food = calculateFoodBudget(snapshot, visit);
+  const misc = calculateMiscellaneous(visit);
+  const estimate = calculateDestinationBudget(snapshot, visit);
+  const shopping = visit.shoppingMinor !== null && visit.shoppingCurrency ? formatCurrency(visit.shoppingMinor, visit.shoppingCurrency) : "Not set";
+  const ideas = stop ? "/trips/" + stop.tripId + "/destinations/" + stop.id : "/destinations/" + visit.id;
+  const ideasLink = (category: Category) => {
+    const count = snapshot.candidates.filter((item) => item.destinationId === visit.id && item.category === category).length;
+    return <Link className="text-button" href={ideas + "/" + category}>{category === "hotels" ? "Hotels" : category === "activities" ? "Activities" : "Restaurants"} ({count})<span className="sr-only"> for {visit.city}</span> →</Link>;
   };
   return <div className="destination-budget">
-    <DestinationDates destination={destination} />
-    {categoryLink("hotels", "Accommodation")}
-    <AccommodationSummary snapshot={snapshot} destination={destination} />
-    {categoryLink("activities", "Activities")}
-    <ActivitiesSummary snapshot={snapshot} destination={destination} />
-    {categoryLink("restaurants", "Food")}
-    <FoodSummary snapshot={snapshot} destination={destination} />
-    <div className="budget-section-heading"><h4>Shopping</h4><button type="button" className="text-button" onClick={onShoppingEdit}>Edit shopping budget<span className="sr-only"> for {destination.city}</span></button></div>
-    <div className="destination-budget-total"><span>Shopping<small>Optional · whole party, entire stay</small></span><strong>{destination.shoppingMinor !== null && destination.shoppingCurrency ? formatCurrency(destination.shoppingMinor, destination.shoppingCurrency) : "Not set"}</strong></div>
-    <MiscellaneousSummary destination={destination} />
-    <div className="destination-budget-total"><span>Destination {estimate.complete ? "estimate" : "partial estimate"}<small>Accommodation, activities, food, shopping, and miscellaneous · whole party</small></span><strong><CurrencyTotals totals={estimate.totalsByCurrency} /></strong></div>
+    {stop ? <DestinationDates stop={stop} /> : <p className="helper">Nights and dates belong to each trip, so stay totals appear on each trip&apos;s page. Budget amounts, methods and selections here are shared by every trip that visits this destination.</p>}
+    <div className="budget-section-heading"><h4><button type="button" className="budget-toggle" aria-expanded={expanded} aria-controls={detailsId} onClick={() => setExpanded((open) => !open)}>Budget<ChevronDown size={18} aria-hidden="true" /></button></h4></div>
+    <dl className="budget-categories">
+      <BudgetCategory name="Accommodation" amount={accommodation.totalMinor !== null && accommodation.currency ? formatCurrency(accommodation.totalMinor, accommodation.currency) : "Not estimated"} action={ideasLink("hotels")} />
+      <BudgetCategory name="Activities" amount={<CurrencyTotals totals={activities.totalsByCurrency} empty={activities.complete ? "$0" : "Not estimated"} />} partial={!activities.complete && activities.knownCount > 0} action={ideasLink("activities")} />
+      <BudgetCategory name="Food" amount={<CurrencyTotals totals={food.totalsByCurrency} empty={food.complete ? "$0" : "Not estimated"} />} partial={!food.complete && food.knownCount > 0} action={ideasLink("restaurants")} />
+      <BudgetCategory name="Shopping" amount={shopping} action={<button type="button" className="text-button" onClick={onShoppingEdit}>Edit shopping budget<span className="sr-only"> for {visit.city}</span></button>} />
+      <BudgetCategory name="Miscellaneous" amount={misc.subtotalMinor !== null && misc.currency ? formatCurrency(misc.subtotalMinor, misc.currency) : "Not estimated"} action={<button type="button" className="text-button" onClick={onMiscellaneousEdit}>Edit miscellaneous budget<span className="sr-only"> for {visit.city}</span></button>} />
+    </dl>
+    {stop && <div className="destination-budget-total"><span>Destination {estimate.complete ? "estimate" : "partial estimate"}<small>Accommodation, activities, food, shopping, and miscellaneous · whole party</small></span><strong><CurrencyTotals totals={estimate.totalsByCurrency} /></strong></div>}
+    <div id={detailsId} className="destination-budget-details" hidden={!expanded}>
+      <h5>Accommodation</h5>
+      <AccommodationSummary snapshot={snapshot} destination={visit} />
+      <h5>Activities</h5>
+      <ActivitiesSummary snapshot={snapshot} destination={visit} />
+      <h5>Food</h5>
+      <FoodSummary snapshot={snapshot} destination={visit} />
+      <h5>Shopping</h5>
+      <div className="destination-budget-total"><span>Shopping<small>Optional · whole party, entire stay</small></span><strong>{shopping}</strong></div>
+      <h5>Miscellaneous</h5>
+      <MiscellaneousSummary destination={visit} />
+    </div>
   </div>;
 }
 
-export function DestinationBudgetEditor({ destination, selectedHotel, disabled, trip, stops }: { destination?: Destination; selectedHotel?: Candidate; disabled: boolean; trip: Trip; stops: Destination[] }) {
-  const [nightInput, setNightInput] = useState(String(destination?.nights ?? ""));
-  const nights = nightInput === "" ? null : Number(nightInput);
-  const previewStops = destination ? stops.map((stop) => stop.id === destination.id ? { ...stop, nights } : stop) : [...stops, { id: "new", nights }];
+/**
+ * Budget amounts and methods, shared by every trip that visits the destination. In a trip, `stay` adds that trip's
+ * nights for this stop, with previews of its dates; `stop` is absent while adding one.
+ */
+export function DestinationBudgetEditor({ destination, selectedHotel, disabled, stay }: { destination?: Destination; selectedHotel?: Candidate; disabled: boolean; stay?: { trip: Trip; stops: TripStop[]; stop?: TripStop } }) {
+  const [nightInput, setNightInput] = useState(String(stay?.stop?.nights ?? ""));
+  const nights = !stay || nightInput === "" ? null : Number(nightInput);
+  const previewStops = !stay ? [] : stay.stop ? stay.stops.map((stop) => stop.id === stay.stop?.id ? { ...stop, nights } : stop) : [...stay.stops, { id: "new", nights }];
   let dates = { arrivalDate: null as string | null, departureDate: null as string | null };
   let dateError = "";
-  try { dates = sequenceDates(trip.startDate, previewStops).destinations.find((stop) => stop.id === (destination?.id ?? "new")) ?? dates; }
+  try { if (stay) dates = sequenceDates(stay.trip.startDate, previewStops).destinations.find((stop) => stop.id === (stay.stop?.id ?? "new")) ?? dates; }
   catch (cause) { dateError = cause instanceof Error ? cause.message : "Enter valid nights."; }
   const currency = "USD";
   const [amount, setAmount] = useState(minorAmountValue(destination?.miscDailyMinor ?? null, destination?.miscCurrency ?? null));
@@ -173,11 +209,11 @@ export function DestinationBudgetEditor({ destination, selectedHotel, disabled, 
   catch (error) { previewError = error instanceof Error ? error.message : "Enter a valid daily amount."; }
 
   return <fieldset className="destination-budget-editor wide" disabled={disabled}>
-    <legend>Dates & destination budget</legend>
-    <p className="helper">Enter nights for this destination. Dates follow the trip start and destination order automatically. All amounts are USD for the whole party; stay notes do not affect calculations.</p>
+    <legend>{stay ? "Dates & destination budget" : "Destination budget"}</legend>
+    <p className="helper">{stay ? "Enter nights for this trip's stay. Dates follow the trip start and destination order automatically. " : "Each trip that visits this destination sets its own nights, which these amounts multiply. "}Budget amounts and methods are shared by every trip that visits this destination. All amounts are USD for the whole party; stay notes do not affect calculations.</p>
     <div className="form-grid">
-      <label className="field wide"><span>Nights</span><input name="nights" type="number" min="0" max="3652058" step="1" value={nightInput} onChange={(event) => setNightInput(event.target.value)} placeholder="Unknown" /><small>Zero is a same-day visit. Leave blank if undecided.</small></label>
-      <div className="wide" aria-live="polite"><DestinationDates destination={{ ...dates, nights, legacyArrivalDate: destination?.legacyArrivalDate ?? null, legacyDepartureDate: destination?.legacyDepartureDate ?? null }} />{dateError && <p className="form-error">{dateError}</p>}</div>
+      {stay && <><label className="field wide"><span>Nights</span><input name="nights" type="number" min="0" max="3652058" step="1" value={nightInput} onChange={(event) => setNightInput(event.target.value)} placeholder="Unknown" /><small>Zero is a same-day visit. Leave blank if undecided.</small></label>
+      <div className="wide" aria-live="polite"><DestinationDates stop={{ ...dates, nights, legacyArrivalDate: stay.stop?.legacyArrivalDate ?? null, legacyDepartureDate: stay.stop?.legacyDepartureDate ?? null }} />{dateError && <p className="form-error">{dateError}</p>}</div></>}
       <label className="field"><span>Nightly hotel amount ($)</span><input name="hotelNightlyAmount" type="number" min="0" max={MAX_AMOUNT_DOLLARS} step="0.01" value={hotelAmount} onChange={(event) => setHotelAmount(event.target.value)} placeholder="Not estimated" /><small>General estimate for all rooms and travelers per night. Leave blank if unknown.</small></label>
       <div className="wide" aria-live="polite">
         {hotelError ? <p className="helper">{hotelError}</p> : <HotelEstimateSummary destination={{ nights, hotelNightlyMinor, hotelCurrency: hotelCurrency || null }} />}
@@ -196,10 +232,11 @@ export function DestinationBudgetEditor({ destination, selectedHotel, disabled, 
 }
 
 
-export function DestinationDates({ destination }: { destination: Pick<Destination, "arrivalDate" | "departureDate" | "nights" | "legacyArrivalDate" | "legacyDepartureDate"> }) {
-  const complete = !!destination.arrivalDate && !!destination.departureDate;
-  return <div className="destination-dates"><p>{destination.nights === null ? "Nights unknown" : destination.nights + (destination.nights === 1 ? " night" : " nights")}</p><dl className="misc-breakdown"><div><dt>Arrival</dt><dd>{formatCalendarDate(destination.arrivalDate)}</dd></div><div><dt>Departure</dt><dd>{formatCalendarDate(destination.departureDate)}</dd></div></dl>
+/** One trip's stay: its nights and calculated dates. */
+export function DestinationDates({ stop }: { stop: Pick<TripStop, "arrivalDate" | "departureDate" | "nights" | "legacyArrivalDate" | "legacyDepartureDate"> }) {
+  const complete = !!stop.arrivalDate && !!stop.departureDate;
+  return <div className="destination-dates"><p>{stop.nights === null ? "Nights unknown" : stop.nights + (stop.nights === 1 ? " night" : " nights")}</p><dl className="misc-breakdown"><div><dt>Arrival</dt><dd>{formatCalendarDate(stop.arrivalDate)}</dd></div><div><dt>Departure</dt><dd>{formatCalendarDate(stop.departureDate)}</dd></div></dl>
     <p className="helper">{complete ? "Calculated from the trip start, destination order, and nights." : "Enter the trip start date and nights for this and every preceding destination to calculate dates."}</p>
-    {!complete && (destination.legacyArrivalDate || destination.legacyDepartureDate) && <p className="helper">Previously recorded dates: {destination.legacyArrivalDate ?? "unknown"} → {destination.legacyDepartureDate ?? "unknown"}. Check these before completing the new schedule.</p>}
+    {!complete && (stop.legacyArrivalDate || stop.legacyDepartureDate) && <p className="helper">Previously recorded dates: {stop.legacyArrivalDate ?? "unknown"} → {stop.legacyDepartureDate ?? "unknown"}. Check these before completing the new schedule.</p>}
   </div>;
 }

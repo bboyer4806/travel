@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { formatDestinationLabel, formatSavedDestinationLabel } from "../src/lib/destination-label.ts";
+import { destinationKey, formatDestinationLabel, formatSavedDestinationLabel } from "../src/lib/destination-label.ts";
 
 test("US destinations show city and full state; international destinations show city and country", () => {
   assert.equal(formatDestinationLabel({ name: "Wooster", region: "Ohio", country: "United States", countryCode: "US" }), "Wooster, Ohio");
@@ -43,4 +43,15 @@ test("manual and ambiguous destination labels remain exactly as entered", () => 
   for (const label of ["Vienna", "Paris, France", "Wooster, OH", "  My summer adventure  ", "Coast, mountains, perhaps", "Hotel, district, city, France", "City, , France", "Museum, Wing B, AA", "Town, state, The airport", "", "Somewhere, local area"]) {
     assert.equal(formatSavedDestinationLabel(label), label);
   }
+});
+
+test("a destination's city key ignores only case, spacing and Unicode form, so other regions stay distinct", () => {
+  assert.equal(destinationKey(" paris ,  ILE-DE-FRANCE,france "), destinationKey("Paris, Ile-de-France, France"));
+  assert.equal(destinationKey("Z\u0075\u0308rich, Switzerland"), destinationKey("Z\u00fcrich, Switzerland"), "composed and decomposed letters match");
+  for (const [one, other] of [
+    ["Paris, Ile-de-France, France", "Paris, Texas, United States"],
+    ["Paris", "Paris, France"],
+    ["Newport, Wales, United Kingdom", "Newport, England, United Kingdom"],
+    ["Wooster, OH", "Wooster, Ohio, United States"],
+  ]) assert.notEqual(destinationKey(one), destinationKey(other), `${one} / ${other}`);
 });

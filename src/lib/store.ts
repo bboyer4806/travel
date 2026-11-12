@@ -4,17 +4,18 @@ import { mkdirSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { containsSunday, isValidDate, nightsToBudgetDays } from "./destination-duration.ts";
+import { destinationKey } from "./destination-label.ts";
 import { backfillDates, MAX_NIGHTS, sequenceDates } from "./trip-dates.ts";
 import { MAX_AMOUNT_CENTS, parseMinorAmount } from "./money.ts";
 import { formatMegabytes, MAX_CANDIDATE_IMAGES, MAX_DESTINATION_IMAGES, MAX_STORED_IMAGE_BYTES } from "./image-limits.ts";
-import { normalizeEntryRequirements } from "./entry-requirements.ts";
+import { ENTRY_REQUIREMENT_FIELDS, normalizeEntryRequirements } from "./entry-requirements.ts";
 import { SESSION_DAYS } from "./session-cookie.ts";
 import type { EntryRequirements } from "./entry-requirements.ts";
 import type { DestinationGalleryUpdate } from "./types";
-import type { AuthorizedAccount, GoogleIdentity, TripAccess, TripMember } from "./types";
+import type { AuthorizedAccount, DestinationAccess, GoogleIdentity, TripAccess, TripMember, TripStop } from "./types";
 import type { FoodBudgetMode, ActivitiesBudgetMode, Candidate, CandidateImage, CandidateGalleryUpdate, Category, Church, MassTime, Destination, HomeItem, StoredImage, ItineraryStop, Mutation, ResearchLink, Snapshot, TravelLeg, Trip } from "./types";
 
-type StoredDestination = Omit<Destination, "churchEnabled" | "images"> & { churchEnabled: number };
+type StoredDestination = Omit<Destination, "churchEnabled" | "images" | "entryRequirements" | "mainImageId" | "imageVersion"> & { churchEnabled: number; ownerId: string; cityKey: string };
 type StoredChurch = Omit<Church, "massTimes" | "images"> & { massTimesJson: string };
 type StoredHomeItem = Omit<HomeItem, "completed"> & { completed: number };
 type StoredLeg = Omit<TravelLeg, "itinerary" | "links"> & { itineraryJson: string; linksJson: string };
@@ -25,18 +26,27 @@ const DAY_MS = 24 * 60 * 60 * 1000;
 const SESSION_MS = SESSION_DAYS * DAY_MS;
 /** The trips an account owns or was shared, as SQL binding the account's ID twice. Every read of trip data is limited to these. */
 const VISIBLE_TRIPS = "SELECT id FROM trips WHERE ownerId = ? UNION SELECT tripId FROM trip_shares WHERE accountId = ?";
+/** The destinations an account owns or that a trip it can open visits, as SQL binding the account's ID three times. */
+const VISIBLE_DESTINATIONS = `SELECT id FROM destinations WHERE ownerId = ? UNION SELECT destinationId FROM trip_stops WHERE tripId IN (${VISIBLE_TRIPS})`;
 /** Every trip column but the owner's account ID, which stays on the server. */
 const TRIP_COLUMNS = "id, name, dateLabel, homeCity, returnCity, travelers, notes, createdAt, startDate";
-/** How each saved item finds its trip, through its parents. */
+/** Every destination column but its owner's account ID and its city key, which stay on the server. */
+const DESTINATION_COLUMNS = ["id", "city", "notes", "miscDailyMinor", "miscCurrency", "hotelNightlyMinor", "hotelCurrency", "activitiesBudgetMode", "activitiesGeneralMinor", "activitiesCurrency", "foodBudgetMode", "foodDailyMinor", "foodCurrency", "shoppingMinor", "shoppingCurrency", "weatherHighF", "weatherLowF", "weatherRainfall", "weatherPeriod", "weatherSource", "churchEnabled"]
+  .map((column) => "destinations." + column).join(", ");
+/** How each saved trip item finds its trip. */
 const TRIP_OF = {
   trips: "SELECT id AS tripId FROM trips WHERE id = ?",
-  destinations: "SELECT tripId FROM destinations WHERE id = ?",
+  trip_stops: "SELECT tripId FROM trip_stops WHERE id = ?",
   home_items: "SELECT tripId FROM home_items WHERE id = ?",
   legs: "SELECT tripId FROM legs WHERE id = ?",
-  candidates: "SELECT destinations.tripId FROM candidates JOIN destinations ON destinations.id = candidates.destinationId WHERE candidates.id = ?",
-  churches: "SELECT destinations.tripId FROM churches JOIN destinations ON destinations.id = churches.destinationId WHERE churches.id = ?",
 } as const;
-/** A missing trip and one the account can't open look the same, so an ID reveals nothing about other people's trips. */
+/** How each saved destination item finds its destination. */
+const DESTINATION_OF = {
+  destinations: "SELECT id AS destinationId FROM destinations WHERE id = ?",
+  candidates: "SELECT destinationId FROM candidates WHERE id = ?",
+  churches: "SELECT destinationId FROM churches WHERE id = ?",
+} as const;
+/** A missing trip or destination and one the account can't open look the same, so an ID reveals nothing about other people's. */
 const NOT_AVAILABLE = "This item no longer exists or isn't shared with you. Please refresh and try again.";
 const OWNER_ONLY: Partial<Record<Mutation["type"], string>> = {
   "trip.delete": "Only the trip's owner can delete it.",
@@ -290,7 +300,7 @@ function validate(input: unknown): Mutation {
       return { type: value.type, id: optionalId(value), name: textField(value, "name", 120, true), startDate: destinationDateField(value, "startDate"), dateLabel: textField(value, "dateLabel", 120), homeCity: textField(value, "homeCity", 120), returnCity: returnCityField(value), travelers: value.travelers, notes: textField(value, "notes", 8000) };
     }
     case "trip.delete":
-    case "destination.delete":
+    case "stop.remove":
     case "candidate.delete":
     case "leg.clear":
       return { type: value.type, id: idField(value) };
@@ -303,14 +313,26 @@ function validate(input: unknown): Mutation {
       return { type: value.type, id: idField(value), tripId: idField(value, "tripId") };
     case "homeItem.complete":
       return { type: value.type, id: idField(value), tripId: idField(value, "tripId"), completed: booleanField(value, "completed") };
-    case "destination.save":
+    case "destination.save": {
       if (value.arrivalDate !== undefined || value.departureDate !== undefined) throw new ValidationError("Destination dates are calculated. Edit the trip start date or destination nights instead.");
-      return { type: value.type, id: optionalId(value), tripId: idField(value, "tripId"), city: value.id !== undefined && value.city === undefined ? undefined : textField(value, "city", 120, true), stay: value.stay === undefined ? undefined : textField(value, "stay", 120), nights: nightsField(value), miscDailyAmount: value.miscDailyAmount === undefined ? undefined : textField(value, "miscDailyAmount", 32), hotelNightlyAmount: value.hotelNightlyAmount === undefined ? undefined : textField(value, "hotelNightlyAmount", 32), activitiesBudgetMode: activitiesModeField(value), activitiesGeneralAmount: value.activitiesGeneralAmount === undefined ? undefined : textField(value, "activitiesGeneralAmount", 32), foodBudgetMode: foodModeField(value), foodDailyAmount: value.foodDailyAmount === undefined ? undefined : textField(value, "foodDailyAmount", 32), shoppingAmount: value.shoppingAmount === undefined ? undefined : textField(value, "shoppingAmount", 32), weatherHighF: temperatureField(value, "weatherHighF"), weatherLowF: temperatureField(value, "weatherLowF"), weatherRainfall: value.weatherRainfall === undefined ? undefined : textField(value, "weatherRainfall", 4000), weatherPeriod: value.weatherPeriod === undefined ? undefined : textField(value, "weatherPeriod", 120), weatherSource: value.weatherSource === undefined ? undefined : textField(value, "weatherSource", 2048), notes: value.notes === undefined ? undefined : textField(value, "notes", 8000), image: imageField(value), gallery: destinationGalleryField(value) };
+      const fields = { city: value.city === undefined ? undefined : textField(value, "city", 120, true), stay: value.stay === undefined ? undefined : textField(value, "stay", 120), nights: nightsField(value), miscDailyAmount: value.miscDailyAmount === undefined ? undefined : textField(value, "miscDailyAmount", 32), hotelNightlyAmount: value.hotelNightlyAmount === undefined ? undefined : textField(value, "hotelNightlyAmount", 32), activitiesBudgetMode: activitiesModeField(value), activitiesGeneralAmount: value.activitiesGeneralAmount === undefined ? undefined : textField(value, "activitiesGeneralAmount", 32), foodBudgetMode: foodModeField(value), foodDailyAmount: value.foodDailyAmount === undefined ? undefined : textField(value, "foodDailyAmount", 32), shoppingAmount: value.shoppingAmount === undefined ? undefined : textField(value, "shoppingAmount", 32), weatherHighF: temperatureField(value, "weatherHighF"), weatherLowF: temperatureField(value, "weatherLowF"), weatherRainfall: value.weatherRainfall === undefined ? undefined : textField(value, "weatherRainfall", 4000), weatherPeriod: value.weatherPeriod === undefined ? undefined : textField(value, "weatherPeriod", 120), weatherSource: value.weatherSource === undefined ? undefined : textField(value, "weatherSource", 2048), notes: value.notes === undefined ? undefined : textField(value, "notes", 8000), image: imageField(value), gallery: destinationGalleryField(value) };
+      // A new destination joins a trip as its last stop. A saved one is changed by its own ID, and only a trip's
+      // stop has stay notes and nights, so a save that changes them names that stop.
+      if (value.id === undefined) {
+        if (value.tripId === undefined) throw new ValidationError("Add a destination from a trip's page.");
+        if (value.stopId !== undefined) throw new ValidationError("A new destination has no stop yet. Please refresh and try again.");
+        return { type: value.type, tripId: idField(value, "tripId"), ...fields, city: textField(value, "city", 120, true) };
+      }
+      if (value.tripId !== undefined) throw new ValidationError("A saved destination is changed by its own ID. Please refresh and try again.");
+      const stopId = value.stopId === undefined ? undefined : idField(value, "stopId");
+      if (stopId === undefined && (fields.stay !== undefined || fields.nights !== undefined)) throw new ValidationError("Stay notes and nights belong to a trip. Change them from the trip's page.");
+      return { type: value.type, id: idField(value), stopId, ...fields };
+    }
     case "destination.entryRequirements": {
       let requirements: EntryRequirements | null;
       try { requirements = normalizeEntryRequirements(value.requirements); }
       catch (error) { throw new ValidationError(error instanceof Error ? error.message : "Enter valid entry requirements."); }
-      return { type: value.type, id: idField(value), tripId: idField(value, "tripId"), requirements };
+      return { type: value.type, id: idField(value), requirements };
     }
     case "destination.churchVisibility":
       return { type: value.type, id: idField(value), enabled: booleanField(value, "enabled") };
@@ -318,7 +340,7 @@ function validate(input: unknown): Mutation {
       return { type: value.type, id: optionalId(value), destinationId: idField(value, "destinationId"), name: textField(value, "name", 160, true), address: textField(value, "address", 500), denomination: textField(value, "denomination", 160), url: urlField(value), massTimes: massTimesField(value), gallery: galleryField(value, "Church") };
     case "church.delete":
       return { type: value.type, id: idField(value), destinationId: idField(value, "destinationId") };
-    case "destination.move":
+    case "stop.move":
       if (value.direction !== "up" && value.direction !== "down") throw new ValidationError("Choose a valid direction for this destination.");
       return { type: value.type, id: idField(value), direction: value.direction };
     case "leg.save":
@@ -341,7 +363,150 @@ function validate(input: unknown): Mutation {
  * The schema this build upgrades every database to, as SQLite's user_version. A schema change adds the next
  * upgrade in createStore and raises this to match; earlier upgrades keep their own numbers.
  */
-export const SCHEMA_VERSION = 20;
+export const SCHEMA_VERSION = 21;
+
+/** A destination as schema 20 saved it, inside one trip, with that trip's owner and name. */
+type TripDestinationRow = Omit<StoredDestination, "cityKey"> & Omit<TripStop, "destinationId"> & { tripName: string };
+type Weather = Pick<Destination, "weatherHighF" | "weatherLowF" | "weatherRainfall" | "weatherPeriod" | "weatherSource">;
+const AMOUNT_COLUMNS = [["miscDailyMinor", "miscCurrency"], ["hotelNightlyMinor", "hotelCurrency"], ["activitiesGeneralMinor", "activitiesCurrency"], ["foodDailyMinor", "foodCurrency"], ["shoppingMinor", "shoppingCurrency"]] as const;
+
+function weatherOf(row: Weather): Weather {
+  return { weatherHighF: row.weatherHighF, weatherLowF: row.weatherLowF, weatherRainfall: row.weatherRainfall, weatherPeriod: row.weatherPeriod, weatherSource: row.weatherSource };
+}
+function weatherText(weather: Weather): string {
+  return [weather.weatherHighF === null ? "" : `High: ${weather.weatherHighF} °F`, weather.weatherLowF === null ? "" : `Low: ${weather.weatherLowF} °F`,
+    weather.weatherPeriod && `Period: ${weather.weatherPeriod}`, weather.weatherRainfall && `Rainfall: ${weather.weatherRainfall}`, weather.weatherSource && `Source: ${weather.weatherSource}`]
+    .filter(Boolean).join("\n");
+}
+function requirementsText(requirements: EntryRequirements): string {
+  return [...ENTRY_REQUIREMENT_FIELDS.map((field) => requirements[field.name] && `${field.label}: ${requirements[field.name]}`),
+    ...requirements.sources.map((source) => `Source: ${source.url}${source.description ? ` (${source.description})` : ""}`),
+    requirements.lastCheckedDate && `Last checked: ${requirements.lastCheckedDate}`].filter(Boolean).join("\n");
+}
+
+/**
+ * One owner's destinations for the same city become the first, from the oldest trip. Ideas, photos, churches and
+ * notes are all kept. The first weather and entry requirements recorded are kept, and any other weather or entry
+ * requirements are added to the notes as text. An amount, budgeting method, Church choice or idea selection is
+ * kept when the destinations agree on it or only one of them set it; one they set differently is cleared, so it
+ * can be entered again.
+ */
+function mergeDestinations(db: DatabaseSync, members: TripDestinationRow[]): Omit<StoredDestination, "cityKey"> {
+  const [first] = members;
+  const shared = { id: first.id, ownerId: first.ownerId, city: first.city, churchEnabled: first.churchEnabled, activitiesBudgetMode: first.activitiesBudgetMode, foodBudgetMode: first.foodBudgetMode };
+  const amounts = Object.fromEntries(AMOUNT_COLUMNS.flatMap(([minor, currency]) => [[minor, first[minor]], [currency, first[currency]]]));
+  if (members.length === 1) return { ...shared, ...amounts, ...weatherOf(first), notes: first.notes } as Omit<StoredDestination, "cityKey">;
+  const ids = JSON.stringify(members.map((member) => member.id));
+  for (const category of CATEGORIES) {
+    const choosing = members.filter((member) => db.prepare("SELECT 1 FROM candidates WHERE destinationId = ? AND category = ? AND included = 1").get(member.id, category));
+    if (choosing.length > 1) db.prepare("UPDATE candidates SET included = 0 WHERE category = ? AND destinationId IN (SELECT value FROM json_each(?))").run(category, ids);
+    // Each list continues with the next destination's ideas, in their saved order.
+    const ideas = members.flatMap((member) => db.prepare("SELECT id FROM candidates WHERE destinationId = ? AND category = ? ORDER BY position, id").all(member.id, category));
+    ideas.forEach((idea, position) => db.prepare("UPDATE candidates SET destinationId = ?, position = ? WHERE id = ?").run(first.id, position, idea.id));
+  }
+  const photos = members.flatMap((member) => db.prepare("SELECT id, isMain FROM destination_images WHERE destinationId = ? ORDER BY position, id").all(member.id));
+  const main = photos.find((photo) => photo.isMain === 1)?.id;
+  photos.forEach((photo, position) => db.prepare("UPDATE destination_images SET destinationId = ?, position = ?, isMain = ? WHERE id = ?").run(first.id, position, Number(photo.id === main), photo.id));
+  db.prepare("UPDATE churches SET destinationId = ? WHERE destinationId IN (SELECT value FROM json_each(?))").run(first.id, ids);
+
+  const notes = [...new Set(members.map((member) => member.notes).filter(Boolean))];
+  const recorded = members.filter((member) => member.weatherHighF !== null || member.weatherLowF !== null || member.weatherRainfall || member.weatherPeriod || member.weatherSource);
+  const weather = weatherOf(recorded[0] ?? first);
+  const weatherNotes = new Set([weatherText(weather)]);
+  for (const member of recorded) {
+    const text = weatherText(member);
+    if (!weatherNotes.has(text)) notes.push(`Typical weather recorded in “${member.tripName}”:\n${text}`);
+    weatherNotes.add(text);
+  }
+  const requirements = members.flatMap((member) => {
+    const row = db.prepare("SELECT requirementsJson FROM destination_entry_requirements WHERE destinationId = ?").get(member.id);
+    return row ? [{ member, json: row.requirementsJson as string, text: requirementsText(JSON.parse(row.requirementsJson as string) as EntryRequirements) }] : [];
+  });
+  const kept = requirements.find((record) => record.text) ?? requirements[0];
+  const requirementNotes = new Set(kept ? [kept.text] : []);
+  for (const record of requirements) {
+    if (record.text && !requirementNotes.has(record.text)) notes.push(`Entry requirements recorded in “${record.member.tripName}”:\n${record.text}`);
+    requirementNotes.add(record.text);
+  }
+  db.prepare("DELETE FROM destination_entry_requirements WHERE destinationId IN (SELECT value FROM json_each(?))").run(ids);
+  if (kept) db.prepare("INSERT INTO destination_entry_requirements(destinationId, requirementsJson) VALUES(?, ?)").run(first.id, kept.json);
+
+  const agreed = <T>(values: T[], cleared: T): T => new Set(values).size === 1 ? values[0] : cleared;
+  for (const [minor, currency] of AMOUNT_COLUMNS) {
+    const set = members.filter((member) => member[minor] !== null);
+    if (new Set(set.map((member) => member[minor])).size > 1) Object.assign(amounts, { [minor]: null, [currency]: "USD" });
+    else if (set.length) Object.assign(amounts, { [minor]: set[0][minor], [currency]: set[0][currency] });
+  }
+  return {
+    ...shared, ...amounts, ...weather, notes: notes.join("\n\n"),
+    activitiesBudgetMode: agreed(members.map((member) => member.activitiesBudgetMode), "itemized"),
+    foodBudgetMode: agreed(members.map((member) => member.foodBudgetMode), "itemized"),
+    churchEnabled: agreed(members.map((member) => member.churchEnabled), 1),
+  } as Omit<StoredDestination, "cityKey">;
+}
+
+/**
+ * Schema 21 (TRA-105): every destination was one trip's, and now each owner has one shared destination per city
+ * that trips visit through stops. Each old destination becomes a stop with the same ID, so its travel connections,
+ * order, stay notes, nights and dates stay with its trip, and links to it keep working.
+ */
+function shareDestinations(db: DatabaseSync) {
+  const rows = db.prepare(`SELECT destinations.*, trips.ownerId, trips.name AS tripName FROM destinations JOIN trips ON trips.id = destinations.tripId
+    ORDER BY trips.createdAt, trips.id, destinations.position, destinations.id`).all() as unknown as TripDestinationRow[];
+  const groups = new Map<string, TripDestinationRow[]>();
+  for (const row of rows) {
+    const key = JSON.stringify([row.ownerId, destinationKey(row.city)]);
+    groups.set(key, [...(groups.get(key) ?? []), row]);
+  }
+  const amountColumns = AMOUNT_COLUMNS.flat();
+  db.exec(`
+    CREATE TABLE shared_destinations (
+      id TEXT PRIMARY KEY, ownerId TEXT NOT NULL REFERENCES accounts(id),
+      city TEXT NOT NULL, cityKey TEXT NOT NULL, notes TEXT NOT NULL DEFAULT '',
+      ${amountColumns.map((column) => column.endsWith("Minor") ? `${column} INTEGER CHECK(${column} BETWEEN 0 AND 9007199254740991)` : `${column} TEXT`).join(", ")},
+      activitiesBudgetMode TEXT NOT NULL DEFAULT 'itemized' CHECK(activitiesBudgetMode IN ('itemized', 'general')),
+      foodBudgetMode TEXT NOT NULL DEFAULT 'itemized' CHECK(foodBudgetMode IN ('itemized', 'daily')),
+      weatherHighF REAL, weatherLowF REAL,
+      weatherRainfall TEXT NOT NULL DEFAULT '', weatherPeriod TEXT NOT NULL DEFAULT '', weatherSource TEXT NOT NULL DEFAULT '',
+      churchEnabled INTEGER NOT NULL DEFAULT 1 CHECK(churchEnabled IN (0,1))
+    ) STRICT;
+    CREATE TABLE trip_stops (
+      id TEXT PRIMARY KEY, tripId TEXT NOT NULL REFERENCES trips(id) ON DELETE CASCADE,
+      destinationId TEXT NOT NULL REFERENCES destinations(id),
+      position INTEGER NOT NULL CHECK(position >= 0), stay TEXT NOT NULL DEFAULT '',
+      nights INTEGER CHECK(nights BETWEEN 0 AND 3652058),
+      arrivalDate TEXT, departureDate TEXT, legacyArrivalDate TEXT, legacyDepartureDate TEXT
+    ) STRICT;
+  `);
+  const columns = ["id", "ownerId", "city", "cityKey", "notes", ...amountColumns, "activitiesBudgetMode", "foodBudgetMode", "weatherHighF", "weatherLowF", "weatherRainfall", "weatherPeriod", "weatherSource", "churchEnabled"] as const;
+  const insertDestination = db.prepare(`INSERT INTO shared_destinations(${columns.join(", ")}) VALUES(${columns.map(() => "?").join(", ")})`);
+  const insertStop = db.prepare("INSERT INTO trip_stops(id, tripId, destinationId, position, stay, nights, arrivalDate, departureDate, legacyArrivalDate, legacyDepartureDate) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
+  for (const members of groups.values()) {
+    const destination: StoredDestination = { ...mergeDestinations(db, members), cityKey: destinationKey(members[0].city) };
+    insertDestination.run(...columns.map((column) => destination[column]));
+    for (const stop of members) insertStop.run(stop.id, stop.tripId, destination.id, stop.position, stop.stay, stop.nights, stop.arrivalDate, stop.departureDate, stop.legacyArrivalDate, stop.legacyDepartureDate);
+  }
+  // Travel connections join a trip's stops now. The other tables keep referring to destinations by name, so the
+  // shared table takes the old one's place.
+  db.exec(`
+    CREATE TABLE shared_legs (
+      id TEXT PRIMARY KEY, tripId TEXT NOT NULL REFERENCES trips(id) ON DELETE CASCADE,
+      fromId TEXT REFERENCES trip_stops(id) ON DELETE CASCADE,
+      toId TEXT REFERENCES trip_stops(id) ON DELETE CASCADE,
+      method TEXT NOT NULL DEFAULT '', priceCents INTEGER CHECK(priceCents BETWEEN 0 AND ${MAX_AMOUNT_CENTS}),
+      departure TEXT NOT NULL DEFAULT '', arrival TEXT NOT NULL DEFAULT '',
+      url TEXT NOT NULL DEFAULT '', notes TEXT NOT NULL DEFAULT '',
+      itineraryJson TEXT NOT NULL DEFAULT '[]', linksJson TEXT NOT NULL DEFAULT '[]',
+      CHECK(fromId IS NOT NULL OR toId IS NOT NULL), CHECK(fromId IS NULL OR toId IS NULL OR fromId != toId)
+    ) STRICT;
+    INSERT INTO shared_legs(id, tripId, fromId, toId, method, priceCents, departure, arrival, url, notes, itineraryJson, linksJson)
+      SELECT id, tripId, fromId, toId, method, priceCents, departure, arrival, url, notes, itineraryJson, linksJson FROM legs;
+    DROP TABLE legs;
+    ALTER TABLE shared_legs RENAME TO legs;
+    DROP TABLE destinations;
+    ALTER TABLE shared_destinations RENAME TO destinations;
+  `);
+}
 
 /**
  * Opens Travel's database, upgrading it in one transaction. `ownerEmail` is the designated owner
@@ -351,12 +516,15 @@ export function createStore(databasePath: string, ownerEmail: string) {
   const owner = emailAddress(ownerEmail);
   if (databasePath !== ":memory:") mkdirSync(dirname(resolve(databasePath)), { recursive: true });
   const db = new DatabaseSync(databasePath, { timeout: 5000 });
-  db.exec("PRAGMA foreign_keys = ON; PRAGMA journal_mode = WAL;");
+  // An upgrade may rebuild a table others refer to, which SQLite allows only with foreign keys off, and they can
+  // only be switched outside a transaction. The upgrade checks every reference itself before it commits.
+  db.exec("PRAGMA journal_mode = WAL; PRAGMA foreign_keys = OFF;");
   db.exec("BEGIN IMMEDIATE");
   try {
     const version = Number(db.prepare("PRAGMA user_version").get()?.user_version ?? 0);
     if (version > SCHEMA_VERSION) throw new Error("This database was created by a newer version of the travel app.");
-    db.exec(`
+    // A new database starts with the schema 1 tables, which the upgrades below bring up to date.
+    if (!db.prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'trips'").get()) db.exec(`
     CREATE TABLE IF NOT EXISTS trips (
       id TEXT PRIMARY KEY, name TEXT NOT NULL, dateLabel TEXT NOT NULL DEFAULT '',
       homeCity TEXT NOT NULL DEFAULT '', travelers INTEGER NOT NULL CHECK(travelers BETWEEN 1 AND 999),
@@ -392,6 +560,9 @@ export function createStore(databasePath: string, ownerEmail: string) {
     // followed by redeployment cannot repeat ALTER TABLE or replace saved links.
     const hasColumn = (table: "trips" | "destinations" | "legs" | "candidates" | "candidate_images" | "destination_images", column: string) =>
       db.prepare(`PRAGMA table_info(${table})`).all().some((row) => row.name === column);
+    // Before schema 21 each destination belonged to one trip. The upgrades from then add trip columns only to such a
+    // table, so replaying them on a later database leaves its shared destinations as they are.
+    const tripDestinations = hasColumn("destinations", "tripId");
     if (version < 2) {
       if (!hasColumn("trips", "returnCity")) db.exec("ALTER TABLE trips ADD COLUMN returnCity TEXT;");
       if (!hasColumn("legs", "itineraryJson")) db.exec("ALTER TABLE legs ADD COLUMN itineraryJson TEXT NOT NULL DEFAULT '[]';");
@@ -459,8 +630,8 @@ export function createStore(databasePath: string, ownerEmail: string) {
       `);
     }
     if (version < 8) {
-      if (!hasColumn("destinations", "arrivalDate")) db.exec("ALTER TABLE destinations ADD COLUMN arrivalDate TEXT;");
-      if (!hasColumn("destinations", "departureDate")) db.exec("ALTER TABLE destinations ADD COLUMN departureDate TEXT;");
+      if (tripDestinations && !hasColumn("destinations", "arrivalDate")) db.exec("ALTER TABLE destinations ADD COLUMN arrivalDate TEXT;");
+      if (tripDestinations && !hasColumn("destinations", "departureDate")) db.exec("ALTER TABLE destinations ADD COLUMN departureDate TEXT;");
       if (!hasColumn("destinations", "miscDailyMinor")) db.exec("ALTER TABLE destinations ADD COLUMN miscDailyMinor INTEGER CHECK(miscDailyMinor BETWEEN 0 AND 9007199254740991);");
       if (!hasColumn("destinations", "miscCurrency")) db.exec("ALTER TABLE destinations ADD COLUMN miscCurrency TEXT;");
       db.exec("PRAGMA user_version = 8;");
@@ -498,7 +669,7 @@ export function createStore(databasePath: string, ownerEmail: string) {
     if (version < 14) {
       if (!hasColumn("destinations", "churchEnabled")) {
         db.exec("ALTER TABLE destinations ADD COLUMN churchEnabled INTEGER NOT NULL DEFAULT 0 CHECK(churchEnabled IN (0,1));");
-        for (const row of db.prepare("SELECT id, arrivalDate, departureDate FROM destinations").all()) {
+        if (tripDestinations) for (const row of db.prepare("SELECT id, arrivalDate, departureDate FROM destinations").all()) {
           if (containsSunday(row.arrivalDate as string | null, row.departureDate as string | null)) {
             db.prepare("UPDATE destinations SET churchEnabled = 1 WHERE id = ?").run(row.id);
           }
@@ -528,23 +699,26 @@ export function createStore(databasePath: string, ownerEmail: string) {
       }
     }
     if (version < 15) {
-      const initializeDates = !hasColumn("destinations", "nights");
       if (!hasColumn("trips", "startDate")) db.exec("ALTER TABLE trips ADD COLUMN startDate TEXT;");
-      if (!hasColumn("destinations", "nights")) db.exec("ALTER TABLE destinations ADD COLUMN nights INTEGER CHECK(nights BETWEEN 0 AND 3652058);");
-      if (!hasColumn("destinations", "legacyArrivalDate")) {
-        db.exec("ALTER TABLE destinations ADD COLUMN legacyArrivalDate TEXT; UPDATE destinations SET legacyArrivalDate = arrivalDate;");
-      }
-      if (!hasColumn("destinations", "legacyDepartureDate")) {
-        db.exec("ALTER TABLE destinations ADD COLUMN legacyDepartureDate TEXT; UPDATE destinations SET legacyDepartureDate = departureDate;");
-      }
-      if (initializeDates) {
-        for (const trip of db.prepare("SELECT id FROM trips").all()) {
-          const stops = db.prepare("SELECT * FROM destinations WHERE tripId = ? ORDER BY position, id").all(trip.id) as unknown as Destination[];
-          const backfill = backfillDates(stops);
-          db.prepare("UPDATE trips SET startDate = ? WHERE id = ?").run(backfill.startDate, trip.id);
-          for (const stop of backfill.destinations) db.prepare("UPDATE destinations SET nights = ? WHERE id = ?").run(stop.nights, stop.id);
+      if (tripDestinations) {
+        const initializeDates = !hasColumn("destinations", "nights");
+        if (!hasColumn("destinations", "nights")) db.exec("ALTER TABLE destinations ADD COLUMN nights INTEGER CHECK(nights BETWEEN 0 AND 3652058);");
+        if (!hasColumn("destinations", "legacyArrivalDate")) {
+          db.exec("ALTER TABLE destinations ADD COLUMN legacyArrivalDate TEXT; UPDATE destinations SET legacyArrivalDate = arrivalDate;");
         }
-        for (const trip of db.prepare("SELECT id FROM trips").all()) refreshDates(trip.id as string);
+        if (!hasColumn("destinations", "legacyDepartureDate")) {
+          db.exec("ALTER TABLE destinations ADD COLUMN legacyDepartureDate TEXT; UPDATE destinations SET legacyDepartureDate = departureDate;");
+        }
+        if (initializeDates) {
+          for (const trip of db.prepare("SELECT id FROM trips").all()) {
+            const stops = db.prepare("SELECT * FROM destinations WHERE tripId = ? ORDER BY position, id").all(trip.id) as unknown as TripStop[];
+            const backfill = backfillDates(stops);
+            db.prepare("UPDATE trips SET startDate = ? WHERE id = ?").run(backfill.startDate, trip.id);
+            for (const stop of backfill.destinations) db.prepare("UPDATE destinations SET nights = ? WHERE id = ?").run(stop.nights, stop.id);
+            const schedule = sequenceDates(backfill.startDate, db.prepare("SELECT id, nights FROM destinations WHERE tripId = ? ORDER BY position, id").all(trip.id) as unknown as TripStop[]);
+            for (const stop of schedule.destinations) db.prepare("UPDATE destinations SET arrivalDate = ?, departureDate = ? WHERE id = ?").run(stop.arrivalDate, stop.departureDate, stop.id);
+          }
+        }
       }
       db.exec("PRAGMA user_version = 15;");
     }
@@ -639,82 +813,123 @@ export function createStore(databasePath: string, ownerEmail: string) {
         PRAGMA user_version = 20;
       `);
     }
+    if (version < 21) {
+      // Each owner has one shared destination per city, and trips visit destinations through stops (TRA-105).
+      // A replay finds destinations already shared and changes nothing.
+      if (tripDestinations) shareDestinations(db);
+      db.exec(`
+        CREATE UNIQUE INDEX IF NOT EXISTS destinations_city ON destinations(ownerId, cityKey);
+        CREATE INDEX IF NOT EXISTS trip_stops_trip ON trip_stops(tripId, position);
+        CREATE INDEX IF NOT EXISTS trip_stops_destination ON trip_stops(destinationId);
+        CREATE UNIQUE INDEX IF NOT EXISTS legs_route ON legs(tripId, ifnull(fromId, ''), ifnull(toId, ''));
+        CREATE TRIGGER IF NOT EXISTS trip_stops_insert_owner BEFORE INSERT ON trip_stops
+          WHEN (SELECT ownerId FROM destinations WHERE id = NEW.destinationId) IS NOT (SELECT ownerId FROM trips WHERE id = NEW.tripId)
+          BEGIN SELECT RAISE(ABORT, 'A trip can only visit its owner''s destinations.'); END;
+        CREATE TRIGGER IF NOT EXISTS trip_stops_update_owner BEFORE UPDATE OF tripId, destinationId ON trip_stops
+          WHEN (SELECT ownerId FROM destinations WHERE id = NEW.destinationId) IS NOT (SELECT ownerId FROM trips WHERE id = NEW.tripId)
+          BEGIN SELECT RAISE(ABORT, 'A trip can only visit its owner''s destinations.'); END;
+        PRAGMA user_version = 21;
+      `);
+    }
+    if (version < SCHEMA_VERSION && db.prepare("PRAGMA foreign_key_check").get()) {
+      throw new Error("This upgrade would leave saved items without the trip or destination they belong to. Nothing was changed; review the database against a backup before upgrading.");
+    }
     db.exec("COMMIT");
   } catch (error) {
     db.exec("ROLLBACK");
     db.close();
     throw error;
   }
+  db.exec("PRAGMA foreign_keys = ON;");
 
-  function getSnapshot(scope?: { tripId: string; destinationId?: string }): Snapshot {
-    const tripArgs = scope ? [scope.tripId] : [];
-    const destinationArgs = scope ? (scope.destinationId ? [scope.tripId, scope.destinationId] : [scope.tripId]) : [];
-    const childWhere = scope ? " WHERE destinationId IN (SELECT id FROM destinations WHERE tripId = ?" + (scope.destinationId ? " AND id = ?" : "") + ")" : "";
-    const query = (sql: string, args: string[] = []) => db.prepare(sql).all(...args);
-    const requirements = new Map(query("SELECT destinationId, requirementsJson FROM destination_entry_requirements" + childWhere, destinationArgs)
-      .map((row) => [row.destinationId as string, JSON.parse(row.requirementsJson as string) as EntryRequirements]));
-    const destinationPhotos = new Map<string, CandidateImage[]>();
-    for (const row of query("SELECT id, destinationId, version FROM destination_images" + childWhere + " ORDER BY destinationId, position, id", destinationArgs)) {
-      const destinationId = row.destinationId as string;
-      const images = destinationPhotos.get(destinationId) ?? [];
-      images.push({ id: row.id as string, version: row.version as string });
-      destinationPhotos.set(destinationId, images);
-    }
-    const churchPhotos = new Map<string, CandidateImage[]>();
-    for (const row of query("SELECT id, churchId, version FROM church_images" + (scope ? " WHERE churchId IN (SELECT id FROM churches" + childWhere + ")" : "") + " ORDER BY churchId, position, id", destinationArgs)) {
-      const churchId = row.churchId as string;
-      const images = churchPhotos.get(churchId) ?? [];
-      images.push({ id: row.id as string, version: row.version as string });
-      churchPhotos.set(churchId, images);
-    }
+  /** A WHERE clause limiting `column` to the given IDs, with its argument, or nothing when every row is wanted. */
+  function among(column: string, ids: readonly string[] | null): [string, string[]] {
+    return ids === null ? ["", []] : [` WHERE ${column} IN (SELECT value FROM json_each(?))`, [JSON.stringify(ids)]];
+  }
+  function photosOf(table: "destination_images" | "candidate_images" | "church_images", ownerColumn: string, ids: readonly string[] | null): Map<string, CandidateImage[]> {
+    const [where, args] = among(ownerColumn, ids);
     const photos = new Map<string, CandidateImage[]>();
-    for (const row of query("SELECT id, candidateId, version FROM candidate_images" + (scope ? " WHERE candidateId IN (SELECT id FROM candidates" + childWhere + ")" : "") + " ORDER BY candidateId, position, id", destinationArgs)) {
-      const candidateId = row.candidateId as string;
-      const images = photos.get(candidateId) ?? [];
-      images.push({ id: row.id as string, version: row.version as string });
-      photos.set(candidateId, images);
+    for (const row of db.prepare(`SELECT id, ${ownerColumn} AS ownerId, version FROM ${table}${where} ORDER BY ${ownerColumn}, position, id`).all(...args)) {
+      photos.set(row.ownerId as string, [...(photos.get(row.ownerId as string) ?? []), { id: row.id as string, version: row.version as string }]);
     }
-    return {
-      trips: query("SELECT " + TRIP_COLUMNS + " FROM trips" + (scope ? " WHERE id = ?" : "") + " ORDER BY createdAt DESC, id", tripArgs).map((row) => {
-        const trip = row as unknown as Trip;
-        return { ...trip, endDate: sequenceDates(trip.startDate, orderedDestinations(trip.id)).endDate };
-      }),
-      homeItems: query("SELECT * FROM home_items" + (scope ? " WHERE tripId = ?" : "") + " ORDER BY createdAt, id", tripArgs).map((row) => {
-        const item = row as unknown as StoredHomeItem;
-        return { ...item, completed: item.completed === 1 };
-      }),
-      destinations: query("SELECT destinations.*, destination_images.version AS imageVersion, destination_images.id AS mainImageId FROM destinations LEFT JOIN destination_images ON destination_images.destinationId = destinations.id AND destination_images.isMain = 1" + (scope ? " WHERE destinations.tripId = ?" : "") + " ORDER BY destinations.tripId, destinations.position", tripArgs).map((row) => {
-        const destination = row as unknown as StoredDestination;
-        return { ...destination, entryRequirements: requirements.get(destination.id) ?? null, churchEnabled: destination.churchEnabled === 1, images: destinationPhotos.get(destination.id) ?? [] };
-      }),
-      legs: query("SELECT legs.* FROM legs LEFT JOIN destinations ON destinations.id = legs.fromId" + (scope ? " WHERE legs.tripId = ?" : "") + " ORDER BY legs.tripId, coalesce(destinations.position, -1)", tripArgs).map((row) => {
-        const { itineraryJson, linksJson, ...leg } = row as unknown as StoredLeg;
-        const links = storedLinks({ ...leg, linksJson });
-        return { ...leg, url: links[0]?.url ?? "", itinerary: JSON.parse(itineraryJson) as ItineraryStop[], links };
-      }),
-      churches: query("SELECT churches.*, church_images.id AS mainImageId FROM churches LEFT JOIN church_images ON church_images.churchId = churches.id AND church_images.isMain = 1" + (scope ? " WHERE churches.destinationId IN (SELECT id FROM destinations WHERE tripId = ?" + (scope.destinationId ? " AND id = ?" : "") + ")" : "") + " ORDER BY churches.name COLLATE NOCASE, churches.id", destinationArgs).map((row) => {
-        const { massTimesJson, ...church } = row as unknown as StoredChurch;
-        return { ...church, massTimes: JSON.parse(massTimesJson) as MassTime[], images: churchPhotos.get(church.id) ?? [] };
-      }),
-      candidates: query("SELECT candidates.*, candidate_images.id AS mainImageId FROM candidates LEFT JOIN candidate_images ON candidate_images.candidateId = candidates.id AND candidate_images.isMain = 1" + (scope ? " WHERE candidates.destinationId IN (SELECT id FROM destinations WHERE tripId = ?" + (scope.destinationId ? " AND id = ?" : "") + ")" : "") + " ORDER BY candidates.destinationId, candidates.category, candidates.position, candidates.id", destinationArgs).map((row) => {
-        const { linksJson, ...candidate } = row as unknown as StoredCandidate;
-        const links = storedLinks({ ...candidate, linksJson });
-        return { ...candidate, url: links[0]?.url ?? "", included: candidate.included === 1, mustDo: candidate.mustDo === 1, links, images: photos.get(candidate.id) ?? [] };
-      }),
-    };
+    return photos;
+  }
+  function readTrips(ids: readonly string[] | null): Trip[] {
+    const [where, args] = among("id", ids);
+    return db.prepare(`SELECT ${TRIP_COLUMNS} FROM trips${where} ORDER BY createdAt DESC, id`).all(...args).map((row) => {
+      const trip = row as unknown as Trip;
+      return { ...trip, endDate: sequenceDates(trip.startDate, orderedStops(trip.id)).endDate };
+    });
+  }
+  /** Stops matching a WHERE clause, as plain objects a page can hand to the browser. */
+  function stopRows(where: string, ...args: string[]): TripStop[] {
+    return db.prepare(`SELECT * FROM trip_stops${where} ORDER BY tripId, position, id`).all(...args).map((row) => ({ ...row }) as unknown as TripStop);
+  }
+  function readStops(tripIds: readonly string[] | null): TripStop[] {
+    const [where, args] = among("tripId", tripIds);
+    return stopRows(where, ...args);
+  }
+  function readLegs(tripIds: readonly string[] | null): TravelLeg[] {
+    const [where, args] = among("legs.tripId", tripIds);
+    return db.prepare(`SELECT legs.* FROM legs LEFT JOIN trip_stops ON trip_stops.id = legs.fromId${where} ORDER BY legs.tripId, coalesce(trip_stops.position, -1)`).all(...args).map((row) => {
+      const { itineraryJson, linksJson, ...leg } = row as unknown as StoredLeg;
+      const links = storedLinks({ ...leg, linksJson });
+      return { ...leg, url: links[0]?.url ?? "", itinerary: JSON.parse(itineraryJson) as ItineraryStop[], links };
+    });
+  }
+  function readHomeItems(tripIds: readonly string[] | null): HomeItem[] {
+    const [where, args] = among("tripId", tripIds);
+    return db.prepare(`SELECT * FROM home_items${where} ORDER BY createdAt, id`).all(...args).map((row) => {
+      const item = row as unknown as StoredHomeItem;
+      return { ...item, completed: item.completed === 1 };
+    });
+  }
+  function readDestinations(ids: readonly string[] | null): Destination[] {
+    const [where, args] = among("destinations.id", ids);
+    const [requirementsWhere, requirementsArgs] = among("destinationId", ids);
+    const requirements = new Map(db.prepare("SELECT destinationId, requirementsJson FROM destination_entry_requirements" + requirementsWhere).all(...requirementsArgs)
+      .map((row) => [row.destinationId as string, JSON.parse(row.requirementsJson as string) as EntryRequirements]));
+    const photos = photosOf("destination_images", "destinationId", ids);
+    return db.prepare(`SELECT ${DESTINATION_COLUMNS}, destination_images.version AS imageVersion, destination_images.id AS mainImageId FROM destinations
+      LEFT JOIN destination_images ON destination_images.destinationId = destinations.id AND destination_images.isMain = 1${where} ORDER BY destinations.city COLLATE NOCASE, destinations.id`).all(...args).map((row) => {
+      const destination = row as unknown as Omit<Destination, "churchEnabled" | "images" | "entryRequirements"> & { churchEnabled: number };
+      return { ...destination, entryRequirements: requirements.get(destination.id) ?? null, churchEnabled: destination.churchEnabled === 1, images: photos.get(destination.id) ?? [] };
+    });
+  }
+  function readCandidates(destinationIds: readonly string[] | null): Candidate[] {
+    const [where, args] = among("candidates.destinationId", destinationIds);
+    const rows = db.prepare(`SELECT candidates.*, candidate_images.id AS mainImageId FROM candidates LEFT JOIN candidate_images ON candidate_images.candidateId = candidates.id AND candidate_images.isMain = 1${where}
+      ORDER BY candidates.destinationId, candidates.category, candidates.position, candidates.id`).all(...args) as unknown as StoredCandidate[];
+    const photos = photosOf("candidate_images", "candidateId", destinationIds === null ? null : rows.map((candidate) => candidate.id));
+    return rows.map(({ linksJson, ...candidate }) => {
+      const links = storedLinks({ ...candidate, linksJson });
+      return { ...candidate, url: links[0]?.url ?? "", included: candidate.included === 1, mustDo: candidate.mustDo === 1, links, images: photos.get(candidate.id) ?? [] };
+    });
+  }
+  function readChurches(destinationIds: readonly string[] | null): Church[] {
+    const [where, args] = among("churches.destinationId", destinationIds);
+    const rows = db.prepare(`SELECT churches.*, church_images.id AS mainImageId FROM churches LEFT JOIN church_images ON church_images.churchId = churches.id AND church_images.isMain = 1${where}
+      ORDER BY churches.name COLLATE NOCASE, churches.id`).all(...args) as unknown as (StoredChurch & { mainImageId: string | null })[];
+    const photos = photosOf("church_images", "churchId", destinationIds === null ? null : rows.map((church) => church.id));
+    return rows.map(({ massTimesJson, ...church }) => ({ ...church, massTimes: JSON.parse(massTimesJson) as MassTime[], images: photos.get(church.id) ?? [] }));
+  }
+  /** Everything saved, for checks and tests. What the app shows or changes always takes the signed-in account. */
+  function getSnapshot(): Snapshot {
+    return { trips: readTrips(null), stops: readStops(null), destinations: readDestinations(null), legs: readLegs(null), candidates: readCandidates(null), churches: readChurches(null), homeItems: readHomeItems(null) };
   }
   /** The trips the account owns or was shared, with their budgets and what the account may do with each. */
   function getHomeOverview(accountId: string) {
     const visible = [accountId, accountId];
     const rawTrips = db.prepare(`SELECT ${TRIP_COLUMNS} FROM trips WHERE id IN (${VISIBLE_TRIPS}) ORDER BY createdAt DESC, id`).all(...visible) as unknown as Trip[];
-    const destinations = db.prepare(`SELECT id,tripId,city,position,nights,miscDailyMinor,miscCurrency,hotelNightlyMinor,hotelCurrency,
-      activitiesBudgetMode,activitiesGeneralMinor,activitiesCurrency,foodBudgetMode,foodDailyMinor,foodCurrency,
-      shoppingMinor,shoppingCurrency FROM destinations WHERE tripId IN (${VISIBLE_TRIPS}) ORDER BY tripId,position,id`).all(...visible) as unknown as Destination[];
-    const trips = rawTrips.map((trip) => ({ ...trip, endDate: sequenceDates(trip.startDate, destinations.filter((stop) => stop.tripId === trip.id)).endDate }));
+    const stops = db.prepare(`SELECT id, tripId, destinationId, position, nights FROM trip_stops WHERE tripId IN (${VISIBLE_TRIPS}) ORDER BY tripId, position, id`).all(...visible) as unknown as TripStop[];
+    const visited = `SELECT destinationId FROM trip_stops WHERE tripId IN (${VISIBLE_TRIPS})`;
+    const destinations = db.prepare(`SELECT id,city,miscDailyMinor,miscCurrency,hotelNightlyMinor,hotelCurrency,activitiesBudgetMode,activitiesGeneralMinor,activitiesCurrency,
+      foodBudgetMode,foodDailyMinor,foodCurrency,shoppingMinor,shoppingCurrency FROM destinations WHERE id IN (${visited})`).all(...visible) as unknown as Destination[];
+    const trips = rawTrips.map((trip) => ({ ...trip, endDate: sequenceDates(trip.startDate, stops.filter((stop) => stop.tripId === trip.id)).endDate }));
     const input: Snapshot = {
-      trips, destinations,
+      trips, stops, destinations,
       legs: db.prepare(`SELECT tripId,fromId,toId,priceCents FROM legs WHERE tripId IN (${VISIBLE_TRIPS})`).all(...visible) as unknown as TravelLeg[],
-      candidates: db.prepare(`SELECT destinationId,category,priceCents,included FROM candidates WHERE destinationId IN (SELECT id FROM destinations WHERE tripId IN (${VISIBLE_TRIPS}))`).all(...visible).map((row) => ({ ...row, included: row.included === 1 })) as unknown as Candidate[],
+      candidates: db.prepare(`SELECT destinationId,category,priceCents,included FROM candidates WHERE destinationId IN (${visited})`).all(...visible).map((row) => ({ ...row, included: row.included === 1 })) as unknown as Candidate[],
       homeItems: db.prepare(`SELECT tripId,priceCents FROM home_items WHERE tripId IN (${VISIBLE_TRIPS})`).all(...visible) as unknown as HomeItem[],
       churches: [],
     };
@@ -722,29 +937,71 @@ export function createStore(databasePath: string, ownerEmail: string) {
     return {
       data: {
         trips,
-        destinations: destinations.map(({ id, tripId, city, position }) => ({ id, tripId, city, position })) as Destination[],
+        stops: stops.map(({ id, tripId, destinationId, position }) => ({ id, tripId, destinationId, position })) as TripStop[],
+        destinations: destinations.map(({ id, city }) => ({ id, city })) as Destination[],
         legs: [], candidates: [], homeItems: [], churches: [],
       } as Snapshot,
       budgets,
       access: Object.fromEntries(trips.map((trip) => [trip.id, tripAccess(accountId, trip.id)!])) as Record<string, TripAccess>,
     };
   }
-  /** One trip's page, or one destination's, and what the account may do there. Undefined when the account can't open the trip. */
-  function getTripSnapshot(accountId: string, tripId: string, destinationId?: string): { data: Snapshot; access: TripAccess } | undefined {
+  /**
+   * One trip's page, or with `stopId` one of its destinations' idea pages, and what the account may do there.
+   * Undefined when the account can't open the trip.
+   */
+  function getTripSnapshot(accountId: string, tripId: string, stopId?: string): { data: Snapshot; access: TripAccess } | undefined {
     const access = tripAccess(accountId, tripId);
-    return access && { data: getSnapshot({ tripId, destinationId }), access };
+    if (!access) return undefined;
+    const stops = readStops([tripId]);
+    // An idea page needs only its own stop's destination; the trip page needs every destination it visits.
+    const destinationIds = [...new Set(stops.filter((stop) => stopId === undefined || stop.id === stopId).map((stop) => stop.destinationId))];
+    return {
+      data: { trips: readTrips([tripId]), stops, destinations: readDestinations(destinationIds), legs: readLegs([tripId]), candidates: readCandidates(destinationIds), churches: readChurches(destinationIds), homeItems: readHomeItems([tripId]) },
+      access,
+    };
+  }
+  /** Every destination the account owns or that a trip it can open visits, and the trips it can open that visit them. */
+  function getDestinationsOverview(accountId: string): { data: Snapshot; access: Record<string, DestinationAccess> } {
+    const destinationIds = db.prepare(VISIBLE_DESTINATIONS).all(accountId, accountId, accountId).map((row) => row.id as string);
+    const stops = stopRows(` WHERE tripId IN (${VISIBLE_TRIPS})`, accountId, accountId);
+    return {
+      data: { trips: readTrips([...new Set(stops.map((stop) => stop.tripId))]), stops, destinations: readDestinations(destinationIds), legs: [], candidates: readCandidates(destinationIds), churches: [], homeItems: [] },
+      access: Object.fromEntries(destinationIds.map((id) => [id, destinationAccess(accountId, id)!])),
+    };
+  }
+  /**
+   * One destination's page and its idea pages, with only the trips the account can open that visit it, and what the
+   * account may do there. Undefined when the account can't open the destination.
+   */
+  function getDestinationSnapshot(accountId: string, destinationId: string): { data: Snapshot; access: DestinationAccess } | undefined {
+    const access = destinationAccess(accountId, destinationId);
+    if (!access) return undefined;
+    const stops = stopRows(` WHERE destinationId = ? AND tripId IN (${VISIBLE_TRIPS})`, destinationId, accountId, accountId);
+    return {
+      data: { trips: readTrips([...new Set(stops.map((stop) => stop.tripId))]), stops, destinations: readDestinations([destinationId]), legs: [], candidates: readCandidates([destinationId]), churches: readChurches([destinationId]), homeItems: [] },
+      access,
+    };
   }
   function getTripName(accountId: string, id: string): string | undefined {
     if (!tripRole(accountId, id)) return undefined;
     return db.prepare("SELECT name FROM trips WHERE id = ?").get(id)?.name as string | undefined;
   }
-  function getDestinationName(accountId: string, tripId: string, destinationId: string): string | undefined {
+  /** The city of one of a trip's stops. */
+  function getStopName(accountId: string, tripId: string, stopId: string): string | undefined {
     if (!tripRole(accountId, tripId)) return undefined;
-    return db.prepare("SELECT city FROM destinations WHERE tripId = ? AND id = ?").get(tripId, destinationId)?.city as string | undefined;
+    return db.prepare("SELECT destinations.city FROM trip_stops JOIN destinations ON destinations.id = trip_stops.destinationId WHERE trip_stops.tripId = ? AND trip_stops.id = ?").get(tripId, stopId)?.city as string | undefined;
   }
-  /** The trip a saved item belongs to, found through its parents. Undefined when the item doesn't exist. */
+  function getDestinationName(accountId: string, destinationId: string): string | undefined {
+    if (!destinationRole(accountId, destinationId)) return undefined;
+    return db.prepare("SELECT city FROM destinations WHERE id = ?").get(destinationId)?.city as string | undefined;
+  }
+  /** The trip a saved trip item belongs to. Undefined when the item doesn't exist. */
   function tripOf(table: keyof typeof TRIP_OF, id: string): string | undefined {
     return db.prepare(TRIP_OF[table]).get(id)?.tripId as string | undefined;
+  }
+  /** The destination a saved destination item belongs to. Undefined when the item doesn't exist. */
+  function destinationOf(table: keyof typeof DESTINATION_OF, id: string): string | undefined {
+    return db.prepare(DESTINATION_OF[table]).get(id)?.destinationId as string | undefined;
   }
   /** The account's role in a trip, or undefined when the trip doesn't exist or isn't the account's to open. */
   function tripRole(accountId: string, tripId: string | undefined): TripAccess["role"] | undefined {
@@ -752,6 +1009,16 @@ export function createStore(databasePath: string, ownerEmail: string) {
     const row = db.prepare("SELECT CASE WHEN ownerId = ? THEN 'owner' WHEN EXISTS (SELECT 1 FROM trip_shares WHERE tripId = trips.id AND accountId = ?) THEN 'editor' END AS role FROM trips WHERE id = ?")
       .get(accountId, accountId, tripId);
     return (row?.role ?? undefined) as TripAccess["role"] | undefined;
+  }
+  /**
+   * The account's role in a destination: its owner, or an editor through a trip it can open that visits it. Undefined
+   * when the destination doesn't exist or isn't the account's to open, which looks the same.
+   */
+  function destinationRole(accountId: string, destinationId: string | undefined): DestinationAccess["role"] | undefined {
+    if (destinationId === undefined) return undefined;
+    const row = db.prepare(`SELECT CASE WHEN ownerId = ? THEN 'owner' WHEN EXISTS (SELECT 1 FROM trip_stops WHERE destinationId = destinations.id AND tripId IN (${VISIBLE_TRIPS})) THEN 'editor' END AS role FROM destinations WHERE id = ?`)
+      .get(accountId, accountId, accountId, destinationId);
+    return (row?.role ?? undefined) as DestinationAccess["role"] | undefined;
   }
   function member(row: Record<string, unknown>): TripMember {
     return { email: row.email as string, name: row.name as string | null };
@@ -766,26 +1033,32 @@ export function createStore(databasePath: string, ownerEmail: string) {
       .all(tripId).map(member);
     return { role, owner, sharedWith };
   }
+  /** Whether the destination is the account's own, or whose it is when a trip shared with the account visits it. */
+  function destinationAccess(accountId: string, destinationId: string): DestinationAccess | undefined {
+    const role = destinationRole(accountId, destinationId);
+    if (role !== "editor") return role && { role };
+    return { role, owner: member(db.prepare("SELECT accounts.email, accounts.name FROM destinations JOIN accounts ON accounts.id = destinations.ownerId WHERE destinations.id = ?").get(destinationId)!) };
+  }
   function checkHealth(): void { db.prepare("SELECT 1").get(); }
 
-  // Photos are served only from trips the account can open, the same as everything else in them.
+  // Photos are served only from destinations the account can open, the same as everything else in them.
   function getDestinationImage(accountId: string, id: string): StoredImage | undefined {
-    if (!tripRole(accountId, tripOf("destinations", id))) return undefined;
+    if (!destinationRole(accountId, id)) return undefined;
     const row = db.prepare("SELECT version, data FROM destination_images WHERE destinationId = ? AND isMain = 1").get(id);
     return row ? { version: row.version as string, data: new Uint8Array(row.data as Uint8Array) } : undefined;
   }
   function getDestinationPhoto(accountId: string, destinationId: string, imageId: string): StoredImage | undefined {
-    if (!tripRole(accountId, tripOf("destinations", destinationId))) return undefined;
+    if (!destinationRole(accountId, destinationId)) return undefined;
     const row = db.prepare("SELECT version, data FROM destination_images WHERE destinationId = ? AND id = ?").get(destinationId, imageId);
     return row ? { version: row.version as string, data: new Uint8Array(row.data as Uint8Array) } : undefined;
   }
   function getCandidatePhoto(accountId: string, candidateId: string, imageId: string): StoredImage | undefined {
-    if (!tripRole(accountId, tripOf("candidates", candidateId))) return undefined;
+    if (!destinationRole(accountId, destinationOf("candidates", candidateId))) return undefined;
     const row = db.prepare("SELECT version, data FROM candidate_images WHERE candidateId = ? AND id = ?").get(candidateId, imageId);
     return row ? { version: row.version as string, data: new Uint8Array(row.data as Uint8Array) } : undefined;
   }
   function getChurchPhoto(accountId: string, churchId: string, imageId: string): StoredImage | undefined {
-    if (!tripRole(accountId, tripOf("churches", churchId))) return undefined;
+    if (!destinationRole(accountId, destinationOf("churches", churchId))) return undefined;
     const row = db.prepare("SELECT version, data FROM church_images WHERE churchId = ? AND id = ?").get(churchId, imageId);
     return row ? { version: row.version as string, data: new Uint8Array(row.data as Uint8Array) } : undefined;
   }
@@ -846,7 +1119,7 @@ export function createStore(databasePath: string, ownerEmail: string) {
     db.prepare(`UPDATE ${table} SET isMain = 0 WHERE ${ownerColumn} = ? AND isMain = 1`).run(ownerId);
     if (main) db.prepare(`UPDATE ${table} SET isMain = 1 WHERE ${ownerColumn} = ? AND id = ?`).run(ownerId, main);
   }
-  function existing<T>(table: "trips" | "destinations" | "legs" | "candidates" | "home_items" | "churches", id: string): T {
+  function existing<T>(table: "trips" | "destinations" | "trip_stops" | "legs" | "candidates" | "home_items" | "churches", id: string): T {
     const row = db.prepare(`SELECT * FROM ${table} WHERE id = ?`).get(id);
     if (!row) throw new ValidationError("This item no longer exists. Please refresh and try again.");
     return row as unknown as T;
@@ -856,13 +1129,13 @@ export function createStore(databasePath: string, ownerEmail: string) {
     if (item.tripId !== tripId) throw new ValidationError("This home item belongs to a different trip.");
     return item;
   }
-  function orderedDestinations(tripId: string): Destination[] {
-    return db.prepare("SELECT * FROM destinations WHERE tripId = ? ORDER BY position, id").all(tripId) as unknown as Destination[];
+  function orderedStops(tripId: string): TripStop[] {
+    return db.prepare("SELECT * FROM trip_stops WHERE tripId = ? ORDER BY position, id").all(tripId) as unknown as TripStop[];
   }
   function reconcileRoute(tripId: string) {
-    const destinations = orderedDestinations(tripId);
-    destinations.forEach((destination, position) => db.prepare("UPDATE destinations SET position = ? WHERE id = ?").run(position, destination.id));
-    const route: (string | null)[] = destinations.length ? [null, ...destinations.map((destination) => destination.id), null] : [];
+    const stops = orderedStops(tripId);
+    stops.forEach((stop, position) => db.prepare("UPDATE trip_stops SET position = ? WHERE id = ?").run(position, stop.id));
+    const route: (string | null)[] = stops.length ? [null, ...stops.map((stop) => stop.id), null] : [];
     const desired = new Set<string>();
     for (let index = 1; index < route.length; index += 1) desired.add(JSON.stringify([route[index - 1], route[index]]));
     const current = db.prepare("SELECT * FROM legs WHERE tripId = ?").all(tripId) as unknown as StoredLeg[];
@@ -882,12 +1155,27 @@ export function createStore(databasePath: string, ownerEmail: string) {
     const trip = db.prepare("SELECT startDate FROM trips WHERE id = ?").get(tripId);
     if (!trip) return;
     try {
-      const schedule = sequenceDates(trip.startDate as string | null, orderedDestinations(tripId));
+      const schedule = sequenceDates(trip.startDate as string | null, orderedStops(tripId));
       for (const stop of schedule.destinations) {
-        db.prepare("UPDATE destinations SET arrivalDate = ?, departureDate = ? WHERE id = ?").run(stop.arrivalDate, stop.departureDate, stop.id);
+        db.prepare("UPDATE trip_stops SET arrivalDate = ?, departureDate = ? WHERE id = ?").run(stop.arrivalDate, stop.departureDate, stop.id);
       }
     } catch (error) {
       throw new ValidationError(error instanceof Error ? error.message : "This trip's dates cannot be calculated.");
+    }
+  }
+  /** Every subtotal multiplies a daily or nightly amount by nights, and each must stay exact for every stay at the destination. */
+  function checkSubtotals(nightsOfStays: (number | null)[], miscMinor: number | null, hotelMinor: number | null, foodMinor: number | null) {
+    for (const nights of nightsOfStays) {
+      const days = nightsToBudgetDays(nights);
+      if (miscMinor !== null && days !== null && !Number.isSafeInteger(Math.round(miscMinor * days))) {
+        throw new ValidationError("The miscellaneous subtotal is too large. Reduce the daily amount or number of nights.");
+      }
+      if (foodMinor !== null && days !== null && !Number.isSafeInteger(Math.round(foodMinor * days))) {
+        throw new ValidationError("The food subtotal is too large. Reduce the daily amount or number of nights.");
+      }
+      if (hotelMinor !== null && nights !== null && !Number.isSafeInteger(hotelMinor * nights)) {
+        throw new ValidationError("The hotel estimate is too large. Reduce the nightly amount or number of nights.");
+      }
     }
   }
   function clearLeg(id: string) {
@@ -895,6 +1183,73 @@ export function createStore(databasePath: string, ownerEmail: string) {
   }
   function clearHotelSelection(destinationId: string) {
     db.prepare("UPDATE candidates SET included = 0 WHERE destinationId = ? AND category = 'hotels'").run(destinationId);
+  }
+  type DestinationSave = Extract<Mutation, { type: "destination.save" }>;
+  /** A destination's columns after a save: the fields it sends, and the saved values of the rest. */
+  function destinationColumns(input: DestinationSave, before?: StoredDestination) {
+    const misc = destinationAmount(input.miscDailyAmount, "Daily miscellaneous amount", before?.miscDailyMinor, before?.miscCurrency);
+    const hotel = destinationAmount(input.hotelNightlyAmount, "Nightly hotel amount", before?.hotelNightlyMinor, before?.hotelCurrency);
+    const activities = destinationAmount(input.activitiesGeneralAmount, "General activities amount", before?.activitiesGeneralMinor, before?.activitiesCurrency);
+    const food = destinationAmount(input.foodDailyAmount, "Daily food amount", before?.foodDailyMinor, before?.foodCurrency);
+    const shopping = destinationAmount(input.shoppingAmount, "Shopping amount", before?.shoppingMinor, before?.shoppingCurrency);
+    const weatherHighF = input.weatherHighF === undefined ? before?.weatherHighF ?? null : input.weatherHighF;
+    const weatherLowF = input.weatherLowF === undefined ? before?.weatherLowF ?? null : input.weatherLowF;
+    if (weatherHighF !== null && weatherLowF !== null && weatherHighF < weatherLowF) {
+      throw new ValidationError("Typical high (°F) must be greater than or equal to typical low (°F).");
+    }
+    const city = input.city ?? before?.city ?? "";
+    return {
+      city, cityKey: destinationKey(city), notes: input.notes ?? before?.notes ?? "",
+      miscDailyMinor: misc.minor, miscCurrency: misc.currency, hotelNightlyMinor: hotel.minor, hotelCurrency: hotel.currency,
+      activitiesBudgetMode: input.activitiesBudgetMode ?? before?.activitiesBudgetMode ?? "itemized", activitiesGeneralMinor: activities.minor, activitiesCurrency: activities.currency,
+      foodBudgetMode: input.foodBudgetMode ?? before?.foodBudgetMode ?? "itemized", foodDailyMinor: food.minor, foodCurrency: food.currency,
+      shoppingMinor: shopping.minor, shoppingCurrency: shopping.currency,
+      weatherHighF, weatherLowF, weatherRainfall: input.weatherRainfall ?? before?.weatherRainfall ?? "", weatherPeriod: input.weatherPeriod ?? before?.weatherPeriod ?? "", weatherSource: input.weatherSource ?? before?.weatherSource ?? "",
+      // Visibility persists through every date change. Each trip's dates decide whether Church can appear.
+      churchEnabled: before?.churchEnabled ?? 1,
+    };
+  }
+  /** Each owner has one destination per city. */
+  function claimCity(ownerId: string, cityKey: string, id: string, message: string) {
+    const saved = db.prepare("SELECT city FROM destinations WHERE ownerId = ? AND cityKey = ? AND id != ?").get(ownerId, cityKey, id);
+    if (saved) throw new ValidationError(`“${saved.city as string}” is already a saved destination. ${message}`);
+  }
+  /** A new destination, as a trip's last stop. It belongs to the trip's owner, whoever on the trip adds it. */
+  function addDestination(input: Extract<DestinationSave, { id?: undefined }>): string {
+    const trip = existing<Trip & { ownerId: string }>("trips", input.tripId);
+    // The stop shares the new destination's ID, as each destination's original stop does since schema 21.
+    const id = randomUUID();
+    const columns = destinationColumns(input);
+    claimCity(trip.ownerId, columns.cityKey, id, "Adding a saved destination to a trip isn't available yet.");
+    const nights = input.nights ?? null;
+    checkSubtotals([nights], columns.miscDailyMinor, columns.hotelNightlyMinor, columns.foodDailyMinor);
+    const row = { id, ownerId: trip.ownerId, ...columns };
+    db.prepare(`INSERT INTO destinations(${Object.keys(row).join(",")}) VALUES(${Object.keys(row).map(() => "?").join(",")})`).run(...Object.values(row));
+    db.prepare("INSERT INTO trip_stops(id,tripId,destinationId,position,stay,nights) VALUES(?,?,?,?,?,?)").run(id, trip.id, id, orderedStops(trip.id).length, input.stay ?? "", nights);
+    reconcileRoute(trip.id);
+    saveDestinationGallery(id, input.gallery, input.image);
+    return id;
+  }
+  /** Changes a destination everywhere it is used, and with a stop, that trip's stay notes and nights too. */
+  function saveDestination(input: Extract<DestinationSave, { id: string }>): string {
+    const before = existing<StoredDestination>("destinations", input.id);
+    const stop = input.stopId === undefined ? undefined : existing<TripStop>("trip_stops", input.stopId);
+    if (stop && stop.destinationId !== input.id) throw new ValidationError("This stop belongs to a different destination.");
+    const columns = destinationColumns(input, before);
+    claimCity(before.ownerId, columns.cityKey, input.id, "Choose a different city, or keep this one's name.");
+    const nights = input.nights === undefined ? stop?.nights ?? null : input.nights;
+    // Shared amounts apply to every trip's stay here, and this stop's with its new nights.
+    const stays = db.prepare("SELECT id, nights FROM trip_stops WHERE destinationId = ?").all(input.id) as unknown as TripStop[];
+    checkSubtotals(stays.map((other) => other.id === stop?.id ? nights : other.nights), columns.miscDailyMinor, columns.hotelNightlyMinor, columns.foodDailyMinor);
+    db.prepare(`UPDATE destinations SET ${Object.keys(columns).map((column) => column + " = ?").join(", ")} WHERE id = ?`).run(...Object.values(columns), input.id);
+    if (before.city !== columns.city) {
+      // A new city changes the connections to and from it, in every trip that visits it.
+      const adjacentLegs = db.prepare("SELECT legs.id FROM legs JOIN trip_stops ON trip_stops.id IN (legs.fromId, legs.toId) WHERE trip_stops.destinationId = ?").all(input.id);
+      for (const leg of adjacentLegs) clearLeg(leg.id as string);
+    }
+    if (stop) db.prepare("UPDATE trip_stops SET stay = ?, nights = ? WHERE id = ?").run(input.stay ?? stop.stay, nights, stop.id);
+    saveDestinationGallery(input.id, input.gallery, input.image);
+    return input.id;
   }
   function mutate(accountId: string, input: Mutation): string | undefined {
     switch (input.type) {
@@ -952,62 +1307,10 @@ export function createStore(databasePath: string, ownerEmail: string) {
         homeItemForTrip(input.id, input.tripId);
         db.prepare("UPDATE home_items SET completed = ? WHERE id = ? AND tripId = ?").run(Number(input.completed), input.id, input.tripId);
         return input.id;
-      case "destination.save": {
-        existing<Trip>("trips", input.tripId);
-        const id = input.id ?? randomUUID();
-        const before = input.id ? existing<StoredDestination>("destinations", id) : undefined;
-        if (before && before.tripId !== input.tripId) throw new ValidationError("This destination belongs to a different trip.");
-        const city = input.city ?? before?.city ?? "";
-        const stay = input.stay ?? before?.stay ?? "";
-        const notes = input.notes ?? before?.notes ?? "";
-        const arrivalDate = before?.arrivalDate ?? null;
-        const departureDate = before?.departureDate ?? null;
-        const nights = input.nights === undefined ? before?.nights ?? null : input.nights;
-        // Visibility preference persists through every date change. The view applies Sunday eligibility.
-        const churchEnabled = before ? before.churchEnabled === 1 : true;
-        const misc = destinationAmount(input.miscDailyAmount, "Daily miscellaneous amount", before?.miscDailyMinor, before?.miscCurrency);
-        const days = nightsToBudgetDays(nights);
-        if (misc.minor !== null && days !== null && !Number.isSafeInteger(Math.round(misc.minor * days))) {
-          throw new ValidationError("The miscellaneous subtotal is too large. Reduce the daily amount or number of nights.");
-        }
-        const hotel = destinationAmount(input.hotelNightlyAmount, "Nightly hotel amount", before?.hotelNightlyMinor, before?.hotelCurrency);
-        const activitiesBudgetMode = input.activitiesBudgetMode ?? before?.activitiesBudgetMode ?? "itemized";
-        const activities = destinationAmount(input.activitiesGeneralAmount, "General activities amount", before?.activitiesGeneralMinor, before?.activitiesCurrency);
-        const foodBudgetMode = input.foodBudgetMode ?? before?.foodBudgetMode ?? "itemized";
-        const food = destinationAmount(input.foodDailyAmount, "Daily food amount", before?.foodDailyMinor, before?.foodCurrency);
-        if (food.minor !== null && days !== null && !Number.isSafeInteger(Math.round(food.minor * days))) {
-          throw new ValidationError("The food subtotal is too large. Reduce the daily amount or number of nights.");
-        }
-        const shopping = destinationAmount(input.shoppingAmount, "Shopping amount", before?.shoppingMinor, before?.shoppingCurrency);
-        const weatherHighF = input.weatherHighF === undefined ? before?.weatherHighF ?? null : input.weatherHighF;
-        const weatherLowF = input.weatherLowF === undefined ? before?.weatherLowF ?? null : input.weatherLowF;
-        if (weatherHighF !== null && weatherLowF !== null && weatherHighF < weatherLowF) {
-          throw new ValidationError("Typical high (°F) must be greater than or equal to typical low (°F).");
-        }
-        const weatherRainfall = input.weatherRainfall ?? before?.weatherRainfall ?? "";
-        const weatherPeriod = input.weatherPeriod ?? before?.weatherPeriod ?? "";
-        const weatherSource = input.weatherSource ?? before?.weatherSource ?? "";
-        if (hotel.minor !== null && nights !== null && !Number.isSafeInteger(hotel.minor * nights)) {
-          throw new ValidationError("The hotel estimate is too large. Reduce the nightly amount or number of nights.");
-        }
-        if (before) {
-          db.prepare("UPDATE destinations SET city = ?, stay = ?, notes = ?, arrivalDate = ?, departureDate = ?, miscDailyMinor = ?, miscCurrency = ?, hotelNightlyMinor = ?, hotelCurrency = ?, activitiesBudgetMode = ?, activitiesGeneralMinor = ?, activitiesCurrency = ?, foodBudgetMode = ?, foodDailyMinor = ?, foodCurrency = ?, shoppingMinor = ?, shoppingCurrency = ?, weatherHighF = ?, weatherLowF = ?, weatherRainfall = ?, weatherPeriod = ?, weatherSource = ?, churchEnabled = ? WHERE id = ?").run(city, stay, notes, arrivalDate, departureDate, misc.minor, misc.currency, hotel.minor, hotel.currency, activitiesBudgetMode, activities.minor, activities.currency, foodBudgetMode, food.minor, food.currency, shopping.minor, shopping.currency, weatherHighF, weatherLowF, weatherRainfall, weatherPeriod, weatherSource, Number(churchEnabled), id);
-          if (before.city !== city) {
-            const adjacentLegs = db.prepare("SELECT id FROM legs WHERE fromId = ? OR toId = ?").all(id, id);
-            for (const leg of adjacentLegs) clearLeg(leg.id as string);
-          }
-        } else {
-          const position = orderedDestinations(input.tripId).length;
-          db.prepare("INSERT INTO destinations(id,tripId,city,stay,notes,position,arrivalDate,departureDate,miscDailyMinor,miscCurrency,hotelNightlyMinor,hotelCurrency,activitiesBudgetMode,activitiesGeneralMinor,activitiesCurrency,foodBudgetMode,foodDailyMinor,foodCurrency,shoppingMinor,shoppingCurrency,weatherHighF,weatherLowF,weatherRainfall,weatherPeriod,weatherSource,churchEnabled) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)").run(id, input.tripId, city, stay, notes, position, arrivalDate, departureDate, misc.minor, misc.currency, hotel.minor, hotel.currency, activitiesBudgetMode, activities.minor, activities.currency, foodBudgetMode, food.minor, food.currency, shopping.minor, shopping.currency, weatherHighF, weatherLowF, weatherRainfall, weatherPeriod, weatherSource, Number(churchEnabled));
-        }
-        db.prepare("UPDATE destinations SET nights = ? WHERE id = ?").run(nights, id);
-        saveDestinationGallery(id, input.gallery, input.image);
-        reconcileRoute(input.tripId);
-        return id;
-      }
+      case "destination.save":
+        return input.id === undefined ? addDestination(input) : saveDestination(input);
       case "destination.entryRequirements": {
-        const destination = existing<StoredDestination>("destinations", input.id);
-        if (destination.tripId !== input.tripId) throw new ValidationError("This destination belongs to a different trip.");
+        existing<StoredDestination>("destinations", input.id);
         if (input.requirements === null) {
           db.prepare("DELETE FROM destination_entry_requirements WHERE destinationId = ?").run(input.id);
         } else {
@@ -1039,21 +1342,22 @@ export function createStore(databasePath: string, ownerEmail: string) {
         db.prepare("DELETE FROM churches WHERE id = ? AND destinationId = ?").run(input.id, input.destinationId);
         return;
       }
-      case "destination.delete": {
-        const before = existing<Destination>("destinations", input.id);
-        db.prepare("DELETE FROM destinations WHERE id = ?").run(input.id);
-        reconcileRoute(before.tripId);
+      case "stop.remove": {
+        // Only this trip's stay goes. The destination and everything saved with it stay, for other trips and Destinations.
+        const stop = existing<TripStop>("trip_stops", input.id);
+        db.prepare("DELETE FROM trip_stops WHERE id = ?").run(input.id);
+        reconcileRoute(stop.tripId);
         return;
       }
-      case "destination.move": {
-        const destination = existing<Destination>("destinations", input.id);
-        const ordered = orderedDestinations(destination.tripId);
+      case "stop.move": {
+        const stop = existing<TripStop>("trip_stops", input.id);
+        const ordered = orderedStops(stop.tripId);
         const index = ordered.findIndex((item) => item.id === input.id);
         const nextIndex = index + (input.direction === "up" ? -1 : 1);
         if (nextIndex >= 0 && nextIndex < ordered.length) {
           [ordered[index], ordered[nextIndex]] = [ordered[nextIndex], ordered[index]];
-          ordered.forEach((item, position) => db.prepare("UPDATE destinations SET position = ? WHERE id = ?").run(position, item.id));
-          reconcileRoute(destination.tripId);
+          ordered.forEach((item, position) => db.prepare("UPDATE trip_stops SET position = ? WHERE id = ?").run(position, item.id));
+          reconcileRoute(stop.tripId);
         }
         return input.id;
       }
@@ -1120,28 +1424,36 @@ export function createStore(databasePath: string, ownerEmail: string) {
     }
   }
   /**
-   * The trip a change applies to, found from the most specific saved item it names, so a browser can't
-   * claim an item belongs to a trip it can open. `mutate` still checks that the item matches the rest.
+   * The trip or destination a change applies to, found from the most specific saved item it names, so a browser can't
+   * claim an item belongs to one it can open. `mutate` still checks that the item matches the rest.
    */
-  function mutationTrip(input: Mutation): string | undefined {
+  function mutationScope(input: Mutation): { trip: string | undefined } | { destination: string | undefined } {
     switch (input.type) {
-      case "trip.save": case "trip.delete": return input.id && tripOf("trips", input.id);
-      case "trip.share": case "trip.unshare": return tripOf("trips", input.tripId);
-      case "homeItem.save": return input.id ? tripOf("home_items", input.id) : tripOf("trips", input.tripId);
-      case "homeItem.delete": case "homeItem.complete": return tripOf("home_items", input.id);
-      case "destination.save": return input.id ? tripOf("destinations", input.id) : tripOf("trips", input.tripId);
-      case "destination.delete": case "destination.move": case "destination.churchVisibility": case "destination.entryRequirements": return tripOf("destinations", input.id);
-      case "church.save": return input.id ? tripOf("churches", input.id) : tripOf("destinations", input.destinationId);
-      case "church.delete": return tripOf("churches", input.id);
-      case "leg.save": case "leg.clear": return tripOf("legs", input.id);
-      case "candidate.save": return input.id ? tripOf("candidates", input.id) : tripOf("destinations", input.destinationId);
-      case "candidate.move": case "candidate.mustDo": case "candidate.delete": case "candidate.include": return tripOf("candidates", input.id);
+      case "trip.save": case "trip.delete": return { trip: input.id && tripOf("trips", input.id) };
+      case "trip.share": case "trip.unshare": return { trip: tripOf("trips", input.tripId) };
+      case "homeItem.save": return { trip: input.id ? tripOf("home_items", input.id) : tripOf("trips", input.tripId) };
+      case "homeItem.delete": case "homeItem.complete": return { trip: tripOf("home_items", input.id) };
+      case "stop.move": case "stop.remove": return { trip: tripOf("trip_stops", input.id) };
+      case "leg.save": case "leg.clear": return { trip: tripOf("legs", input.id) };
+      // Adding one is a change to its trip, and so is changing a trip's stay there along with it.
+      case "destination.save":
+        if (input.id === undefined) return { trip: tripOf("trips", input.tripId) };
+        return input.stopId === undefined ? { destination: destinationOf("destinations", input.id) } : { trip: tripOf("trip_stops", input.stopId) };
+      case "destination.churchVisibility": case "destination.entryRequirements": return { destination: destinationOf("destinations", input.id) };
+      case "church.save": return { destination: input.id ? destinationOf("churches", input.id) : destinationOf("destinations", input.destinationId) };
+      case "church.delete": return { destination: destinationOf("churches", input.id) };
+      case "candidate.save": return { destination: input.id ? destinationOf("candidates", input.id) : destinationOf("destinations", input.destinationId) };
+      case "candidate.move": case "candidate.mustDo": case "candidate.delete": case "candidate.include": return { destination: destinationOf("candidates", input.id) };
     }
   }
-  /** Owners and the accounts they shared a trip with may change it; deleting it and changing who has it are for its owner. */
+  /**
+   * Owners and the accounts they shared a trip with may change it and the destinations it visits; deleting a trip and
+   * changing who has it are for its owner.
+   */
   function authorize(accountId: string, input: Mutation): void {
     if (input.type === "trip.save" && input.id === undefined) return;
-    const role = tripRole(accountId, mutationTrip(input));
+    const scope = mutationScope(input);
+    const role = "trip" in scope ? tripRole(accountId, scope.trip) : destinationRole(accountId, scope.destination);
     if (!role) throw new ValidationError(NOT_AVAILABLE);
     const ownerOnly = OWNER_ONLY[input.type];
     if (ownerOnly && role !== "owner") throw new ValidationError(ownerOnly);
@@ -1156,10 +1468,13 @@ export function createStore(databasePath: string, ownerEmail: string) {
       if (valid.type === "trip.save" && valid.startDate !== undefined) {
         if (valid.id && db.prepare("SELECT startDate FROM trips WHERE id = ?").get(valid.id)?.startDate !== valid.startDate) scheduleTrip = valid.id;
       } else if (valid.type === "destination.save") {
-        if (!valid.id || (valid.nights !== undefined &&
-            db.prepare("SELECT nights FROM destinations WHERE id = ?").get(valid.id)?.nights !== valid.nights)) scheduleTrip = valid.tripId;
-      } else if (valid.type === "destination.delete" || valid.type === "destination.move") {
-        scheduleTrip = existing<Destination>("destinations", valid.id).tripId;
+        if (valid.id === undefined) scheduleTrip = valid.tripId;
+        else if (valid.stopId !== undefined && valid.nights !== undefined) {
+          const stop = db.prepare("SELECT tripId, nights FROM trip_stops WHERE id = ?").get(valid.stopId);
+          if (stop && stop.nights !== valid.nights) scheduleTrip = stop.tripId as string;
+        }
+      } else if (valid.type === "stop.remove" || valid.type === "stop.move") {
+        scheduleTrip = existing<TripStop>("trip_stops", valid.id).tripId;
       }
       const id = mutate(accountId, valid);
       if (valid.type === "trip.save" && !valid.id && valid.startDate !== undefined) scheduleTrip = id;
@@ -1221,8 +1536,8 @@ export function createStore(databasePath: string, ownerEmail: string) {
     db.prepare("DELETE FROM sessions WHERE tokenHash = ?").run(tokenHash(token));
   }
 
-  // getSnapshot reads every trip, for checks and tests. Everything the app shows or changes takes the signed-in account.
-  return { getSnapshot, getHomeOverview, getTripSnapshot, getTripName, getDestinationName, checkHealth, getDestinationImage, getDestinationPhoto, getCandidatePhoto, getChurchPhoto, applyMutation, authorizeAccount, getAccountByGoogleSubject, authorizeGoogleSignIn, createSession, readSession, deleteSession, close: () => db.close() };
+  // getSnapshot reads everything, for checks and tests. Everything the app shows or changes takes the signed-in account.
+  return { getSnapshot, getHomeOverview, getTripSnapshot, getDestinationsOverview, getDestinationSnapshot, getTripName, getStopName, getDestinationName, checkHealth, getDestinationImage, getDestinationPhoto, getCandidatePhoto, getChurchPhoto, applyMutation, authorizeAccount, getAccountByGoogleSubject, authorizeGoogleSignIn, createSession, readSession, deleteSession, close: () => db.close() };
 }
 
 /** The Google account authorized during initial setup. src/instrumentation.ts checks it as the server starts. */
@@ -1244,7 +1559,7 @@ function defaultStore(): Store {
   }
   return globalStore.travelStore;
 }
-// Each takes the signed-in account's ID from the server's session, and sees only that account's trips.
+// Each takes the signed-in account's ID from the server's session, and sees only that account's trips and destinations.
 export function getDestinationImage(accountId: string, id: string): StoredImage | undefined {
   return defaultStore().getDestinationImage(accountId, id);
 }
@@ -1260,10 +1575,13 @@ export function getChurchPhoto(accountId: string, churchId: string, imageId: str
 export function applyMutation(accountId: string, input: unknown): { id?: string } {
   return defaultStore().applyMutation(accountId, input);
 }
-export function getTripSnapshot(accountId: string, tripId: string, destinationId?: string) { return defaultStore().getTripSnapshot(accountId, tripId, destinationId); }
+export function getTripSnapshot(accountId: string, tripId: string, stopId?: string) { return defaultStore().getTripSnapshot(accountId, tripId, stopId); }
 export function getHomeOverview(accountId: string) { return defaultStore().getHomeOverview(accountId); }
+export function getDestinationsOverview(accountId: string) { return defaultStore().getDestinationsOverview(accountId); }
+export function getDestinationSnapshot(accountId: string, destinationId: string) { return defaultStore().getDestinationSnapshot(accountId, destinationId); }
 export function getTripName(accountId: string, id: string) { return defaultStore().getTripName(accountId, id); }
-export function getDestinationName(accountId: string, tripId: string, destinationId: string) { return defaultStore().getDestinationName(accountId, tripId, destinationId); }
+export function getStopName(accountId: string, tripId: string, stopId: string) { return defaultStore().getStopName(accountId, tripId, stopId); }
+export function getDestinationName(accountId: string, destinationId: string) { return defaultStore().getDestinationName(accountId, destinationId); }
 export function checkHealth(): void { defaultStore().checkHealth(); }
 export function authorizeGoogleSignIn(identity: GoogleIdentity) { return defaultStore().authorizeGoogleSignIn(identity); }
 export function createSession(accountId: string) { return defaultStore().createSession(accountId, Date.now()); }

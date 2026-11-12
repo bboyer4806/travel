@@ -181,11 +181,11 @@ test("schema 5 photos migrate with their exact bytes and versions, and repeated 
   const path = fileDatabase(t);
   let store = createOwnedStore(path);
   try {
-    const { tripId, destinationId } = seed(store);
+    const { destinationId } = seed(store);
     const input = ideaInput(destinationId);
     const single = photo(alternative);
     const id = store.applyMutation({ ...input, gallery: { add: [single], remove: [] } }).id;
-    store.applyMutation({ ...destinationInput(tripId), id: destinationId, image: webp });
+    store.applyMutation({ type: "destination.save", id: destinationId, image: webp });
     const before = store.getSnapshot();
     const original = store.getCandidatePhoto(id, single.id);
     const destinationPhoto = store.getDestinationImage(destinationId);
@@ -224,7 +224,7 @@ test("schema 5 photos migrate with their exact bytes and versions, and repeated 
   } finally { store.close(); }
 });
 
-test("deleting an idea, destination, or trip removes every owned gallery photo only", (t) => {
+test("deleting an idea removes only its gallery photos, and ideas keep theirs when their trips go", (t) => {
   const path = fileDatabase(t);
   const store = createOwnedStore(path);
   const observer = new DatabaseSync(path);
@@ -240,13 +240,11 @@ test("deleting an idea, destination, or trip removes every owned gallery photo o
     assert.equal(count(), 4);
     assert.equal(mainPhoto(0), undefined);
     assert.ok(mainPhoto(1));
-    store.applyMutation({ type: "destination.delete", id: destinationId });
-    assert.equal(count(), 2);
-    assert.equal(mainPhoto(1), undefined);
-    assert.ok(mainPhoto(2));
+    store.applyMutation({ type: "stop.remove", id: destinationId });
     store.applyMutation({ type: "trip.delete", id: tripId });
-    assert.equal(count(), 0);
-    assert.equal(mainPhoto(2), undefined);
+    assert.equal(count(), 4, "ideas belong to their destinations, which outlive every trip");
+    assert.ok(mainPhoto(1));
+    assert.ok(mainPhoto(2));
     assert.deepEqual(observer.prepare("PRAGMA foreign_key_check").all(), []);
   } finally { observer.close(); store.close(); }
 });

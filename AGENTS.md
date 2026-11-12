@@ -1,6 +1,6 @@
 <!-- BEGIN:nextjs-agent-rules -->
 
-# This is NOT the Next.js you know
+## This is NOT the Next.js you know
 
 This version has breaking changes — APIs, conventions, and file structure may all differ from your training data. Read the relevant guide in `node_modules/next/dist/docs/` (resolved from this file's directory; in monorepos the `next` package may not be visible from the repo root) before writing any code. Heed deprecation notices.
 
@@ -35,7 +35,7 @@ is no stand-in for Google. Never commit or log their values.
 Use targeted checks while iterating. Before pushing, run the checks from
 `.github/workflows/check.yml`: `pnpm lint`, `pnpm typecheck`, `pnpm test` and `pnpm build`.
 CI also runs `bash scripts/smoke-container.sh`, which needs Docker and Bash and checks the
-container, persistent storage, sign-in enforcement and trip isolation. A Next.js build alone does
+container, persistent storage, sign-in enforcement and trip and destination isolation. A Next.js build alone does
 not verify those.
 Fix regressions caused by your change; report unrelated baseline failures and blocked checks.
 Repeat passing checks when subsequent changes affect their coverage or required gates demand it.
@@ -54,12 +54,18 @@ Repeat passing checks when subsequent changes affect their coverage or required 
   store decides access: every read and `applyMutation` take the signed-in account's ID from
   `requireAccount()` or `currentAccount()`, never from input, and a trip the account can't open
   looks the same as a missing one. Only owners delete, share or unshare a trip.
+- Destinations are shared by their owner's trips (TRA-105). Each owner has one per city
+  (`destinations.cityKey`, from `destinationKey` in `src/lib/destination-label.ts`), and trips visit
+  them through `trip_stops`, which keep each trip's order, stay notes, nights and dates. A destination
+  belongs to its trip's owner; an account opens one it owns or that a trip it can open visits.
+  Removing a stop or deleting a trip never deletes a destination or what is saved with it.
 - Application writes go through `mutatePlanner` in `src/app/actions.ts`, into `applyMutation`
   in `src/lib/store.ts`. A new operation adds a `Mutation` variant in `src/lib/types.ts` and
-  a case in `validate`, `mutationTrip` and `mutate` in the store. `mutationTrip` finds the trip
-  a change applies to from saved rows; a change it doesn't place in a trip is refused.
+  a case in `validate`, `mutationScope` and `mutate` in the store. `mutationScope` finds the trip
+  or destination a change applies to from saved rows; a change it doesn't place is refused.
 - `src/lib/store.ts` is the application's database boundary. Home pages read `getHomeOverview`,
-  trip and category pages read `getTripSnapshot`, and saves return only an ID or error.
+  trip and category pages read `getTripSnapshot`, Destinations pages read
+  `getDestinationsOverview` and `getDestinationSnapshot`, and saves return only an ID or error.
   The store's `getSnapshot` reads every trip, for checks and tests only. Backup utilities and tests
   also access SQLite directly.
 - Store validation throws `ValidationError`; upload validation throws `ImageValidationError`.
@@ -72,7 +78,7 @@ Repeat passing checks when subsequent changes affect their coverage or required 
   and the $100,000,000 limit for every amount, prices included, live in `src/lib/money.ts`.
 - Image upload types and size and gallery limits live in `src/lib/image-limits.ts`. The photo
   editors, upload decoding and the store use them, and messages state them from there.
-- Trip startDate and destination nights are schedule inputs. Use `src/lib/trip-dates.ts`
+- Trip startDate and each stop's nights are schedule inputs. Use `src/lib/trip-dates.ts`
   for ordered read-only destination dates and trip end; retain legacy date columns for migration review.
   Hotels use nights; daily food/miscellaneous use `nightsToBudgetDays` (zero nights = one day).
   Never parse free-text stay notes. Church eligibility is separate from persistent manual visibility.
@@ -89,7 +95,8 @@ authorizes the designated owner it is given at every start). A schema
 change adds the next `if (version < N)` block inside the startup transaction, keeps older
 databases upgrading, tolerates a block that already ran (as the `hasColumn` checks do), and
 raises `SCHEMA_VERSION` to N. The newer-version guard, tests and the container smoke test read
-that constant; older blocks keep their own numbers. In the schema history of `docs/DEPLOYMENT.md`, update the current
+that constant; older blocks keep their own numbers. Upgrades run with foreign keys off, so a block
+can rebuild a table others refer to, and `foreign_key_check` must pass before they commit. In the schema history of `docs/DEPLOYMENT.md`, update the current
 schema and add a note for the new version, with only what its rollback adds to the shared procedure.
 
 ## Tests
@@ -99,7 +106,8 @@ schema and add a note for the new version, with only what its rollback adds to t
   `tests/budget-fixtures.mjs`; import those rather than copying them into a test file.
   Planning tests use `createOwnedStore` from `tests/owned-store.mjs`, which reads and writes as the
   designated owner; access tests call `createStore(path, ownerEmail)` with several accounts, as
-  `tests/sharing.test.mjs` does.
+  `tests/sharing.test.mjs` does. Tests of older databases turn a new one back with
+  `UNDO_SCHEMA_21` (then `UNDO_SCHEMA_20`) from `tests/owned-store.mjs`.
 - Node runs that TypeScript by stripping types, without path aliases. Code in `src/lib` uses
   relative imports for values (type-only `@/` imports are fine) and only erasable TypeScript: no
   enums or parameter properties. Passing type checks alone does not verify these runtime rules.

@@ -4,7 +4,7 @@ import { DatabaseSync } from "node:sqlite";
 import test from "node:test";
 import { ValidationError } from "../src/lib/store.ts";
 import { createOwnedStore } from "./owned-store.mjs";
-import { fileDatabase } from "./budget-fixtures.mjs";
+import { fileDatabase, stop } from "./budget-fixtures.mjs";
 import { calculateBudget } from "../src/lib/budget.ts";
 import { storedImageResponse } from "../src/lib/stored-image-response.ts";
 
@@ -28,28 +28,28 @@ test("destination photo add, primary selection, reorder and fallback persist wit
     const before = store.getSnapshot();
     const budget = calculateBudget(before, tripId);
     const photos = [photo(), photo(), photo()];
-    store.applyMutation({ type: "destination.save", tripId, id, gallery: { add: photos, remove: [], mainImageId: photos[1].id } });
+    store.applyMutation({ type: "destination.save", id, gallery: { add: photos, remove: [], mainImageId: photos[1].id } });
     assert.equal(destination(store, id).mainImageId, photos[1].id);
     assert.deepEqual(destination(store, id).images.map((image) => image.id), photos.map((image) => image.id));
     const versions = destination(store, id).images.map((image) => image.version);
     const order = [photos[2].id, photos[0].id, photos[1].id];
-    store.applyMutation({ type: "destination.save", tripId, id, gallery: { add: [], remove: [], order } });
+    store.applyMutation({ type: "destination.save", id, gallery: { add: [], remove: [], order } });
     assert.deepEqual(destination(store, id).images.map((image) => image.id), order);
     assert.equal(destination(store, id).mainImageId, photos[1].id, "position and primary choice are independent");
     assert.deepEqual(destination(store, id).images.map((image) => image.version), [versions[2], versions[0], versions[1]]);
     assert.equal(destination(store, id).city, before.destinations[0].city);
     assert.equal(destination(store, id).notes, before.destinations[0].notes);
-    assert.equal(destination(store, id).nights, 4);
+    assert.equal(stop(store, id).nights, 4);
     assert.deepEqual(store.getSnapshot().legs, before.legs);
     assert.deepEqual(calculateBudget(store.getSnapshot(), tripId), budget);
-    store.applyMutation({ type: "destination.save", tripId, id, gallery: { add: [], remove: [photos[1].id] } });
+    store.applyMutation({ type: "destination.save", id, gallery: { add: [], remove: [photos[1].id] } });
     assert.equal(destination(store, id).mainImageId, photos[2].id, "removing primary chooses first remaining in saved order");
     assert.deepEqual(store.getDestinationImage(id), store.getDestinationPhoto(id, photos[2].id));
     const saved = store.getSnapshot();
     store.close();
     store = createOwnedStore(path);
     assert.deepEqual(store.getSnapshot(), saved);
-    store.applyMutation({ type: "destination.save", tripId, id, gallery: { add: [], remove: [photos[2].id, photos[0].id], mainImageId: null, order: [] } });
+    store.applyMutation({ type: "destination.save", id, gallery: { add: [], remove: [photos[2].id, photos[0].id], mainImageId: null, order: [] } });
     assert.deepEqual(destination(store, id).images, []);
     assert.equal(destination(store, id).mainImageId, null);
     assert.equal(store.getDestinationImage(id), undefined);
@@ -61,7 +61,7 @@ test("destination galleries validate ownership, ordering, limits and photo data 
   t.after(() => store.close());
   const { tripId, id } = plan(store);
   const own = photo(), foreign = photo(), extra = photo();
-  store.applyMutation({ type: "destination.save", tripId, id, gallery: { add: [own], remove: [] } });
+  store.applyMutation({ type: "destination.save", id, gallery: { add: [own], remove: [] } });
   const otherId = store.applyMutation(destinationInput(tripId, { city: "Paris", gallery: { add: [foreign], remove: [] } })).id;
   const before = store.getSnapshot();
   assert.equal(store.getDestinationPhoto(id, foreign.id), undefined);
@@ -79,14 +79,14 @@ test("destination galleries validate ownership, ordering, limits and photo data 
     { add: Array.from({ length: 11 }, photo), remove: [] },
   ];
   for (const gallery of invalid) {
-    assert.throws(() => store.applyMutation({ type: "destination.save", tripId, id, city: "Unsaved city", gallery }), ValidationError);
+    assert.throws(() => store.applyMutation({ type: "destination.save", id, city: "Unsaved city", gallery }), ValidationError);
     assert.deepEqual(store.getSnapshot(), before);
   }
-  for (const image of [null, webp]) assert.throws(() => store.applyMutation({ type: "destination.save", tripId, id, image, gallery: { add: [], remove: [] } }), ValidationError);
+  for (const image of [null, webp]) assert.throws(() => store.applyMutation({ type: "destination.save", id, image, gallery: { add: [], remove: [] } }), ValidationError);
   const more = Array.from({ length: 9 }, photo);
-  store.applyMutation({ type: "destination.save", tripId, id, gallery: { add: more, remove: [] } });
-  assert.throws(() => store.applyMutation({ type: "destination.save", tripId, id, gallery: { add: [extra], remove: [] } }), /10 photos/);
-  store.applyMutation({ type: "destination.save", tripId, id, gallery: { add: [extra], remove: [own.id], mainImageId: extra.id } });
+  store.applyMutation({ type: "destination.save", id, gallery: { add: more, remove: [] } });
+  assert.throws(() => store.applyMutation({ type: "destination.save", id, gallery: { add: [extra], remove: [] } }), /10 photos/);
+  store.applyMutation({ type: "destination.save", id, gallery: { add: [extra], remove: [own.id], mainImageId: extra.id } });
   assert.equal(destination(store, id).images.length, 10);
   assert.equal(destination(store, id).mainImageId, extra.id);
 });
@@ -94,14 +94,14 @@ test("destination galleries validate ownership, ordering, limits and photo data 
 test("concurrent adds survive ordinary edits and stale reorder fails without discarding new photos", (t) => {
   const store = createOwnedStore(":memory:");
   t.after(() => store.close());
-  const { tripId, id } = plan(store);
+  const { id } = plan(store);
   const first = photo(), second = photo(), third = photo();
-  store.applyMutation({ type: "destination.save", tripId, id, gallery: { add: [first, second], remove: [] } });
-  store.applyMutation({ type: "destination.save", tripId, id, gallery: { add: [third], remove: [] } });
+  store.applyMutation({ type: "destination.save", id, gallery: { add: [first, second], remove: [] } });
+  store.applyMutation({ type: "destination.save", id, gallery: { add: [third], remove: [] } });
   const before = store.getSnapshot();
-  assert.throws(() => store.applyMutation({ type: "destination.save", tripId, id, gallery: { add: [], remove: [], order: [second.id, first.id] } }), /Refresh/);
+  assert.throws(() => store.applyMutation({ type: "destination.save", id, gallery: { add: [], remove: [], order: [second.id, first.id] } }), /Refresh/);
   assert.deepEqual(store.getSnapshot(), before);
-  store.applyMutation({ type: "destination.save", tripId, id, gallery: { add: [], remove: [first.id], mainImageId: second.id } });
+  store.applyMutation({ type: "destination.save", id, gallery: { add: [], remove: [first.id], mainImageId: second.id } });
   assert.deepEqual(destination(store, id).images.map((image) => image.id), [second.id, third.id]);
 });
 
@@ -110,12 +110,12 @@ test("gallery write failures roll back removals, additions, destination changes 
   const store = createOwnedStore(path);
   const observer = new DatabaseSync(path);
   try {
-    const { tripId, id } = plan(store);
+    const { id } = plan(store);
     const original = photo(), accepted = photo(), rejected = photo();
-    store.applyMutation({ type: "destination.save", tripId, id, gallery: { add: [original], remove: [] } });
+    store.applyMutation({ type: "destination.save", id, gallery: { add: [original], remove: [] } });
     const before = store.getSnapshot();
     observer.exec(`CREATE TRIGGER reject_gallery_photo BEFORE INSERT ON destination_images WHEN NEW.id = '${rejected.id}' BEGIN SELECT RAISE(ABORT, 'Injected photo failure'); END;`);
-    assert.throws(() => store.applyMutation({ type: "destination.save", tripId, id, city: "Unsaved", gallery: { add: [accepted, rejected], remove: [original.id] } }), /Injected photo failure/);
+    assert.throws(() => store.applyMutation({ type: "destination.save", id, city: "Unsaved", gallery: { add: [accepted, rejected], remove: [original.id] } }), /Injected photo failure/);
     assert.deepEqual(store.getSnapshot(), before);
     assert.deepEqual(store.getDestinationPhoto(id, original.id).data, webp);
     assert.equal(store.getDestinationPhoto(id, accepted.id), undefined);
@@ -127,8 +127,8 @@ test("schema 16 single images migrate unchanged and replay preserves galleries a
   const path = fileDatabase(t);
   let store = createOwnedStore(path);
   try {
-    const { tripId, id } = plan(store);
-    store.applyMutation({ type: "destination.save", tripId, id, image: webp });
+    const { id } = plan(store);
+    store.applyMutation({ type: "destination.save", id, image: webp });
     const original = store.getDestinationImage(id);
     const planning = store.getSnapshot();
     store.close();
@@ -143,7 +143,7 @@ test("schema 16 single images migrate unchanged and replay preserves galleries a
     assert.equal(destination(store, id).mainImageId, id);
     assert.deepEqual(store.getSnapshot().legs, planning.legs);
     const extra = photo();
-    store.applyMutation({ type: "destination.save", tripId, id, gallery: { add: [extra], remove: [], mainImageId: extra.id, order: [extra.id, id] } });
+    store.applyMutation({ type: "destination.save", id, gallery: { add: [extra], remove: [], mainImageId: extra.id, order: [extra.id, id] } });
     const snapshot = store.getSnapshot();
     store.close();
     const reset = new DatabaseSync(path);
@@ -158,39 +158,38 @@ test("schema 16 single images migrate unchanged and replay preserves galleries a
   } finally { store.close(); }
 });
 
-test("legacy image changes affect only primary and destination gallery deletion cascades independently", (t) => {
+test("legacy image changes affect only primary, and a destination keeps its gallery after its trips go", (t) => {
   const store = createOwnedStore(":memory:");
   t.after(() => store.close());
   const { tripId, id } = plan(store);
   const photos = [photo(), photo()];
-  store.applyMutation({ type: "destination.save", tripId, id, gallery: { add: photos, remove: [], mainImageId: photos[1].id } });
+  store.applyMutation({ type: "destination.save", id, gallery: { add: photos, remove: [], mainImageId: photos[1].id } });
   const candidatePhoto = photo();
   const candidateId = store.applyMutation({ type: "candidate.save", destinationId: id, category: "hotels", name: "Hotel", price: "", address: "", url: "", notes: "", included: false, gallery: { add: [candidatePhoto], remove: [] } }).id;
   const candidate = store.getSnapshot().candidates[0];
   const first = store.getDestinationPhoto(id, photos[0].id);
   const originalMain = store.getDestinationImage(id);
-  store.applyMutation({ type: "destination.save", tripId, id, image: webp });
+  store.applyMutation({ type: "destination.save", id, image: webp });
   assert.notEqual(store.getDestinationImage(id).version, originalMain.version);
   assert.deepEqual(store.getDestinationPhoto(id, photos[0].id), first);
-  store.applyMutation({ type: "destination.save", tripId, id, image: null });
+  store.applyMutation({ type: "destination.save", id, image: null });
   assert.deepEqual(store.getDestinationImage(id), first);
   assert.deepEqual(store.getSnapshot().candidates[0], candidate);
   const otherPhoto = photo();
   const otherId = store.applyMutation(destinationInput(tripId, { city: "Paris", gallery: { add: [otherPhoto], remove: [] } })).id;
-  store.applyMutation({ type: "destination.delete", id });
-  assert.equal(store.getDestinationPhoto(id, photos[0].id), undefined);
-  assert.equal(store.getCandidatePhoto(candidateId, candidatePhoto.id), undefined);
-  assert.ok(store.getDestinationPhoto(otherId, otherPhoto.id));
+  store.applyMutation({ type: "stop.remove", id });
+  assert.deepEqual(store.getDestinationPhoto(id, photos[0].id), first);
+  assert.ok(store.getCandidatePhoto(candidateId, candidatePhoto.id));
   store.applyMutation({ type: "trip.delete", id: tripId });
-  assert.equal(store.getDestinationPhoto(otherId, otherPhoto.id), undefined);
+  assert.ok(store.getDestinationPhoto(otherId, otherPhoto.id));
 });
 
 test("individual destination photo reads enforce owner, version and cache semantics", async (t) => {
   const store = createOwnedStore(":memory:");
   t.after(() => store.close());
-  const { tripId, id } = plan(store);
+  const { id } = plan(store);
   const image = photo();
-  store.applyMutation({ type: "destination.save", tripId, id, gallery: { add: [image], remove: [] } });
+  store.applyMutation({ type: "destination.save", id, gallery: { add: [image], remove: [] } });
   const version = store.getDestinationPhoto(id, image.id).version;
   const read = (owner) => store.getDestinationPhoto(owner, image.id);
   const request = (suffix = "", headers) => new Request(`https://example.test/api/destination-images/${id}/${image.id}${suffix}`, { headers });

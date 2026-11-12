@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { MAX_AMOUNT_CENTS, MAX_AMOUNT_DOLLARS, parseMinorAmount } from "../src/lib/money.ts";
-import { candidateInput, destinationInput, setup } from "./budget-fixtures.mjs";
+import { candidateInput, destinationInput, setup, destinationEdit } from "./budget-fixtures.mjs";
 
 const formatMessage = (label) => `${label} must be a positive USD amount or zero, with up to 2 decimal places. Leave it blank if unknown.`;
 const limitMessage = (label) => `${label} must be $100,000,000 or less.`;
@@ -22,11 +22,11 @@ test("destination amounts and estimated prices reject equivalent amounts with on
     ["Estimated price", (price) => candidateInput(destinationId, "activities", { price })],
     ["Estimated price", (price) => ({ type: "leg.save", id: legId, method: "Train", price, departure: "", arrival: "", url: "", notes: "" })],
     ["Estimated price", (price) => ({ type: "homeItem.save", tripId, name: "Pet sitter", price, notes: "", completed: false })],
-    ["Daily miscellaneous amount", (miscDailyAmount) => destinationInput(tripId, { id: destinationId, miscDailyAmount })],
-    ["Nightly hotel amount", (hotelNightlyAmount) => destinationInput(tripId, { id: destinationId, hotelNightlyAmount })],
-    ["General activities amount", (activitiesGeneralAmount) => destinationInput(tripId, { id: destinationId, activitiesGeneralAmount })],
-    ["Daily food amount", (foodDailyAmount) => destinationInput(tripId, { id: destinationId, foodDailyAmount })],
-    ["Shopping amount", (shoppingAmount) => destinationInput(tripId, { id: destinationId, shoppingAmount })],
+    ["Daily miscellaneous amount", (miscDailyAmount) => destinationEdit(destinationId, { miscDailyAmount })],
+    ["Nightly hotel amount", (hotelNightlyAmount) => destinationEdit(destinationId, { hotelNightlyAmount })],
+    ["General activities amount", (activitiesGeneralAmount) => destinationEdit(destinationId, { activitiesGeneralAmount })],
+    ["Daily food amount", (foodDailyAmount) => destinationEdit(destinationId, { foodDailyAmount })],
+    ["Shopping amount", (shoppingAmount) => destinationEdit(destinationId, { shoppingAmount })],
   ];
   for (const [label, save] of fields) {
     const before = store.getSnapshot();

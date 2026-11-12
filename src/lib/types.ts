@@ -1,4 +1,5 @@
 import type { EntryRequirements } from "./entry-requirements";
+import type { HealthSafety } from "./health-safety";
 export type FoodBudgetMode = "itemized" | "daily";
 export type ActivitiesBudgetMode = "itemized" | "general";
 export type Category = "hotels" | "activities" | "restaurants";
@@ -6,7 +7,7 @@ export interface TypicalWeather { weatherHighF: number | null; weatherLowF: numb
 export interface Trip { startDate: string | null; endDate: string | null; id: string; name: string; dateLabel: string; homeCity: string; returnCity: string | null; travelers: number; notes: string; createdAt: string; }
 export interface HomeItem { id: string; tripId: string; name: string; notes: string; priceCents: number | null; completed: boolean; createdAt: string; }
 /** A city's research, ideas, selections and budget amounts, shared by every trip that visits it. Each owner has one per city. */
-export interface Destination extends TypicalWeather, DestinationPhotos { entryRequirements: EntryRequirements | null; churchEnabled: boolean; id: string; city: string; miscDailyMinor: number | null; miscCurrency: string | null; hotelNightlyMinor: number | null; hotelCurrency: string | null; activitiesBudgetMode: ActivitiesBudgetMode; activitiesGeneralMinor: number | null; activitiesCurrency: string | null; foodBudgetMode: FoodBudgetMode; foodDailyMinor: number | null; foodCurrency: string | null; shoppingMinor: number | null; shoppingCurrency: string | null; notes: string; imageVersion: string | null; }
+export interface Destination extends TypicalWeather, DestinationPhotos { entryRequirements: EntryRequirements | null; healthSafety: HealthSafety | null; churchEnabled: boolean; id: string; city: string; miscDailyMinor: number | null; miscCurrency: string | null; hotelNightlyMinor: number | null; hotelCurrency: string | null; activitiesBudgetMode: ActivitiesBudgetMode; activitiesGeneralMinor: number | null; activitiesCurrency: string | null; foodBudgetMode: FoodBudgetMode; foodDailyMinor: number | null; foodCurrency: string | null; shoppingMinor: number | null; shoppingCurrency: string | null; notes: string; imageVersion: string | null; }
 /** One trip's stay at a destination: its place in the route, stay notes, nights and calculated dates. */
 export interface TripStop { id: string; tripId: string; destinationId: string; position: number; stay: string; nights: number | null; arrivalDate: string | null; departureDate: string | null; legacyArrivalDate: string | null; legacyDepartureDate: string | null; }
 /** A destination with the nights of one stay there, which its duration-based amounts use. Outside a trip they are unknown. */
@@ -40,6 +41,7 @@ export type Mutation =
  // Changes a saved destination everywhere it is used, and with `stopId` that trip's stay notes and nights too.
  | ({ type: "destination.save"; id: string; tripId?: undefined; stopId?: string } & DestinationFields & StopFields)
  | { type: "destination.entryRequirements"; id: string; requirements: EntryRequirements | null }
+ | { type: "destination.healthSafety"; id: string; healthSafety: HealthSafety | null }
  | { type: "destination.churchVisibility"; id: string; enabled: boolean }
  | { type: "church.save"; id?: string; destinationId: string; name: string; address: string; denomination: string; url: string; massTimes: MassTime[]; gallery?: CandidateGalleryUpdate }
  | { type: "church.delete"; id: string; destinationId: string }

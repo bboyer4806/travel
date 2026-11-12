@@ -16,6 +16,7 @@ const webp = new Uint8Array([82, 73, 70, 70, 4, 0, 0, 0, 87, 69, 66, 80]);
 const photo = () => ({ id: randomUUID(), data: webp });
 const google = (subject, email, name = null) => ({ subject, email, emailVerified: true, name });
 const requirements = () => ({ passportNationality: "United States", travelPurpose: "Tourism", travelerCircumstances: "Two adults", visaRequirements: "None for short stays", passportValidity: "Three months", requiredDocuments: "Return ticket", transitRequirements: "None", notes: "Checked", sources: [{ id: randomUUID(), url: "https://example.gov/entry", description: "Entry guidance" }], lastCheckedDate: "2026-11-03" });
+const healthSafety = () => ({ advisoryLevel: "Level 1", advisoryWarnings: "", healthPrecautions: "Routine vaccines", localSafety: "Watch for pickpockets", emergencyContacts: [{ id: randomUUID(), name: "Emergency services", phone: "112", notes: "" }], sources: [{ id: randomUUID(), url: "https://example.gov/advisory", description: "Travel advisory" }], lastCheckedDate: "2026-11-10" });
 
 /** The designated owner, someone a trip will be shared with, and someone it never is. */
 function setup(t, path = ":memory:") {
@@ -29,7 +30,7 @@ function setup(t, path = ":memory:") {
 
 /**
  * A trip with something in every part: dates, two destinations and their connections, ideas, a church, entry
- * requirements, an At home item and photos. Each account has one destination per city, so one account's trips need different cities.
+ * requirements, health and safety, an At home item and photos. Each account has one destination per city, so one account's trips need different cities.
  */
 function plannedTrip(store, accountId, name = "Portugal", [firstCity, secondCity] = ["Lisbon", "Porto"]) {
   const change = (input) => store.applyMutation(accountId, input).id;
@@ -41,6 +42,7 @@ function plannedTrip(store, accountId, name = "Portugal", [firstCity, secondCity
   const church = change({ type: "church.save", destinationId: lisbon, name: "Sé", address: "", denomination: "", url: "", massTimes: [], gallery: { add: [photo()], remove: [] } });
   const homeItem = change({ type: "homeItem.save", tripId, name: "House sitting", price: "100", notes: "", completed: false });
   change({ type: "destination.entryRequirements", id: lisbon, requirements: requirements() });
+  change({ type: "destination.healthSafety", id: lisbon, healthSafety: healthSafety() });
   const snapshot = store.getTripSnapshot(accountId, tripId).data;
   const legs = snapshot.legs.map((leg) => leg.id);
   change({ type: "leg.save", id: legs[0], method: "Flight", price: "900", departure: "", arrival: "", url: "", notes: "" });
@@ -147,6 +149,7 @@ test("people a trip is shared with change everything in it, but only its owner d
   change({ type: "church.save", id: church, destinationId: lisbon, name: "Sé de Lisboa", address: "", denomination: "Catholic", url: "", massTimes: [] });
   change({ type: "destination.churchVisibility", id: lisbon, enabled: false });
   change({ type: "destination.entryRequirements", id: porto, requirements: requirements() });
+  change({ type: "destination.healthSafety", id: porto, healthSafety: healthSafety() });
   change({ type: "destination.save", id: porto, notes: "Port wine", gallery: { add: [portoPhoto], remove: [] } });
   change({ type: "destination.save", id: porto, stopId: porto, stay: "By the river", nights: 4 });
   change({ type: "homeItem.save", tripId, name: "Pet care", price: "50", notes: "", completed: false });
@@ -163,6 +166,7 @@ test("people a trip is shared with change everything in it, but only its owner d
   assert.deepEqual(store.getTripSnapshot(editor, tripId).data, asOwner.data);
   assert.equal(asOwner.data.trips[0].name, "Portugal together");
   assert.equal(asOwner.data.destinations.find((item) => item.id === porto).notes, "Port wine");
+  assert.equal(asOwner.data.destinations.find((item) => item.id === porto).healthSafety.localSafety, "Watch for pickpockets");
   assert.deepEqual(store.getDestinationPhoto(owner, porto, portoPhoto.id).data, webp);
   store.applyMutation(owner, { type: "destination.save", id: porto, notes: "Back to the owner" });
   assert.equal(store.getTripSnapshot(editor, tripId).data.destinations.find((item) => item.id === porto).notes, "Back to the owner");
@@ -208,6 +212,8 @@ test("an account a trip isn't shared with can neither read nor change any part o
     { type: "stop.move", id: lisbon, direction: "down" },
     { type: "destination.churchVisibility", id: lisbon, enabled: false },
     { type: "destination.entryRequirements", id: lisbon, requirements: null },
+    { type: "destination.healthSafety", id: lisbon, healthSafety: null },
+    { type: "destination.healthSafety", id: lisbon, healthSafety: healthSafety() },
     { type: "church.save", destinationId: lisbon, name: "Mine", address: "", denomination: "", url: "", massTimes: [] },
     { type: "church.save", id: church, destinationId: lisbon, name: "Mine", address: "", denomination: "", url: "", massTimes: [] },
     { type: "church.delete", id: church, destinationId: lisbon },

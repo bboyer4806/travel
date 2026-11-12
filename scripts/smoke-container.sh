@@ -39,6 +39,7 @@ const db = new DatabaseSync('/data/travel.sqlite');
 const destinationId = '22222222-2222-4222-8222-222222222222';
 const imageVersion = '33333333-3333-4333-8333-333333333333';
 const requirements = { passportNationality: 'United States', travelPurpose: 'Tourism', travelerCircumstances: 'Whole party', visaRequirements: 'Review authorization rules', passportValidity: 'Review passport rules', requiredDocuments: 'Review health and entry documents', transitRequirements: 'Review transit rules separately', notes: 'Manually maintained', sources: [{ id: 'c1000000-0000-4000-8000-000000000001', url: 'https://example.gov/entry', description: 'Official source' }], lastCheckedDate: '2026-11-03' };
+const healthSafety = { advisoryLevel: 'Level 1: Exercise normal precautions', advisoryWarnings: 'Review the advisory before departure', healthPrecautions: 'Routine vaccines', localSafety: 'Watch for pickpockets', emergencyContacts: [{ id: 'f1000000-0000-4000-8000-000000000001', name: 'Emergency services', phone: '112', notes: 'Police, fire and ambulance' }], sources: [{ id: 'f2000000-0000-4000-8000-000000000001', url: 'https://example.gov/advisory', description: 'Official advisory' }], lastCheckedDate: '2026-11-10' };
 const candidates = [
   { id: '66666666-6666-4666-8666-666666666666', category: 'hotels', version: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb' },
   { id: '77777777-7777-4777-8777-777777777777', category: 'activities', version: 'cccccccc-cccc-4ccc-8ccc-cccccccccccc' },
@@ -88,6 +89,7 @@ for (const [index, data] of images.entries()) {
   db.prepare('INSERT INTO destination_images(id,destinationId,version,data,position,isMain) VALUES(?,?,?,?,?,?)').run(`a2000000-0000-4000-8000-00000000000${index + 1}`, destinationId, index === 0 ? imageVersion : 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa', data, 1 - index, index === 0 ? 1 : 0);
 }
 db.prepare('INSERT INTO destination_entry_requirements(destinationId,requirementsJson) VALUES(?,?)').run(destinationId, JSON.stringify(requirements));
+db.prepare('INSERT INTO destination_health_safety(destinationId,healthSafetyJson) VALUES(?,?)').run(destinationId, JSON.stringify(healthSafety));
 for (const [index, candidate] of candidates.entries()) {
   db.prepare('INSERT INTO candidates(id,destinationId,category,name,position,mustDo) VALUES(?,?,?,?,?,?)').run(candidate.id, destinationId, candidate.category, 'Persistence test: ' + candidate.category, index + 2, candidate.category === 'hotels' ? 0 : 1);
   for (const [position, data] of images.entries()) {
@@ -124,6 +126,7 @@ import { DatabaseSync } from 'node:sqlite';
 const destinationId = '22222222-2222-4222-8222-222222222222';
 const imageVersion = '33333333-3333-4333-8333-333333333333';
 const requirements = { passportNationality: 'United States', travelPurpose: 'Tourism', travelerCircumstances: 'Whole party', visaRequirements: 'Review authorization rules', passportValidity: 'Review passport rules', requiredDocuments: 'Review health and entry documents', transitRequirements: 'Review transit rules separately', notes: 'Manually maintained', sources: [{ id: 'c1000000-0000-4000-8000-000000000001', url: 'https://example.gov/entry', description: 'Official source' }], lastCheckedDate: '2026-11-03' };
+const healthSafety = { advisoryLevel: 'Level 1: Exercise normal precautions', advisoryWarnings: 'Review the advisory before departure', healthPrecautions: 'Routine vaccines', localSafety: 'Watch for pickpockets', emergencyContacts: [{ id: 'f1000000-0000-4000-8000-000000000001', name: 'Emergency services', phone: '112', notes: 'Police, fire and ambulance' }], sources: [{ id: 'f2000000-0000-4000-8000-000000000001', url: 'https://example.gov/advisory', description: 'Official advisory' }], lastCheckedDate: '2026-11-10' };
 const candidates = [
   { id: '66666666-6666-4666-8666-666666666666', category: 'hotels', version: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb' },
   { id: '77777777-7777-4777-8777-777777777777', category: 'activities', version: 'cccccccc-cccc-4ccc-8ccc-cccccccccccc' },
@@ -176,6 +179,7 @@ try {
     assert.deepEqual(Buffer.from(photo.data), images[index]);
   }
   assert.deepEqual(JSON.parse(db.prepare('SELECT requirementsJson FROM destination_entry_requirements WHERE destinationId = ?').get(destinationId).requirementsJson), requirements);
+  assert.deepEqual(JSON.parse(db.prepare('SELECT healthSafetyJson FROM destination_health_safety WHERE destinationId = ?').get(destinationId).healthSafetyJson), healthSafety);
   assert.equal(db.prepare('SELECT count(*) AS count FROM candidate_images').get().count, 6);
   for (const [index, candidate] of candidates.entries()) {
     const saved = db.prepare('SELECT destinationId,category,included,priceCents,position,mustDo FROM candidates WHERE id = ?').get(candidate.id);
@@ -389,6 +393,8 @@ try {
   // ideas and its photos, without either; someone it isn't shared with finds nothing.
   const ownerPage = await (await get(tripPages[0], owner)).text();
   assert.ok(ownerPage.includes(">Share<") && ownerPage.includes('aria-label="Delete trip"'), "The owner can share and delete the trip");
+  assert.ok(ownerPage.includes(">Health and safety<"), "Each destination on the trip page has Health and safety");
+  assert.ok((await (await get(destinationPages[0], owner)).text()).includes(">Health and safety<"), "A destination's page has Health and safety");
   assert.match(await (await get("/destinations", owner)).text(), /Vienna/, "The owner's destination appears in Destinations");
   const editorList = await (await get("/", editor)).text();
   assert.match(editorList, /Persistence test/, "A shared trip appears in its recipient's list");
@@ -433,6 +439,12 @@ try {
   assert.deepEqual(await mutation(destinationEdit("Outsider"), outsider), notAvailable);
   assert.deepEqual(await mutation(destinationEdit("Edited from Destinations"), editor), { ok: true, id: "22222222-2222-4222-8222-222222222222" });
   assert.equal(db.prepare("SELECT notes FROM destinations WHERE id = ?").get("22222222-2222-4222-8222-222222222222").notes, "Edited from Destinations");
+  // Its health and safety research has the same access, through the same action.
+  const healthSafety = { advisoryLevel: "Level 2", advisoryWarnings: "", healthPrecautions: "", localSafety: "Edited from a shared trip", emergencyContacts: [{ id: "f1000000-0000-4000-8000-000000000002", name: "Embassy", phone: "+1 202 555 0100", notes: "" }], sources: [], lastCheckedDate: null };
+  const healthSafetyEdit = { type: "destination.healthSafety", id: "22222222-2222-4222-8222-222222222222", healthSafety };
+  assert.deepEqual(await mutation(healthSafetyEdit, outsider), notAvailable);
+  assert.deepEqual(await mutation(healthSafetyEdit, editor), { ok: true, id: "22222222-2222-4222-8222-222222222222" });
+  assert.deepEqual(JSON.parse(db.prepare("SELECT healthSafetyJson FROM destination_health_safety WHERE destinationId = ?").get("22222222-2222-4222-8222-222222222222").healthSafetyJson), healthSafety);
   assert.deepEqual(await mutation({ type: "trip.unshare", tripId: saved.id, email: "editor@example.test" }), { ok: true, id: saved.id });
   assert.deepEqual(await mutation(edit("Editor, after removal"), editor), notAvailable, "Removing access ends it at once");
   const revoked = await (await get("/trips/" + saved.id, editor)).text();

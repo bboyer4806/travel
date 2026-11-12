@@ -2,6 +2,15 @@ export interface Release { version: string; date: string; changes: readonly stri
 
 // Add only verified, deployed changes and their actual release dates at release close.
 export const releases: readonly Release[] = [{
+  version: "1.8",
+  date: "2026-11-11",
+  changes: [
+    "See specific validation messages when a change cannot be saved, regardless of which page or image loaded first.",
+    "City suggestions now limit excessive requests and pause briefly when the provider is busy; you can still enter cities manually.",
+    "Retry feedback after a temporary failure without closing the form or losing your draft, with clearer error messages.",
+    "Use Try again to recover from a temporary page failure. Missing pages and server errors now return the correct response status.",
+  ],
+}, {
   version: "1.7",
   date: "2026-11-11",
   changes: [

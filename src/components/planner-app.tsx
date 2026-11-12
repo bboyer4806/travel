@@ -33,6 +33,8 @@ type Editor =
   | { kind: "trip"; item?: Trip }
   // Without an item it adds a destination to the trip; with a stop it also edits that trip's stay.
   | { kind: "destination"; item?: Destination; stop?: TripStop }
+  // A destination outside any trip, from Destinations. Only its city is asked for.
+  | { kind: "newDestination" }
   | { kind: "shoppingBudget"; item: Destination }
   | { kind: "weather"; item: Destination }
   | { kind: "entryRequirements"; item: Destination }
@@ -143,6 +145,7 @@ export default function PlannerApp({ initialData, initialBudgets, access = {}, d
       setEditor(null); setDestinationGallery(createDestinationGalleryDraft()); setCandidateGallery(createCandidateGalleryDraft()); setMessage(success);
       if (redirect) router.push(redirect);
       else if (mutation.type === "trip.save" && !mutation.id && result.id) router.push("/trips/" + result.id);
+      else if (mutation.type === "destination.create" && result.id) router.push("/destinations/" + result.id);
       else router.refresh();
     } catch { setError("We couldn't reach the planner. Your changes haven't been saved. Please try again."); }
     finally { setBusy(false); }
@@ -183,6 +186,7 @@ export default function PlannerApp({ initialData, initialBudgets, access = {}, d
         else void perform({ type: "destination.save", id: editor.item.id, ...shared }, "Destination saved in every trip that visits it.", undefined, imageForm);
         break;
       }
+      case "newDestination": void perform({ type: "destination.create", city: text("city") }); break;
       case "shoppingBudget": {
         const item = editor.item;
         void perform({ type: "destination.save", id: item.id, shoppingAmount: text("shoppingAmount") }, "Shopping budget saved.");
@@ -224,6 +228,7 @@ export default function PlannerApp({ initialData, initialBudgets, access = {}, d
     : editor?.kind === "healthSafety" ? "Edit health and safety"
     : editor?.kind === "weather" ? "Edit typical weather"
     : editor?.kind === "destination" ? (editor.item ? "Edit destination: " + formatSavedDestinationLabel(editor.item.city) : "Add a destination")
+    : editor?.kind === "newDestination" ? "New destination"
     : editor?.kind === "shoppingBudget" ? "Edit shopping budget"
     : editor?.kind === "foodBudget" ? "Edit food budget"
     : editor?.kind === "activitiesBudget" ? "Edit activities budget"
@@ -272,7 +277,7 @@ export default function PlannerApp({ initialData, initialBudgets, access = {}, d
     return <>
       <Link href="/destinations" className="breadcrumb"><ArrowLeft size={16} />All destinations</Link>
       <section className="trip-heading"><div><p className="eyebrow">A PLACE WORTH KNOWING</p><h1>{label}</h1><div className="trip-meta">{label !== place.city && <span><MapPin size={17} />{place.city}</span>}<span><Plane size={17} />{stays.length ? "In " + count(new Set(stays.map((visit) => visit.trip.id)).size, "trip", "trips") : "Not in a trip"}</span>{placeAccess?.role === "editor" && <span><Share2 size={17} />{"Shared by " + memberLabel(placeAccess.owner)}</span>}</div>{place.notes && <p className="trip-notes">{place.notes}</p>}</div>
-        <div className="heading-actions"><button className="button secondary" onClick={() => open({ kind: "destination", item: place })}><Pencil size={15} />Edit destination</button></div>
+        <div className="heading-actions"><button className="button secondary" onClick={() => open({ kind: "destination", item: place })}><Pencil size={15} />Edit destination</button>{placeAccess?.role === "owner" && stays.length === 0 && <button className="icon-button" aria-label="Delete destination" onClick={() => confirmDelete({ type: "destination.delete", id: place.id }, "Delete this destination?", "“" + label + "” and everything saved for it will be removed: its hotels, activities, restaurants, churches, photos, notes, budget amounts, entry requirements, health and safety, and typical weather.", "/destinations")}><Trash2 size={18} /></button>}</div>
       </section>
       <div className="trip-layout"><div className="trip-main">
         <article className="destination-card" id={"destination-" + place.id}><DestinationGallery destination={place} />
@@ -291,6 +296,7 @@ export default function PlannerApp({ initialData, initialBudgets, access = {}, d
             <span><strong><CurrencyTotals totals={estimate.totalsByCurrency} /></strong> {estimate.complete ? "estimate" : "partial estimate"}</span></li>;
         })}</ul> : <p className="helper">Not in any of your trips. It stays here with everything saved for it.</p>}
         <p className="helper">Changes here appear in every trip that visits this destination. Each trip keeps its own nights, dates, stay notes, and travel connections.</p>
+        {placeAccess?.role === "owner" && stays.length > 0 && <p className="helper">To delete this destination, first remove it from each trip that visits it.</p>}
       </aside></div>
     </>;
   }
@@ -360,10 +366,10 @@ export default function PlannerApp({ initialData, initialBudgets, access = {}, d
       {trip && stop && destination && renderIdeas(destination, stop, { href: "/trips/" + trip.id + "#destination-" + stop.id, label: trip.name + " · " + formatSavedDestinationLabel(destination.city) })}
 
       {destinationList && <>
-        <section className="ideas-heading"><div><p className="eyebrow">EVERY PLACE YOU HAVE LOOKED INTO</p><h1>Destinations</h1><p className="hero-description">Each city keeps one set of hotels, activities, restaurants, and research, shared by every trip that visits it.</p></div></section>
+        <section className="ideas-heading"><div><p className="eyebrow">EVERY PLACE YOU HAVE LOOKED INTO</p><h1>Destinations</h1><p className="hero-description">Each city keeps one set of hotels, activities, restaurants, and research, shared by every trip that visits it.</p></div><button className="button primary" onClick={() => open({ kind: "newDestination" })}><Plus size={17} />New destination</button></section>
         <section className="trips-section"><div className="section-heading"><div className="heading-inline"><h2>Saved destinations</h2><span className="count-pill">{data.destinations.length}</span></div>
           {data.destinations.length > 0 && <label className="search-field"><Search size={17} /><input aria-label="Search destinations" value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Find a city or trip" /></label>}</div>
-          {data.destinations.length === 0 ? <div className="empty-state home-empty"><span className="empty-icon"><MapPin size={28} strokeWidth={1.5} /></span><h3>No destinations yet.</h3><p>Destinations you add to a trip appear here, and stay here with everything saved for them<br />even after they leave every trip.</p><Link className="button secondary" href="/">See your trips</Link></div>
+          {data.destinations.length === 0 ? <div className="empty-state home-empty"><span className="empty-icon"><MapPin size={28} strokeWidth={1.5} /></span><h3>No destinations yet.</h3><p>Add a city to research it before it is in a trip. Destinations you add to trips appear here too, and stay here with everything saved for them even after they leave every trip.</p><button className="button secondary" onClick={() => open({ kind: "newDestination" })}><Plus size={17} />Add your first destination</button></div>
             : visibleDestinations.length === 0 ? <div className="empty-state"><h3>No destinations match that search.</h3><button className="text-button" onClick={() => setSearch("")}>Clear search</button></div>
             : <div className="trip-grid">{visibleDestinations.map((item, index) => {
               const trips = visitsOf(item.id).map((visit) => visit.trip.name);
@@ -407,6 +413,7 @@ export default function PlannerApp({ initialData, initialBudgets, access = {}, d
         <DestinationGalleryEditor destination={editor.item} draft={destinationGallery} onChange={setDestinationGallery} disabled={busy} />
         <Notes value={editor.item?.notes} />
       </>}
+      {editor.kind === "newDestination" && <LocationField compactDestination label="City or destination" name="city" required autoFocus disabled={busy} placeholder="Start typing a city, e.g. Vienna" helpText="Choose a suggestion or enter any destination." hint="If you already have this destination, its page opens instead." />}
       {editor.kind === "church" && <ChurchEditor item={editor.item} massTimes={massTimes} onTimesChange={setMassTimes} gallery={candidateGallery} onGalleryChange={setCandidateGallery} busy={busy} />}
       {editor.kind === "entryRequirements" && <EntryRequirementsEditor requirements={editor.item.entryRequirements} sources={researchLinks} onSourcesChange={setResearchLinks} disabled={busy} />}
       {editor.kind === "healthSafety" && <HealthSafetyEditor healthSafety={editor.item.healthSafety} contacts={emergencyContacts} onContactsChange={setEmergencyContacts} sources={researchLinks} onSourcesChange={setResearchLinks} disabled={busy} />}
@@ -440,6 +447,6 @@ export default function PlannerApp({ initialData, initialBudgets, access = {}, d
         {category !== "hotels" && <label className="checkbox-field wide"><input name="mustDo" type="checkbox" defaultChecked={editor.item?.mustDo ?? false} disabled={busy} /><span>Must do<small>A planning priority. Budget inclusion and list order stay separate.</small></span></label>}
         <label className="checkbox-field wide"><input name="included" type="checkbox" defaultChecked={editor.item?.included ?? false} /><span>{category === "hotels" ? "Choose this hotel for the budget" : category === "activities" ? "Include in itemized activity costs" : "Include in itemized restaurant costs"}<small>{category === "hotels" ? "Replaces the general estimate or other chosen hotel. Your general estimate stays saved." : category === "activities" ? "Applies only in Itemized activity costs mode. This does not change your budgeting method." : "Applies only in Itemized restaurant costs mode. This does not change your budgeting method."}</small></span></label>
       </>}
-    </div>{error && editor.kind !== "destination" && <p className="form-error" role="alert">{error}</p>}<div className="dialog-actions"><button type="button" className="button secondary" onClick={close} disabled={busy}>Cancel</button>{editor.kind !== "destination" && <button className={editor.kind === "delete" ? "button danger" : "button primary"} type="submit" disabled={busy}>{busy ? "Saving…" : editor.kind === "delete" ? (editor.mutation.type === "leg.clear" ? "Clear travel plan" : editor.mutation.type === "destination.entryRequirements" ? "Clear entry requirements" : editor.mutation.type === "destination.healthSafety" ? "Clear health and safety" : editor.mutation.type === "stop.remove" ? "Remove from trip" : "Delete") : editor.kind === "trip" && !editor.item ? "Create trip" : editor.kind === "share" ? "Share" : "Save changes"}</button>}</div></form></Dialog>}
+    </div>{error && editor.kind !== "destination" && <p className="form-error" role="alert">{error}</p>}<div className="dialog-actions"><button type="button" className="button secondary" onClick={close} disabled={busy}>Cancel</button>{editor.kind !== "destination" && <button className={editor.kind === "delete" ? "button danger" : "button primary"} type="submit" disabled={busy}>{busy ? "Saving…" : editor.kind === "delete" ? (editor.mutation.type === "leg.clear" ? "Clear travel plan" : editor.mutation.type === "destination.entryRequirements" ? "Clear entry requirements" : editor.mutation.type === "destination.healthSafety" ? "Clear health and safety" : editor.mutation.type === "stop.remove" ? "Remove from trip" : "Delete") : editor.kind === "trip" && !editor.item ? "Create trip" : editor.kind === "newDestination" ? "Create destination" : editor.kind === "share" ? "Share" : "Save changes"}</button>}</div></form></Dialog>}
   </div>;
 }

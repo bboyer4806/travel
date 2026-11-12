@@ -40,6 +40,10 @@ export type Mutation =
  | ({ type: "destination.save"; id?: undefined; tripId: string; stopId?: undefined; city: string } & DestinationFields & StopFields)
  // Changes a saved destination everywhere it is used, and with `stopId` that trip's stay notes and nights too.
  | ({ type: "destination.save"; id: string; tripId?: undefined; stopId?: string } & DestinationFields & StopFields)
+ // Saves a destination outside any trip. A city the account already has a destination for opens that one instead.
+ | { type: "destination.create"; city: string }
+ // Deletes a destination no trip visits, with everything saved for it. Only its owner can.
+ | { type: "destination.delete"; id: string }
  | { type: "destination.entryRequirements"; id: string; requirements: EntryRequirements | null }
  | { type: "destination.healthSafety"; id: string; healthSafety: HealthSafety | null }
  | { type: "destination.churchVisibility"; id: string; enabled: boolean }

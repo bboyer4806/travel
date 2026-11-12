@@ -295,6 +295,35 @@ test("people a trip is shared with work on its destinations, which stay the owne
   assert.equal(store.getDestinationImage(editor, ids.springLisbon), undefined);
 });
 
+test("a destination created outside a trip is its creator's, and only its owner deletes one, when no trip visits it", (t) => {
+  const store = createStore(":memory:", OWNER_EMAIL);
+  t.after(() => store.close());
+  const owner = store.authorizeAccount(OWNER_EMAIL).id;
+  const editor = store.authorizeAccount("editor@example.com").id;
+  const other = store.authorizeAccount("other@example.com").id;
+  const change = (input, account = owner) => store.applyMutation(account, input).id;
+  const tripId = change({ type: "trip.save", name: "Trip", dateLabel: "", homeCity: "Boston", travelers: 2, notes: "" });
+  const lisbon = change({ type: "destination.save", tripId, city: "Lisbon, Lisbon, Portugal", stay: "", notes: "" });
+  change({ type: "trip.share", tripId, email: "editor@example.com" });
+  const porto = change({ type: "destination.create", city: "Porto, Porto, Portugal" });
+
+  // Choosing a city another account has never opens theirs, even one a trip shared with them visits.
+  const editorLisbon = change({ type: "destination.create", city: "Lisbon, Lisbon, Portugal" }, editor);
+  const otherPorto = change({ type: "destination.create", city: "Porto, Porto, Portugal" }, other);
+  assert.equal(new Set([lisbon, porto, editorLisbon, otherPorto]).size, 4);
+  assert.deepEqual(store.getDestinationSnapshot(editor, editorLisbon).access, { role: "owner" });
+  for (const account of [editor, other]) assert.equal(store.getDestinationSnapshot(account, porto), undefined, "the owner's stays theirs alone");
+
+  // Nobody else deletes a destination; one they can't open is no different from one that doesn't exist.
+  const before = store.getSnapshot();
+  for (const account of [editor, other]) assert.throws(() => change({ type: "destination.delete", id: porto }, account), NOT_AVAILABLE);
+  assert.throws(() => change({ type: "destination.delete", id: lisbon }, editor), { name: "ValidationError", message: "Only the destination's owner can delete it." });
+  assert.deepEqual(store.getSnapshot(), before);
+  change({ type: "destination.delete", id: porto });
+  change({ type: "destination.delete", id: otherPorto }, other);
+  assert.deepEqual(store.getSnapshot().destinations.map((item) => item.id).sort(), [lisbon, editorLisbon].sort());
+});
+
 test("an upgrade that would leave saved items without their parents is refused, changing nothing", (t) => {
   const plans = legacyPlans(t);
   const db = new DatabaseSync(plans.path);

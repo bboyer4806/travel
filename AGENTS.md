@@ -59,8 +59,10 @@ Repeat passing checks when subsequent changes affect their coverage or required 
 - Destinations are shared by their owner's trips (TRA-105). Each owner has one per city
   (`destinations.cityKey`, from `destinationKey` in `src/lib/destination-label.ts`), and trips visit
   them through `trip_stops`, which keep each trip's order, stay notes, nights and dates. A destination
-  belongs to its trip's owner; an account opens one it owns or that a trip it can open visits.
-  Removing a stop or deleting a trip never deletes a destination or what is saved with it.
+  added to a trip belongs to the trip's owner, and one created in Destinations (TRA-106) to its creator;
+  an account opens one it owns or that a trip it can open visits. Removing a stop or deleting a trip
+  never deletes a destination or what is saved with it. Only its owner deletes a destination, and only
+  while no trip visits it.
 - Application writes go through `mutatePlanner` in `src/app/actions.ts`, into `applyMutation`
   in `src/lib/store.ts`. A new operation adds a `Mutation` variant in `src/lib/types.ts` and
   a case in `validate`, `mutationScope` and `mutate` in the store. `mutationScope` finds the trip

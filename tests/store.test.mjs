@@ -14,6 +14,18 @@ const candidateInput = (destinationId, overrides = {}) => ({ type: "candidate.sa
 const legInput = (id, overrides = {}) => ({ type: "leg.save", id, method: "Flight", price: "100.01", departure: "Morning", arrival: "Evening", url: "https://example.com/flights", notes: "Two passengers", ...overrides });
 const legsFor = (store, tripId) => store.getSnapshot().legs.filter((leg) => leg.tripId === tripId);
 const pair = (leg) => JSON.stringify([leg.fromId, leg.toId]);
+const NOT_AVAILABLE = { name: "ValidationError", message: "This item no longer exists or isn't shared with you. Please refresh and try again." };
+const photo = () => ({ add: [{ id: randomUUID(), data: new Uint8Array([82, 73, 70, 70, 4, 0, 0, 0, 87, 69, 66, 80]) }], remove: [] });
+/** Every kind of research a destination keeps, saved from its own page, as Destinations saves it without a trip. */
+function saveResearch(store, destinationId) {
+  store.applyMutation(destinationEdit(destinationId, { notes: "Gardens at dawn", hotelNightlyAmount: "180", miscDailyAmount: "40", foodBudgetMode: "daily", foodDailyAmount: "75", shoppingAmount: "120", activitiesBudgetMode: "general", activitiesGeneralAmount: "300", weatherHighF: 70, weatherLowF: 55, weatherPeriod: "April", gallery: photo() }));
+  store.applyMutation(candidateInput(destinationId, { gallery: photo() }));
+  store.applyMutation(candidateInput(destinationId, { category: "activities", name: "A temple walk", mustDo: true }));
+  store.applyMutation(candidateInput(destinationId, { category: "restaurants", name: "A market lunch", included: false }));
+  store.applyMutation({ type: "church.save", destinationId, name: "A cathedral", address: "", denomination: "Catholic", url: "", massTimes: [{ id: randomUUID(), day: "Sunday", time: "9:00" }], gallery: photo() });
+  store.applyMutation({ type: "destination.entryRequirements", id: destinationId, requirements: { passportNationality: "United States", travelPurpose: "Tourism", travelerCircumstances: "", visaRequirements: "None for short stays", passportValidity: "", requiredDocuments: "", transitRequirements: "", notes: "", sources: [], lastCheckedDate: "2026-11-12" } });
+  store.applyMutation({ type: "destination.healthSafety", id: destinationId, healthSafety: { advisoryLevel: "Level 1", advisoryWarnings: "", healthPrecautions: "", localSafety: "", emergencyContacts: [{ id: randomUUID(), name: "Emergency services", phone: "110", notes: "" }], sources: [], lastCheckedDate: "2026-11-12" } });
+}
 
 test("complete create, edit, clear, and delete flows preserve the trip relationships", (t) => {
   const { store, tripId } = setup(t, tripInput());
@@ -171,6 +183,8 @@ test("runtime validation rejects malformed values without modifying saved inform
     ...["javascript:alert(1)", "data:text/html,hello", "ftp://example.com", "https://user:password@example.com"].map((url) => candidateInput(destinationId, { url })),
     candidateInput(destinationId, { notes: "x".repeat(8001) }),
     { type: "leg.save", id: randomUUID(), method: "Flight", price: "20", departure: "", arrival: "", url: "", notes: "" },
+    { type: "destination.create" }, { type: "destination.create", city: " " }, { type: "destination.create", city: "a".repeat(121) },
+    { type: "destination.delete", id: "wrong" },
   ];
   for (const input of invalidInputs) {
     assert.throws(() => store.applyMutation(input), ValidationError);
@@ -193,6 +207,7 @@ test("updates cannot move records into unrelated trips, destinations, or lists",
     candidateInput(destinationId, { id: hotelId, category: "activities" }),
     destinationInput(randomUUID()),
     candidateInput(randomUUID()),
+    { type: "destination.delete", id: randomUUID() },
   ]) {
     assert.throws(() => store.applyMutation(input), ValidationError);
     assert.deepEqual(store.getSnapshot(), before);
@@ -236,4 +251,83 @@ test("a database failure rolls back hotel deselection and every partial mutation
     observer.close();
     store.close();
   }
+});
+
+test("a destination created outside a trip needs only a city, opens again for the same city, and keeps its research", (t) => {
+  const path = fileDatabase(t);
+  let store = createOwnedStore(path);
+  try {
+    const create = (city) => store.applyMutation({ type: "destination.create", city }).id;
+    const paris = create("Paris, Ile-de-France, France");
+    const { data, access } = store.getDestinationSnapshot(paris);
+    assert.deepEqual([data.trips, data.stops, access], [[], [], { role: "owner" }], "it is in no trip, and it is its creator's");
+    // It starts as a destination added to a trip with only its city does.
+    const tripId = store.applyMutation(tripInput()).id;
+    const tokyo = store.applyMutation(destinationInput(tripId)).id;
+    const fresh = (id) => ({ ...store.getSnapshot().destinations.find((item) => item.id === id), id: undefined, city: undefined });
+    assert.deepEqual(fresh(paris), fresh(tokyo));
+
+    // Choosing a city again opens its destination, however it is spelled, even one a trip visits, and saves nothing.
+    const before = store.getSnapshot();
+    assert.equal(create(" paris ,  ILE-DE-FRANCE,france "), paris);
+    assert.equal(create("tokyo"), tokyo);
+    assert.deepEqual(store.getSnapshot(), before);
+    // A same-named city in another region, or a name entered by hand, is a destination of its own.
+    const texas = create("Paris, Texas, United States");
+    const typed = create("Paris");
+    assert.equal(new Set([paris, texas, typed]).size, 3);
+
+    // Research is added and edited from its page, as for a destination in a trip, and appears in no trip.
+    saveResearch(store, paris);
+    store.applyMutation(destinationEdit(paris, { notes: "Museums first" }));
+    const researched = store.getDestinationSnapshot(paris).data;
+    assert.deepEqual([researched.destinations[0].notes, researched.destinations[0].hotelNightlyMinor, researched.destinations[0].images.length, researched.candidates.length, researched.churches.length], ["Museums first", 18000, 1, 3, 1]);
+    assert.ok(researched.destinations[0].entryRequirements && researched.destinations[0].healthSafety);
+    assert.deepEqual(store.getTripSnapshot(tripId).data.destinations.map((item) => item.id), [tokyo]);
+
+    // Everything is there after reopening the database, and Destinations lists it.
+    const saved = store.getSnapshot();
+    store.close(); store = null;
+    store = createOwnedStore(path);
+    assert.deepEqual(store.getSnapshot(), saved);
+    assert.deepEqual(Object.keys(store.getDestinationsOverview().access).sort(), [paris, texas, typed, tokyo].sort());
+  } finally {
+    store?.close();
+  }
+});
+
+test("only a destination no trip visits can be deleted, and everything saved for it goes with it", (t) => {
+  const path = fileDatabase(t);
+  const store = createOwnedStore(path);
+  const db = new DatabaseSync(path);
+  t.after(() => { db.close(); store.close(); });
+  const tripId = store.applyMutation(tripInput()).id;
+  const tokyo = store.applyMutation(destinationInput(tripId)).id;
+  const kyoto = store.applyMutation({ type: "destination.create", city: "Kyoto" }).id;
+  saveResearch(store, tokyo);
+  saveResearch(store, kyoto);
+  const tables = ["destinations", "candidates", "candidate_images", "churches", "church_images", "destination_images", "destination_entry_requirements", "destination_health_safety", "trip_stops", "legs"];
+  const counts = () => Object.fromEntries(tables.map((table) => [table, db.prepare(`SELECT count(*) AS count FROM ${table}`).get().count]));
+
+  // A destination a trip visits keeps everything, for that trip.
+  const before = store.getSnapshot();
+  assert.throws(() => store.applyMutation({ type: "destination.delete", id: tokyo }), { name: "ValidationError", message: "“Tokyo” is in a trip, so it can't be deleted. Remove it from every trip that visits it first." });
+  assert.deepEqual(store.getSnapshot(), before);
+
+  // One in no trip goes with its ideas, churches, photos and research, leaving everything else as it was.
+  const rows = counts();
+  store.applyMutation({ type: "destination.delete", id: kyoto });
+  assert.deepEqual(store.getSnapshot(), { ...before, destinations: before.destinations.filter((item) => item.id !== kyoto), candidates: before.candidates.filter((item) => item.destinationId !== kyoto), churches: before.churches.filter((item) => item.destinationId !== kyoto) });
+  assert.deepEqual(counts(), { ...rows, destinations: rows.destinations - 1, candidates: rows.candidates - 3, candidate_images: rows.candidate_images - 1, churches: rows.churches - 1, church_images: rows.church_images - 1, destination_images: rows.destination_images - 1, destination_entry_requirements: rows.destination_entry_requirements - 1, destination_health_safety: rows.destination_health_safety - 1 });
+  assert.equal(store.getDestinationSnapshot(kyoto), undefined);
+  assert.throws(() => store.applyMutation({ type: "destination.delete", id: kyoto }), NOT_AVAILABLE);
+
+  // Removed from its trip, a destination can be deleted too, and its city starts again empty.
+  store.applyMutation({ type: "stop.remove", id: tokyo });
+  store.applyMutation({ type: "destination.delete", id: tokyo });
+  assert.deepEqual(counts(), Object.fromEntries(tables.map((table) => [table, 0])));
+  assert.deepEqual(db.prepare("PRAGMA foreign_key_check").all(), []);
+  const again = store.applyMutation({ type: "destination.create", city: "Kyoto" }).id;
+  assert.notEqual(again, kyoto);
+  assert.deepEqual(store.getDestinationSnapshot(again).data.candidates, []);
 });

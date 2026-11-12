@@ -243,7 +243,7 @@ Church details, visibility, and gallery images use the existing persistent SQLit
 
 **Superseded by [schema 15](#schema-15-travel-12-schedule-inputs-and-usd-validation):** the saved visibility is a show or hide choice that date changes keep, and new destinations start shown. The dates separately decide whether the section can appear.
 
-**Superseded by [schema 21](#schema-21-shared-destinations-tra-105):** destinations are no longer deleted, so their churches and photos stay when a destination leaves a trip or its trip is deleted.
+**Superseded by [schema 21](#schema-21-shared-destinations-tra-105):** leaving a trip, or the trip being deleted, no longer deletes a destination, so its churches and photos stay. Only deleting a destination that no trip visits (TRA-106) removes them.
 
 ### Schema 15: Travel 1.2 schedule inputs and USD validation
 Rehearse the upgrade against a copy of production data, including galleries, weather, churches, routes, and all budget source modes. On October 29, 2026, schema 15 was rehearsed against a server-side copy of the verified schema 14 production backup. All nine tables retained their rows and existing fields (original dates retained in legacy columns), and integrity and foreign-key checks passed. Both existing trips had incomplete schedules requiring review; no dates were guessed. Production data stayed on the server.

@@ -445,6 +445,19 @@ try {
   assert.deepEqual(await mutation(healthSafetyEdit, outsider), notAvailable);
   assert.deepEqual(await mutation(healthSafetyEdit, editor), { ok: true, id: "22222222-2222-4222-8222-222222222222" });
   assert.deepEqual(JSON.parse(db.prepare("SELECT healthSafetyJson FROM destination_health_safety WHERE destinationId = ?").get("22222222-2222-4222-8222-222222222222").healthSafetyJson), healthSafety);
+  // A destination created outside a trip is its creator's: choosing a city never opens someone else's. Only the owner
+  // deletes a destination, and only one no trip visits; its page offers Delete only then.
+  const vienna = "22222222-2222-4222-8222-222222222222";
+  assert.deepEqual(await mutation({ type: "destination.create", city: " vienna " }), { ok: true, id: vienna }, "The owner's saved city opens their destination");
+  const outsiderVienna = await mutation({ type: "destination.create", city: "Vienna" }, outsider);
+  assert.ok(outsiderVienna.ok && outsiderVienna.id !== vienna, "Another account's same city is a destination of its own");
+  assert.deepEqual(await mutation({ type: "destination.delete", id: vienna }, outsider), notAvailable);
+  assert.deepEqual(await mutation({ type: "destination.delete", id: vienna }, editor), { ok: false, error: "Only the destination's owner can delete it." });
+  assert.deepEqual(await mutation({ type: "destination.delete", id: vienna }), { ok: false, error: "“Vienna” is in a trip, so it can't be deleted. Remove it from every trip that visits it first." });
+  assert.ok(!(await (await get(destinationPages[0], owner)).text()).includes('aria-label="Delete destination"'), "A destination in a trip offers no Delete");
+  assert.ok((await (await get("/destinations/" + outsiderVienna.id, outsider)).text()).includes('aria-label="Delete destination"'), "Its owner can delete a destination in no trip");
+  assert.deepEqual(await mutation({ type: "destination.delete", id: outsiderVienna.id }, outsider), { ok: true });
+  assert.deepEqual(db.prepare("SELECT id FROM destinations WHERE city = 'Vienna'").all().map((row) => row.id), [vienna], "Only the outsider's own destination was deleted");
   assert.deepEqual(await mutation({ type: "trip.unshare", tripId: saved.id, email: "editor@example.test" }), { ok: true, id: saved.id });
   assert.deepEqual(await mutation(edit("Editor, after removal"), editor), notAvailable, "Removing access ends it at once");
   const revoked = await (await get("/trips/" + saved.id, editor)).text();

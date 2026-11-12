@@ -2,6 +2,14 @@
 
 Approved direction: a shared travel-ideas planner with manually entered prices in USD for the entire traveling party.
 
+## Added scope: Travel 1.8 review tickets, November 11, 2026 (TRA-73, TRA-80, TRA-91, TRA-94)
+- TRA-73: verify the existing cross-bundle store validation recognition through `isValidationError`, preserving specific messages, image-upload validation, and generic handling of unexpected errors. Keep database behavior unchanged.
+- TRA-80: enforce rolling process-wide city-search budgets of 300/minute, 2,500/hour, and 8,000/day; anonymous-cookie client limits of 20/minute and two concurrent requests; eight concurrent requests globally; and a 60-second cooldown after an upstream HTTP 429. Preserve cached results, shared requests, existing authentication, and manual city entry.
+- TRA-91: hide empty feedback errors, translate invalid/non-JSON responses into the existing friendly failure message, and allow manual Send retries after token preparation fails while retaining drafts and submission protections.
+- TRA-94: use Next.js retry to re-fetch failed server data and remove the root streaming loading boundary so missing pages return 404 and server-rendering failures return 500. Preserve existing messages and health endpoint behavior.
+
+Only these four sprint tickets whose titles start with **Review:** are included. No other Travel 1.8 features, schema changes, or dependency upgrades are part of this implementation.
+
 ## Pages and navigation
 - Home lists potential trips: user-created name, ordered cities, general date, and estimated budget. Create, edit, and delete trips.
 - A trip landing page shows notes, home location, ordered destinations, transportation, and budget breakdown. Add, edit, remove, and reorder destinations.

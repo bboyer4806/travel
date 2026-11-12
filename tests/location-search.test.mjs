@@ -89,7 +89,7 @@ test("matching lookups share in-flight work and expire their bounded cache", asy
   clock = 10 * 60 * 1000;
   await search("Wooster");
   assert.equal(calls, 2);
-  for (let i = 0; i < 200; i++) await search(`City ${i}`);
+  for (let i = 0; i < 200; i++) await search(`City ${i}`, `client-${i}`);
   await search("Wooster");
   assert.equal(calls, 203);
 });
@@ -100,11 +100,161 @@ test("distinct concurrent requests have a fixed upper bound", async () => {
     if (resolvers.length < 8) await new Promise((resolve) => resolvers.push(resolve));
     return json({ results: [] });
   } });
-  const requests = Array.from({ length: 8 }, (_, i) => search(`City ${i}`));
+  const requests = Array.from({ length: 8 }, (_, i) => search(`City ${i}`, `client-${i}`));
   await assert.rejects(search("Another city"), hasStatus(503));
   resolvers.forEach((resolve) => resolve());
   await Promise.all(requests);
   assert.deepEqual(await search("Another city"), []);
+});
+
+test("rolling global minute budget survives client changes and recovers only expired capacity", async () => {
+  let clock = 0;
+  let calls = 0;
+  const search = createLocationSearch({ now: () => clock, fetcher: async () => { calls++; return json({}); } });
+  for (let i = 0; i < 150; i++) await search(`First city ${i}`, `first-${i}`);
+  clock = 30_000;
+  for (let i = 0; i < 150; i++) await search(`Second city ${i}`, `second-${i}`);
+  for (const client of ["old-client", "new-cookie", "another-cookie"]) {
+    await assert.rejects(search("Blocked city", client), hasStatus(503));
+  }
+  assert.equal(calls, 300);
+  clock = 59_999;
+  await assert.rejects(search("Still blocked", "fresh"), hasStatus(503));
+  clock = 60_000;
+  for (let i = 0; i < 150; i++) await search(`Recovered city ${i}`, `recovered-${i}`);
+  await assert.rejects(search("No more capacity", "fresh"), hasStatus(503));
+  assert.equal(calls, 450);
+  clock = 90_000;
+  await search("Next window", "fresh");
+  assert.equal(calls, 451);
+});
+
+test("rolling hour budget rejects at 2500 attempts and restores expired capacity", async () => {
+  let clock = 0;
+  let calls = 0;
+  const search = createLocationSearch({ now: () => clock, fetcher: async () => { calls++; return json({}); } });
+  for (let batch = 0; batch < 25; batch++) {
+    clock = batch * 60_000;
+    for (let i = 0; i < 100; i++) await search(`City ${batch}-${i}`, `client-${i}`);
+  }
+  clock = 60 * 60_000 - 1;
+  await assert.rejects(search("Hour exhausted", "fresh"), hasStatus(503));
+  assert.equal(calls, 2500);
+  clock++;
+  for (let i = 0; i < 100; i++) await search(`Recovered city ${i}`, `client-${i}`);
+  await assert.rejects(search("Hour still full", "fresh"), hasStatus(503));
+  assert.equal(calls, 2600);
+});
+
+test("rolling daily budget rejects at 8000 attempts and recovers at the day boundary", async () => {
+  let clock = 0;
+  let calls = 0;
+  const search = createLocationSearch({ now: () => clock, fetcher: async () => { calls++; return json({}); } });
+  for (let batch = 0; batch < 40; batch++) {
+    clock = batch * 6 * 60_000;
+    for (let i = 0; i < 200; i++) await search(`City ${batch}-${i}`, `client-${i}`);
+  }
+  clock = 24 * 60 * 60_000 - 1;
+  await assert.rejects(search("Day exhausted", "fresh"), hasStatus(503));
+  assert.equal(calls, 8000);
+  clock++;
+  for (let i = 0; i < 200; i++) await search(`Recovered city ${i}`, `client-${i}`);
+  await assert.rejects(search("Day still full", "fresh"), hasStatus(503));
+  assert.equal(calls, 8200);
+});
+
+test("client minute accounting includes failures, excludes cached and rejected requests, and expires", async () => {
+  let clock = 0;
+  let calls = 0;
+  const search = createLocationSearch({ now: () => clock, fetcher: async () => {
+    calls++;
+    if (calls === 1) throw new Error("Unavailable");
+    return json({ results: [wooster] });
+  } });
+  await assert.rejects(search("Failure", "busy-client"), hasStatus(502));
+  for (let i = 0; i < 19; i++) await search(`City ${i}`, "busy-client");
+  for (let i = 0; i < 5; i++) {
+    await search("City 0", "busy-client");
+    await assert.rejects(search("Not cached", "busy-client"), hasStatus(503));
+  }
+  assert.equal(calls, 20);
+  await search("Other person's city", "other-client");
+  assert.equal(calls, 21);
+  clock = 59_999;
+  await assert.rejects(search("Not cached", "busy-client"), hasStatus(503));
+  clock++;
+  for (let i = 0; i < 20; i++) await search(`Fresh city ${i}`, "busy-client");
+  assert.equal(calls, 41);
+  await assert.rejects(search("One too many", "busy-client"), hasStatus(503));
+});
+
+test("one client is limited to two concurrent lookups while other clients retain capacity", async () => {
+  const resolvers = [];
+  let calls = 0;
+  const search = createLocationSearch({ fetcher: async () => {
+    calls++;
+    await new Promise((resolve) => resolvers.push(resolve));
+    return json({});
+  } });
+  const first = search("First city", "busy-client");
+  const shared = search(" FIRST   CITY ", "busy-client");
+  const second = search("Second city", "busy-client");
+  await assert.rejects(search("Third city", "busy-client"), hasStatus(503));
+  assert.equal(calls, 2);
+  const other = Array.from({ length: 6 }, (_, i) => search(`Other city ${i}`, `client-${Math.floor(i / 2)}`));
+  await assert.rejects(search("Global full", "fresh"), hasStatus(503));
+  assert.equal(calls, 8);
+  resolvers.forEach((resolve) => resolve());
+  await Promise.all([first, shared, second, ...other]);
+  const next = search("Third city", "busy-client");
+  assert.equal(calls, 9);
+  resolvers.at(-1)();
+  await next;
+});
+
+test("shared requests consume only the originating client's quota", async () => {
+  let release;
+  let calls = 0;
+  const search = createLocationSearch({ fetcher: async () => {
+    calls++;
+    if (calls === 1) await new Promise((resolve) => { release = resolve; });
+    return json({});
+  } });
+  const requests = [search("Shared city", "origin"), ...Array.from({ length: 25 }, () => search("Shared city", "joining"))];
+  release();
+  await Promise.all(requests);
+  for (let i = 0; i < 20; i++) await search(`Joining city ${i}`, "joining");
+  await assert.rejects(search("Joining full", "joining"), hasStatus(503));
+  for (let i = 0; i < 19; i++) await search(`Origin city ${i}`, "origin");
+  await assert.rejects(search("Origin full", "origin"), hasStatus(503));
+  assert.equal(calls, 40);
+});
+
+test("upstream 429 pauses all new lookups for 60 seconds while cache and shared work remain available", async () => {
+  let clock = 0;
+  let calls = 0;
+  let release;
+  const search = createLocationSearch({ now: () => clock, fetcher: async (url) => {
+    calls++;
+    if (url.searchParams.get("name") === "Pending city") await new Promise((resolve) => { release = resolve; });
+    if (url.searchParams.get("name") === "Rate limited") return json({}, 429);
+    return json({ results: [wooster] });
+  } });
+  await search("Cached city", "cache-client");
+  const pending = search("Pending city", "pending-client");
+  clock = 10_000;
+  await assert.rejects(search("Rate limited", "first"), hasStatus(503));
+  for (let i = 0; i < 30; i++) await assert.rejects(search(`Blocked city ${i}`, `client-${i}`), hasStatus(503));
+  const shared = search("Pending city", "joining-client");
+  assert.deepEqual((await search("Cached city", "first"))[0].name, "Wooster");
+  assert.equal(calls, 3);
+  release();
+  assert.deepEqual(await pending, await shared);
+  clock = 69_999;
+  await assert.rejects(search("Blocked until expiry", "first"), hasStatus(503));
+  clock++;
+  await search("Recovered city", "first");
+  assert.equal(calls, 4);
 });
 
 test("country code metadata leaves full labels and distinct regions intact", async () => {

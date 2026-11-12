@@ -71,6 +71,8 @@ bash scripts/smoke-container.sh
 ```
 The container smoke script needs Docker and Bash. It builds the image and checks the container, persistent storage, sign-in enforcement and trip and destination isolation, which a Next.js build alone does not verify.
 
+After building, CI also runs `node scripts/review-errors-smoke.mjs` to check production page status codes, failure recovery, and save validation with health-, image-, and page-first store initialization. It creates disposable databases and logs under `test-results`, using fixture sessions without contacting Google. You can run the same command locally.
+
 ## Local production preview
 `pnpm build` produces Next.js standalone output, the same server the Docker image runs. Next.js warns that `next start`, which `pnpm start` runs, does not work with standalone output. To preview a build, copy in the files the standalone server leaves out, then start it with your `.env.local` settings:
 ```sh
@@ -85,6 +87,15 @@ Repeat the copies after every build. The standalone server doesn't read `.env.lo
 Trip and destination pages fetch only the relevant trip's or destination's data. Home-page budgets are computed on the server and reused while searching, and saves refresh the displayed page without returning the entire database to the browser. The unused Next.js image optimizer is disabled; existing photo routes and galleries are unchanged.
 
 Production deployments require a verified, encrypted off-host backup before replacing the running application, and the server also sends one to the Windows receiver daily at 03:00 UTC. The one-time administrator setup, its November 9, 2026 verification and the isolated restore rehearsal are described in [deployment](docs/DEPLOYMENT.md).
+
+## Travel 1.8 review fixes
+Save failures keep their specific validation message even when an API route opens the database first. Unexpected failures retain the generic save error.
+
+City suggestions limit upstream requests within the single application process to 300 per rolling minute, 2,500 per hour, and 8,000 per day, with at most eight concurrent requests. An anonymous client cookie provides best-effort limits of 20 upstream requests per minute and two concurrent requests per client. An upstream rate-limit response pauses new lookups for 60 seconds. Cached suggestions remain available; manual city entry still works when new suggestions are temporarily unavailable. These in-memory limits reset when the process restarts.
+
+Feedback errors appear only when there is a message. Unreadable server responses show the standard friendly error, and **Send** can retry failed initialization without closing the sheet or losing the draft. Pending submissions still prevent duplicate sends.
+
+The error page's **Try again** reloads failed server data. Initial requests for missing trips, destinations, or categories return HTTP 404; server-rendering failures return HTTP 500. Pages wait for their server checks before sending a response, instead of streaming the root loading screen first.
 
 ## Trip dates and nights
 Set the trip's optional **Start date**, then enter each destination's nonnegative whole number of **Nights** from the trip's page. Nights and stay notes belong to the trip, so a destination shared with other trips can have different nights in each. Arrival and departure dates, their weekdays, and the trip end date are calculated in destination order. A departure is the next destination's arrival; changing the start, nights, or order recalculates the route. A zero-night stop arrives and departs on the same day. Dates cannot be overridden individually. Travel-leg timing notes do not determine the schedule.

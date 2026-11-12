@@ -25,5 +25,7 @@ jobs:
       - run: pnpm typecheck
       - run: pnpm test
       - run: pnpm build
+      - name: Verify production error responses and validation
+        run: node scripts/review-errors-smoke.mjs
       - name: Verify container and persistent storage
         run: bash scripts/smoke-container.sh

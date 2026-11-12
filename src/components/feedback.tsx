@@ -17,39 +17,54 @@ export default function FeedbackProvider({ children }: { children: ReactNode }) 
   const opening = useRef(0);
   const token = useRef("");
   const readyAt = useRef(0);
+  const preparing = useRef<Promise<boolean> | null>(null);
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
   const [sent, setSent] = useState(false);
   const [busy, setBusy] = useState(false);
-  const [ready, setReady] = useState(false);
   const request = async (body: object) => {
     const response = await fetch("/api/feedback", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body), signal: AbortSignal.timeout(15_000) }).catch(() => { throw new Error(FEEDBACK_FAILURE); });
-    const result = await response.json();
-    if (!response.ok) throw new Error(result.error || FEEDBACK_FAILURE);
+    const data: unknown = await response.json().catch(() => { throw new Error(FEEDBACK_FAILURE); });
+    if (!data || typeof data !== "object" || Array.isArray(data)) throw new Error(FEEDBACK_FAILURE);
+    const result = data as Record<string, unknown>;
+    if (!response.ok) throw new Error(typeof result.error === "string" && result.error.trim() ? result.error : FEEDBACK_FAILURE);
     return result;
   };
-  async function prepare() {
-    const generation = ++opening.current;
-    setReady(false); token.current = "";
-    try {
-      const result = await request({ action: "open" });
-      if (generation !== opening.current) return;
-      token.current = result.token;
-      readyAt.current = Date.now() + 1100;
-      setReady(true);
-    } catch (cause) { if (generation === opening.current) setError(cause instanceof Error ? cause.message : FEEDBACK_FAILURE); }
+  function prepare(): Promise<boolean> {
+    // A fast Send shares the opening request rather than issuing a second challenge.
+    if (preparing.current) return preparing.current;
+    const generation = opening.current;
+    preparing.current = (async () => {
+      try {
+        const result = await request({ action: "open" });
+        if (generation !== opening.current) return false;
+        if (typeof result.token !== "string" || !result.token) throw new Error(FEEDBACK_FAILURE);
+        token.current = result.token;
+        readyAt.current = Date.now() + 1100;
+        return true;
+      } catch (cause) {
+        if (generation === opening.current) setError(cause instanceof Error ? cause.message : FEEDBACK_FAILURE);
+        return false;
+      } finally {
+        if (generation === opening.current) preparing.current = null;
+      }
+    })();
+    return preparing.current;
   }
   function open() {
     if (dialog.current?.open) return;
     opener.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
     if (sent) { setMessage(""); setSent(false); }
     setError("");
+    opening.current++;
     dialog.current?.showModal();
     void prepare();
   }
   function close() {
     if (pending.current) return;
     opening.current++;
+    token.current = "";
+    preparing.current = null;
     dialog.current?.close();
     opener.current?.focus();
   }
@@ -68,18 +83,22 @@ export default function FeedbackProvider({ children }: { children: ReactNode }) 
         const website = new FormData(event.currentTarget).get("website") ?? "";
         pending.current = true; setBusy(true); setError("");
         try {
+          if (!token.current && !await prepare()) return;
           // Allow the invisible server challenge to mature, including very fast pastes.
           if (readyAt.current > Date.now()) await new Promise((resolve) => setTimeout(resolve, readyAt.current - Date.now()));
-          await request({ message, page: location.pathname + location.search, viewport: `${window.innerWidth} × ${window.innerHeight}`, token: token.current, website });
+          const submissionToken = token.current;
+          token.current = ""; // A failed response may still have consumed this single-use token.
+          const result = await request({ message, page: location.pathname + location.search, viewport: `${window.innerWidth} × ${window.innerHeight}`, token: submissionToken, website });
+          if (result.ok !== true) throw new Error(FEEDBACK_FAILURE);
           setSent(true);
-        } catch (cause) { setError(cause instanceof Error ? cause.message : FEEDBACK_FAILURE); await prepare(); }
+        } catch (cause) { setError(cause instanceof Error ? cause.message : FEEDBACK_FAILURE); }
         finally { pending.current = false; setBusy(false); }
       }}>
-        <label className="field"><span>Feedback</span><textarea name="message" rows={6} value={message} onChange={(event) => setMessage(event.target.value.slice(0, FEEDBACK_LIMIT))} maxLength={FEEDBACK_LIMIT} disabled={busy} aria-describedby="feedback-count feedback-error" autoFocus /></label>
+        <label className="field"><span>Feedback</span><textarea name="message" rows={6} value={message} onChange={(event) => setMessage(event.target.value.slice(0, FEEDBACK_LIMIT))} maxLength={FEEDBACK_LIMIT} disabled={busy} aria-describedby={error ? "feedback-count feedback-error" : "feedback-count"} autoFocus /></label>
         <div className="feedback-trap" aria-hidden="true"><label>Website<input name="website" tabIndex={-1} autoComplete="off" /></label></div>
         <p id="feedback-count" className="helper">{message.length.toLocaleString()} / 2,000{message.length === FEEDBACK_LIMIT ? " — Character limit reached." : ""}</p>
-        <p id="feedback-error" role="alert" className="form-error">{error}</p>
-        <div className="dialog-actions"><button type="button" className="button secondary" onClick={close} disabled={busy}>Cancel</button><button className="button primary" type="submit" disabled={busy || !ready}>{busy ? "Sending…" : "Send"}</button></div>
+        {error && <p id="feedback-error" role="alert" className="form-error">{error}</p>}
+        <div className="dialog-actions"><button type="button" className="button secondary" onClick={close} disabled={busy}>Cancel</button><button className="button primary" type="submit" disabled={busy}>{busy ? "Sending…" : "Send"}</button></div>
       </form>}
     </dialog>
   </FeedbackContext.Provider>;

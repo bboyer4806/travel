@@ -183,51 +183,115 @@ export function DestinationBudget({ snapshot, visit, stop, onShoppingEdit, onMis
   </div>;
 }
 
-/**
- * Budget amounts and methods, shared by every trip that visits the destination. In a trip, `stay` adds that trip's
- * nights for this stop, with previews of its dates; `stop` is absent while adding one.
- */
-export function DestinationBudgetEditor({ destination, selectedHotel, disabled, stay }: { destination?: Destination; selectedHotel?: Candidate; disabled: boolean; stay?: { trip: Trip; stops: TripStop[]; stop?: TripStop } }) {
-  const [nightInput, setNightInput] = useState(String(stay?.stop?.nights ?? ""));
-  const nights = !stay || nightInput === "" ? null : Number(nightInput);
-  const previewStops = !stay ? [] : stay.stop ? stay.stops.map((stop) => stop.id === stay.stop?.id ? { ...stop, nights } : stop) : [...stay.stops, { id: "new", nights }];
+/** One trip's stay at a destination while it is edited: the trip, its stops in route order, and the stop, absent while adding one. */
+type TripStay = { trip: Trip; stops: TripStop[]; stop?: TripStop };
+
+/** A stay's nights while editing: the text as typed, and `value`, the number previews use, unknown while blank or outside a trip. */
+function useStayNights(stay: TripStay | undefined) {
+  const [input, setInput] = useState(String(stay?.stop?.nights ?? ""));
+  return { input, setInput, value: !stay || input === "" ? null : Number(input) };
+}
+
+/** A trip stay's Nights field, with a preview of the dates they give it. */
+function StayNightsField({ stay, nights }: { stay: TripStay; nights: ReturnType<typeof useStayNights> }) {
+  const previewStops = stay.stop ? stay.stops.map((stop) => stop.id === stay.stop?.id ? { ...stop, nights: nights.value } : stop) : [...stay.stops, { id: "new", nights: nights.value }];
   let dates = { arrivalDate: null as string | null, departureDate: null as string | null };
   let dateError = "";
-  try { if (stay) dates = sequenceDates(stay.trip.startDate, previewStops).destinations.find((stop) => stop.id === (stay.stop?.id ?? "new")) ?? dates; }
+  try { dates = sequenceDates(stay.trip.startDate, previewStops).destinations.find((stop) => stop.id === (stay.stop?.id ?? "new")) ?? dates; }
   catch (cause) { dateError = cause instanceof Error ? cause.message : "Enter valid nights."; }
-  const currency = "USD";
-  const [amount, setAmount] = useState(minorAmountValue(destination?.miscDailyMinor ?? null, destination?.miscCurrency ?? null));
+  return <>
+    <label className="field wide"><span>Nights</span><input name="nights" type="number" min="0" max="3652058" step="1" value={nights.input} onChange={(event) => nights.setInput(event.target.value)} placeholder="Unknown" /><small>Zero is a same-day visit. Leave blank if undecided.</small></label>
+    <div className="wide" aria-live="polite"><DestinationDates stop={{ ...dates, nights: nights.value, legacyArrivalDate: stay.stop?.legacyArrivalDate ?? null, legacyDepartureDate: stay.stop?.legacyDepartureDate ?? null }} />{dateError && <p className="form-error">{dateError}</p>}</div>
+  </>;
+}
+
+/** The general nightly hotel estimate, with a preview of the stay estimate it gives for `nights`. */
+function HotelEstimateFields({ destination, selectedHotel, nights }: { destination?: Destination; selectedHotel?: Candidate; nights: number | null }) {
   const hotelCurrency = "USD";
   const [hotelAmount, setHotelAmount] = useState(minorAmountValue(destination?.hotelNightlyMinor, destination?.hotelCurrency));
   let hotelNightlyMinor: number | null = null;
   let hotelError = "";
   try { hotelNightlyMinor = parseMinorAmount(hotelAmount, hotelCurrency || null, "Nightly hotel amount"); }
   catch (error) { hotelError = error instanceof Error ? error.message : "Enter a valid nightly amount."; }
+  return <>
+    <label className="field"><span>Nightly hotel amount ($)</span><input name="hotelNightlyAmount" type="number" min="0" max={MAX_AMOUNT_DOLLARS} step="0.01" value={hotelAmount} onChange={(event) => setHotelAmount(event.target.value)} placeholder="Not estimated" /><small>General estimate for all rooms and travelers per night. Leave blank if unknown.</small></label>
+    <div className="wide" aria-live="polite">
+      {hotelError ? <p className="helper">{hotelError}</p> : <HotelEstimateSummary destination={{ nights, hotelNightlyMinor, hotelCurrency: hotelCurrency || null }} />}
+      <p className="helper">{selectedHotel ? "Selected hotel: " + selectedHotel.name + ". Its whole-stay price stays in the budget; this general estimate is saved for when no hotel is selected." : "The general stay estimate is included until you select a hotel. A same-day visit has zero nights."}</p>
+    </div>
+  </>;
+}
+
+/** The daily miscellaneous amount, with a preview of the subtotal it gives for `nights`. */
+function MiscellaneousFields({ destination, nights }: { destination?: Destination; nights: number | null }) {
+  const currency = "USD";
+  const [amount, setAmount] = useState(minorAmountValue(destination?.miscDailyMinor ?? null, destination?.miscCurrency ?? null));
   let dailyMinor: number | null = null;
   let previewError = "";
   try { dailyMinor = parseMinorAmount(amount.trim(), currency || null, "Daily miscellaneous amount"); }
   catch (error) { previewError = error instanceof Error ? error.message : "Enter a valid daily amount."; }
+  return <>
+    <label className="field"><span>Daily miscellaneous amount ($)</span><input name="miscDailyAmount" type="number" min="0" max={MAX_AMOUNT_DOLLARS} step="0.01" value={amount} onChange={(event) => setAmount(event.target.value)} placeholder="Not estimated" /><small>For the whole party. Zero is accepted; leave blank if unknown.</small></label>
+    <div className="wide" aria-live="polite">
+      {previewError ? <p className="helper">{previewError}</p> : <MiscellaneousSummary destination={{ nights, miscDailyMinor: dailyMinor, miscCurrency: currency || null }} />}
+    </div>
+  </>;
+}
 
+/**
+ * Budget amounts and methods, shared by every trip that visits the destination. In a trip, `stay` adds that trip's
+ * nights for this stop, with previews of its dates; `stop` is absent while adding one.
+ */
+export function DestinationBudgetEditor({ destination, selectedHotel, disabled, stay }: { destination?: Destination; selectedHotel?: Candidate; disabled: boolean; stay?: TripStay }) {
+  const nights = useStayNights(stay);
   return <fieldset className="destination-budget-editor wide" disabled={disabled}>
     <legend>{stay ? "Dates & destination budget" : "Destination budget"}</legend>
     <p className="helper">{stay ? "Enter nights for this trip's stay. Dates follow the trip start and destination order automatically. " : "Each trip that visits this destination sets its own nights, which these amounts multiply. "}Budget amounts and methods are shared by every trip that visits this destination. All amounts are USD for the whole party; stay notes do not affect calculations.</p>
     <div className="form-grid">
-      {stay && <><label className="field wide"><span>Nights</span><input name="nights" type="number" min="0" max="3652058" step="1" value={nightInput} onChange={(event) => setNightInput(event.target.value)} placeholder="Unknown" /><small>Zero is a same-day visit. Leave blank if undecided.</small></label>
-      <div className="wide" aria-live="polite"><DestinationDates stop={{ ...dates, nights, legacyArrivalDate: stay.stop?.legacyArrivalDate ?? null, legacyDepartureDate: stay.stop?.legacyDepartureDate ?? null }} />{dateError && <p className="form-error">{dateError}</p>}</div></>}
-      <label className="field"><span>Nightly hotel amount ($)</span><input name="hotelNightlyAmount" type="number" min="0" max={MAX_AMOUNT_DOLLARS} step="0.01" value={hotelAmount} onChange={(event) => setHotelAmount(event.target.value)} placeholder="Not estimated" /><small>General estimate for all rooms and travelers per night. Leave blank if unknown.</small></label>
-      <div className="wide" aria-live="polite">
-        {hotelError ? <p className="helper">{hotelError}</p> : <HotelEstimateSummary destination={{ nights, hotelNightlyMinor, hotelCurrency: hotelCurrency || null }} />}
-        <p className="helper">{selectedHotel ? "Selected hotel: " + selectedHotel.name + ". Its whole-stay price stays in the budget; this general estimate is saved for when no hotel is selected." : "The general stay estimate is included until you select a hotel. A same-day visit has zero nights."}</p>
-      </div>
-      <label className="field"><span>Daily miscellaneous amount ($)</span><input name="miscDailyAmount" type="number" min="0" max={MAX_AMOUNT_DOLLARS} step="0.01" value={amount} onChange={(event) => setAmount(event.target.value)} placeholder="Not estimated" /><small>For the whole party. Zero is accepted; leave blank if unknown.</small></label>
-    </div>
-    <div aria-live="polite">
-      {previewError ? <p className="helper">{previewError}</p> : <MiscellaneousSummary destination={{ nights, miscDailyMinor: dailyMinor, miscCurrency: currency || null }} />}
+      {stay && <StayNightsField stay={stay} nights={nights} />}
+      <HotelEstimateFields destination={destination} selectedHotel={selectedHotel} nights={nights.value} />
+      <MiscellaneousFields destination={destination} nights={nights.value} />
     </div>
     <p className="helper">Miscellaneous uses one budget day per night, or one full day for a zero-night visit. Unknown nights keep the estimate incomplete.</p>
     <ActivitiesBudgetEditor destination={destination} disabled={disabled} />
-    <FoodBudgetEditor destination={destination} nights={nights} disabled={disabled} />
+    <FoodBudgetEditor destination={destination} nights={nights.value} disabled={disabled} />
     <ShoppingBudgetEditor destination={destination} disabled={disabled} />
+  </fieldset>;
+}
+
+/**
+ * Accommodation's own editor: the general nightly hotel estimate, shared by every trip that visits the destination,
+ * with a preview of the stay estimate. In a trip, `stay` adds that trip's nights for this stop, with previews of its dates.
+ */
+export function AccommodationBudgetEditor({ destination, selectedHotel, disabled, stay }: { destination: Destination; selectedHotel?: Candidate; disabled: boolean; stay?: TripStay & { stop: TripStop } }) {
+  const nights = useStayNights(stay);
+  return <fieldset className="destination-budget-editor wide" disabled={disabled}>
+    <legend>Accommodation budget</legend>
+    <p className="helper">{stay ? "Enter nights for this trip's stay. Dates follow the trip start and destination order automatically. " : "Each trip that visits this destination sets its own nights, which this amount multiplies. "}The nightly amount is shared by every trip that visits this destination. All amounts are USD for the whole party.</p>
+    <div className="form-grid">
+      {stay && <StayNightsField stay={stay} nights={nights} />}
+      <HotelEstimateFields destination={destination} selectedHotel={selectedHotel} nights={nights.value} />
+    </div>
+  </fieldset>;
+}
+
+/** Miscellaneous's own editor. `nights` are the stay the preview uses: one trip's, or unknown outside a trip. */
+export function MiscellaneousBudgetEditor({ destination, nights, disabled }: { destination: Destination; nights: number | null; disabled: boolean }) {
+  return <fieldset className="destination-budget-editor wide" disabled={disabled}>
+    <legend>Miscellaneous budget</legend>
+    <div className="form-grid"><MiscellaneousFields destination={destination} nights={nights} /></div>
+    <p className="helper">Miscellaneous uses one budget day per night, or one full day for a zero-night visit. Each trip&apos;s nights for this destination set its allowance; unknown nights keep the estimate incomplete.</p>
+    <p className="helper">The daily amount is shared by every trip that visits this destination. Traveler count never multiplies it.</p>
+  </fieldset>;
+}
+
+/** One trip's nights at a destination, with a preview of the dates they give. */
+export function StayNightsEditor({ stay, disabled }: { stay: TripStay & { stop: TripStop }; disabled: boolean }) {
+  const nights = useStayNights(stay);
+  return <fieldset className="destination-budget-editor wide" disabled={disabled}>
+    <legend>Nights &amp; dates</legend>
+    <p className="helper">Enter nights for this trip&apos;s stay. Dates follow the trip start and destination order automatically. Other trips that visit this destination keep their own nights.</p>
+    <div className="form-grid"><StayNightsField stay={stay} nights={nights} /></div>
   </fieldset>;
 }
 

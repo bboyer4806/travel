@@ -1028,6 +1028,7 @@ button svg,a svg {
   color:#953c31;
   margin-top:22px
 }
+/* Editors stop above the bottom-right Send feedback button (43px tall, 24px from the bottom or 12px on phones), so it never covers them. */
 .editor-dialog {
   border:1px solid #d5dccd;
   border-radius:13px;
@@ -1035,9 +1036,19 @@ button svg,a svg {
   color:var(--ink);
   width:560px;
   max-width:calc(100vw - 32px);
-  max-height:calc(100dvh - 44px);
+  bottom:67px;
+  max-height:calc(100dvh - 111px);
   padding:0;
   box-shadow:0 25px 100px #172c3540
+}
+/* The title and X stay at the top and Cancel and Save at the bottom; only the fields between them scroll. */
+.editor-dialog[open] {
+  display:flex;
+  flex-direction:column
+}
+.editor-dialog .dialog-heading {
+  flex:none;
+  align-items:flex-start
 }
 .editor-dialog::backdrop {
   background:#20382e66;
@@ -1056,7 +1067,25 @@ button svg,a svg {
   overflow-wrap:anywhere
 }
 .editor-dialog form {
+  display:flex;
+  flex-direction:column;
+  flex:1 1 auto;
+  min-height:0
+}
+.dialog-body {
+  position:relative; /* Absolutely positioned content, such as screen-reader text, scrolls with the fields. */
+  flex:1 1 auto;
+  min-height:0;
+  overflow-y:auto;
   padding:23px 27px 25px
+}
+.dialog-footer {
+  flex:none;
+  padding:18px 27px 22px;
+  border-top:1px solid var(--line)
+}
+.dialog-footer .form-error {
+  margin:0 0 14px
 }
 .form-grid {
   display:grid;
@@ -1107,6 +1136,13 @@ button svg,a svg {
   border-top:1px solid var(--line);
   padding-top:20px;
   margin-top:23px
+}
+/* An editor's footer: Cancel on the left, Save on the right. */
+.dialog-footer .dialog-actions {
+  justify-content:space-between;
+  border-top:0;
+  padding-top:0;
+  margin-top:0
 }
 .form-route {
   overflow-wrap:anywhere;
@@ -1547,7 +1583,8 @@ button svg,a svg {
 }
 .editor-dialog {
   max-width:calc(100vw - 22px);
-  max-height:calc(100dvh - 22px)
+  bottom:55px;
+  max-height:calc(100dvh - 77px)
 }
 .dialog-heading {
   padding:20px 20px 17px
@@ -1555,8 +1592,11 @@ button svg,a svg {
 .dialog-heading h2 {
   font-size:26px
 }
-.editor-dialog form {
+.dialog-body {
   padding:20px
+}
+.dialog-footer {
+  padding:14px 20px 16px
 }
 .form-grid {
   gap:16px;
@@ -1910,8 +1950,8 @@ button svg,a svg {
 .church-visibility { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 16px; margin: 20px 0; }
 .church-visibility > .helper { flex: 1 1 280px; margin: 0; }
 .category-tabs { flex-wrap: wrap; }
-/* Travel 1.2: destination sections and persistent editor actions. */
-.budget-section-heading,.dialog-title-row { display:flex; align-items:center; justify-content:space-between; gap:12px; flex-wrap:wrap; }
+/* Travel 1.2: destination sections. */
+.budget-section-heading { display:flex; align-items:center; justify-content:space-between; gap:12px; flex-wrap:wrap; }
 .budget-section-heading { margin-top:22px; margin-bottom:12px; }
 .budget-section-heading h4 { margin:0; font-size:17px; }
 .budget-section-heading a,.budget-section-heading button { min-height:44px; }
@@ -1921,18 +1961,14 @@ button svg,a svg {
 .destination-church .ideas-grid { grid-template-columns: minmax(0,1fr); }
 .destination-church .ideas-empty { padding:24px 12px; }
 .destination-church .idea-card { min-width:0; }
-.sticky-heading { position:sticky; top:0; z-index:5; display:block!important; background:var(--paper,#fffdf8); border-bottom:1px solid var(--border,#ddd); }
-.sticky-heading .form-error { margin:8px 0 0; }
-.editor-dialog:has(.sticky-heading) { scroll-padding-top:150px; }
-.editor-dialog:has(.sticky-heading) input,.editor-dialog:has(.sticky-heading) textarea,.editor-dialog:has(.sticky-heading) select { scroll-margin-top:150px; }
-.dialog-title-row { width:100%; }
 .site-header nav { display:flex; gap:20px; align-items:center; }
 .unread-dot { display:inline-block; width:8px; height:8px; margin-left:7px; border-radius:50%; background:#a14726; vertical-align:middle; }
 .change-log { max-width:900px; padding-bottom:120px; }
 .release-entry { margin:32px 0; padding:24px; border:1px solid var(--border,#ddd); border-radius:14px; }
 .release-entry li { margin:12px 0; }
 .feedback-launcher { position:fixed; right:24px; bottom:24px; z-index:30; box-shadow:0 4px 18px #0002; }
-body:has(.editor-dialog[open])>.feedback-launcher,body:has(.editor-dialog[open]) .feedback-launcher { visibility:hidden; }
+/* An open editor shows its own Send feedback button above the backdrop, so the page's is hidden. */
+body:has(.editor-dialog[open])>.feedback-launcher { visibility:hidden; }
 .site-footer { padding-bottom:110px!important; }
 .feedback-dialog { width:min(540px,calc(100vw - 24px)); max-height:calc(100dvh - 24px); padding:0; border:1px solid #d8d2c7; border-radius:18px; background:#fffdf8; color:#292b27; }
 .feedback-dialog::backdrop { background:rgb(24 30 25 / 45%); }
@@ -1943,13 +1979,11 @@ body:has(.editor-dialog[open])>.feedback-launcher,body:has(.editor-dialog[open])
 @media(max-width:600px) {
   .site-header nav { gap:12px; }
   .site-header .nav-link { font-size:13px; }
-  .dialog-title-row h2 { font-size:18px; overflow-wrap:anywhere; }
-  .dialog-title-row .heading-actions { gap:8px; }
-  .feedback-inline { font-size:12px; }
+  .editor-dialog .dialog-heading h2 { font-size:18px; }
   .feedback-launcher { right:12px; bottom:12px; }
   .budget-section-heading { gap:4px; }
 }
-@media print { .feedback-launcher,.feedback-inline,.feedback-dialog { display:none!important; } }
+@media print { .feedback-launcher,.feedback-dialog { display:none!important; } }
 .sign-in { max-width:620px; padding-top:72px; }
 .sign-in h1 { font-size:clamp(38px,4.5vw,56px); letter-spacing:-1.5px; }
 .sign-in .form-error { margin:0 0 24px; }

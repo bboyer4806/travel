@@ -5,9 +5,10 @@ import { MessageSquare, X } from "lucide-react";
 import { FEEDBACK_FAILURE, FEEDBACK_LIMIT } from "@/lib/feedback";
 
 const FeedbackContext = createContext<() => void>(() => {});
-export function FeedbackButton({ compact = false }: { compact?: boolean }) {
+/** The bottom-right Send feedback button. An editor renders its own, since a modal hides the page's. */
+export function FeedbackButton() {
   const open = useContext(FeedbackContext);
-  return <button type="button" className={compact ? "text-button feedback-inline" : "button primary feedback-launcher"} onClick={open}><MessageSquare size={18} aria-hidden="true" />Send feedback</button>;
+  return <button type="button" className="button primary feedback-launcher" onClick={open}><MessageSquare size={18} aria-hidden="true" />Send feedback</button>;
 }
 
 export default function FeedbackProvider({ children }: { children: ReactNode }) {

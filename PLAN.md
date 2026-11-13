@@ -275,3 +275,8 @@ This replaces TRA-62's destination Save in a sticky header.
 - The trip list filters by any number of selected tags, showing only trips with every selected tag, combined with the existing search so both must match. Each filter can be removed on its own, and Clear tag filters removes them all while keeping the search.
 - Schema 23 adds a `trip_tags` table, one row per trip and tag, deleted with its trip. Existing trips start without tags. Backup and rollback are in [deployment](docs/DEPLOYMENT.md).
 - Not included: a screen for renaming or deleting tags across trips, tag colors, icons or hierarchies, searching by tag text, and separate tag permissions or other changes to sharing.
+
+## Added scope: November 13, 2026, saving after a deploy (TRA-74)
+- Every image is built with the same Server Actions key, the `NEXT_SERVER_ACTIONS_ENCRYPTION_KEY` deploy secret, so the save action keeps its ID across deploys and a page opened before a deploy can still save. A deploy without the secret stops before building.
+- When a save reaches a server that doesn't recognize its action, because the key or the action itself changed, the save error says the planner was updated and asks for a reload, instead of the connection error that retrying never cleared. An open editor keeps its entries until the page reloads.
+- Not included: keeping unsaved changes across a reload, announcing a new version before saving, reloading automatically, and changes to other save errors.

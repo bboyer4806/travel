@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
+import { fstatSync, readdirSync, statSync, writeFileSync } from "node:fs";
 import { DatabaseSync } from "node:sqlite";
 import test from "node:test";
 import { SCHEMA_VERSION, ValidationError } from "../src/lib/store.ts";
@@ -251,6 +252,50 @@ test("a database failure rolls back hotel deselection and every partial mutation
     observer.close();
     store.close();
   }
+});
+
+test("a full disk is reported as SQLite's own error, saves nothing, and saving works again once there is room", (t) => {
+  const store = createOwnedStore(fileDatabase(t));
+  try {
+    const tripId = store.applyMutation(tripInput()).id;
+    // The store's own connection, taken from the read below, may not grow the database file, as on a full disk.
+    const prepare = t.mock.method(DatabaseSync.prototype, "prepare");
+    const before = store.getSnapshot();
+    const connection = prepare.mock.calls[0].this;
+    prepare.mock.restore();
+    const pages = connection.prepare("PRAGMA page_count").get().page_count;
+    connection.exec(`PRAGMA max_page_count = ${pages}`);
+    // SQLite rolls this save back itself. Rolling back again would replace its error with
+    // "cannot rollback - no transaction is active".
+    const edit = tripInput({ id: tripId, notes: "A long note. ".repeat(600).trim() });
+    assert.throws(() => store.applyMutation(edit), { message: "database or disk is full" });
+    assert.deepEqual(store.getSnapshot(), before);
+    connection.exec(`PRAGMA max_page_count = ${pages + 100}`);
+    store.applyMutation(edit);
+    assert.equal(store.getSnapshot().trips[0].notes, edit.notes);
+  } finally {
+    store.close();
+  }
+});
+
+/** How many of this process's open file descriptors, listed in /dev/fd, are the file at `path`. */
+function openDescriptors(path) {
+  const file = statSync(path);
+  return readdirSync("/dev/fd").filter((fd) => {
+    try {
+      const open = fstatSync(Number(fd));
+      return open.dev === file.dev && open.ino === file.ino;
+    } catch {
+      return false; // The descriptor that listed the folder is already closed.
+    }
+  }).length;
+}
+
+test("a file that isn't a database is refused, and no attempt to open it leaves it open", (t) => {
+  const path = fileDatabase(t);
+  writeFileSync(path, "This is not a database.\n".repeat(100));
+  for (let attempt = 0; attempt < 3; attempt++) assert.throws(() => createOwnedStore(path), /file is not a database/);
+  assert.equal(openDescriptors(path), 0);
 });
 
 test("a destination created outside a trip needs only a city, opens again for the same city, and keeps its research", (t) => {

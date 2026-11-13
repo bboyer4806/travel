@@ -287,3 +287,8 @@ This replaces TRA-62's destination Save in a sticky header.
 - A save whose response doesn't arrive says the changes couldn't be confirmed, instead of saying they weren't saved.
 - A page opened before this change adds items without IDs. Adding from it saves nothing and shows TRA-74's message asking for a reload, while its changes to saved items keep working.
 - **New destination** in Destinations already opens the saved destination for a city it has, so it is unchanged.
+
+## Added scope: November 13, 2026, reporting database errors (TRA-93)
+- A save that SQLite has already rolled back, as when the disk is full, reports and logs SQLite's own error, such as `database or disk is full`, instead of the error from rolling back a second time. It saves nothing, and saving works again once there is room.
+- Opening the database closes its connection whenever the open fails: before the upgrade begins, as for a file that isn't a database or a write lock another process holds past the 5-second wait, or during the upgrade. Failed opens no longer leave connections open.
+- Not included: shortening the 5-second wait for another process's write lock, so each try to open the database still waits that long while the lock is held; remembering a failed open between requests; and changes to the save errors people see.

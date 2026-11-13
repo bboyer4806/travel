@@ -244,6 +244,11 @@ Images live in the same persistent SQLite database and are included in online ba
 ## Saving after a deploy
 Every deploy builds with the same Server Actions key, so a page opened before a deploy keeps saving after it. If a save reaches a version of the planner that doesn't recognize it, because the key or the save action itself changed, it shows **The planner was updated. Your changes haven't been saved. Please reload the page and try again.** instead of the connection error, since trying again without reloading never works. Adding an item from a page opened before TRA-75, which doesn't send the new item's ID, shows the same message; that page's changes to saved items keep working. Deploying requires the key; see [deployment](docs/DEPLOYMENT.md#server-actions-key-tra-74).
 
+## Database failures
+A save the database can't complete, as when the disk is full, saves nothing and shows **We couldn't save your changes. Please try again.** The server log names SQLite's own error, such as `database or disk is full`, rather than an error from undoing the save (TRA-93). Saving works again once there is room, without a restart.
+
+If the database can't be opened, because its file isn't a database or another process holds its write lock, the request that tried fails and closes its connection, and the next request tries again. While another process holds the write lock, each try waits up to 5 seconds for it.
+
 ## Hosting
 The existing GitHub Actions deployment builds a Node container and deploys it to Dokku at travel.dev.boyersoftware.com after checks pass. Only `main` deploys, only to the server with the verified SSH host key, and with the 20 MiB request limit photo uploads need; see [deployment safeguards](docs/DEPLOYMENT.md#deployment-safeguards-tra-98).
 **Provision persistent storage before the first app deployment.** See [deployment and recovery instructions](docs/DEPLOYMENT.md).

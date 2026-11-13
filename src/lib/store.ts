@@ -550,11 +550,11 @@ export function createStore(databasePath: string, ownerEmail: string) {
   const owner = emailAddress(ownerEmail);
   if (databasePath !== ":memory:") mkdirSync(dirname(resolve(databasePath)), { recursive: true });
   const db = new DatabaseSync(databasePath, { timeout: 5000 });
-  // An upgrade may rebuild a table others refer to, which SQLite allows only with foreign keys off, and they can
-  // only be switched outside a transaction. The upgrade checks every reference itself before it commits.
-  db.exec("PRAGMA journal_mode = WAL; PRAGMA foreign_keys = OFF;");
-  db.exec("BEGIN IMMEDIATE");
   try {
+    // An upgrade may rebuild a table others refer to, which SQLite allows only with foreign keys off, and they can
+    // only be switched outside a transaction. The upgrade checks every reference itself before it commits.
+    db.exec("PRAGMA journal_mode = WAL; PRAGMA foreign_keys = OFF;");
+    db.exec("BEGIN IMMEDIATE");
     const version = Number(db.prepare("PRAGMA user_version").get()?.user_version ?? 0);
     if (version > SCHEMA_VERSION) throw new Error("This database was created by a newer version of the travel app.");
     // A new database starts with the schema 1 tables, which the upgrades below bring up to date.
@@ -894,8 +894,13 @@ export function createStore(databasePath: string, ownerEmail: string) {
     }
     db.exec("COMMIT");
   } catch (error) {
-    db.exec("ROLLBACK");
-    db.close();
+    // A failure may come before the transaction begins, or after SQLite has rolled it back itself, as on a full
+    // disk. The connection closes either way, so failed starts leave none open.
+    try {
+      if (db.isTransaction) db.exec("ROLLBACK");
+    } finally {
+      db.close();
+    }
     throw error;
   }
   db.exec("PRAGMA foreign_keys = ON;");
@@ -1643,7 +1648,9 @@ export function createStore(databasePath: string, ownerEmail: string) {
       db.exec("COMMIT");
       return id ? { id } : {};
     } catch (error) {
-      db.exec("ROLLBACK");
+      // SQLite has already rolled back after some failures, such as a full disk, and a second ROLLBACK would throw
+      // and hide the real error.
+      if (db.isTransaction) db.exec("ROLLBACK");
       throw error;
     }
   }

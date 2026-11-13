@@ -20,7 +20,7 @@ import { ConnectionItinerary, ConnectionItineraryEditor } from "@/components/con
 import { ResearchLinks, ResearchLinksEditor } from "@/components/research-links";
 import { unstable_isUnrecognizedActionError, useRouter } from "next/navigation";
 import { useEffect, useRef, useState, type FormEvent, type ReactNode } from "react";
-import { ArrowDown, ArrowLeft, ArrowRight, ArrowUp, BedDouble, Bike, Binoculars, Bus, CalendarDays, Car, CheckCircle2, Compass, Footprints, MapPin, MoreHorizontal, Pencil, Plane, Plus, Route, Search, Share2, Ship, TrainFront, Trash2, UserPlus, Users, Utensils, Wallet, X, type LucideIcon } from "lucide-react";
+import { ArrowDown, ArrowLeft, ArrowRight, ArrowUp, BedDouble, Bike, Binoculars, Bus, CalendarDays, Car, CheckCircle2, CircleAlert, Compass, Footprints, MapPin, MoreHorizontal, Pencil, Plane, Plus, Route, Search, Share2, Ship, TrainFront, Trash2, UserPlus, Users, Utensils, Wallet, X, type LucideIcon } from "lucide-react";
 import TripSharing, { memberLabel } from "@/components/trip-sharing";
 import { TripTagFilter, TripTagList, TripTagsEditor } from "@/components/trip-tags";
 import { hasEveryTag, tagKey } from "@/lib/trip-tags";
@@ -458,7 +458,8 @@ export default function PlannerApp({ initialData, initialBudgets, access = {}, d
       {!trip && tripId && <div className="empty-state"><h1>This trip is no longer here.</h1><Link href="/">Back to all trips</Link></div>}
       {!tripId && destinationId && !destination && <div className="empty-state"><h1>This destination is no longer here.</h1><Link href="/destinations">Back to all destinations</Link></div>}
       {message && <div className="toast" role="status"><CheckCircle2 size={17} />{message}<button aria-label="Dismiss message" className="icon-button" onClick={() => setMessage("")}><X size={14} /></button></div>}
-      {error && !editor && <div role="alert" className="error-banner">{error}</div>}
+      {/* Controls that save without an editor, such as Move or Include, can be far from the end of the page, so their errors stay in view like the toast. An editor shows its own above its buttons. */}
+      {error && !editor && <div className="toast error-toast" role="alert"><CircleAlert size={17} aria-hidden="true" />{error}<button aria-label="Dismiss error" className="icon-button" onClick={() => setError("")}><X size={14} /></button></div>}
     </main>
     <footer className="site-footer"><span><Compass size={15} />For the trips still taking shape.</span><span>Shared editing · whole-party estimates</span></footer>
     {editor && <Dialog title={pageTitle} busy={busy} onClose={close}><form id="planner-editor" onSubmit={submit}><div className="form-grid dialog-body">

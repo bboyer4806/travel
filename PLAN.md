@@ -288,6 +288,11 @@ This replaces TRA-62's destination Save in a sticky header.
 - A page opened before this change adds items without IDs. Adding from it saves nothing and shows TRA-74's message asking for a reload, while its changes to saved items keep working.
 - **New destination** in Destinations already opens the saved destination for a city it has, so it is unchanged.
 
+## Added scope: November 13, 2026, inline action errors (TRA-82)
+- When a change made without an editor fails, such as moving a destination or an idea, Include, Must do, Mark complete, Show or Hide Church, or adding or removing a tag, its error appears in an alert fixed at the bottom of the screen at every screen size, wherever the page is scrolled, instead of after the page's last section. It sits above **Send feedback** so neither covers the other, and stays until it is dismissed or another change starts.
+- Editors still show their errors above their Save and Cancel buttons.
+- Not included: changes to error messages, the success message, or saving.
+
 ## Added scope: November 13, 2026, reporting database errors (TRA-93)
 - A save that SQLite has already rolled back, as when the disk is full, reports and logs SQLite's own error, such as `database or disk is full`, instead of the error from rolling back a second time. It saves nothing, and saving works again once there is room.
 - Opening the database closes its connection whenever the open fails: before the upgrade begins, as for a file that isn't a database or a write lock another process holds past the 5-second wait, or during the upgrade. Failed opens no longer leave connections open.

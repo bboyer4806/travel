@@ -1020,13 +1020,14 @@ button svg,a svg {
 .toast .icon-button:hover {
   background:#456759
 }
-.error-banner {
-  background:#f9e8e4;
-  border:1px solid #d99d90;
-  padding:12px 18px;
-  border-radius:7px;
-  color:#953c31;
-  margin-top:22px
+/* The error of a change made without an editor. It sits above the bottom-right Send feedback button (43px tall, 24px from the bottom or 12px on phones), so neither covers the other. */
+.error-toast {
+  bottom:79px;
+  background:#9b3b32
+}
+.error-toast .icon-button:hover {
+  background:#b05247;
+  color:white
 }
 /* Editors stop above the bottom-right Send feedback button (43px tall, 24px from the bottom or 12px on phones), so it never covers them. */
 .editor-dialog {
@@ -1618,6 +1619,9 @@ button svg,a svg {
 .toast .icon-button {
   margin-left:auto;
   flex-shrink:0
+}
+.error-toast {
+  bottom:67px
 }
 
 }

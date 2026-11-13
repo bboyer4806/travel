@@ -1,0 +1,28 @@
+.tags { display: flex; flex-wrap: wrap; gap: 6px; margin: 0; padding: 0; list-style: none; min-width: 0; }
+.tag { display: inline-flex; align-items: center; gap: 2px; max-width: 100%; min-height: 26px; padding: 2px 10px; border-radius: 999px; background: var(--wash); color: var(--green); font-size: 11px; font-weight: 600; line-height: 1.4; overflow-wrap: anywhere; }
+/* A trip card's tags sit between its details and its estimate. */
+.cardTags { margin-top: 16px; }
+
+.editor { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 18px; }
+.editor .tag { padding-right: 2px; }
+.remove { display: inline-grid; place-items: center; flex-shrink: 0; width: 28px; height: 28px; padding: 0; border: 0; border-radius: 50%; background: none; color: inherit; }
+.remove:hover:not(:disabled) { background: #dfe6d6; color: var(--orange); }
+.add { display: flex; align-items: center; gap: 6px; }
+.add input { width: 160px; min-height: 37px; padding: 7px 10px; border: 1px solid #ccd6c7; border-radius: 6px; background: #fffffc; color: var(--ink); font-size: 12px; }
+.add input::placeholder { color: #99a196; }
+.add input:focus { outline: 2px solid #719683; outline-offset: 1px; }
+
+.filter { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: -8px 0 24px; }
+.filterLabel { margin-right: 4px; color: var(--muted); font-size: 11px; font-weight: 600; }
+/* Text changes color with the background, so a toggled tag never flashes white on white. */
+.filterTag { display: inline-flex; align-items: center; gap: 5px; min-height: 32px; padding: 5px 12px; border: 1px solid #d4dbcd; border-radius: 999px; background: var(--white); color: var(--green); font-size: 12px; font-weight: 600; line-height: 1.4; overflow-wrap: anywhere; transition: background .16s, border-color .16s, color .16s; }
+.filterTag:hover { background: #eef1e8; }
+.filterTag[aria-pressed="true"] { border-color: var(--green); background: var(--green); color: white; }
+
+@media (max-width: 540px) {
+  .add { flex: 1 1 100%; }
+  /* 16px keeps phones from zooming into the field. */
+  .add input { flex: 1; width: auto; min-width: 0; font-size: 16px; }
+  .remove { width: 32px; height: 32px; }
+  .filterTag { min-height: 36px; }
+}

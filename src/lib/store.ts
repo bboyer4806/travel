@@ -11,6 +11,7 @@ import { formatMegabytes, MAX_CANDIDATE_IMAGES, MAX_DESTINATION_IMAGES, MAX_STOR
 import { ENTRY_REQUIREMENT_FIELDS, normalizeEntryRequirements } from "./entry-requirements.ts";
 import { normalizeHealthSafety } from "./health-safety.ts";
 import { SESSION_DAYS } from "./session-cookie.ts";
+import { alreadyTagged, cleanTagName, MAX_TAG_LENGTH, tagKey } from "./trip-tags.ts";
 import type { EntryRequirements } from "./entry-requirements.ts";
 import type { HealthSafety } from "./health-safety.ts";
 import type { DestinationFields, DestinationGalleryUpdate } from "./types";
@@ -95,6 +96,14 @@ function emailAddress(value: string): string {
   const email = normalizeEmail(value);
   if (email.length > 254 || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) throw new ValidationError("Enter a valid email address.");
   return email;
+}
+/** A tag's name, cleaned before its length is checked, so extra spaces never count against it. */
+function tagNameField(input: Input): string {
+  if (typeof input.name !== "string") throw new ValidationError("A tag must be text.");
+  const name = cleanTagName(input.name);
+  if (!name) throw new ValidationError("Please enter a tag.");
+  if (name.length > MAX_TAG_LENGTH) throw new ValidationError(`A tag must be ${MAX_TAG_LENGTH} characters or fewer.`);
+  return name;
 }
 function optionalId(input: Input): string | undefined {
   return input.id === undefined ? undefined : idField(input);
@@ -311,6 +320,9 @@ function validate(input: unknown): Mutation {
     case "trip.share":
     case "trip.unshare":
       return { type: value.type, tripId: idField(value, "tripId"), email: emailAddress(textField(value, "email", 254)) };
+    case "trip.tag":
+    case "trip.untag":
+      return { type: value.type, tripId: idField(value, "tripId"), name: tagNameField(value) };
     case "homeItem.save":
       return { type: value.type, id: optionalId(value), tripId: idField(value, "tripId"), name: textField(value, "name", 160, true), price: priceField(value), notes: textField(value, "notes", 8000), completed: booleanField(value, "completed") };
     case "homeItem.delete":
@@ -375,7 +387,7 @@ function validate(input: unknown): Mutation {
  * The schema this build upgrades every database to, as SQLite's user_version. A schema change adds the next
  * upgrade in createStore and raises this to match; earlier upgrades keep their own numbers.
  */
-export const SCHEMA_VERSION = 22;
+export const SCHEMA_VERSION = 23;
 
 /** A destination as schema 20 saved it, inside one trip, with that trip's owner and name. */
 type TripDestinationRow = Omit<StoredDestination, "cityKey"> & Omit<TripStop, "destinationId"> & { tripName: string };
@@ -853,6 +865,20 @@ export function createStore(databasePath: string, ownerEmail: string) {
         PRAGMA user_version = 22;
       `);
     }
+    if (version < 23) {
+      // Each trip's tags (TRA-17), one row per trip and tag. `tagKey` is the tag's name ignoring letter case, spacing and
+      // Unicode form, so a trip has each tag once. A tag exists while a trip has it, and goes with each trip's deletion.
+      // A replay keeps saved tags.
+      db.exec(`
+        CREATE TABLE IF NOT EXISTS trip_tags (
+          tripId TEXT NOT NULL REFERENCES trips(id) ON DELETE CASCADE,
+          tagKey TEXT NOT NULL CHECK(tagKey != ''),
+          name TEXT NOT NULL CHECK(name != ''),
+          PRIMARY KEY (tripId, tagKey)
+        ) STRICT;
+        PRAGMA user_version = 23;
+      `);
+    }
     if (version < SCHEMA_VERSION && db.prepare("PRAGMA foreign_key_check").get()) {
       throw new Error("This upgrade would leave saved items without the trip or destination they belong to. Nothing was changed; review the database against a backup before upgrading.");
     }
@@ -876,11 +902,29 @@ export function createStore(databasePath: string, ownerEmail: string) {
     }
     return photos;
   }
+  /** Each of the given trips' tags in alphabetical order, or every trip's. A trip without tags has no entry. */
+  function tagsOf(tripIds: readonly string[] | null): Map<string, string[]> {
+    const [where, args] = among("tripId", tripIds);
+    const tags = new Map<string, string[]>();
+    for (const row of db.prepare(`SELECT tripId, name FROM trip_tags${where} ORDER BY tagKey`).all(...args)) {
+      tags.set(row.tripId as string, [...(tags.get(row.tripId as string) ?? []), row.name as string]);
+    }
+    return tags;
+  }
+  /**
+   * One spelling of each tag on the given trips, or on every trip, in alphabetical order. A tag spelled differently on
+   * two trips is listed once, with the spelling a new tag of the same name reuses.
+   */
+  function tagNames(tripIds: readonly string[] | null): string[] {
+    const [where, args] = among("tripId", tripIds);
+    return db.prepare(`SELECT min(name) AS name FROM trip_tags${where} GROUP BY tagKey ORDER BY tagKey`).all(...args).map((row) => row.name as string);
+  }
   function readTrips(ids: readonly string[] | null): Trip[] {
     const [where, args] = among("id", ids);
+    const tags = tagsOf(ids);
     return db.prepare(`SELECT ${TRIP_COLUMNS} FROM trips${where} ORDER BY createdAt DESC, id`).all(...args).map((row) => {
       const trip = row as unknown as Trip;
-      return { ...trip, endDate: sequenceDates(trip.startDate, orderedStops(trip.id)).endDate };
+      return { ...trip, tags: tags.get(trip.id) ?? [], endDate: sequenceDates(trip.startDate, orderedStops(trip.id)).endDate };
     });
   }
   /** Stops matching a WHERE clause, as plain objects a page can hand to the browser. */
@@ -940,9 +984,9 @@ export function createStore(databasePath: string, ownerEmail: string) {
   }
   /** Everything saved, for checks and tests. What the app shows or changes always takes the signed-in account. */
   function getSnapshot(): Snapshot {
-    return { trips: readTrips(null), stops: readStops(null), destinations: readDestinations(null), legs: readLegs(null), candidates: readCandidates(null), churches: readChurches(null), homeItems: readHomeItems(null) };
+    return { trips: readTrips(null), stops: readStops(null), destinations: readDestinations(null), legs: readLegs(null), candidates: readCandidates(null), churches: readChurches(null), homeItems: readHomeItems(null), tags: tagNames(null) };
   }
-  /** The trips the account owns or was shared, with their budgets and what the account may do with each. */
+  /** The trips the account owns or was shared, with their tags and budgets, what the account may do with each, and every tag on them to filter by. */
   function getHomeOverview(accountId: string) {
     const visible = [accountId, accountId];
     const rawTrips = db.prepare(`SELECT ${TRIP_COLUMNS} FROM trips WHERE id IN (${VISIBLE_TRIPS}) ORDER BY createdAt DESC, id`).all(...visible) as unknown as Trip[];
@@ -950,13 +994,15 @@ export function createStore(databasePath: string, ownerEmail: string) {
     const visited = `SELECT destinationId FROM trip_stops WHERE tripId IN (${VISIBLE_TRIPS})`;
     const destinations = db.prepare(`SELECT id,city,miscDailyMinor,miscCurrency,hotelNightlyMinor,hotelCurrency,activitiesBudgetMode,activitiesGeneralMinor,activitiesCurrency,
       foodBudgetMode,foodDailyMinor,foodCurrency,shoppingMinor,shoppingCurrency FROM destinations WHERE id IN (${visited})`).all(...visible) as unknown as Destination[];
-    const trips = rawTrips.map((trip) => ({ ...trip, endDate: sequenceDates(trip.startDate, stops.filter((stop) => stop.tripId === trip.id)).endDate }));
+    const tripIds = rawTrips.map((trip) => trip.id);
+    const tags = tagsOf(tripIds);
+    const trips = rawTrips.map((trip) => ({ ...trip, tags: tags.get(trip.id) ?? [], endDate: sequenceDates(trip.startDate, stops.filter((stop) => stop.tripId === trip.id)).endDate }));
     const input: Snapshot = {
       trips, stops, destinations,
       legs: db.prepare(`SELECT tripId,fromId,toId,priceCents FROM legs WHERE tripId IN (${VISIBLE_TRIPS})`).all(...visible) as unknown as TravelLeg[],
       candidates: db.prepare(`SELECT destinationId,category,priceCents,included FROM candidates WHERE destinationId IN (${visited})`).all(...visible).map((row) => ({ ...row, included: row.included === 1 })) as unknown as Candidate[],
       homeItems: db.prepare(`SELECT tripId,priceCents FROM home_items WHERE tripId IN (${VISIBLE_TRIPS})`).all(...visible) as unknown as HomeItem[],
-      churches: [],
+      churches: [], tags: [],
     };
     const budgets = Object.fromEntries(trips.map((trip) => [trip.id, calculateBudget(input, trip.id)]));
     return {
@@ -965,6 +1011,7 @@ export function createStore(databasePath: string, ownerEmail: string) {
         stops: stops.map(({ id, tripId, destinationId, position }) => ({ id, tripId, destinationId, position })) as TripStop[],
         destinations: destinations.map(({ id, city }) => ({ id, city })) as Destination[],
         legs: [], candidates: [], homeItems: [], churches: [],
+        tags: tagNames(tripIds),
       } as Snapshot,
       budgets,
       access: Object.fromEntries(trips.map((trip) => [trip.id, tripAccess(accountId, trip.id)!])) as Record<string, TripAccess>,
@@ -980,8 +1027,10 @@ export function createStore(databasePath: string, ownerEmail: string) {
     const stops = readStops([tripId]);
     // An idea page needs only its own stop's destination; the trip page needs every destination it visits.
     const destinationIds = [...new Set(stops.filter((stop) => stopId === undefined || stop.id === stopId).map((stop) => stop.destinationId))];
+    // The trip can reuse any tag on a trip the account can open, and no other.
+    const visibleTripIds = db.prepare(VISIBLE_TRIPS).all(accountId, accountId).map((row) => row.id as string);
     return {
-      data: { trips: readTrips([tripId]), stops, destinations: readDestinations(destinationIds), legs: readLegs([tripId]), candidates: readCandidates(destinationIds), churches: readChurches(destinationIds), homeItems: readHomeItems([tripId]) },
+      data: { trips: readTrips([tripId]), stops, destinations: readDestinations(destinationIds), legs: readLegs([tripId]), candidates: readCandidates(destinationIds), churches: readChurches(destinationIds), homeItems: readHomeItems([tripId]), tags: tagNames(visibleTripIds) },
       access,
     };
   }
@@ -990,7 +1039,7 @@ export function createStore(databasePath: string, ownerEmail: string) {
     const destinationIds = db.prepare(VISIBLE_DESTINATIONS).all(accountId, accountId, accountId).map((row) => row.id as string);
     const stops = stopRows(` WHERE tripId IN (${VISIBLE_TRIPS})`, accountId, accountId);
     return {
-      data: { trips: readTrips([...new Set(stops.map((stop) => stop.tripId))]), stops, destinations: readDestinations(destinationIds), legs: [], candidates: readCandidates(destinationIds), churches: [], homeItems: [] },
+      data: { trips: readTrips([...new Set(stops.map((stop) => stop.tripId))]), stops, destinations: readDestinations(destinationIds), legs: [], candidates: readCandidates(destinationIds), churches: [], homeItems: [], tags: [] },
       access: Object.fromEntries(destinationIds.map((id) => [id, destinationAccess(accountId, id)!])),
     };
   }
@@ -1003,7 +1052,7 @@ export function createStore(databasePath: string, ownerEmail: string) {
     if (!access) return undefined;
     const stops = stopRows(` WHERE destinationId = ? AND tripId IN (${VISIBLE_TRIPS})`, destinationId, accountId, accountId);
     return {
-      data: { trips: readTrips([...new Set(stops.map((stop) => stop.tripId))]), stops, destinations: readDestinations([destinationId]), legs: [], candidates: readCandidates([destinationId]), churches: readChurches([destinationId]), homeItems: [] },
+      data: { trips: readTrips([...new Set(stops.map((stop) => stop.tripId))]), stops, destinations: readDestinations([destinationId]), legs: [], candidates: readCandidates([destinationId]), churches: readChurches([destinationId]), homeItems: [], tags: [] },
       access,
     };
   }
@@ -1328,6 +1377,21 @@ export function createStore(databasePath: string, ownerEmail: string) {
         if (removed.changes === 0) throw new ValidationError(`This trip isn't shared with ${input.email}. Refresh to see who has access.`);
         return input.tripId;
       }
+      case "trip.tag": {
+        const key = tagKey(input.name);
+        const own = db.prepare("SELECT name FROM trip_tags WHERE tripId = ? AND tagKey = ?").get(input.tripId, key);
+        if (own) throw new ValidationError(alreadyTagged(own.name as string));
+        // A tag keeps the spelling it has on a trip this account can open. Other accounts' trips play no part.
+        const saved = db.prepare(`SELECT name FROM trip_tags WHERE tagKey = ? AND tripId IN (${VISIBLE_TRIPS}) ORDER BY name LIMIT 1`).get(key, accountId, accountId);
+        db.prepare("INSERT INTO trip_tags(tripId, tagKey, name) VALUES(?, ?, ?)").run(input.tripId, key, (saved?.name as string | undefined) ?? input.name);
+        return input.tripId;
+      }
+      case "trip.untag": {
+        // Only this trip's tag goes. Other trips keep theirs.
+        const removed = db.prepare("DELETE FROM trip_tags WHERE tripId = ? AND tagKey = ?").run(input.tripId, tagKey(input.name));
+        if (removed.changes === 0) throw new ValidationError(`This trip isn't tagged “${input.name}”. Refresh to see its tags.`);
+        return input.tripId;
+      }
       case "homeItem.save": {
         existing<Trip>("trips", input.tripId);
         const id = input.id ?? randomUUID();
@@ -1492,7 +1556,7 @@ export function createStore(databasePath: string, ownerEmail: string) {
   function mutationScope(input: Mutation): { trip: string | undefined } | { destination: string | undefined } {
     switch (input.type) {
       case "trip.save": case "trip.delete": return { trip: input.id && tripOf("trips", input.id) };
-      case "trip.share": case "trip.unshare": return { trip: tripOf("trips", input.tripId) };
+      case "trip.share": case "trip.unshare": case "trip.tag": case "trip.untag": return { trip: tripOf("trips", input.tripId) };
       case "homeItem.save": return { trip: input.id ? tripOf("home_items", input.id) : tripOf("trips", input.tripId) };
       case "homeItem.delete": case "homeItem.complete": return { trip: tripOf("home_items", input.id) };
       case "stop.move": case "stop.remove": return { trip: tripOf("trip_stops", input.id) };

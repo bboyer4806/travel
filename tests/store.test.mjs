@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 import { DatabaseSync } from "node:sqlite";
 import test from "node:test";
-import { ValidationError } from "../src/lib/store.ts";
+import { SCHEMA_VERSION, ValidationError } from "../src/lib/store.ts";
 import { createOwnedStore } from "./owned-store.mjs";
 import { fileDatabase, setup, destinationEdit, stopEdit } from "./budget-fixtures.mjs";
 import { calculateBudget } from "../src/lib/budget.ts";
@@ -55,7 +55,7 @@ test("complete create, edit, clear, and delete flows preserve the trip relations
   const { destinations, candidates } = store.getSnapshot();
   store.applyMutation({ type: "trip.delete", id: tripId });
   // The destination and its ideas stay in Destinations; only the trip's own parts go.
-  assert.deepEqual(store.getSnapshot(), { trips: [], stops: [], destinations, legs: [], candidates, homeItems: [], churches: [] });
+  assert.deepEqual(store.getSnapshot(), { trips: [], stops: [], destinations, legs: [], candidates, homeItems: [], churches: [], tags: [] });
 });
 
 test("route changes retain only unchanged connections, and removing a destination from the trip keeps its ideas", (t) => {
@@ -330,4 +330,102 @@ test("only a destination no trip visits can be deleted, and everything saved for
   const again = store.applyMutation({ type: "destination.create", city: "Kyoto" }).id;
   assert.notEqual(again, kyoto);
   assert.deepEqual(store.getDestinationSnapshot(again).data.candidates, []);
+});
+
+test("a trip's tags are added and removed one at a time, keep one spelling each, and are kept after reopening", (t) => {
+  const path = fileDatabase(t);
+  let store = createOwnedStore(path);
+  try {
+    const japan = store.applyMutation(tripInput()).id;
+    const italy = store.applyMutation(tripInput({ name: "Italy" })).id;
+    const tag = (tripId, name) => store.applyMutation({ type: "trip.tag", tripId, name });
+    const untag = (tripId, name) => store.applyMutation({ type: "trip.untag", tripId, name });
+    const tagsOf = (tripId) => store.getTripSnapshot(tripId).data.trips[0].tags;
+    // Trips start without tags.
+    assert.deepEqual(store.getHomeOverview().data.trips.map((trip) => trip.tags), [[], []]);
+    assert.deepEqual(store.getHomeOverview().data.tags, []);
+
+    assert.deepEqual(tag(japan, "  Family \t vacation "), { id: japan });
+    tag(japan, "Food");
+    // The same tag on another trip keeps the spelling it already has.
+    tag(italy, "family VACATION");
+    tag(italy, "food");
+    tag(italy, "Europe");
+    assert.deepEqual(tagsOf(japan), ["Family vacation", "Food"]);
+    assert.deepEqual(tagsOf(italy), ["Europe", "Family vacation", "Food"]);
+    // A trip's page can reuse the tags of every trip, and the trip list filters by them.
+    assert.deepEqual(store.getTripSnapshot(japan).data.tags, ["Europe", "Family vacation", "Food"]);
+    assert.deepEqual(store.getHomeOverview().data.tags, ["Europe", "Family vacation", "Food"]);
+    assert.deepEqual(Object.fromEntries(store.getHomeOverview().data.trips.map((trip) => [trip.id, trip.tags])), { [japan]: tagsOf(japan), [italy]: tagsOf(italy) });
+
+    // Each tag is on a trip once, a tag needs a name of up to 40 characters, and only a tag the trip has can be removed.
+    const before = store.getSnapshot();
+    for (const [input, message] of [
+      [{ type: "trip.tag", tripId: japan, name: "FOOD" }, "This trip is already tagged “Food”."],
+      [{ type: "trip.tag", tripId: japan, name: " \t " }, "Please enter a tag."],
+      [{ type: "trip.tag", tripId: japan, name: "x".repeat(41) }, "A tag must be 40 characters or fewer."],
+      [{ type: "trip.tag", tripId: japan, name: 5 }, "A tag must be text."],
+      [{ type: "trip.untag", tripId: japan, name: "Europe" }, "This trip isn't tagged “Europe”. Refresh to see its tags."],
+    ]) {
+      assert.throws(() => store.applyMutation(input), { name: "ValidationError", message });
+    }
+    assert.deepEqual(store.getSnapshot(), before, "nothing is saved from a refused change");
+    // Spaces a name loses don't count toward its length.
+    tag(japan, "a".repeat(20) + "   " + "b".repeat(19));
+    assert.ok(tagsOf(japan).includes("a".repeat(20) + " " + "b".repeat(19)));
+    untag(japan, "a".repeat(20) + " " + "b".repeat(19));
+
+    // Removing a tag from one trip leaves the trip and every other trip's tags.
+    assert.deepEqual(untag(japan, " FOOD "), { id: japan });
+    assert.deepEqual(tagsOf(japan), ["Family vacation"]);
+    assert.deepEqual(tagsOf(italy), ["Europe", "Family vacation", "Food"]);
+    assert.ok(store.getTripSnapshot(japan));
+    // Editing the trip keeps its tags.
+    store.applyMutation(tripInput({ id: japan, name: "Japan in autumn" }));
+    assert.deepEqual(tagsOf(japan), ["Family vacation"]);
+
+    const saved = store.getSnapshot();
+    store.close(); store = null;
+    store = createOwnedStore(path);
+    assert.deepEqual(store.getSnapshot(), saved, "tags are kept after reopening");
+
+    // Deleting a trip deletes its tags, never another trip's.
+    store.applyMutation({ type: "trip.delete", id: italy });
+    assert.deepEqual(tagsOf(japan), ["Family vacation"]);
+    assert.deepEqual(store.getHomeOverview().data.tags, ["Family vacation"]);
+    const db = new DatabaseSync(path, { readOnly: true });
+    try {
+      assert.deepEqual(db.prepare("SELECT tripId, tagKey, name FROM trip_tags").all().map((row) => ({ ...row })), [{ tripId: japan, tagKey: "family vacation", name: "Family vacation" }]);
+    } finally { db.close(); }
+  } finally {
+    store?.close();
+  }
+});
+
+test("schema 23 adds trip tags to an existing database without changing it, and replaying the upgrade keeps them", (t) => {
+  const path = fileDatabase(t);
+  let store = createOwnedStore(path);
+  const tripId = store.applyMutation(tripInput()).id;
+  store.applyMutation(destinationInput(tripId));
+  const before = store.getSnapshot();
+  store.close();
+  // A schema 22 database, from before tags.
+  let db = new DatabaseSync(path); db.exec("DROP TABLE trip_tags; PRAGMA user_version = 22;"); db.close();
+  store = createOwnedStore(path);
+  assert.deepEqual(store.getSnapshot(), before, "existing trips upgrade without tags, and nothing else changes");
+  store.applyMutation({ type: "trip.tag", tripId, name: "Asia" });
+  const tagged = store.getSnapshot();
+  store.close();
+  db = new DatabaseSync(path); db.exec("PRAGMA user_version = 22;"); db.close();
+  store = createOwnedStore(path);
+  assert.deepEqual(store.getSnapshot(), tagged, "replaying the upgrade keeps saved tags");
+  store.close();
+  db = new DatabaseSync(path);
+  try {
+    assert.equal(db.prepare("PRAGMA user_version").get().user_version, SCHEMA_VERSION);
+    assert.equal(db.prepare("PRAGMA integrity_check").get().integrity_check, "ok");
+    assert.deepEqual(db.prepare("PRAGMA foreign_key_check").all(), []);
+    // The database keeps each tag on a trip once.
+    assert.throws(() => db.prepare("INSERT INTO trip_tags(tripId, tagKey, name) VALUES(?, 'asia', 'ASIA')").run(tripId), /UNIQUE/);
+  } finally { db.close(); }
 });

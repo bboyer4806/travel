@@ -182,7 +182,7 @@ Prefer fixing forward. Rolling back an image does not reverse a database schema 
 
 ## Schema history
 
-The schema version is SQLite's `user_version`; the current schema is 22, `SCHEMA_VERSION` in `src/lib/store.ts`. At every start, `createStore` in `src/lib/store.ts` upgrades an older database in one transaction, through each version in turn. Each upgrade checks what already exists, so running it again on a database that already has its changes (a replay) keeps saved data. The notes below are in schema order. **Superseded** marks behavior that a later schema replaced; the current behavior is in [README.md](../README.md).
+The schema version is SQLite's `user_version`; the current schema is 23, `SCHEMA_VERSION` in `src/lib/store.ts`. At every start, `createStore` in `src/lib/store.ts` upgrades an older database in one transaction, through each version in turn. Each upgrade checks what already exists, so running it again on a database that already has its changes (a replay) keeps saved data. The notes below are in schema order. **Superseded** marks behavior that a later schema replaced; the current behavior is in [README.md](../README.md).
 
 ### Schema 1: first shared planner
 The first release creates the `trips`, `destinations`, `legs` and `candidates` tables, with prices in integer USD cents for the whole party. Anyone with the URL can view and edit every trip. The schema 1 build sets `user_version` to 1 at every start and does not refuse a newer database, so later upgrades check what already exists as well as the version: redeploying a newer build after a rollback to schema 1 cannot repeat an `ALTER TABLE` or replace saved links.
@@ -301,6 +301,11 @@ Restoring the pre-upgrade backup separates the destinations again and loses ever
 Health and safety research upgrades the database to schema 22 in the startup transaction with a `destination_health_safety` table that follows `destination_entry_requirements`: at most one record per destination, keyed by its ID, holding the manually recorded advisories, health precautions, local safety guidance, emergency contacts, source links and last checked date as JSON. Existing destinations start without a record, and nothing else changes. Deleting a destination deletes its record; removing a destination from a trip or deleting a trip keeps it. The table is in the same online backups, and a replay keeps saved records.
 
 Restoring the pre-upgrade backup to run a schema 21 build again loses every health and safety record.
+
+### Schema 23: trip tags (TRA-17)
+Trip tags upgrade the database to schema 23 in the startup transaction with a `trip_tags` table: one row per trip and tag, keyed by the trip's ID and the tag's `tagKey` (its name with letter case, extra spaces and Unicode form made uniform), holding the name as shown. A tag has no row of its own; it exists while a trip has it. Existing trips start without tags, and nothing else changes. Deleting a trip deletes its tags, and other trips keep theirs. The table is in the same online backups, and a replay keeps saved tags.
+
+Restoring the pre-upgrade backup to run a schema 22 build again loses every tag.
 
 ## Feedback and release notes
 Configure server-only JIRA_URL (HTTPS Jira base URL), JIRA_EMAIL, and JIRA_API_TOKEN with permission to create Tasks in TRA. Use the host's secret configuration; never put credentials in source, image layers, client variables, or logs. Preserve the browser Host and Origin headers through the proxy; the feedback endpoint compares them and ignores forwarded-host claims. The HttpOnly feedback cookie is Secure for HTTPS origins.

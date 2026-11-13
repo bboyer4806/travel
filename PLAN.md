@@ -267,3 +267,11 @@ This replaces TRA-62's destination Save in a sticky header.
 - City suggestions open when the person types in a city field or presses the Down or Up arrow, not when the field gets focus. A destination editor that opens on a saved city shows no list, and one Escape closes it.
 - Confirmations without fields, such as removing a destination, are unchanged.
 - Not included: changes to fields or their order, how cities are searched or chosen, validation, saving, or the Send feedback dialog.
+
+## Added scope: November 13, 2026, trip tags (TRA-17)
+- People can add custom text tags, such as Europe, Beach or Family vacation, to a trip directly on its page without opening Edit trip, give a trip any number of tags, and remove one tag at a time without changing the trip. A tag is up to 40 characters, and names that differ only in letter case or spacing are the same tag, so a trip has each tag once.
+- Tags are reusable: a trip's page suggests the tags on every trip the account can open, and a tag added there takes the spelling the same tag already has on such a trip. Tags only on trips the account can't open are never suggested, filtered by, or used for a spelling.
+- Tags follow trip sharing: everyone with access to a trip sees and changes its tags, and the server authorizes tag changes as it does every other trip change. Tags persist, appear on trip cards and the trip's page, and deleting a trip deletes its tags without affecting other trips' tags.
+- The trip list filters by any number of selected tags, showing only trips with every selected tag, combined with the existing search so both must match. Each filter can be removed on its own, and Clear tag filters removes them all while keeping the search.
+- Schema 23 adds a `trip_tags` table, one row per trip and tag, deleted with its trip. Existing trips start without tags. Backup and rollback are in [deployment](docs/DEPLOYMENT.md).
+- Not included: a screen for renaming or deleting tags across trips, tag colors, icons or hierarchies, searching by tag text, and separate tag permissions or other changes to sharing.

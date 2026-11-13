@@ -91,8 +91,8 @@ test("a new trip belongs to whoever creates it, and only its owner can open it u
   assert.deepEqual(Object.keys(editorHome.budgets), [ownTrip]);
   assert.ok(editorHome.data.stops.every((stop) => stop.tripId === ownTrip), "The home page sends no other trip's cities");
   assert.equal(editorHome.access[ownTrip].role, "owner");
-  assert.deepEqual(store.getHomeOverview(outsider), { data: { trips: [], stops: [], destinations: [], legs: [], candidates: [], homeItems: [], churches: [] }, budgets: {}, access: {} });
-  assert.deepEqual(store.getDestinationsOverview(outsider), { data: { trips: [], stops: [], destinations: [], legs: [], candidates: [], homeItems: [], churches: [] }, access: {} });
+  assert.deepEqual(store.getHomeOverview(outsider), { data: { trips: [], stops: [], destinations: [], legs: [], candidates: [], homeItems: [], churches: [], tags: [] }, budgets: {}, access: {} });
+  assert.deepEqual(store.getDestinationsOverview(outsider), { data: { trips: [], stops: [], destinations: [], legs: [], candidates: [], homeItems: [], churches: [], tags: [] }, access: {} });
   // The owner's account ID stays on the server.
   assert.ok(store.getSnapshot().trips.every((item) => !("ownerId" in item)));
 });
@@ -139,6 +139,7 @@ test("people a trip is shared with change everything in it, but only its owner d
   const portoPhoto = photo();
 
   change({ type: "trip.save", id: tripId, name: "Portugal together", startDate: "2027-05-03", dateLabel: "Spring", homeCity: "Boston", travelers: 3, notes: "Edited together" });
+  change({ type: "trip.tag", tripId, name: "Together" });
   change({ type: "leg.save", id: legs[0], method: "Train", price: "45", departure: "", arrival: "", url: "", notes: "" });
   change({ type: "leg.clear", id: legs[1] });
   change({ type: "candidate.save", destinationId: porto, category: "restaurants", name: "Cantinho", price: "60", address: "", url: "", notes: "", included: true });
@@ -165,6 +166,7 @@ test("people a trip is shared with change everything in it, but only its owner d
   const asOwner = store.getTripSnapshot(owner, tripId);
   assert.deepEqual(store.getTripSnapshot(editor, tripId).data, asOwner.data);
   assert.equal(asOwner.data.trips[0].name, "Portugal together");
+  assert.deepEqual(asOwner.data.trips[0].tags, ["Together"]);
   assert.equal(asOwner.data.destinations.find((item) => item.id === porto).notes, "Port wine");
   assert.equal(asOwner.data.destinations.find((item) => item.id === porto).healthSafety.localSafety, "Watch for pickpockets");
   assert.deepEqual(store.getDestinationPhoto(owner, porto, portoPhoto.id).data, webp);
@@ -201,6 +203,8 @@ test("an account a trip isn't shared with can neither read nor change any part o
     { type: "trip.delete", id: tripId },
     { type: "trip.share", tripId, email: "outsider@example.com" },
     { type: "trip.unshare", tripId, email: "editor@example.com" },
+    { type: "trip.tag", tripId, name: "Mine" },
+    { type: "trip.untag", tripId, name: "Mine" },
     { type: "homeItem.save", tripId, name: "Mine", price: "", notes: "", completed: false },
     { type: "homeItem.save", id: homeItem, tripId, name: "Mine", price: "", notes: "", completed: false },
     { type: "homeItem.complete", id: homeItem, tripId, completed: true },
@@ -259,6 +263,60 @@ test("an account a trip isn't shared with can neither read nor change any part o
   assert.equal(store.getChurchPhoto(outsider, own.church, photos.church), undefined);
   assert.deepEqual(readsAs(store, outsider, trip), everything(false));
   assert.deepEqual(readsAs(store, owner, own), everything(false), "Isolation works both ways");
+});
+
+test("everyone with a trip sees and changes its tags, and a tag only on trips an account can't open stays hidden from it", (t) => {
+  const { store, owner, editor, outsider } = setup(t);
+  const trip = plannedTrip(store, owner);
+  const ownersOther = plannedTrip(store, owner, "Owner's other trip", ["Faro", "Braga"]);
+  const editorsTrip = plannedTrip(store, editor, "Editor's own trip");
+  const tag = (accountId, tripId, name) => store.applyMutation(accountId, { type: "trip.tag", tripId, name });
+  const untag = (accountId, tripId, name) => store.applyMutation(accountId, { type: "trip.untag", tripId, name });
+  const homeTags = (accountId) => store.getHomeOverview(accountId).data.tags;
+  const tagsOf = (accountId, tripId) => store.getTripSnapshot(accountId, tripId).data.trips[0].tags;
+  tag(owner, trip.tripId, "Europe");
+  tag(owner, ownersOther.tripId, "Surprise party");
+  tag(editor, editorsTrip.tripId, "Work");
+  assert.deepEqual(homeTags(owner), ["Europe", "Surprise party"]);
+  assert.deepEqual(homeTags(editor), ["Work"]);
+
+  // Shared, the trip's tags appear in the editor's list and can be reused on the editor's own trip. The owner's other trip's can't.
+  store.applyMutation(owner, { type: "trip.share", tripId: trip.tripId, email: "editor@example.com" });
+  assert.deepEqual(homeTags(editor), ["Europe", "Work"]);
+  assert.deepEqual(store.getHomeOverview(editor).data.trips.find((item) => item.id === trip.tripId).tags, ["Europe"]);
+  assert.deepEqual(store.getTripSnapshot(editor, editorsTrip.tripId).data.tags, ["Europe", "Work"]);
+  assert.deepEqual(store.getTripSnapshot(editor, trip.tripId).data.tags, ["Europe", "Work"]);
+  assert.deepEqual(store.getTripSnapshot(owner, trip.tripId).data.tags, ["Europe", "Surprise party"]);
+
+  // The editor changes the shared trip's tags, and the owner sees the change.
+  tag(editor, trip.tripId, "work");
+  untag(editor, trip.tripId, "Europe");
+  assert.deepEqual(tagsOf(owner, trip.tripId), ["Work"], "the editor's spelling is reused");
+  assert.deepEqual(homeTags(owner), ["Surprise party", "Work"]);
+  // A spelling on a trip the editor can't open is never used, so it reveals nothing.
+  tag(editor, editorsTrip.tripId, "SURPRISE PARTY");
+  assert.deepEqual(tagsOf(editor, editorsTrip.tripId), ["SURPRISE PARTY", "Work"]);
+  assert.deepEqual(homeTags(owner), ["Surprise party", "Work"], "nor are the editor's own trip's tags shown to the owner");
+
+  // An account without the trip can neither change its tags nor see them.
+  const before = store.getSnapshot();
+  for (const input of [{ type: "trip.tag", tripId: trip.tripId, name: "Mine" }, { type: "trip.untag", tripId: trip.tripId, name: "Work" }, { type: "trip.tag", tripId: randomUUID(), name: "Mine" }]) {
+    assert.throws(() => store.applyMutation(outsider, input), NOT_AVAILABLE, input.type);
+  }
+  assert.deepEqual(store.getSnapshot(), before);
+  assert.deepEqual(homeTags(outsider), []);
+
+  // Once access is removed, the trip's tags are hidden from the editor again and can't be changed.
+  store.applyMutation(owner, { type: "trip.unshare", tripId: trip.tripId, email: "editor@example.com" });
+  tag(owner, trip.tripId, "Owner only");
+  assert.throws(() => untag(editor, trip.tripId, "Work"), NOT_AVAILABLE);
+  assert.deepEqual(homeTags(editor), ["SURPRISE PARTY", "Work"]);
+  assert.deepEqual(store.getTripSnapshot(editor, editorsTrip.tripId).data.tags, ["SURPRISE PARTY", "Work"]);
+
+  // Deleting the trip deletes its tags, never another trip's.
+  store.applyMutation(owner, { type: "trip.delete", id: trip.tripId });
+  assert.deepEqual(homeTags(owner), ["Surprise party"]);
+  assert.deepEqual(tagsOf(editor, editorsTrip.tripId), ["SURPRISE PARTY", "Work"]);
 });
 
 test("removing someone's access ends it at once and changes nothing in the trip", (t) => {

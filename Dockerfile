@@ -8,8 +8,11 @@ RUN pnpm install --frozen-lockfile
 FROM dependencies AS builder
 ENV NEXT_TELEMETRY_DISABLED=1
 COPY . .
+# Next derives Server Action IDs from NEXT_SERVER_ACTIONS_ENCRYPTION_KEY. Every build gets the same
+# key as a build secret, so pages opened before a deploy can still save (docs/DEPLOYMENT.md).
 # Next's standalone output does not copy public or static assets automatically.
-RUN mkdir -p public && pnpm build
+RUN --mount=type=secret,id=NEXT_SERVER_ACTIONS_ENCRYPTION_KEY,env=NEXT_SERVER_ACTIONS_ENCRYPTION_KEY,required=true \
+    mkdir -p public && pnpm build
 
 FROM node:24-bookworm-slim AS runner
 WORKDIR /app

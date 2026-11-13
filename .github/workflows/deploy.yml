@@ -46,11 +46,21 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
+      # Server Action IDs derive from this key, so every build must use the same one: pages
+      # opened before a deploy can then still save. See docs/DEPLOYMENT.md.
+      - name: Require the Server Actions key
+        env:
+          SERVER_ACTIONS_KEY: ${{ secrets.NEXT_SERVER_ACTIONS_ENCRYPTION_KEY }}
+        run: |
+          : "${SERVER_ACTIONS_KEY:?Add the NEXT_SERVER_ACTIONS_ENCRYPTION_KEY secret under Settings > Secrets and variables > Actions; see docs/DEPLOYMENT.md}"
+
       - name: Build and push
         uses: docker/build-push-action@v6
         with:
           context: .
           push: true
+          secrets: |
+            NEXT_SERVER_ACTIONS_ENCRYPTION_KEY=${{ secrets.NEXT_SERVER_ACTIONS_ENCRYPTION_KEY }}
           # Tagged by commit so a rollback is naming an older tag, not a rebuild.
           tags: |
             ghcr.io/${{ github.repository }}:${{ github.sha }}

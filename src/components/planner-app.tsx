@@ -18,7 +18,7 @@ import { CandidateGalleryEditor, candidateGalleryForm, createCandidateGalleryDra
 import TripRouteFields from "@/components/trip-route-fields";
 import { ConnectionItinerary, ConnectionItineraryEditor } from "@/components/connection-itinerary";
 import { ResearchLinks, ResearchLinksEditor } from "@/components/research-links";
-import { useRouter } from "next/navigation";
+import { unstable_isUnrecognizedActionError, useRouter } from "next/navigation";
 import { useEffect, useRef, useState, type FormEvent, type ReactNode } from "react";
 import { ArrowDown, ArrowLeft, ArrowRight, ArrowUp, BedDouble, Bike, Binoculars, Bus, CalendarDays, Car, CheckCircle2, Compass, Footprints, MapPin, MoreHorizontal, Pencil, Plane, Plus, Route, Search, Share2, Ship, TrainFront, Trash2, UserPlus, Users, Utensils, Wallet, X, type LucideIcon } from "lucide-react";
 import TripSharing, { memberLabel } from "@/components/trip-sharing";
@@ -182,7 +182,11 @@ export default function PlannerApp({ initialData, initialBudgets, access = {}, d
       else if (mutation.type === "destination.create" && result.id) router.push("/destinations/" + result.id);
       else router.refresh();
       return true;
-    } catch { setError("We couldn't reach the planner. Your changes haven't been saved. Please try again."); return false; }
+    } catch (failure) {
+      // A page opened before a deploy whose build changed the save action's ID: retrying never works, reloading does.
+      setError(unstable_isUnrecognizedActionError(failure) ? "The planner was updated. Your changes haven't been saved. Please reload the page and try again." : "We couldn't reach the planner. Your changes haven't been saved. Please try again.");
+      return false;
+    }
     finally { setBusy(false); }
   }
   function confirmDelete(mutation: Mutation, title: string, description: string, redirect?: string) {

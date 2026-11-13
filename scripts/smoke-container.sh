@@ -14,7 +14,15 @@ cleanup() {
 }
 trap cleanup EXIT
 
-docker build -t "$image" .
+# Server Action IDs derive from this key, which every deploy passes to the build. A throwaway key
+# is enough to check that the build used it.
+server_actions_key="$(node --print 'require("node:crypto").randomBytes(32).toString("base64")')"
+NEXT_SERVER_ACTIONS_ENCRYPTION_KEY="$server_actions_key" docker build --secret id=NEXT_SERVER_ACTIONS_ENCRYPTION_KEY,env=NEXT_SERVER_ACTIONS_ENCRYPTION_KEY -t "$image" .
+built_key="$(docker run --rm --entrypoint node "$image" --print 'require("./.next/server/server-reference-manifest.json").encryptionKey')"
+if [ "$built_key" != "$server_actions_key" ]; then
+  echo "The image was not built with the given Server Actions key." >&2
+  exit 1
+fi
 docker volume create "$volume" >/dev/null
 docker run --rm --user 0 --entrypoint sh -v "$volume:/data" "$image" -c 'touch /data/.travel-persistent-storage && chown -R 1001:1001 /data'
 

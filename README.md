@@ -239,6 +239,9 @@ Destination galleries also have **Move left** and **Move right** controls in the
 JPEG, PNG, and WebP uploads up to 5 MiB each and 20 megapixels are supported, with at most 15 MiB of new files in one save. Images are oriented, resized to fit 1600 × 1200, stripped of metadata, and saved as WebP (up to 2 MiB each). All selected uploads must be valid before any changes are saved.
 Images live in the same persistent SQLite database and are included in online backups. Snapshots carry only photo IDs, versions, and the main selection; image routes serve separate, versioned responses. Image-only edits preserve travel plans, prices, research links, and budget selections.
 
+## Saving after a deploy
+Every deploy builds with the same Server Actions key, so a page opened before a deploy keeps saving after it. If a save reaches a version of the planner that doesn't recognize it, because the key or the save action itself changed, it shows **The planner was updated. Your changes haven't been saved. Please reload the page and try again.** instead of the connection error, since trying again without reloading never works. Deploying requires the key; see [deployment](docs/DEPLOYMENT.md#server-actions-key-tra-74).
+
 ## Hosting
 The existing GitHub Actions deployment builds a Node container and deploys it to Dokku at travel.dev.boyersoftware.com after checks pass. Only `main` deploys, only to the server with the verified SSH host key, and with the 20 MiB request limit photo uploads need; see [deployment safeguards](docs/DEPLOYMENT.md#deployment-safeguards-tra-98).
 **Provision persistent storage before the first app deployment.** See [deployment and recovery instructions](docs/DEPLOYMENT.md).

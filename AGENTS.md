@@ -67,6 +67,12 @@ Repeat passing checks when subsequent changes affect their coverage or required 
   in `src/lib/store.ts`. A new operation adds a `Mutation` variant in `src/lib/types.ts` and
   a case in `validate`, `mutationScope` and `mutate` in the store. `mutationScope` finds the trip
   or destination a change applies to from saved rows; a change it doesn't place is refused.
+- A save that adds a trip, a destination to a trip, an idea, a church or an At home item sends the
+  ID its editor gave it when it opened, with `create: true` (TRA-75). The store adds the item when no
+  item has that ID, and the same save sent again after a lost response changes that item instead of
+  adding another. Without `create`, a save changes a saved item and is refused when it no longer
+  exists. `destination.create` instead opens the saved destination for its city, or adds one with an
+  ID the store gives it.
 - `src/lib/store.ts` is the application's database boundary. Home pages read `getHomeOverview`,
   trip and category pages read `getTripSnapshot`, Destinations pages read
   `getDestinationsOverview` and `getDestinationSnapshot`, and saves return only an ID or error.
@@ -107,7 +113,8 @@ schema and add a note for the new version, with only what its rollback adds to t
 
 - Tests are `tests/*.test.mjs` using `node:test`. They import TypeScript libraries directly and
   use in-memory or temporary on-disk databases from the shared `setup` and `fileDatabase` in
-  `tests/budget-fixtures.mjs`; import those rather than copying them into a test file.
+  `tests/budget-fixtures.mjs`; import those rather than copying them into a test file. A save that
+  adds an item spreads `newItem()` from there for its ID and `create`, as its editor sends them.
   Planning tests use `createOwnedStore` from `tests/owned-store.mjs`, which reads and writes as the
   designated owner; access tests call `createStore(path, ownerEmail)` with several accounts, as
   `tests/sharing.test.mjs` does. Tests of older databases turn a new one back with

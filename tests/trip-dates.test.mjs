@@ -5,7 +5,7 @@ import { randomUUID } from "node:crypto";
 import { addNights, backfillDates, churchDateEligible, churchSundayDates, formatCalendarDate, sequenceDates } from "../src/lib/trip-dates.ts";
 import { ValidationError } from "../src/lib/store.ts";
 import { createOwnedStore, UNDO_SCHEMA_21 } from "./owned-store.mjs";
-import { setup, tripInput, destinationInput, destination, fileDatabase, candidateInput, destinationEdit, stopEdit, stop } from "./budget-fixtures.mjs";
+import { newItem, setup, tripInput, destinationInput, destination, fileDatabase, candidateInput, destinationEdit, stopEdit, stop } from "./budget-fixtures.mjs";
 
 test("automatic sequence, calendar boundaries, same-day and unknown lengths", () => {
   const stops = [{ id: "Paris", nights: 3 }, { id: "Rome", nights: 2 }];
@@ -48,7 +48,7 @@ test("church Sunday dates follow start, nights and order edits without changing 
   const { store, tripId } = setup(t);
   const first = store.applyMutation(destinationInput(tripId, { city: "Paris", nights: 7 })).id;
   const second = store.applyMutation(destinationInput(tripId, { city: "Rome", nights: 1 })).id;
-  store.applyMutation({ type: "church.save", destinationId: second, name: "Chapel", address: "", denomination: "", url: "", massTimes: [{ id: randomUUID(), day: "Sunday", time: "9:00 AM" }] });
+  store.applyMutation({ type: "church.save", ...newItem(), destinationId: second, name: "Chapel", address: "", denomination: "", url: "", massTimes: [{ id: randomUUID(), day: "Sunday", time: "9:00 AM" }] });
   const churches = store.getSnapshot().churches;
   const sundays = id => churchSundayDates(stop(store, id));
   assert.equal(sundays(second), null);
@@ -118,7 +118,7 @@ test("church placement uses inclusive Sundays and respects hiding through every 
   assert.equal(visible(first),true); assert.equal(visible(second),true,"unknown dates show Church");
   store.applyMutation(tripInput({id:tripId,startDate:"2027-06-05"}));
   assert.equal(visible(first),true); assert.equal(visible(second),true,"shared Sunday counts at both endpoints");
-  const churchId=store.applyMutation({type:"church.save",destinationId:second,name:"Chapel",address:"",denomination:"",url:"",massTimes:[]}).id;
+  const churchId=store.applyMutation({type:"church.save",...newItem(),destinationId:second,name:"Chapel",address:"",denomination:"",url:"",massTimes:[]}).id;
   store.applyMutation({type:"destination.churchVisibility",id:second,enabled:false});
   for(const startDate of ["2027-06-12",null,"2027-06-01","2027-06-05"]) {
     store.applyMutation(tripInput({id:tripId,startDate})); assert.equal(visible(second),false);
@@ -150,7 +150,7 @@ for (const consistent of [true,false]) test(`schema 14 date backfill, originals,
   const second=store.applyMutation(destinationInput(tripId,{city:"Rome"})).id;
   const candidateId=store.applyMutation(candidateInput(first,"hotels")).id;
   const image=new Uint8Array([82,73,70,70,4,0,0,0,87,69,66,80]);
-  store.applyMutation({type:"church.save",destinationId:first,name:"Chapel",address:"",denomination:"",url:"",massTimes:[],gallery:{add:[{id:randomUUID(),data:image}],remove:[]}});
+  store.applyMutation({type:"church.save",...newItem(),destinationId:first,name:"Chapel",address:"",denomination:"",url:"",massTimes:[],gallery:{add:[{id:randomUUID(),data:image}],remove:[]}});
   const old=store.getSnapshot();
   store.close();
   let db=new DatabaseSync(path);

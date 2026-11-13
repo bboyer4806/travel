@@ -4,17 +4,17 @@ import { DatabaseSync } from "node:sqlite";
 import test from "node:test";
 import { ValidationError } from "../src/lib/store.ts";
 import { createOwnedStore } from "./owned-store.mjs";
-import { fileDatabase, stop } from "./budget-fixtures.mjs";
+import { fileDatabase, newItem, stop } from "./budget-fixtures.mjs";
 import { calculateBudget } from "../src/lib/budget.ts";
 import { storedImageResponse } from "../src/lib/stored-image-response.ts";
 
 const webp = new Uint8Array(Buffer.from("UklGRiIAAABXRUJQVlA4IBYAAAAwAQCdASoBAAEADsD+JaQAA3AAAAAA", "base64"));
 const photo = () => ({ id: randomUUID(), data: new Uint8Array(webp) });
 const tripInput = { type: "trip.save", name: "Gallery trip", dateLabel: "Next spring", homeCity: "Boston", travelers: 2, notes: "", startDate: "2027-05-01" };
-const destinationInput = (tripId, overrides = {}) => ({ type: "destination.save", tripId, city: "Vienna", nights: 4, stay: "Near the station", notes: "Walk the old town", ...overrides });
+const destinationInput = (tripId, overrides = {}) => ({ type: "destination.save", tripId, city: "Vienna", nights: 4, stay: "Near the station", notes: "Walk the old town", ...overrides, ...newItem(overrides) });
 const destination = (store, id) => store.getSnapshot().destinations.find((item) => item.id === id);
 function plan(store) {
-  const tripId = store.applyMutation(tripInput).id;
+  const tripId = store.applyMutation({ ...tripInput, ...newItem() }).id;
   const id = store.applyMutation(destinationInput(tripId)).id;
   for (const leg of store.getSnapshot().legs) store.applyMutation({ type: "leg.save", id: leg.id, method: "Flight", price: "300", departure: "Morning", arrival: "Evening", url: "", notes: "Keep this connection" });
   return { tripId, id };
@@ -165,7 +165,7 @@ test("legacy image changes affect only primary, and a destination keeps its gall
   const photos = [photo(), photo()];
   store.applyMutation({ type: "destination.save", id, gallery: { add: photos, remove: [], mainImageId: photos[1].id } });
   const candidatePhoto = photo();
-  const candidateId = store.applyMutation({ type: "candidate.save", destinationId: id, category: "hotels", name: "Hotel", price: "", address: "", url: "", notes: "", included: false, gallery: { add: [candidatePhoto], remove: [] } }).id;
+  const candidateId = store.applyMutation({ type: "candidate.save", ...newItem(), destinationId: id, category: "hotels", name: "Hotel", price: "", address: "", url: "", notes: "", included: false, gallery: { add: [candidatePhoto], remove: [] } }).id;
   const candidate = store.getSnapshot().candidates[0];
   const first = store.getDestinationPhoto(id, photos[0].id);
   const originalMain = store.getDestinationImage(id);

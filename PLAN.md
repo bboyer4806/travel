@@ -275,3 +275,9 @@ This replaces TRA-62's destination Save in a sticky header.
 - The trip list filters by any number of selected tags, showing only trips with every selected tag, combined with the existing search so both must match. Each filter can be removed on its own, and Clear tag filters removes them all while keeping the search.
 - Schema 23 adds a `trip_tags` table, one row per trip and tag, deleted with its trip. Existing trips start without tags. Backup and rollback are in [deployment](docs/DEPLOYMENT.md).
 - Not included: a screen for renaming or deleting tags across trips, tag colors, icons or hierarchies, searching by tag text, and separate tag permissions or other changes to sharing.
+
+## Added scope: November 13, 2026, saving again after a lost response (TRA-75)
+- Each editor that adds a trip, destination, idea, church or At home item gives the new item its ID once, when it opens, and sends it with every save. The server adds the item when no item has that ID and treats the same ID sent again as the same item, saving the details sent last, so saving again after a lost response never adds a second one. Photos a save already added to an item are kept once when it is sent again.
+- A change to an item that no longer exists is still refused, never recreated, and a new item's ID can't save over another item.
+- A save whose response doesn't arrive says the changes couldn't be confirmed, instead of saying they weren't saved.
+- **New destination** in Destinations already opens the saved destination for a city it has, so it is unchanged.

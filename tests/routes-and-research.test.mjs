@@ -4,13 +4,13 @@ import { DatabaseSync } from "node:sqlite";
 import test from "node:test";
 import { SCHEMA_VERSION, ValidationError } from "../src/lib/store.ts";
 import { createOwnedStore } from "./owned-store.mjs";
-import { fileDatabase, setup, destinationEdit } from "./budget-fixtures.mjs";
+import { fileDatabase, newItem, setup, destinationEdit } from "./budget-fixtures.mjs";
 import { calculateBudget } from "../src/lib/budget.ts";
 
-const tripInput = (overrides = {}) => ({ type: "trip.save", name: "Europe", dateLabel: "Fall 2027", homeCity: "New York", travelers: 2, notes: "A possible trip", ...overrides });
-const destinationInput = (tripId, overrides = {}) => ({ type: "destination.save", tripId, city: "Vienna", stay: "4 nights", notes: "", ...overrides });
+const tripInput = (overrides = {}) => ({ type: "trip.save", name: "Europe", dateLabel: "Fall 2027", homeCity: "New York", travelers: 2, notes: "A possible trip", ...overrides, ...newItem(overrides) });
+const destinationInput = (tripId, overrides = {}) => ({ type: "destination.save", tripId, city: "Vienna", stay: "4 nights", notes: "", ...overrides, ...newItem(overrides) });
 const legInput = (id, overrides = {}) => ({ type: "leg.save", id, method: "Flight", price: "100.01", departure: "Morning", arrival: "Evening", url: "https://example.com/flights", notes: "Two passengers", ...overrides });
-const candidateInput = (destinationId, overrides = {}) => ({ type: "candidate.save", destinationId, category: "hotels", name: "Hotel idea", price: "200.33", address: "", url: "https://example.com/hotel", notes: "", included: true, ...overrides });
+const candidateInput = (destinationId, overrides = {}) => ({ type: "candidate.save", destinationId, category: "hotels", name: "Hotel idea", price: "200.33", address: "", url: "https://example.com/hotel", notes: "", included: true, ...overrides, ...newItem(overrides) });
 const stopInput = (overrides = {}) => ({ id: randomUUID(), kind: "layover", place: "London Heathrow", arrival: "10:30", departure: "13:15", notes: "Change terminals", ...overrides });
 const linkInput = (overrides = {}) => ({ id: randomUUID(), url: "https://example.com/research", description: "A useful option", ...overrides });
 const legsFor = (store, tripId) => store.getSnapshot().legs.filter((leg) => leg.tripId === tripId);

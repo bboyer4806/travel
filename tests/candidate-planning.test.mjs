@@ -6,17 +6,17 @@ import { DatabaseSync } from "node:sqlite";
 import test from "node:test";
 import { SCHEMA_VERSION, ValidationError } from "../src/lib/store.ts";
 import { createOwnedStore } from "./owned-store.mjs";
-import { fileDatabase } from "./budget-fixtures.mjs";
+import { fileDatabase, newItem } from "./budget-fixtures.mjs";
 import { calculateBudget } from "../src/lib/budget.ts";
 
 const tripInput = { type: "trip.save", name: "Planning priorities", dateLabel: "", homeCity: "Home", travelers: 2, notes: "" };
-const ideaInput = (destinationId, category, name, overrides = {}) => ({ type: "candidate.save", destinationId, category, name, price: "12.34", included: false, address: "Address", url: "https://example.com", notes: "Keep these details", ...overrides });
+const ideaInput = (destinationId, category, name, overrides = {}) => ({ type: "candidate.save", destinationId, category, name, price: "12.34", included: false, address: "Address", url: "https://example.com", notes: "Keep these details", ...overrides, ...newItem(overrides) });
 const image = Buffer.from("UklGRh4AAABXRUJQVlA4TBEAAAAvAUAAAAfQtSZVrP+BiOh/AAA=", "base64");
 const list = (store, destinationId, category) => store.getSnapshot().candidates.filter(item => item.destinationId === destinationId && item.category === category);
 const ids = (store, destinationId, category) => list(store, destinationId, category).map(item => item.id);
 function seed(store, city = "Paris") {
-  const tripId = store.applyMutation(tripInput).id;
-  const destinationId = store.applyMutation({ type: "destination.save", tripId, city, stay: "", notes: "", nights: 3 }).id;
+  const tripId = store.applyMutation({ ...tripInput, ...newItem() }).id;
+  const destinationId = store.applyMutation({ type: "destination.save", ...newItem(), tripId, city, stay: "", notes: "", nights: 3 }).id;
   return { tripId, destinationId };
 }
 

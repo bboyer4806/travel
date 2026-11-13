@@ -1,7 +1,8 @@
-// Production HTTP regressions for TRA-73 and TRA-94. Run after pnpm build with Node 24.
+// Production HTTP regressions for TRA-73, TRA-75 and TRA-94. Run after pnpm build with Node 24.
 // All writes and failure injection use a new, isolated database under test-results.
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
+import { randomUUID } from "node:crypto";
 import { once } from "node:events";
 import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { createServer } from "node:net";
@@ -30,12 +31,14 @@ const owner = store.authorizeAccount(ownerEmail);
 assert.equal(store.authorizeGoogleSignIn({ subject: "review-smoke-owner", email: ownerEmail, emailVerified: true, name: "Smoke Owner" })?.id, owner.id);
 const cookie = `${sessionCookieName(false)}=${store.createSession(owner.id, Date.now())}`;
 const tripInput = { type: "trip.save", name: "Review smoke trip", dateLabel: "", homeCity: "Test", travelers: 2, notes: "" };
-const tripId = store.applyMutation(owner.id, tripInput).id;
+// A new item carries the ID its editor gives it.
+const newItem = () => ({ id: randomUUID(), create: true });
+const tripId = store.applyMutation(owner.id, { ...tripInput, ...newItem() }).id;
 const destinationId = store.applyMutation(owner.id, {
-  type: "destination.save", tripId, city: "Vienna", notes: "", stay: "",
+  type: "destination.save", ...newItem(), tripId, city: "Vienna", notes: "", stay: "",
   image: Buffer.from("UklGRh4AAABXRUJQVlA4TBEAAAAvAUAAAAfQtSZVrP+BiOh/AAA=", "base64"),
 }).id;
-const otherTripId = store.applyMutation(owner.id, { ...tripInput, name: "Other smoke trip" }).id;
+const otherTripId = store.applyMutation(owner.id, { ...tripInput, ...newItem(), name: "Other smoke trip" }).id;
 store.close();
 const manifest = JSON.parse(readFileSync(".next/server/server-reference-manifest.json", "utf8"));
 const actions = Object.entries(manifest.node ?? {}).filter(([, action]) => action.exportedName === "mutatePlanner" && action.filename === "src/app/actions.ts");
@@ -116,13 +119,14 @@ for (const [label, firstPath] of [
   const server = await startServer(label);
   try {
     assert.equal((await server.request(firstPath)).status, 200, `${label} initialization must succeed.`);
-    assert.deepEqual(await server.mutation({ ...tripInput, name: " " }), { ok: false, error: "Please enter name." }, `${label} must preserve cross-bundle validation messages.`);
+    assert.deepEqual(await server.mutation({ ...tripInput, ...newItem(), name: " " }), { ok: false, error: "Please enter name." }, `${label} must preserve cross-bundle validation messages.`);
     assert.deepEqual(await server.mutation({ type: "trip.delete", id: missingId }), {
       ok: false, error: "This item no longer exists or isn't shared with you. Please refresh and try again.",
     }, `${label} must preserve current stale-record access messages.`);
-    const saved = await server.mutation({ ...tripInput, name: `${label} valid save` });
-    assert.equal(saved.ok, true);
-    assert.match(saved.id, /^[a-f0-9-]{36}$/i);
+    const created = { ...tripInput, ...newItem(), name: `${label} valid save` };
+    const saved = await server.mutation(created);
+    assert.deepEqual(saved, { ok: true, id: created.id });
+    assert.deepEqual(await server.mutation(created), saved, `${label} must save a new trip sent again as the same trip.`);
     assert.equal((await server.mutation({ type: "trip.delete", id: saved.id })).ok, true);
 
     if (label === "page-first") {

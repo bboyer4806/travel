@@ -30,8 +30,13 @@ export interface Snapshot { churches: Church[]; trips: Trip[]; homeItems: HomeIt
 export interface DestinationFields { city?: string; notes?: string; miscDailyAmount?: string; hotelNightlyAmount?: string; activitiesBudgetMode?: ActivitiesBudgetMode; activitiesGeneralAmount?: string; foodBudgetMode?: FoodBudgetMode; foodDailyAmount?: string; shoppingAmount?: string; weatherHighF?: number | null; weatherLowF?: number | null; weatherRainfall?: string; weatherPeriod?: string; weatherSource?: string; image?: Uint8Array | null; gallery?: DestinationGalleryUpdate }
 /** One trip's stay notes and nights at a destination. */
 export interface StopFields { stay?: string; nights?: number | null }
+/**
+ * A save names the item it changes by its ID. An editor adding an item gives it its ID when it opens and sends it with
+ * `create`, so saving again after a response is lost changes that item instead of adding another. Without `create`, a
+ * save changes a saved item, and is refused when the item no longer exists.
+ */
 export type Mutation =
- | { type: "trip.save"; startDate?: string | null; id?: string; name: string; dateLabel: string; homeCity: string; returnCity?: string | null; travelers: number; notes: string }
+ | { type: "trip.save"; id: string; create?: true; startDate?: string | null; name: string; dateLabel: string; homeCity: string; returnCity?: string | null; travelers: number; notes: string }
  | { type: "trip.delete"; id: string }
  | { type: "trip.share"; tripId: string; email: string }
  | { type: "trip.unshare"; tripId: string; email: string }
@@ -39,13 +44,13 @@ export type Mutation =
  | { type: "trip.tag"; tripId: string; name: string }
  // Removes one tag from a trip. The trip, its other tags and other trips' tags stay.
  | { type: "trip.untag"; tripId: string; name: string }
- | { type: "homeItem.save"; id?: string; tripId: string; name: string; price: string; notes: string; completed: boolean }
+ | { type: "homeItem.save"; id: string; create?: true; tripId: string; name: string; price: string; notes: string; completed: boolean }
  | { type: "homeItem.delete"; id: string; tripId: string }
  | { type: "homeItem.complete"; id: string; tripId: string; completed: boolean }
- // Adds a new destination to a trip as its last stop.
- | ({ type: "destination.save"; id?: undefined; tripId: string; stopId?: undefined; city: string } & DestinationFields & StopFields)
+ // Adds a new destination to a trip as its last stop. Its stop shares its ID.
+ | ({ type: "destination.save"; id: string; create: true; tripId: string; stopId?: undefined; city: string } & DestinationFields & StopFields)
  // Changes a saved destination everywhere it is used, and with `stopId` that trip's stay notes and nights too.
- | ({ type: "destination.save"; id: string; tripId?: undefined; stopId?: string } & DestinationFields & StopFields)
+ | ({ type: "destination.save"; id: string; create?: undefined; tripId?: undefined; stopId?: string } & DestinationFields & StopFields)
  // Saves a destination outside any trip. A city the account already has a destination for opens that one instead.
  | { type: "destination.create"; city: string }
  // Deletes a destination no trip visits, with everything saved for it. Only its owner can.
@@ -53,14 +58,14 @@ export type Mutation =
  | { type: "destination.entryRequirements"; id: string; requirements: EntryRequirements | null }
  | { type: "destination.healthSafety"; id: string; healthSafety: HealthSafety | null }
  | { type: "destination.churchVisibility"; id: string; enabled: boolean }
- | { type: "church.save"; id?: string; destinationId: string; name: string; address: string; denomination: string; url: string; massTimes: MassTime[]; gallery?: CandidateGalleryUpdate }
+ | { type: "church.save"; id: string; create?: true; destinationId: string; name: string; address: string; denomination: string; url: string; massTimes: MassTime[]; gallery?: CandidateGalleryUpdate }
  | { type: "church.delete"; id: string; destinationId: string }
  | { type: "stop.move"; id: string; direction: "up" | "down" }
  // Removes a destination from one trip. The destination and everything saved with it stay.
  | { type: "stop.remove"; id: string }
  | { type: "leg.save"; id: string; method: string; price: string; departure: string; arrival: string; url: string; notes: string; itinerary?: ItineraryStop[]; links?: ResearchLink[] }
  | { type: "leg.clear"; id: string }
- | { type: "candidate.save"; id?: string; destinationId: string; category: Category; name: string; price: string; address: string; url: string; notes: string; included: boolean; mustDo?: boolean; links?: ResearchLink[]; gallery?: CandidateGalleryUpdate }
+ | { type: "candidate.save"; id: string; create?: true; destinationId: string; category: Category; name: string; price: string; address: string; url: string; notes: string; included: boolean; mustDo?: boolean; links?: ResearchLink[]; gallery?: CandidateGalleryUpdate }
  | { type: "candidate.move"; id: string; direction: "up" | "down" }
  | { type: "candidate.mustDo"; id: string; mustDo: boolean }
  | { type: "candidate.delete"; id: string }

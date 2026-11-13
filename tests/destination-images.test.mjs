@@ -4,14 +4,14 @@ import { DatabaseSync } from "node:sqlite";
 import test from "node:test";
 import { SCHEMA_VERSION, ValidationError } from "../src/lib/store.ts";
 import { createOwnedStore } from "./owned-store.mjs";
-import { fileDatabase, destinationEdit } from "./budget-fixtures.mjs";
+import { fileDatabase, destinationEdit, newItem } from "./budget-fixtures.mjs";
 import { calculateBudget } from "../src/lib/budget.ts";
 
 const webp = new Uint8Array(Buffer.from("UklGRiIAAABXRUJQVlA4IBYAAAAwAQCdASoBAAEADsD+JaQAA3AAAAAA", "base64"));
 const replacement = new Uint8Array(webp);
 replacement[replacement.length - 1] = 1;
 const tripInput = { type: "trip.save", name: "Image test", dateLabel: "Next spring", homeCity: "Boston", travelers: 2, notes: "" };
-const destinationInput = (tripId, overrides = {}) => ({ type: "destination.save", tripId, city: "Vienna", stay: "4 nights", notes: "", ...overrides });
+const destinationInput = (tripId, overrides = {}) => ({ type: "destination.save", tripId, city: "Vienna", stay: "4 nights", notes: "", ...overrides, ...newItem(overrides) });
 function planConnections(store) {
   for (const leg of store.getSnapshot().legs) {
     store.applyMutation({
@@ -26,7 +26,7 @@ test("destination images persist, replace with new versions, and preserve routes
   const path = fileDatabase(t);
   let store = createOwnedStore(path);
   try {
-    const tripId = store.applyMutation(tripInput).id;
+    const tripId = store.applyMutation({ ...tripInput, ...newItem() }).id;
     const destinationId = store.applyMutation(destinationInput(tripId, { image: webp })).id;
     const initialImage = store.getDestinationImage(destinationId);
     assert.ok(initialImage.data instanceof Uint8Array);
@@ -70,7 +70,7 @@ test("destination photos stay when a trip stops visiting the destination or is d
   const store = createOwnedStore(path);
   const observer = new DatabaseSync(path);
   try {
-    const tripId = store.applyMutation(tripInput).id;
+    const tripId = store.applyMutation({ ...tripInput, ...newItem() }).id;
     const first = store.applyMutation(destinationInput(tripId, { image: webp })).id;
     const second = store.applyMutation(destinationInput(tripId, { city: "Paris", image: replacement })).id;
     const photos = [store.getDestinationImage(first), store.getDestinationImage(second)];
@@ -89,7 +89,7 @@ test("destination photos stay when a trip stops visiting the destination or is d
 test("invalid destination image bytes are rejected before any trip or route data changes", (t) => {
   const store = createOwnedStore(":memory:");
   t.after(() => store.close());
-  const tripId = store.applyMutation(tripInput).id;
+  const tripId = store.applyMutation({ ...tripInput, ...newItem() }).id;
   const destinationId = store.applyMutation(destinationInput(tripId, { image: webp })).id;
   planConnections(store);
   const before = store.getSnapshot();
@@ -117,7 +117,7 @@ test("a failed image write rolls back destination edits and all connection chang
   const store = createOwnedStore(path);
   const observer = new DatabaseSync(path);
   try {
-    const tripId = store.applyMutation(tripInput).id;
+    const tripId = store.applyMutation({ ...tripInput, ...newItem() }).id;
     const destinationId = store.applyMutation(destinationInput(tripId, { image: webp })).id;
     planConnections(store);
     const before = store.getSnapshot();
@@ -140,7 +140,7 @@ test("schema 3 upgrades add image storage without changing destinations, and rep
   const path = fileDatabase(t);
   let store = createOwnedStore(path);
   try {
-    const tripId = store.applyMutation(tripInput).id;
+    const tripId = store.applyMutation({ ...tripInput, ...newItem() }).id;
     const destinationId = store.applyMutation(destinationInput(tripId)).id;
     assert.equal(store.getSnapshot().destinations[0].imageVersion, null);
     planConnections(store);

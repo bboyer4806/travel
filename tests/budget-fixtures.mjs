@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { randomUUID } from "node:crypto";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -6,14 +7,20 @@ import { DatabaseSync } from "node:sqlite";
 import { ValidationError } from "../src/lib/store.ts";
 import { createOwnedStore } from "./owned-store.mjs";
 
-export const tripInput = (overrides = {}) => ({ type: "trip.save", name: "Trip", dateLabel: "Someday", homeCity: "Boston", travelers: 2, notes: "Trip notes", ...overrides });
+/**
+ * The ID and `create` an editor adding an item sends, or nothing when `overrides` names a saved item by `id`. Each
+ * new item gets its own ID, as each editor that adds one does. Spread it after `overrides`, so an `id` left undefined
+ * still means a new item.
+ */
+export const newItem = (overrides = {}) => (overrides.id === undefined ? { id: randomUUID(), create: true } : {});
+export const tripInput = (overrides = {}) => ({ type: "trip.save", name: "Trip", dateLabel: "Someday", homeCity: "Boston", travelers: 2, notes: "Trip notes", ...overrides, ...newItem(overrides) });
 /** A new destination added to a trip, as the trip's Add destination saves it. */
-export const destinationInput = (tripId, overrides = {}) => ({ type: "destination.save", tripId, city: "Paris", stay: "Stay notes", notes: "Destination notes", ...overrides });
+export const destinationInput = (tripId, overrides = {}) => ({ type: "destination.save", tripId, city: "Paris", stay: "Stay notes", notes: "Destination notes", ...overrides, ...newItem(overrides) });
 /** A change to a saved destination, shared by every trip that visits it. */
 export const destinationEdit = (id, overrides = {}) => ({ type: "destination.save", id, ...overrides });
 /** A change to a destination and to its stay in the trip it was added to, whose stop shares its ID. */
 export const stopEdit = (id, overrides = {}) => ({ type: "destination.save", id, stopId: id, ...overrides });
-export const candidateInput = (destinationId, category, overrides = {}) => ({ type: "candidate.save", destinationId, category, name: "Idea", price: "12.25", included: true, address: "", url: "", notes: "", ...overrides });
+export const candidateInput = (destinationId, category, overrides = {}) => ({ type: "candidate.save", destinationId, category, name: "Idea", price: "12.25", included: true, address: "", url: "", notes: "", ...overrides, ...newItem(overrides) });
 export const destination = (store, id) => store.getSnapshot().destinations.find((item) => item.id === id);
 /** A trip's stop: one trip's stay at a destination. */
 export const stop = (store, id) => store.getSnapshot().stops.find((item) => item.id === id);

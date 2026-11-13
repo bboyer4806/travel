@@ -379,12 +379,14 @@ async function assertHidden(label, headers) {
 const db = new DatabaseSync("/data/travel.sqlite", { readOnly: true });
 try {
   const trip = { type: "trip.save", name: "Container action smoke", startDate: null, dateLabel: "", homeCity: "Test", returnCity: null, travelers: 2, notes: "" };
+  // A new trip carries the ID its editor gives it.
+  const newTrip = { ...trip, id: "d1000000-0000-4000-8000-000000000001", create: true };
   // Signed out, an expired, unknown or malformed session, or a cookie read over the wrong protocol.
   const rejected = { none: undefined, expired: "smoke-expired-session", unknown: "smoke-unknown-session", malformed: "x", wrongName: "smoke-owner-session" };
   for (const [label, token] of Object.entries(rejected)) {
     const headers = label === "wrongName" ? cookie(token, "__Host-travel_session") : cookie(token);
     await assertRefused(label, headers);
-    assert.deepEqual(await mutation(trip, headers), { ok: false, error: "Your session has ended. Sign in again in another tab, then save again." }, `${label} must not save`);
+    assert.deepEqual(await mutation(newTrip, headers), { ok: false, error: "Your session has ended. Sign in again in another tab, then save again." }, `${label} must not save`);
     assert.equal(db.prepare("SELECT count(*) AS count FROM trips WHERE name = ?").get(trip.name).count, 0, `${label} must not create a trip`);
   }
   assert.equal(db.prepare("SELECT count(*) AS count FROM sessions WHERE tokenHash = ?").get(tokenHash("smoke-expired-session")).count, 0, "An expired session is removed when presented");
@@ -412,10 +414,12 @@ try {
   for (const path of dataRoutes.slice(0, 4)) assert.equal((await get(path, editor)).status, 200, `The editor can load ${path}`);
   await assertHidden("outsider", outsider);
 
-  const saved = await mutation(trip);
-  assert.equal(saved.ok, true, "Server Action returned a save error");
-  assert.match(saved.id, /^[a-f0-9-]{36}$/i);
+  const saved = await mutation(newTrip);
+  assert.deepEqual(saved, { ok: true, id: newTrip.id }, "Server Action returned a save error");
   assert.equal(db.prepare("SELECT name FROM trips WHERE id = ?").get(saved.id)?.name, "Container action smoke");
+  // Saving it again, as after a lost response, saves the same trip instead of adding another.
+  assert.deepEqual(await mutation(newTrip), saved);
+  assert.equal(db.prepare("SELECT count(*) AS count FROM trips WHERE name = ?").get(trip.name).count, 1, "A new trip saved again is one trip");
 
   // Sharing through the real Server Action: only the owner may share, delete or remove access, and removing access ends it at once.
   const notAvailable = { ok: false, error: "This item no longer exists or isn't shared with you. Please refresh and try again." };

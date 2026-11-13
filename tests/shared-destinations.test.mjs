@@ -5,7 +5,7 @@ import test from "node:test";
 import { calculateBudget, calculateDestinationBudget, tripVisits } from "../src/lib/budget.ts";
 import { createStore, SCHEMA_VERSION } from "../src/lib/store.ts";
 import { churchDateEligible } from "../src/lib/trip-dates.ts";
-import { fileDatabase } from "./budget-fixtures.mjs";
+import { fileDatabase, newItem } from "./budget-fixtures.mjs";
 import { OWNER_EMAIL, UNDO_SCHEMA_21 } from "./owned-store.mjs";
 
 const NOT_AVAILABLE = { name: "ValidationError", message: "This item no longer exists or isn't shared with you. Please refresh and try again." };
@@ -26,10 +26,10 @@ function legacyPlans(t) {
   const other = store.authorizeAccount("other@example.com").id;
   const as = (account) => (input) => store.applyMutation(account, input).id;
   const m = as(owner);
-  const trip = (name, startDate, save = m) => save({ type: "trip.save", name, startDate, dateLabel: "", homeCity: "Boston", travelers: 2, notes: "" });
-  const add = (tripId, city, fields = {}, save = m) => save({ type: "destination.save", tripId, city, stay: "", notes: "", ...fields });
-  const idea = (destinationId, category, name, fields = {}) => m({ type: "candidate.save", destinationId, category, name, price: "10", address: "", url: "", notes: "", included: false, ...fields });
-  const church = (destinationId, name, fields = {}) => m({ type: "church.save", destinationId, name, address: "", denomination: "", url: "", massTimes: [], ...fields });
+  const trip = (name, startDate, save = m) => save({ type: "trip.save", ...newItem(), name, startDate, dateLabel: "", homeCity: "Boston", travelers: 2, notes: "" });
+  const add = (tripId, city, fields = {}, save = m) => save({ type: "destination.save", tripId, city, stay: "", notes: "", ...fields, ...newItem(fields) });
+  const idea = (destinationId, category, name, fields = {}) => m({ type: "candidate.save", destinationId, category, name, price: "10", address: "", url: "", notes: "", included: false, ...fields, ...newItem(fields) });
+  const church = (destinationId, name, fields = {}) => m({ type: "church.save", destinationId, name, address: "", denomination: "", url: "", massTimes: [], ...fields, ...newItem(fields) });
   // May 2, 2027 is a Sunday and October 4, 2027 a Monday.
   const ids = { spring: trip("Spring", "2027-05-02"), autumn: trip("Autumn", "2027-10-04"), loop: trip("Loop", null), theirs: trip("Theirs", null, as(other)) };
   Object.assign(ids, {
@@ -224,8 +224,8 @@ test("each account has one destination per city, and same-named cities in differ
   const owner = store.authorizeAccount(OWNER_EMAIL).id;
   const other = store.authorizeAccount("other@example.com").id;
   const change = (input, account = owner) => store.applyMutation(account, input).id;
-  const trip = (account = owner) => change({ type: "trip.save", name: "Trip", dateLabel: "", homeCity: "Boston", travelers: 2, notes: "" }, account);
-  const add = (tripId, city, account = owner) => change({ type: "destination.save", tripId, city, stay: "", notes: "" }, account);
+  const trip = (account = owner) => change({ type: "trip.save", ...newItem(), name: "Trip", dateLabel: "", homeCity: "Boston", travelers: 2, notes: "" }, account);
+  const add = (tripId, city, account = owner) => change({ type: "destination.save", ...newItem(), tripId, city, stay: "", notes: "" }, account);
   const first = trip(), second = trip();
   const paris = add(first, "Paris, Ile-de-France, France");
   const before = store.getSnapshot();
@@ -277,7 +277,7 @@ test("people a trip is shared with work on its destinations, which stay the owne
   // They edit it like the owner, and what they add to the trip is the owner's.
   change({ type: "destination.save", id: ids.springLisbon, notes: "From the editor" }, editor);
   assert.equal(store.getDestinationSnapshot(plans.owner, ids.springLisbon).data.destinations[0].notes, "From the editor");
-  const coimbra = change({ type: "destination.save", tripId: ids.spring, city: "Coimbra", stay: "", notes: "" }, editor).id;
+  const coimbra = change({ type: "destination.save", ...newItem(), tripId: ids.spring, city: "Coimbra", stay: "", notes: "" }, editor).id;
   assert.deepEqual(store.getDestinationsOverview(plans.owner).access[coimbra], { role: "owner" });
   // Not through a stay in a trip they can't open.
   assert.throws(() => change({ type: "destination.save", id: ids.springLisbon, stopId: ids.autumnLisbon, nights: 1 }, editor), NOT_AVAILABLE);
@@ -302,8 +302,8 @@ test("a destination created outside a trip is its creator's, and only its owner 
   const editor = store.authorizeAccount("editor@example.com").id;
   const other = store.authorizeAccount("other@example.com").id;
   const change = (input, account = owner) => store.applyMutation(account, input).id;
-  const tripId = change({ type: "trip.save", name: "Trip", dateLabel: "", homeCity: "Boston", travelers: 2, notes: "" });
-  const lisbon = change({ type: "destination.save", tripId, city: "Lisbon, Lisbon, Portugal", stay: "", notes: "" });
+  const tripId = change({ type: "trip.save", ...newItem(), name: "Trip", dateLabel: "", homeCity: "Boston", travelers: 2, notes: "" });
+  const lisbon = change({ type: "destination.save", ...newItem(), tripId, city: "Lisbon, Lisbon, Portugal", stay: "", notes: "" });
   change({ type: "trip.share", tripId, email: "editor@example.com" });
   const porto = change({ type: "destination.create", city: "Porto, Porto, Portugal" });
 

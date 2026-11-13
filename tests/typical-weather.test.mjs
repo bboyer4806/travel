@@ -5,10 +5,10 @@ import test from "node:test";
 import { calculateBudget, calculateDestinationBudget } from "../src/lib/budget.ts";
 import { SCHEMA_VERSION, ValidationError } from "../src/lib/store.ts";
 import { createOwnedStore } from "./owned-store.mjs";
-import { fileDatabase, setup, destinationEdit, stopEdit } from "./budget-fixtures.mjs";
+import { fileDatabase, newItem, setup, destinationEdit, stopEdit } from "./budget-fixtures.mjs";
 
-const tripInput = (overrides = {}) => ({ type: "trip.save", name: "Weather planning", dateLabel: "2027", homeCity: "Boston", travelers: 2, notes: "", ...overrides });
-const destinationInput = (tripId, overrides = {}) => ({ type: "destination.save", tripId, city: "Reykjavik", stay: "A few nights", notes: "", ...overrides });
+const tripInput = (overrides = {}) => ({ type: "trip.save", name: "Weather planning", dateLabel: "2027", homeCity: "Boston", travelers: 2, notes: "", ...overrides, ...newItem(overrides) });
+const destinationInput = (tripId, overrides = {}) => ({ type: "destination.save", tripId, city: "Reykjavik", stay: "A few nights", notes: "", ...overrides, ...newItem(overrides) });
 const emptyWeather = { weatherHighF: null, weatherLowF: null, weatherRainfall: "", weatherPeriod: "", weatherSource: "" };
 const winterWeather = { weatherHighF: 0, weatherLowF: -12.5, weatherRainfall: "Light snow; occasional rain", weatherPeriod: "January historical averages", weatherSource: "Local climate archive" };
 const dates = { nights: 3 };
@@ -123,9 +123,9 @@ test("weather edits leave existing destination data, routes, choices, and separa
     activitiesBudgetMode: "general", activitiesGeneralAmount: "20",
     foodBudgetMode: "daily", foodDailyAmount: "30", shoppingAmount: "12.34", image: webp,
   })).id;
-  store.applyMutation({ type: "candidate.save", destinationId: id, category: "activities", name: "Museum", price: "999", address: "", url: "", notes: "Preserve this idea", included: true });
+  store.applyMutation({ type: "candidate.save", ...newItem(), destinationId: id, category: "activities", name: "Museum", price: "999", address: "", url: "", notes: "Preserve this idea", included: true });
   for (const leg of store.getSnapshot().legs) store.applyMutation({ type: "leg.save", id: leg.id, method: "Flight", price: "100", departure: "Morning", arrival: "Evening", url: "", notes: "Booked" });
-  store.applyMutation({ type: "homeItem.save", tripId, name: "Pause mail", price: "", notes: "", completed: false });
+  store.applyMutation({ type: "homeItem.save", ...newItem(), tripId, name: "Pause mail", price: "", notes: "", completed: false });
   const before = store.getSnapshot();
   const budget = calculateBudget(before, tripId);
   const visitIn = (snapshot) => ({ ...snapshot.destinations.find((item) => item.id === id), nights: snapshot.stops.find((item) => item.id === id).nights });
@@ -152,8 +152,8 @@ test("schema 12 upgrade defaults weather to missing and preserves old data; migr
       foodBudgetMode: "daily", foodDailyAmount: "20", shoppingAmount: "12.34",
     })).id;
     const hotelPhoto = { id: randomUUID(), data: webp };
-    const candidateId = store.applyMutation({ type: "candidate.save", destinationId: id, category: "hotels", name: "Saved hotel", price: "123.45", address: "Main street", url: "", notes: "", included: true, gallery: { add: [hotelPhoto], remove: [] }, links: [{ id: randomUUID(), url: "https://example.com/hotel", description: "Booking" }] }).id;
-    store.applyMutation({ type: "homeItem.save", tripId, name: "House sitting", price: "23.95", notes: "Leave a key", completed: true });
+    const candidateId = store.applyMutation({ type: "candidate.save", ...newItem(), destinationId: id, category: "hotels", name: "Saved hotel", price: "123.45", address: "Main street", url: "", notes: "", included: true, gallery: { add: [hotelPhoto], remove: [] }, links: [{ id: randomUUID(), url: "https://example.com/hotel", description: "Booking" }] }).id;
+    store.applyMutation({ type: "homeItem.save", ...newItem(), tripId, name: "House sitting", price: "23.95", notes: "Leave a key", completed: true });
     for (const leg of store.getSnapshot().legs) store.applyMutation({ type: "leg.save", id: leg.id, method: "Flight", price: "100", departure: "Morning", arrival: "Evening", url: "", notes: "Booked", itinerary: [{ id: randomUUID(), kind: "layover", place: "London", arrival: "10:00", departure: "12:00", notes: "" }] });
     const before = store.getSnapshot();
     const budget = calculateBudget(before, tripId);

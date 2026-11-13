@@ -25,6 +25,7 @@ import TripSharing, { memberLabel } from "@/components/trip-sharing";
 import { TripTagFilter, TripTagList, TripTagsEditor } from "@/components/trip-tags";
 import { hasEveryTag, tagKey } from "@/lib/trip-tags";
 import { mutatePlanner } from "@/app/actions";
+import { randomUuid } from "@/lib/uuid";
 import { formatSavedDestinationLabel } from "@/lib/destination-label";
 import { transportationIcons, type TransportationIcon } from "@/lib/transportation-methods";
 import { calculateBudget, calculateDestinationBudget, tripVisits } from "@/lib/budget";
@@ -132,6 +133,8 @@ export default function PlannerApp({ initialData, initialBudgets, access = {}, d
   const [emergencyContacts, setEmergencyContacts] = useState<EmergencyContact[]>([]);
   const [destinationGallery, setDestinationGallery] = useState<DestinationGalleryDraft>(() => createDestinationGalleryDraft());
   const [candidateGallery, setCandidateGallery] = useState<CandidateGalleryDraft>(() => createCandidateGalleryDraft());
+  // The ID of the item an editor adds, given once when it opens, so saving again after a response is lost changes that item instead of adding another.
+  const [newId, setNewId] = useState("");
   const [error, setError] = useState("");
   const [message, setMessage] = useState("");
   const [search, setSearch] = useState("");
@@ -166,8 +169,11 @@ export default function PlannerApp({ initialData, initialBudgets, access = {}, d
     if (value.kind === "church") setMassTimes(value.item?.massTimes ?? []);
     setDestinationGallery(createDestinationGalleryDraft(value.kind === "destination" ? value.item : undefined));
     setCandidateGallery(createCandidateGalleryDraft(value.kind === "candidate" || value.kind === "church" ? value.item : undefined));
+    setNewId(randomUuid());
     setEditor(value); setError(""); setMessage("");
   };
+  /** The item a save is for: the saved one an editor changes, or the new one it adds. */
+  const itemToSave = (item?: { id: string }) => item ? { id: item.id } : { id: newId, create: true as const };
   const close = () => { if (!busy) { setEditor(null); setDestinationGallery(createDestinationGalleryDraft()); setCandidateGallery(createCandidateGalleryDraft()); setError(""); } };
   /** Saves a change and refreshes the page, resolving to whether it was saved. A refused change shows its error. */
   async function perform(mutation: Mutation, success = "Changes saved.", redirect?: string, imageForm?: FormData): Promise<boolean> {
@@ -178,11 +184,11 @@ export default function PlannerApp({ initialData, initialBudgets, access = {}, d
       if (!result.ok) { setError(result.error); return false; }
       setEditor(null); setDestinationGallery(createDestinationGalleryDraft()); setCandidateGallery(createCandidateGalleryDraft()); setMessage(success);
       if (redirect) router.push(redirect);
-      else if (mutation.type === "trip.save" && !mutation.id && result.id) router.push("/trips/" + result.id);
+      else if (mutation.type === "trip.save" && mutation.create) router.push("/trips/" + mutation.id);
       else if (mutation.type === "destination.create" && result.id) router.push("/destinations/" + result.id);
       else router.refresh();
       return true;
-    } catch { setError("We couldn't reach the planner. Your changes haven't been saved. Please try again."); return false; }
+    } catch { setError("We couldn't confirm that your changes were saved. Please try again."); return false; }
     finally { setBusy(false); }
   }
   function confirmDelete(mutation: Mutation, title: string, description: string, redirect?: string) {
@@ -196,7 +202,7 @@ export default function PlannerApp({ initialData, initialBudgets, access = {}, d
     const nights = text("nights") === "" ? null : Number(text("nights"));
     switch (editor.kind) {
       case "delete": void perform(editor.mutation, "Removed from your notebook.", editor.redirect); break;
-      case "trip": void perform({ type: "trip.save", id: editor.item?.id, name: text("name"), startDate: text("startDate") || null, dateLabel: text("dateLabel"), homeCity: text("homeCity"), returnCity: fields.has("differentReturn") ? text("returnCity") : null, travelers: Number(text("travelers")), notes: text("notes") }); break;
+      case "trip": void perform({ type: "trip.save", ...itemToSave(editor.item), name: text("name"), startDate: text("startDate") || null, dateLabel: text("dateLabel"), homeCity: text("homeCity"), returnCity: fields.has("differentReturn") ? text("returnCity") : null, travelers: Number(text("travelers")), notes: text("notes") }); break;
       case "entryRequirements": {
         void perform({ type: "destination.entryRequirements", id: editor.item.id, requirements: entryRequirementsFromForm(fields, researchLinks) }, "Entry requirements saved.");
         break;
@@ -217,7 +223,7 @@ export default function PlannerApp({ initialData, initialBudgets, access = {}, d
         const imageForm = destinationGalleryForm(destinationGallery, editor.item);
         const shared = { city: text("city"), notes: text("notes"), miscDailyAmount: text("miscDailyAmount"), hotelNightlyAmount: text("hotelNightlyAmount"), activitiesBudgetMode: text("activitiesBudgetMode") as ActivitiesBudgetMode, activitiesGeneralAmount: text("activitiesGeneralAmount"), foodBudgetMode: text("foodBudgetMode") as FoodBudgetMode, foodDailyAmount: text("foodDailyAmount"), shoppingAmount: text("shoppingAmount") };
         const stay = { stay: text("stay"), nights };
-        if (!editor.item) { if (trip) void perform({ type: "destination.save", tripId: trip.id, ...shared, ...stay }, "Destination saved. Review any new travel connections.", undefined, imageForm); }
+        if (!editor.item) { if (trip) void perform({ type: "destination.save", id: newId, create: true, tripId: trip.id, ...shared, ...stay }, "Destination saved. Review any new travel connections.", undefined, imageForm); }
         else if (editor.stop) void perform({ type: "destination.save", id: editor.item.id, stopId: editor.stop.id, ...shared, ...stay }, "Destination saved. Review any new travel connections.", undefined, imageForm);
         else void perform({ type: "destination.save", id: editor.item.id, ...shared }, "Destination saved in every trip that visits it.", undefined, imageForm);
         break;
@@ -247,7 +253,7 @@ export default function PlannerApp({ initialData, initialBudgets, access = {}, d
         break;
       }
       case "homeItem": {
-        if (trip) void perform({ type: "homeItem.save", id: editor.item?.id, tripId: trip.id, name: text("name"), price: text("price"), notes: text("notes"), completed: fields.has("completed") }, "At home item saved.");
+        if (trip) void perform({ type: "homeItem.save", ...itemToSave(editor.item), tripId: trip.id, name: text("name"), price: text("price"), notes: text("notes"), completed: fields.has("completed") }, "At home item saved.");
         break;
       }
       case "share": {
@@ -256,12 +262,12 @@ export default function PlannerApp({ initialData, initialBudgets, access = {}, d
       }
       case "leg": void perform({ type: "leg.save", id: editor.item.id, method: text("method"), price: text("price"), departure: text("departure"), arrival: text("arrival"), url: researchLinks[0]?.url ?? "", links: researchLinks, notes: text("notes"), itinerary }); break;
       case "church": {
-        void perform({ type: "church.save", id: editor.item?.id, destinationId: editor.destinationId, name: text("name"), address: text("address"), denomination: text("denomination"), url: text("url"), massTimes }, "Church saved.", undefined, candidateGalleryForm(candidateGallery, editor.item));
+        void perform({ type: "church.save", ...itemToSave(editor.item), destinationId: editor.destinationId, name: text("name"), address: text("address"), denomination: text("denomination"), url: text("url"), massTimes }, "Church saved.", undefined, candidateGalleryForm(candidateGallery, editor.item));
         break;
       }
       case "candidate": {
         const imageForm = candidateGalleryForm(candidateGallery, editor.item);
-        if (destination && category) void perform({ type: "candidate.save", id: editor.item?.id, destinationId: destination.id, category, name: text("name"), price: text("price"), address: text("address"), url: researchLinks[0]?.url ?? "", links: researchLinks, notes: text("notes"), included: fields.has("included"), mustDo: fields.has("mustDo") }, "Changes saved.", undefined, imageForm);
+        if (destination && category) void perform({ type: "candidate.save", ...itemToSave(editor.item), destinationId: destination.id, category, name: text("name"), price: text("price"), address: text("address"), url: researchLinks[0]?.url ?? "", links: researchLinks, notes: text("notes"), included: fields.has("included"), mustDo: fields.has("mustDo") }, "Changes saved.", undefined, imageForm);
         break;
       }
     }

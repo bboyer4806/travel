@@ -4,13 +4,13 @@ import { DatabaseSync } from "node:sqlite";
 import test from "node:test";
 import { SCHEMA_VERSION, ValidationError } from "../src/lib/store.ts";
 import { createOwnedStore } from "./owned-store.mjs";
-import { fileDatabase, setup } from "./budget-fixtures.mjs";
+import { fileDatabase, newItem, setup } from "./budget-fixtures.mjs";
 import { calculateBudget } from "../src/lib/budget.ts";
 
-const tripInput = (overrides = {}) => ({ type: "trip.save", name: "Spring trip", dateLabel: "Spring 2027", homeCity: "Boston", travelers: 2, notes: "", ...overrides });
-const destinationInput = (tripId, overrides = {}) => ({ type: "destination.save", tripId, city: "Vienna", stay: "3 nights", notes: "", ...overrides });
-const candidateInput = (destinationId, overrides = {}) => ({ type: "candidate.save", destinationId, category: "hotels", name: "Hotel", price: "200.33", address: "City center", url: "https://example.com", notes: "Research", included: true, ...overrides });
-const homeInput = (tripId, overrides = {}) => ({ type: "homeItem.save", tripId, name: "Arrange pet care", price: "", notes: "Leave the spare key", completed: false, ...overrides });
+const tripInput = (overrides = {}) => ({ type: "trip.save", name: "Spring trip", dateLabel: "Spring 2027", homeCity: "Boston", travelers: 2, notes: "", ...overrides, ...newItem(overrides) });
+const destinationInput = (tripId, overrides = {}) => ({ type: "destination.save", tripId, city: "Vienna", stay: "3 nights", notes: "", ...overrides, ...newItem(overrides) });
+const candidateInput = (destinationId, overrides = {}) => ({ type: "candidate.save", destinationId, category: "hotels", name: "Hotel", price: "200.33", address: "City center", url: "https://example.com", notes: "Research", included: true, ...overrides, ...newItem(overrides) });
+const homeInput = (tripId, overrides = {}) => ({ type: "homeItem.save", tripId, name: "Arrange pet care", price: "", notes: "Leave the spare key", completed: false, ...overrides, ...newItem(overrides) });
 const webp = new Uint8Array(Buffer.from("UklGRiIAAABXRUJQVlA4IBYAAAAwAQCdASoBAAEADsD+JaQAA3AAAAAA", "base64"));
 const otherWebp = new Uint8Array(webp);
 otherWebp[otherWebp.length - 1] = 1;

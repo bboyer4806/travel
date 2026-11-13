@@ -6,7 +6,7 @@ import { DatabaseSync } from "node:sqlite";
 import test from "node:test";
 import { SCHEMA_VERSION, ValidationError } from "../src/lib/store.ts";
 import { createOwnedStore } from "./owned-store.mjs";
-import { fileDatabase, newItem } from "./budget-fixtures.mjs";
+import { addCity, fileDatabase, newItem } from "./budget-fixtures.mjs";
 import { calculateBudget } from "../src/lib/budget.ts";
 
 const tripInput = { type: "trip.save", name: "Planning priorities", dateLabel: "", homeCity: "Home", travelers: 2, notes: "" };
@@ -16,7 +16,7 @@ const list = (store, destinationId, category) => store.getSnapshot().candidates.
 const ids = (store, destinationId, category) => list(store, destinationId, category).map(item => item.id);
 function seed(store, city = "Paris") {
   const tripId = store.applyMutation({ ...tripInput, ...newItem() }).id;
-  const destinationId = store.applyMutation({ type: "destination.save", ...newItem(), tripId, city, stay: "", notes: "", nights: 3 }).id;
+  const destinationId = addCity((input) => store.applyMutation(input).id, tripId, city, { nights: 3 });
   return { tripId, destinationId };
 }
 

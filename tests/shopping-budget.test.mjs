@@ -1,10 +1,10 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { calculateBudget, calculateActivitiesBudget } from "../src/lib/budget.ts";
-import { setup, destination, tripInput, destinationInput, validateMoney, verifyPersistence, destinationEdit, stopEdit } from "./budget-fixtures.mjs";
+import { setup, destination, tripInput, addDestination, validateMoney, verifyPersistence, destinationEdit, stopEdit } from "./budget-fixtures.mjs";
 
 test("optional shopping distinguishes unset and zero without requiring dates",t=>{
- const {store,tripId}=setup(t); const id=store.applyMutation(destinationInput(tripId)).id;
+ const {store,tripId}=setup(t); const id=addDestination(store, tripId);
  const before=calculateBudget(store.getSnapshot(),tripId);
  store.applyMutation(destinationEdit(id, {shoppingAmount:"0"}));
  const zero=calculateBudget(store.getSnapshot(),tripId);

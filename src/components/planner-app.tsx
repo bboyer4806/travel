@@ -36,8 +36,10 @@ import type { FoodBudgetMode, ActivitiesBudgetMode, Budget, Candidate, Church, M
 
 type Editor =
   | { kind: "trip"; item?: Trip }
-  // Without an item it adds a destination to the trip; with a stop it also edits that trip's stay.
-  | { kind: "destination"; item?: Destination; stop?: TripStop }
+  // A saved destination; with a stop it also edits that trip's stay.
+  | { kind: "destination"; item: Destination; stop?: TripStop }
+  // A city to add to the trip. Only the city is asked for.
+  | { kind: "addStop" }
   // A destination outside any trip, from Destinations. Only its city is asked for.
   | { kind: "newDestination" }
   | { kind: "shoppingBudget"; item: Destination }
@@ -141,6 +143,13 @@ export default function PlannerApp({ initialData, initialBudgets, access = {}, d
   const [search, setSearch] = useState("");
   // The trip list's selected tag filters, as tag keys.
   const [tagFilter, setTagFilter] = useState<string[]>([]);
+  // A stop to scroll to once the page shows it, after adding its city. This scrolls instead of navigating to its
+  // #destination- link: after a Server Action, Next.js 16.4 adds that hash to any the URL already has.
+  const shownStop = useRef<string | null>(null);
+  useEffect(() => {
+    const card = shownStop.current === null ? null : document.getElementById("destination-" + shownStop.current);
+    if (card) { shownStop.current = null; card.scrollIntoView(); }
+  });
   if (lastInitial !== initialData) { setLastInitial(initialData); setData(initialData); }
   const trip = data.trips.find((item) => item.id === tripId);
   // Only owners see Share and Delete; the server refuses those changes from anyone else.
@@ -184,6 +193,12 @@ export default function PlannerApp({ initialData, initialBudgets, access = {}, d
       const result = await mutatePlanner(mutation, imageForm);
       if (!result.ok) { setError(result.error); return false; }
       setEditor(null); setDestinationGallery(createDestinationGalleryDraft()); setCandidateGallery(createCandidateGalleryDraft()); setMessage(success);
+      if (mutation.type === "stop.add" && result.id) {
+        // The trip's stop for the city: the one added, or the one it already had, which opens instead.
+        const visiting = stops.find((item) => item.id === result.id);
+        if (visiting) setMessage("“" + formatSavedDestinationLabel(cityOf(visiting.destinationId)) + "” is already in this trip.");
+        shownStop.current = result.id;
+      }
       if (redirect) router.push(redirect);
       else if (mutation.type === "trip.save" && mutation.create) router.push("/trips/" + mutation.id);
       else if (mutation.type === "destination.create" && result.id) router.push("/destinations/" + result.id);
@@ -228,11 +243,11 @@ export default function PlannerApp({ initialData, initialBudgets, access = {}, d
         const imageForm = destinationGalleryForm(destinationGallery, editor.item);
         const shared = { city: text("city"), notes: text("notes"), miscDailyAmount: text("miscDailyAmount"), hotelNightlyAmount: text("hotelNightlyAmount"), activitiesBudgetMode: text("activitiesBudgetMode") as ActivitiesBudgetMode, activitiesGeneralAmount: text("activitiesGeneralAmount"), foodBudgetMode: text("foodBudgetMode") as FoodBudgetMode, foodDailyAmount: text("foodDailyAmount"), shoppingAmount: text("shoppingAmount") };
         const stay = { stay: text("stay"), nights };
-        if (!editor.item) { if (trip) void perform({ type: "destination.save", id: newId, create: true, tripId: trip.id, ...shared, ...stay }, "Destination saved. Review any new travel connections.", undefined, imageForm); }
-        else if (editor.stop) void perform({ type: "destination.save", id: editor.item.id, stopId: editor.stop.id, ...shared, ...stay }, "Destination saved. Review any new travel connections.", undefined, imageForm);
+        if (editor.stop) void perform({ type: "destination.save", id: editor.item.id, stopId: editor.stop.id, ...shared, ...stay }, "Destination saved. Review any new travel connections.", undefined, imageForm);
         else void perform({ type: "destination.save", id: editor.item.id, ...shared }, "Destination saved in every trip that visits it.", undefined, imageForm);
         break;
       }
+      case "addStop": if (trip) void perform({ type: "stop.add", tripId: trip.id, city: text("city") }, "Destination added. Review any new travel connections."); break;
       case "newDestination": void perform({ type: "destination.create", city: text("city") }); break;
       case "shoppingBudget": {
         const item = editor.item;
@@ -282,7 +297,8 @@ export default function PlannerApp({ initialData, initialBudgets, access = {}, d
     : editor?.kind === "entryRequirements" ? "Edit entry requirements"
     : editor?.kind === "healthSafety" ? "Edit health and safety"
     : editor?.kind === "weather" ? "Edit typical weather"
-    : editor?.kind === "destination" ? (editor.item ? "Edit destination: " + formatSavedDestinationLabel(editor.item.city) : "Add a destination")
+    : editor?.kind === "destination" ? "Edit destination: " + formatSavedDestinationLabel(editor.item.city)
+    : editor?.kind === "addStop" ? "Add a destination"
     : editor?.kind === "newDestination" ? "New destination"
     : editor?.kind === "shoppingBudget" ? "Edit shopping budget"
     : editor?.kind === "accommodationBudget" ? "Edit accommodation budget"
@@ -403,9 +419,9 @@ export default function PlannerApp({ initialData, initialBudgets, access = {}, d
           <div className="heading-actions"><button className="button secondary" onClick={() => open({ kind: "trip", item: trip })}><Pencil size={15} />Edit trip</button>{tripAccess?.role === "owner" && <><button className="button secondary" onClick={() => open({ kind: "share" })}><UserPlus size={15} />Share</button><button className="icon-button" aria-label="Delete trip" onClick={() => confirmDelete({ type: "trip.delete", id: trip.id }, "Delete this trip?", "“" + trip.name + "”, its travel plans, and At home items will be removed. Its destinations, with their saved ideas and research, stay in Destinations." + sharedDeleteNote(tripAccess), "/")}><Trash2 size={18} /></button></>}</div>
         </section>
         <div className="trip-layout"><div className="trip-main">
-          <section><div className="section-heading"><div><p className="eyebrow">ONE STOP AT A TIME</p><h2>The destinations</h2></div><button className="button secondary small" onClick={() => open({ kind: "destination" })}><Plus size={16} />Add destination</button></div>
-            {visits.length === 0 ? <div className="empty-state"><MapPin size={29} strokeWidth={1.4} /><h3>Where should this trip take you?</h3><p>Add your first destination. Your departure and return connections will appear automatically.</p><button className="text-button" onClick={() => open({ kind: "destination" })}>Add a destination <ArrowRight size={16} /></button></div>
-              : <div className="destination-list">{visits.map(({ stop: visitStop, visit }, index) => { const label = formatSavedDestinationLabel(visit.city); return <article className="destination-card" key={visitStop.id} id={"destination-" + visitStop.id}><DestinationGallery destination={visit} /><div className="destination-top"><span className="stop-number">{String(index + 1).padStart(2, "0")}</span><div className="destination-name"><h3><Link href={"/destinations/" + visit.id}>{label}</Link></h3><p>{visitStop.stay || "Stay notes not added"}</p></div><div className="destination-tools"><button className="icon-button" disabled={busy || index === 0} aria-label={"Move " + label + " up"} onClick={() => void perform({ type: "stop.move", id: visitStop.id, direction: "up" }, "Route updated. Review the new travel connections.")}><ArrowUp size={15} /></button><button className="icon-button" disabled={busy || index === visits.length - 1} aria-label={"Move " + label + " down"} onClick={() => void perform({ type: "stop.move", id: visitStop.id, direction: "down" }, "Route updated. Review the new travel connections.")}><ArrowDown size={15} /></button><button className="icon-button" aria-label={"Edit " + label} onClick={() => open({ kind: "destination", item: visit, stop: visitStop })}><Pencil size={15} /></button><button className="icon-button" aria-label={"Remove " + label + " from this trip"} onClick={() => confirmDelete({ type: "stop.remove", id: visitStop.id }, "Remove “" + label + "” from this trip?", "Its hotels, activities, restaurants, photos, and research stay in Destinations and in any other trip. This trip’s nights, stay notes, and travel plans to and from it are removed, and the remaining route reconnects. Saved destinations can’t be added back to a trip yet.")}><Trash2 size={15} /></button></div></div>
+          <section><div className="section-heading"><div><p className="eyebrow">ONE STOP AT A TIME</p><h2>The destinations</h2></div><button className="button secondary small" onClick={() => open({ kind: "addStop" })}><Plus size={16} />Add destination</button></div>
+            {visits.length === 0 ? <div className="empty-state"><MapPin size={29} strokeWidth={1.4} /><h3>Where should this trip take you?</h3><p>Add your first destination. Your departure and return connections will appear automatically.</p><button className="text-button" onClick={() => open({ kind: "addStop" })}>Add a destination <ArrowRight size={16} /></button></div>
+              : <div className="destination-list">{visits.map(({ stop: visitStop, visit }, index) => { const label = formatSavedDestinationLabel(visit.city); return <article className="destination-card" key={visitStop.id} id={"destination-" + visitStop.id}><DestinationGallery destination={visit} /><div className="destination-top"><span className="stop-number">{String(index + 1).padStart(2, "0")}</span><div className="destination-name"><h3><Link href={"/destinations/" + visit.id}>{label}</Link></h3><p>{visitStop.stay || "Stay notes not added"}</p></div><div className="destination-tools"><button className="icon-button" disabled={busy || index === 0} aria-label={"Move " + label + " up"} onClick={() => void perform({ type: "stop.move", id: visitStop.id, direction: "up" }, "Route updated. Review the new travel connections.")}><ArrowUp size={15} /></button><button className="icon-button" disabled={busy || index === visits.length - 1} aria-label={"Move " + label + " down"} onClick={() => void perform({ type: "stop.move", id: visitStop.id, direction: "down" }, "Route updated. Review the new travel connections.")}><ArrowDown size={15} /></button><button className="icon-button" aria-label={"Edit " + label} onClick={() => open({ kind: "destination", item: visit, stop: visitStop })}><Pencil size={15} /></button><button className="icon-button" aria-label={"Remove " + label + " from this trip"} onClick={() => confirmDelete({ type: "stop.remove", id: visitStop.id }, "Remove “" + label + "” from this trip?", "Its hotels, activities, restaurants, photos, and research stay in Destinations and in any other trip. This trip’s nights, stay notes, and travel plans to and from it are removed, and the remaining route reconnects.")}><Trash2 size={15} /></button></div></div>
                 {visit.notes && <p className="destination-notes">{visit.notes}</p>}
                 <DestinationBudget snapshot={data} visit={visit} stop={visitStop} onShoppingEdit={() => open({ kind: "shoppingBudget", item: visit })} onMiscellaneousEdit={() => open({ kind: "miscellaneousBudget", item: visit, nights: visit.nights })} />
                 <EntryRequirementsPanel requirements={visit.entryRequirements} stay={visitStop} disabled={busy} onEdit={() => open({ kind: "entryRequirements", item: visit })} onClear={() => confirmDelete({ type: "destination.entryRequirements", id: visit.id, requirements: null }, "Clear entry requirements?", "This removes the recorded requirements, sources, and last checked date for " + label + ", in every trip that visits it.")} />
@@ -473,13 +489,15 @@ export default function PlannerApp({ initialData, initialBudgets, access = {}, d
         <TripRouteFields trip={editor.item} disabled={busy} /><Notes value={editor.item?.notes} />
       </>}
       {editor.kind === "destination" && <>
-        {editor.item && <p className="helper wide">The city, budget amounts, photos, and notes are shared by every trip that visits this destination.{editor.stop && " Stay notes and nights are for this trip only."}</p>}
-        <LocationField compactDestination label="City or destination" name="city" defaultValue={editor.item?.city} required disabled={busy} placeholder="Start typing a city, e.g. Vienna" helpText="Choose a suggestion or enter any destination." hint={editor.item ? "Changing the city changes it in every trip that visits this destination, and clears travel details for its incoming and outgoing connections." : undefined} />
-        {trip && (!editor.item || editor.stop) && <Field label="Stay notes" hint="For this trip only." wide><input name="stay" defaultValue={editor.stop?.stay} maxLength={120} placeholder="3 nights, or sometime in May" /></Field>}
-        <DestinationBudgetEditor stay={trip && (!editor.item || editor.stop) ? { trip, stops, stop: editor.stop } : undefined} destination={editor.item} selectedHotel={selectedHotel(editor.item?.id)} disabled={busy} />
+        <p className="helper wide">The city, budget amounts, photos, and notes are shared by every trip that visits this destination.{editor.stop && " Stay notes and nights are for this trip only."}</p>
+        <LocationField compactDestination label="City or destination" name="city" defaultValue={editor.item.city} required disabled={busy} placeholder="Start typing a city, e.g. Vienna" helpText="Choose a suggestion or enter any destination." hint="Changing the city changes it in every trip that visits this destination, and clears travel details for its incoming and outgoing connections." />
+        {trip && editor.stop && <Field label="Stay notes" hint="For this trip only." wide><input name="stay" defaultValue={editor.stop.stay} maxLength={120} placeholder="3 nights, or sometime in May" /></Field>}
+        <DestinationBudgetEditor stay={trip && editor.stop ? { trip, stops, stop: editor.stop } : undefined} destination={editor.item} selectedHotel={selectedHotel(editor.item.id)} disabled={busy} />
         <DestinationGalleryEditor destination={editor.item} draft={destinationGallery} onChange={setDestinationGallery} disabled={busy} />
-        <Notes value={editor.item?.notes} />
+        <Notes value={editor.item.notes} />
       </>}
+      {/* A trip visits its owner's destinations, so a city the owner has comes with everything saved for it. */}
+      {editor.kind === "addStop" && <LocationField compactDestination label="City or destination" name="city" required disabled={busy} placeholder="Start typing a city, e.g. Vienna" helpText="Choose a suggestion or enter any destination." hint={"If " + (tripAccess?.role === "editor" ? memberLabel(tripAccess.owner) + " already has" : "you already have") + " this destination, it’s added with everything saved for it. A city already in this trip opens instead."} />}
       {editor.kind === "newDestination" && <LocationField compactDestination label="City or destination" name="city" required disabled={busy} placeholder="Start typing a city, e.g. Vienna" helpText="Choose a suggestion or enter any destination." hint="If you already have this destination, its page opens instead." />}
       {editor.kind === "church" && <ChurchEditor item={editor.item} massTimes={massTimes} onTimesChange={setMassTimes} gallery={candidateGallery} onGalleryChange={setCandidateGallery} busy={busy} />}
       {editor.kind === "entryRequirements" && <EntryRequirementsEditor requirements={editor.item.entryRequirements} sources={researchLinks} onSourcesChange={setResearchLinks} disabled={busy} />}
@@ -517,6 +535,6 @@ export default function PlannerApp({ initialData, initialBudgets, access = {}, d
         {category !== "hotels" && <label className="checkbox-field wide"><input name="mustDo" type="checkbox" defaultChecked={editor.item?.mustDo ?? false} disabled={busy} /><span>Must do<small>A planning priority. Budget inclusion and list order stay separate.</small></span></label>}
         <label className="checkbox-field wide"><input name="included" type="checkbox" defaultChecked={editor.item?.included ?? false} /><span>{category === "hotels" ? "Choose this hotel for the budget" : category === "activities" ? "Include in itemized activity costs" : "Include in itemized restaurant costs"}<small>{category === "hotels" ? "Replaces the general estimate or other chosen hotel. Your general estimate stays saved." : category === "activities" ? "Applies only in Itemized activity costs mode. This does not change your budgeting method." : "Applies only in Itemized restaurant costs mode. This does not change your budgeting method."}</small></span></label>
       </>}
-    </div><div className="dialog-footer">{error && <p className="form-error" role="alert">{error}</p>}<div className="dialog-actions"><button type="button" className="button secondary" onClick={close} disabled={busy}>Cancel</button><button className={editor.kind === "delete" ? "button danger" : "button primary"} type="submit" disabled={busy}>{busy ? "Saving…" : editor.kind === "delete" ? (editor.mutation.type === "leg.clear" ? "Clear travel plan" : editor.mutation.type === "destination.entryRequirements" ? "Clear entry requirements" : editor.mutation.type === "destination.healthSafety" ? "Clear health and safety" : editor.mutation.type === "stop.remove" ? "Remove from trip" : "Delete") : editor.kind === "trip" && !editor.item ? "Create trip" : editor.kind === "newDestination" ? "Create destination" : editor.kind === "share" ? "Share" : "Save changes"}</button></div></div></form></Dialog>}
+    </div><div className="dialog-footer">{error && <p className="form-error" role="alert">{error}</p>}<div className="dialog-actions"><button type="button" className="button secondary" onClick={close} disabled={busy}>Cancel</button><button className={editor.kind === "delete" ? "button danger" : "button primary"} type="submit" disabled={busy}>{busy ? "Saving…" : editor.kind === "delete" ? (editor.mutation.type === "leg.clear" ? "Clear travel plan" : editor.mutation.type === "destination.entryRequirements" ? "Clear entry requirements" : editor.mutation.type === "destination.healthSafety" ? "Clear health and safety" : editor.mutation.type === "stop.remove" ? "Remove from trip" : "Delete") : editor.kind === "trip" && !editor.item ? "Create trip" : editor.kind === "addStop" ? "Add destination" : editor.kind === "newDestination" ? "Create destination" : editor.kind === "share" ? "Share" : "Save changes"}</button></div></div></form></Dialog>}
   </div>;
 }

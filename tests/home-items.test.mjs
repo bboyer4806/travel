@@ -4,11 +4,11 @@ import { DatabaseSync } from "node:sqlite";
 import test from "node:test";
 import { SCHEMA_VERSION, ValidationError } from "../src/lib/store.ts";
 import { createOwnedStore } from "./owned-store.mjs";
-import { fileDatabase, newItem, setup } from "./budget-fixtures.mjs";
+import { addCity, fileDatabase, newItem, setup } from "./budget-fixtures.mjs";
 import { calculateBudget } from "../src/lib/budget.ts";
 
 const tripInput = (overrides = {}) => ({ type: "trip.save", name: "Spring trip", dateLabel: "Spring 2027", homeCity: "Boston", travelers: 2, notes: "", ...overrides, ...newItem(overrides) });
-const destinationInput = (tripId, overrides = {}) => ({ type: "destination.save", tripId, city: "Vienna", stay: "3 nights", notes: "", ...overrides, ...newItem(overrides) });
+const addDestination = (store, tripId, { city = "Vienna", ...overrides } = {}) => addCity((input) => store.applyMutation(input).id, tripId, city, { stay: "3 nights", notes: "", ...overrides });
 const candidateInput = (destinationId, overrides = {}) => ({ type: "candidate.save", destinationId, category: "hotels", name: "Hotel", price: "200.33", address: "City center", url: "https://example.com", notes: "Research", included: true, ...overrides, ...newItem(overrides) });
 const homeInput = (tripId, overrides = {}) => ({ type: "homeItem.save", tripId, name: "Arrange pet care", price: "", notes: "Leave the spare key", completed: false, ...overrides, ...newItem(overrides) });
 const webp = new Uint8Array(Buffer.from("UklGRiIAAABXRUJQVlA4IBYAAAAwAQCdASoBAAEADsD+JaQAA3AAAAAA", "base64"));
@@ -16,7 +16,7 @@ const otherWebp = new Uint8Array(webp);
 otherWebp[otherWebp.length - 1] = 1;
 const item = (store, id) => store.getSnapshot().homeItems.find((entry) => entry.id === id);
 function pricedTrip(store, tripId) {
-  const destinationId = store.applyMutation(destinationInput(tripId)).id;
+  const destinationId = addDestination(store, tripId);
   store.applyMutation(candidateInput(destinationId));
   for (const leg of store.getSnapshot().legs.filter((entry) => entry.tripId === tripId)) {
     store.applyMutation({ type: "leg.save", id: leg.id, method: "Train", price: "100.01", departure: "Morning", arrival: "Afternoon", url: "", notes: "" });
@@ -187,7 +187,7 @@ test("deleting a trip cascades only its home items, while removing a destination
   try {
     const tripId = store.applyMutation(tripInput()).id;
     const otherTripId = store.applyMutation(tripInput({ name: "Another trip" })).id;
-    const destinationId = store.applyMutation(destinationInput(tripId)).id;
+    const destinationId = addDestination(store, tripId);
     const ownedIds = [store.applyMutation(homeInput(tripId)).id, store.applyMutation(homeInput(tripId, { price: "90", completed: true })).id];
     const otherId = store.applyMutation(homeInput(otherTripId, { price: "27.01" })).id;
     const otherItem = item(store, otherId);
@@ -240,7 +240,7 @@ test("schema 6 migration adds home items while preserving trips, research, itine
   let store = createOwnedStore(path);
   try {
     const tripId = store.applyMutation(tripInput()).id;
-    const destinationId = store.applyMutation(destinationInput(tripId, { image: webp })).id;
+    const destinationId = addDestination(store, tripId, { image: webp });
     const photos = [{ id: randomUUID(), data: webp }, { id: randomUUID(), data: otherWebp }];
     const candidateId = store.applyMutation(candidateInput(destinationId, { links: [{ id: randomUUID(), url: "https://example.com", description: "Booking research" }], gallery: { add: photos, remove: [], mainImageId: photos[1].id } })).id;
     const firstLeg = store.getSnapshot().legs.find((entry) => entry.tripId === tripId);

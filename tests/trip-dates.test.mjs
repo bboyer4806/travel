@@ -5,7 +5,7 @@ import { randomUUID } from "node:crypto";
 import { addNights, backfillDates, churchDateEligible, churchSundayDates, formatCalendarDate, sequenceDates } from "../src/lib/trip-dates.ts";
 import { ValidationError } from "../src/lib/store.ts";
 import { createOwnedStore, UNDO_SCHEMA_21 } from "./owned-store.mjs";
-import { newItem, setup, tripInput, destinationInput, destination, fileDatabase, candidateInput, destinationEdit, stopEdit, stop } from "./budget-fixtures.mjs";
+import { newItem, setup, tripInput, addDestination, destination, fileDatabase, candidateInput, destinationEdit, stopEdit, stop } from "./budget-fixtures.mjs";
 
 test("automatic sequence, calendar boundaries, same-day and unknown lengths", () => {
   const stops = [{ id: "Paris", nights: 3 }, { id: "Rome", nights: 2 }];
@@ -46,8 +46,8 @@ test("unknown or invalid ranges do not fabricate Sunday dates", () => {
 
 test("church Sunday dates follow start, nights and order edits without changing church details", t => {
   const { store, tripId } = setup(t);
-  const first = store.applyMutation(destinationInput(tripId, { city: "Paris", nights: 7 })).id;
-  const second = store.applyMutation(destinationInput(tripId, { city: "Rome", nights: 1 })).id;
+  const first = addDestination(store, tripId, { city: "Paris", nights: 7 });
+  const second = addDestination(store, tripId, { city: "Rome", nights: 1 });
   store.applyMutation({ type: "church.save", ...newItem(), destinationId: second, name: "Chapel", address: "", denomination: "", url: "", massTimes: [{ id: randomUUID(), day: "Sunday", time: "9:00 AM" }] });
   const churches = store.getSnapshot().churches;
   const sundays = id => churchSundayDates(stop(store, id));
@@ -73,9 +73,9 @@ test("church Sunday dates follow start, nights and order edits without changing 
 test("night/order/start edits recalculate the entire affected sequence and preserve saved options", t => {
   const {store,tripId}=setup(t);
   store.applyMutation(tripInput({id:tripId,startDate:"2027-06-01"}));
-  const first=store.applyMutation(destinationInput(tripId,{city:"Paris",nights:3})).id;
-  const second=store.applyMutation(destinationInput(tripId,{city:"Rome",nights:2})).id;
-  const third=store.applyMutation(destinationInput(tripId,{city:"Venice",nights:0})).id;
+  const first=addDestination(store, tripId,{city:"Paris",nights:3});
+  const second=addDestination(store, tripId,{city:"Rome",nights:2});
+  const third=addDestination(store, tripId,{city:"Venice",nights:0});
   store.applyMutation(candidateInput(second,"activities"));
   const items=store.getSnapshot().candidates;
   assert.equal(store.getSnapshot().trips[0].endDate,"2027-06-06");
@@ -98,7 +98,7 @@ test("night/order/start edits recalculate the entire affected sequence and prese
 test("server rejects date overrides, invalid start/nights and overflow atomically", t => {
   const {store,tripId}=setup(t);
   store.applyMutation(tripInput({id:tripId,startDate:"9999-12-30"}));
-  const id=store.applyMutation(destinationInput(tripId,{nights:1})).id;
+  const id=addDestination(store, tripId,{nights:1});
   const before=store.getSnapshot();
   for(const fields of [{nights:-1},{nights:1.5},{nights:"3"},{nights:NaN},{nights:3652059},{nights:2},{arrivalDate:"2027-06-01"},{departureDate:null}]) {
     assert.throws(()=>store.applyMutation(destinationEdit(id, {...fields})),ValidationError);
@@ -112,8 +112,8 @@ test("server rejects date overrides, invalid start/nights and overflow atomicall
 
 test("church placement uses inclusive Sundays and respects hiding through every date change",t=>{
   const {store,tripId}=setup(t);
-  const first=store.applyMutation(destinationInput(tripId,{nights:1})).id;
-  const second=store.applyMutation(destinationInput(tripId,{city:"Lyon",nights:0})).id;
+  const first=addDestination(store, tripId,{nights:1});
+  const second=addDestination(store, tripId,{city:"Lyon",nights:0});
   const visible=id=>destination(store,id).churchEnabled && churchDateEligible(stop(store,id));
   assert.equal(visible(first),true); assert.equal(visible(second),true,"unknown dates show Church");
   store.applyMutation(tripInput({id:tripId,startDate:"2027-06-05"}));
@@ -146,8 +146,8 @@ for (const consistent of [true,false]) test(`schema 14 date backfill, originals,
   const path=fileDatabase(t);
   let store=createOwnedStore(path);
   const tripId=store.applyMutation(tripInput()).id;
-  const first=store.applyMutation(destinationInput(tripId,{hotelNightlyAmount:"123.45",weatherHighF:0,weatherLowF:-12.5})).id;
-  const second=store.applyMutation(destinationInput(tripId,{city:"Rome"})).id;
+  const first=addDestination(store, tripId,{hotelNightlyAmount:"123.45",weatherHighF:0,weatherLowF:-12.5});
+  const second=addDestination(store, tripId,{city:"Rome"});
   const candidateId=store.applyMutation(candidateInput(first,"hotels")).id;
   const image=new Uint8Array([82,73,70,70,4,0,0,0,87,69,66,80]);
   store.applyMutation({type:"church.save",...newItem(),destinationId:first,name:"Chapel",address:"",denomination:"",url:"",massTimes:[],gallery:{add:[{id:randomUUID(),data:image}],remove:[]}});
@@ -187,7 +187,7 @@ for (const consistent of [true,false]) test(`schema 14 date backfill, originals,
 test("contrary legacy currency aborts the upgrade without relabeling amounts or advancing schema",t=>{
   const path=fileDatabase(t); let store=createOwnedStore(path);
   const tripId=store.applyMutation(tripInput()).id;
-  const id=store.applyMutation(destinationInput(tripId,{shoppingAmount:"123.45"})).id;
+  const id=addDestination(store, tripId,{shoppingAmount:"123.45"});
   store.close(); const db=new DatabaseSync(path);
   db.prepare("UPDATE destinations SET shoppingCurrency='KWD' WHERE id=?").run(id); db.exec("PRAGMA user_version=14");
   assert.throws(()=>createOwnedStore(path),/Unexpected non-USD data/);

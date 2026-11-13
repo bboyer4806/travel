@@ -1,11 +1,11 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { calculateFoodBudget, calculateFoodEstimate } from "../src/lib/budget.ts";
-import { setup, destination, destinationInput, candidateInput, validateMoney, verifyPersistence, destinationEdit, visit } from "./budget-fixtures.mjs";
+import { setup, destination, addDestination, candidateInput, validateMoney, verifyPersistence, destinationEdit, visit } from "./budget-fixtures.mjs";
 
 test("food methods preserve general estimates, items and selections without double-counting", (t)=>{
   const {store,tripId}=setup(t);
-  const id=store.applyMutation(destinationInput(tripId,{nights:3})).id;
+  const id=addDestination(store, tripId,{nights:3});
   assert.equal(destination(store,id).foodBudgetMode,"itemized");
   const item=store.applyMutation(candidateInput(id,"restaurants")).id;
   const unknown=store.applyMutation(candidateInput(id,"restaurants",{price:""})).id;
@@ -30,8 +30,8 @@ test("food methods preserve general estimates, items and selections without doub
 });
 test("food amount and mode validation is atomic",t=>{
   validateMoney(t,"foodDailyAmount","foodDailyMinor","foodCurrency");
-  const {store,tripId}=setup(t); const before=store.getSnapshot();
-  assert.throws(()=>store.applyMutation(destinationInput(tripId,{foodBudgetMode:"invalid"}))); assert.deepEqual(store.getSnapshot(),before);
+  const {store,tripId}=setup(t); const id=addDestination(store,tripId); const before=store.getSnapshot();
+  assert.throws(()=>store.applyMutation(destinationEdit(id,{foodBudgetMode:"invalid"}))); assert.deepEqual(store.getSnapshot(),before);
 });
 test("an unsafe food subtotal is never displayed as exact money",()=>assert.equal(calculateFoodEstimate({nights:3,foodDailyMinor:Number.MAX_SAFE_INTEGER,foodCurrency:"USD"}).subtotalMinor,null));
 test("food persists and upgrades additively with migration replay",t=>verifyPersistence(t,"foodDailyAmount","foodDailyMinor","foodCurrency",10,["foodBudgetMode","foodDailyMinor","foodCurrency"],{foodBudgetMode:"daily"}));

@@ -60,21 +60,24 @@ Repeat passing checks when subsequent changes affect their coverage or required 
   (`destinations.cityKey`, from `destinationKey` in `src/lib/destination-label.ts`), and trips visit
   them through `trip_stops`, which keep each trip's order, stay notes, nights and dates. A destination
   added to a trip belongs to the trip's owner, and one created in Destinations (TRA-106) to its creator;
-  an account opens one it owns or that a trip it can open visits. Removing a stop or deleting a trip
+  an account opens one it owns or that a trip it can open visits. Adding a city to a trip (`stop.add`,
+  TRA-107) visits the trip owner's destination for it, or adds one, as a stop without nights, and
+  returns the trip's existing stop there instead of adding another. Removing a stop or deleting a trip
   never deletes a destination or what is saved with it. Only its owner deletes a destination, and only
   while no trip visits it.
 - Application writes go through `mutatePlanner` in `src/app/actions.ts`, into `applyMutation`
   in `src/lib/store.ts`. A new operation adds a `Mutation` variant in `src/lib/types.ts` and
   a case in `validate`, `mutationScope` and `mutate` in the store. `mutationScope` finds the trip
   or destination a change applies to from saved rows; a change it doesn't place is refused.
-- A save that adds a trip, a destination to a trip, an idea, a church or an At home item sends the
+- A save that adds a trip, an idea, a church or an At home item sends the
   ID its editor gave it when it opened, with `create: true` (TRA-75). The store adds the item when no
   item has that ID, and the same save sent again after a lost response changes that item instead of
   adding another. Without `create`, a save changes a saved item and is refused when it no longer
   exists. A save without an ID comes from a page opened before this and is refused with
   `PLANNER_UPDATED` from `src/lib/planner-updated.ts`, the message `perform()` also shows for an
-  unrecognized action. `destination.create` instead opens the saved destination for its city, or
-  adds one with an ID the store gives it.
+  unrecognized action, as is a `destination.save` that adds a destination to a trip, from a page
+  opened before `stop.add`. `destination.create` and `stop.add` instead open the saved destination,
+  or the trip's stop, for their city, or add one with an ID the store gives it.
 - `src/lib/store.ts` is the application's database boundary. Home pages read `getHomeOverview`,
   trip and category pages read `getTripSnapshot`, Destinations pages read
   `getDestinationsOverview` and `getDestinationSnapshot`, and saves return only an ID or error.
@@ -116,7 +119,8 @@ schema and add a note for the new version, with only what its rollback adds to t
 - Tests are `tests/*.test.mjs` using `node:test`. They import TypeScript libraries directly and
   use in-memory or temporary on-disk databases from the shared `setup` and `fileDatabase` in
   `tests/budget-fixtures.mjs`; import those rather than copying them into a test file. A save that
-  adds an item spreads `newItem()` from there for its ID and `create`, as its editor sends them.
+  adds an item spreads `newItem()` from there for its ID and `create`, as its editor sends them, and
+  `addDestination` or `addCity` from there add a city to a trip with `stop.add`, then save its details.
   Planning tests use `createOwnedStore` from `tests/owned-store.mjs`, which reads and writes as the
   designated owner; access tests call `createStore(path, ownerEmail)` with several accounts, as
   `tests/sharing.test.mjs` does. Tests of older databases turn a new one back with

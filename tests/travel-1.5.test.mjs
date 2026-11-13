@@ -1,15 +1,13 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { createOwnedStore } from "./owned-store.mjs";
-import { newItem } from "./budget-fixtures.mjs";
+import { addCity, newItem } from "./budget-fixtures.mjs";
 import { calculateBudget } from "../src/lib/budget.ts";
 
 const trip = (name, startDate) => ({
   type: "trip.save", ...newItem(), name, startDate, dateLabel: "", homeCity: "New York", travelers: 2, notes: "",
 });
-const destination = (tripId, city, nights) => ({
-  type: "destination.save", ...newItem(), tripId, city, stay: "", notes: "", nights,
-});
+const destination = (store, tripId, city, nights) => addCity((input) => store.applyMutation(input).id, tripId, city, { nights });
 const hotel = (destinationId) => ({
   type: "candidate.save", ...newItem(), destinationId, category: "hotels", name: "Hotel",
   price: "100.50", address: "", url: "", notes: "", included: true,
@@ -20,9 +18,9 @@ test("scoped trip and destination snapshots omit unrelated data", (t) => {
   t.after(() => store.close());
   const first = store.applyMutation(trip("Europe", "2027-06-01")).id;
   const second = store.applyMutation(trip("Asia", "2027-08-01")).id;
-  const rome = store.applyMutation(destination(first, "Rome", 3)).id;
-  const paris = store.applyMutation(destination(first, "Paris", 2)).id;
-  const tokyo = store.applyMutation(destination(second, "Tokyo", 5)).id;
+  const rome = destination(store, first, "Rome", 3);
+  const paris = destination(store, first, "Paris", 2);
+  const tokyo = destination(store, second, "Tokyo", 5);
   store.applyMutation(hotel(rome));
   store.applyMutation(hotel(paris));
   store.applyMutation(hotel(tokyo));
@@ -68,8 +66,8 @@ test("only the affected trip's schedule changes after mutations", (t) => {
   t.after(() => store.close());
   const first = store.applyMutation(trip("First", "2027-06-01")).id;
   const second = store.applyMutation(trip("Second", "2027-07-01")).id;
-  const firstStop = store.applyMutation(destination(first, "Rome", 2)).id;
-  const otherStop = store.applyMutation(destination(second, "Tokyo", 3)).id;
+  const firstStop = destination(store, first, "Rome", 2);
+  const otherStop = destination(store, second, "Tokyo", 3);
   const otherDate = store.getSnapshot().stops.find((item) => item.id === otherStop).arrivalDate;
   store.applyMutation({ type: "destination.save", id: firstStop, stopId: firstStop, nights: 4 });
   assert.equal(store.getSnapshot().stops.find((item) => item.id === otherStop).arrivalDate, otherDate);

@@ -34,10 +34,12 @@ const tripInput = { type: "trip.save", name: "Review smoke trip", dateLabel: "",
 // A new item carries the ID its editor gives it.
 const newItem = () => ({ id: randomUUID(), create: true });
 const tripId = store.applyMutation(owner.id, { ...tripInput, ...newItem() }).id;
-const destinationId = store.applyMutation(owner.id, {
-  type: "destination.save", ...newItem(), tripId, city: "Vienna", notes: "", stay: "",
+// A city added to a trip is a new destination whose first stop shares its ID.
+const destinationId = store.applyMutation(owner.id, { type: "stop.add", tripId, city: "Vienna" }).id;
+store.applyMutation(owner.id, {
+  type: "destination.save", id: destinationId,
   image: Buffer.from("UklGRh4AAABXRUJQVlA4TBEAAAAvAUAAAAfQtSZVrP+BiOh/AAA=", "base64"),
-}).id;
+});
 const otherTripId = store.applyMutation(owner.id, { ...tripInput, ...newItem(), name: "Other smoke trip" }).id;
 store.close();
 const manifest = JSON.parse(readFileSync(".next/server/server-reference-manifest.json", "utf8"));

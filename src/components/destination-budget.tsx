@@ -183,25 +183,25 @@ export function DestinationBudget({ snapshot, visit, stop, onShoppingEdit, onMis
   </div>;
 }
 
-/** One trip's stay at a destination while it is edited: the trip, its stops in route order, and the stop, absent while adding one. */
-type TripStay = { trip: Trip; stops: TripStop[]; stop?: TripStop };
+/** One trip's stay at a destination while it is edited: the trip, its stops in route order, and the stop. */
+type TripStay = { trip: Trip; stops: TripStop[]; stop: TripStop };
 
 /** A stay's nights while editing: the text as typed, and `value`, the number previews use, unknown while blank or outside a trip. */
 function useStayNights(stay: TripStay | undefined) {
-  const [input, setInput] = useState(String(stay?.stop?.nights ?? ""));
+  const [input, setInput] = useState(String(stay?.stop.nights ?? ""));
   return { input, setInput, value: !stay || input === "" ? null : Number(input) };
 }
 
 /** A trip stay's Nights field, with a preview of the dates they give it. */
 function StayNightsField({ stay, nights }: { stay: TripStay; nights: ReturnType<typeof useStayNights> }) {
-  const previewStops = stay.stop ? stay.stops.map((stop) => stop.id === stay.stop?.id ? { ...stop, nights: nights.value } : stop) : [...stay.stops, { id: "new", nights: nights.value }];
+  const previewStops = stay.stops.map((stop) => stop.id === stay.stop.id ? { ...stop, nights: nights.value } : stop);
   let dates = { arrivalDate: null as string | null, departureDate: null as string | null };
   let dateError = "";
-  try { dates = sequenceDates(stay.trip.startDate, previewStops).destinations.find((stop) => stop.id === (stay.stop?.id ?? "new")) ?? dates; }
+  try { dates = sequenceDates(stay.trip.startDate, previewStops).destinations.find((stop) => stop.id === stay.stop.id) ?? dates; }
   catch (cause) { dateError = cause instanceof Error ? cause.message : "Enter valid nights."; }
   return <>
     <label className="field wide"><span>Nights</span><input name="nights" type="number" min="0" max="3652058" step="1" value={nights.input} onChange={(event) => nights.setInput(event.target.value)} placeholder="Unknown" /><small>Zero is a same-day visit. Leave blank if undecided.</small></label>
-    <div className="wide" aria-live="polite"><DestinationDates stop={{ ...dates, nights: nights.value, legacyArrivalDate: stay.stop?.legacyArrivalDate ?? null, legacyDepartureDate: stay.stop?.legacyDepartureDate ?? null }} />{dateError && <p className="form-error">{dateError}</p>}</div>
+    <div className="wide" aria-live="polite"><DestinationDates stop={{ ...dates, nights: nights.value, legacyArrivalDate: stay.stop.legacyArrivalDate, legacyDepartureDate: stay.stop.legacyDepartureDate }} />{dateError && <p className="form-error">{dateError}</p>}</div>
   </>;
 }
 
@@ -240,9 +240,9 @@ function MiscellaneousFields({ destination, nights }: { destination?: Destinatio
 
 /**
  * Budget amounts and methods, shared by every trip that visits the destination. In a trip, `stay` adds that trip's
- * nights for this stop, with previews of its dates; `stop` is absent while adding one.
+ * nights for this stop, with previews of its dates.
  */
-export function DestinationBudgetEditor({ destination, selectedHotel, disabled, stay }: { destination?: Destination; selectedHotel?: Candidate; disabled: boolean; stay?: TripStay }) {
+export function DestinationBudgetEditor({ destination, selectedHotel, disabled, stay }: { destination: Destination; selectedHotel?: Candidate; disabled: boolean; stay?: TripStay }) {
   const nights = useStayNights(stay);
   return <fieldset className="destination-budget-editor wide" disabled={disabled}>
     <legend>{stay ? "Dates & destination budget" : "Destination budget"}</legend>
@@ -263,7 +263,7 @@ export function DestinationBudgetEditor({ destination, selectedHotel, disabled, 
  * Accommodation's own editor: the general nightly hotel estimate, shared by every trip that visits the destination,
  * with a preview of the stay estimate. In a trip, `stay` adds that trip's nights for this stop, with previews of its dates.
  */
-export function AccommodationBudgetEditor({ destination, selectedHotel, disabled, stay }: { destination: Destination; selectedHotel?: Candidate; disabled: boolean; stay?: TripStay & { stop: TripStop } }) {
+export function AccommodationBudgetEditor({ destination, selectedHotel, disabled, stay }: { destination: Destination; selectedHotel?: Candidate; disabled: boolean; stay?: TripStay }) {
   const nights = useStayNights(stay);
   return <fieldset className="destination-budget-editor wide" disabled={disabled}>
     <legend>Accommodation budget</legend>
@@ -286,7 +286,7 @@ export function MiscellaneousBudgetEditor({ destination, nights, disabled }: { d
 }
 
 /** One trip's nights at a destination, with a preview of the dates they give. */
-export function StayNightsEditor({ stay, disabled }: { stay: TripStay & { stop: TripStop }; disabled: boolean }) {
+export function StayNightsEditor({ stay, disabled }: { stay: TripStay; disabled: boolean }) {
   const nights = useStayNights(stay);
   return <fieldset className="destination-budget-editor wide" disabled={disabled}>
     <legend>Nights &amp; dates</legend>

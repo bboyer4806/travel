@@ -5,10 +5,10 @@ import test from "node:test";
 import { calculateBudget, calculateDestinationBudget } from "../src/lib/budget.ts";
 import { SCHEMA_VERSION, ValidationError } from "../src/lib/store.ts";
 import { createOwnedStore } from "./owned-store.mjs";
-import { fileDatabase, newItem, setup, destinationEdit, stopEdit } from "./budget-fixtures.mjs";
+import { addCity, fileDatabase, newItem, setup, destinationEdit, stopEdit } from "./budget-fixtures.mjs";
 
 const tripInput = (overrides = {}) => ({ type: "trip.save", name: "Weather planning", dateLabel: "2027", homeCity: "Boston", travelers: 2, notes: "", ...overrides, ...newItem(overrides) });
-const destinationInput = (tripId, overrides = {}) => ({ type: "destination.save", tripId, city: "Reykjavik", stay: "A few nights", notes: "", ...overrides, ...newItem(overrides) });
+const addDestination = (store, tripId, { city = "Reykjavik", ...overrides } = {}) => addCity((input) => store.applyMutation(input).id, tripId, city, { stay: "A few nights", notes: "", ...overrides });
 const emptyWeather = { weatherHighF: null, weatherLowF: null, weatherRainfall: "", weatherPeriod: "", weatherSource: "" };
 const winterWeather = { weatherHighF: 0, weatherLowF: -12.5, weatherRainfall: "Light snow; occasional rain", weatherPeriod: "January historical averages", weatherSource: "Local climate archive" };
 const dates = { nights: 3 };
@@ -18,7 +18,7 @@ const weather = (store, id) => Object.fromEntries(Object.keys(emptyWeather).map(
 
 test("optional weather defaults to missing, preserves zero, and accepts partial negative and decimal temperatures", (t) => {
   const { store, tripId } = setup(t, tripInput());
-  const id = store.applyMutation(destinationInput(tripId)).id;
+  const id = addDestination(store, tripId);
   assert.deepEqual(weather(store, id), emptyWeather);
   for (const [fields, expected] of [
     [{ weatherLowF: 0 }, { ...emptyWeather, weatherLowF: 0 }],
@@ -32,7 +32,7 @@ test("optional weather defaults to missing, preserves zero, and accepts partial 
     store.applyMutation(destinationEdit(id, { ...fields }));
     assert.deepEqual(weather(store, id), expected);
   }
-  const partialId = store.applyMutation(destinationInput(tripId, { city: "Akureyri", weatherLowF: -40 })).id;
+  const partialId = addDestination(store, tripId, { city: "Akureyri", weatherLowF: -40 });
   assert.deepEqual(weather(store, partialId), { ...emptyWeather, weatherLowF: -40 });
 });
 
@@ -41,10 +41,10 @@ test("weather save, edit, per-field omission, and clearing survive closing and r
   let store = createOwnedStore(path);
   try {
     const tripId = store.applyMutation(tripInput()).id;
-    const id = store.applyMutation(destinationInput(tripId, {
+    const id = addDestination(store, tripId, {
       ...winterWeather, weatherRainfall: "  Light snow; occasional rain  ",
       weatherPeriod: " January historical averages ", weatherSource: " Local climate archive ",
-    })).id;
+    });
     const changes = [
       [{}, winterWeather],
       [{ weatherRainfall: "  2 inches on average\nBring waterproof shoes  " }, { ...winterWeather, weatherRainfall: "2 inches on average\nBring waterproof shoes" }],
@@ -67,7 +67,7 @@ test("weather save, edit, per-field omission, and clearing survive closing and r
 
 test("invalid weather types, text lengths, and high/low combinations reject the entire save", (t) => {
   const { store, tripId } = setup(t, tripInput());
-  const id = store.applyMutation(destinationInput(tripId, { ...winterWeather, image: webp })).id;
+  const id = addDestination(store, tripId, { ...winterWeather, image: webp });
   const before = store.getSnapshot();
   const image = store.getDestinationImage(id);
   const invalid = [
@@ -97,7 +97,7 @@ test("invalid weather types, text lengths, and high/low combinations reject the 
 
 test("date changes and other destination editors preserve manually entered weather and its recorded period", (t) => {
   const { store, tripId } = setup(t, tripInput());
-  const id = store.applyMutation(destinationInput(tripId, { ...dates, ...winterWeather })).id;
+  const id = addDestination(store, tripId, { ...dates, ...winterWeather });
   for (const fields of [
     { nights: 3 },
     { nights: null },
@@ -118,11 +118,11 @@ test("date changes and other destination editors preserve manually entered weath
 
 test("weather edits leave existing destination data, routes, choices, and separated currency budgets unchanged", (t) => {
   const { store, tripId } = setup(t, tripInput());
-  const id = store.applyMutation(destinationInput(tripId, {
+  const id = addDestination(store, tripId, {
     ...dates, hotelNightlyAmount: "100", miscDailyAmount: "10",
     activitiesBudgetMode: "general", activitiesGeneralAmount: "20",
     foodBudgetMode: "daily", foodDailyAmount: "30", shoppingAmount: "12.34", image: webp,
-  })).id;
+  });
   store.applyMutation({ type: "candidate.save", ...newItem(), destinationId: id, category: "activities", name: "Museum", price: "999", address: "", url: "", notes: "Preserve this idea", included: true });
   for (const leg of store.getSnapshot().legs) store.applyMutation({ type: "leg.save", id: leg.id, method: "Flight", price: "100", departure: "Morning", arrival: "Evening", url: "", notes: "Booked" });
   store.applyMutation({ type: "homeItem.save", ...newItem(), tripId, name: "Pause mail", price: "", notes: "", completed: false });
@@ -146,11 +146,11 @@ test("schema 12 upgrade defaults weather to missing and preserves old data; migr
   let store = createOwnedStore(path);
   try {
     const tripId = store.applyMutation(tripInput()).id;
-    const id = store.applyMutation(destinationInput(tripId, {
+    const id = addDestination(store, tripId, {
       ...dates, image: webp, hotelNightlyAmount: "125.25", miscDailyAmount: "10.01",
       activitiesBudgetMode: "general", activitiesGeneralAmount: "55.55",
       foodBudgetMode: "daily", foodDailyAmount: "20", shoppingAmount: "12.34",
-    })).id;
+    });
     const hotelPhoto = { id: randomUUID(), data: webp };
     const candidateId = store.applyMutation({ type: "candidate.save", ...newItem(), destinationId: id, category: "hotels", name: "Saved hotel", price: "123.45", address: "Main street", url: "", notes: "", included: true, gallery: { add: [hotelPhoto], remove: [] }, links: [{ id: randomUUID(), url: "https://example.com/hotel", description: "Booking" }] }).id;
     store.applyMutation({ type: "homeItem.save", ...newItem(), tripId, name: "House sitting", price: "23.95", notes: "Leave a key", completed: true });

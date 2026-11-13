@@ -5,7 +5,7 @@ import sharp from "sharp";
 import { formatMegabytes, IMAGE_UPLOAD_TYPES, MAX_CANDIDATE_IMAGES, MAX_DESTINATION_IMAGES, MAX_GALLERY_UPLOAD_BYTES, MAX_IMAGE_UPLOAD_BYTES, MAX_STORED_IMAGE_BYTES } from "../src/lib/image-limits.ts";
 import { prepareCandidateGallery } from "../src/lib/candidate-gallery-upload.ts";
 import { prepareImage } from "../src/lib/image-upload.ts";
-import { candidateInput, destinationInput, setup, destinationEdit } from "./budget-fixtures.mjs";
+import { candidateInput, addDestination, setup, destinationEdit } from "./budget-fixtures.mjs";
 
 const webp = new Uint8Array(Buffer.from("UklGRiIAAABXRUJQVlA4IBYAAAAwAQCdASoBAAEADsD+JaQAA3AAAAAA", "base64"));
 const photo = (data = webp) => ({ id: randomUUID(), data });
@@ -39,7 +39,7 @@ test("uploads accept every shared type and state the shared limits they enforce"
 
 test("the store keeps saved photos within the shared limits and states them", (t) => {
   const { store, tripId } = setup(t);
-  const destinationId = store.applyMutation(destinationInput(tripId)).id;
+  const destinationId = addDestination(store, tripId);
   const ideaId = store.applyMutation(candidateInput(destinationId, "activities")).id;
   const saveDestination = (add) => store.applyMutation(destinationEdit(destinationId, { gallery: { add, remove: [] } }));
   const saveIdea = (add) => store.applyMutation(candidateInput(destinationId, "activities", { id: ideaId, gallery: { add, remove: [] } }));

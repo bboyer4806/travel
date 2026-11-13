@@ -47,10 +47,8 @@ export type Mutation =
  | { type: "homeItem.save"; id: string; create?: true; tripId: string; name: string; price: string; notes: string; completed: boolean }
  | { type: "homeItem.delete"; id: string; tripId: string }
  | { type: "homeItem.complete"; id: string; tripId: string; completed: boolean }
- // Adds a new destination to a trip as its last stop. Its stop shares its ID.
- | ({ type: "destination.save"; id: string; create: true; tripId: string; stopId?: undefined; city: string } & DestinationFields & StopFields)
  // Changes a saved destination everywhere it is used, and with `stopId` that trip's stay notes and nights too.
- | ({ type: "destination.save"; id: string; create?: undefined; tripId?: undefined; stopId?: string } & DestinationFields & StopFields)
+ | ({ type: "destination.save"; id: string; stopId?: string } & DestinationFields & StopFields)
  // Saves a destination outside any trip. A city the account already has a destination for opens that one instead.
  | { type: "destination.create"; city: string }
  // Deletes a destination no trip visits, with everything saved for it. Only its owner can.
@@ -60,6 +58,9 @@ export type Mutation =
  | { type: "destination.churchVisibility"; id: string; enabled: boolean }
  | { type: "church.save"; id: string; create?: true; destinationId: string; name: string; address: string; denomination: string; url: string; massTimes: MassTime[]; gallery?: CandidateGalleryUpdate }
  | { type: "church.delete"; id: string; destinationId: string }
+ // Adds a city to a trip as its last stop, without stay notes or nights: the trip owner's saved destination for the
+ // city, or a new one. A city the trip already visits opens that stop instead of adding another.
+ | { type: "stop.add"; tripId: string; city: string }
  | { type: "stop.move"; id: string; direction: "up" | "down" }
  // Removes a destination from one trip. The destination and everything saved with it stay.
  | { type: "stop.remove"; id: string }

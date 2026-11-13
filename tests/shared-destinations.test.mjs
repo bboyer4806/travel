@@ -5,7 +5,7 @@ import test from "node:test";
 import { calculateBudget, calculateDestinationBudget, tripVisits } from "../src/lib/budget.ts";
 import { createStore, SCHEMA_VERSION } from "../src/lib/store.ts";
 import { churchDateEligible } from "../src/lib/trip-dates.ts";
-import { fileDatabase, newItem } from "./budget-fixtures.mjs";
+import { addCity, fileDatabase, newItem } from "./budget-fixtures.mjs";
 import { OWNER_EMAIL, UNDO_SCHEMA_21 } from "./owned-store.mjs";
 
 const NOT_AVAILABLE = { name: "ValidationError", message: "This item no longer exists or isn't shared with you. Please refresh and try again." };
@@ -27,7 +27,7 @@ function legacyPlans(t) {
   const as = (account) => (input) => store.applyMutation(account, input).id;
   const m = as(owner);
   const trip = (name, startDate, save = m) => save({ type: "trip.save", ...newItem(), name, startDate, dateLabel: "", homeCity: "Boston", travelers: 2, notes: "" });
-  const add = (tripId, city, fields = {}, save = m) => save({ type: "destination.save", tripId, city, stay: "", notes: "", ...fields, ...newItem(fields) });
+  const add = (tripId, city, fields = {}, save = m) => addCity(save, tripId, city, fields);
   const idea = (destinationId, category, name, fields = {}) => m({ type: "candidate.save", destinationId, category, name, price: "10", address: "", url: "", notes: "", included: false, ...fields, ...newItem(fields) });
   const church = (destinationId, name, fields = {}) => m({ type: "church.save", destinationId, name, address: "", denomination: "", url: "", massTimes: [], ...fields, ...newItem(fields) });
   // May 2, 2027 is a Sunday and October 4, 2027 a Monday.
@@ -225,15 +225,14 @@ test("each account has one destination per city, and same-named cities in differ
   const other = store.authorizeAccount("other@example.com").id;
   const change = (input, account = owner) => store.applyMutation(account, input).id;
   const trip = (account = owner) => change({ type: "trip.save", ...newItem(), name: "Trip", dateLabel: "", homeCity: "Boston", travelers: 2, notes: "" }, account);
-  const add = (tripId, city, account = owner) => change({ type: "destination.save", ...newItem(), tripId, city, stay: "", notes: "" }, account);
+  const add = (tripId, city, account = owner) => change({ type: "stop.add", tripId, city }, account);
   const first = trip(), second = trip();
   const paris = add(first, "Paris, Ile-de-France, France");
-  const before = store.getSnapshot();
-  // A spelling that differs only in case or spacing is the same city; adding a saved city to a trip waits for TRA-107.
-  for (const city of [" paris ,  ILE-DE-FRANCE,france ", "Paris, Ile-de-France, France"]) {
-    assert.throws(() => add(second, city), { name: "ValidationError", message: "“Paris, Ile-de-France, France” is already a saved destination. Adding a saved destination to a trip isn't available yet." });
-  }
-  assert.deepEqual(store.getSnapshot(), before);
+  // A spelling that differs only in case or spacing is the same city, so another trip visits the same destination.
+  const secondParis = add(second, " paris ,  ILE-DE-FRANCE,france ");
+  assert.equal(add(second, "Paris, Ile-de-France, France"), secondParis, "once");
+  assert.deepEqual(store.getSnapshot().stops.map((item) => item.destinationId), [paris, paris]);
+  assert.deepEqual(store.getSnapshot().destinations.map((item) => item.id), [paris]);
   // A different region, or a manually entered name, is a different destination.
   const texas = add(second, "Paris, Texas, United States");
   add(second, "Paris");
@@ -277,7 +276,7 @@ test("people a trip is shared with work on its destinations, which stay the owne
   // They edit it like the owner, and what they add to the trip is the owner's.
   change({ type: "destination.save", id: ids.springLisbon, notes: "From the editor" }, editor);
   assert.equal(store.getDestinationSnapshot(plans.owner, ids.springLisbon).data.destinations[0].notes, "From the editor");
-  const coimbra = change({ type: "destination.save", ...newItem(), tripId: ids.spring, city: "Coimbra", stay: "", notes: "" }, editor).id;
+  const coimbra = change({ type: "stop.add", tripId: ids.spring, city: "Coimbra" }, editor).id;
   assert.deepEqual(store.getDestinationsOverview(plans.owner).access[coimbra], { role: "owner" });
   // Not through a stay in a trip they can't open.
   assert.throws(() => change({ type: "destination.save", id: ids.springLisbon, stopId: ids.autumnLisbon, nights: 1 }, editor), NOT_AVAILABLE);
@@ -303,7 +302,7 @@ test("a destination created outside a trip is its creator's, and only its owner 
   const other = store.authorizeAccount("other@example.com").id;
   const change = (input, account = owner) => store.applyMutation(account, input).id;
   const tripId = change({ type: "trip.save", ...newItem(), name: "Trip", dateLabel: "", homeCity: "Boston", travelers: 2, notes: "" });
-  const lisbon = change({ type: "destination.save", ...newItem(), tripId, city: "Lisbon, Lisbon, Portugal", stay: "", notes: "" });
+  const lisbon = change({ type: "stop.add", tripId, city: "Lisbon, Lisbon, Portugal" });
   change({ type: "trip.share", tripId, email: "editor@example.com" });
   const porto = change({ type: "destination.create", city: "Porto, Porto, Portugal" });
 
@@ -322,6 +321,50 @@ test("a destination created outside a trip is its creator's, and only its owner 
   change({ type: "destination.delete", id: porto });
   change({ type: "destination.delete", id: otherPorto }, other);
   assert.deepEqual(store.getSnapshot().destinations.map((item) => item.id).sort(), [lisbon, editorLisbon].sort());
+});
+
+test("a city added to a trip is its owner's destination, with what the owner saved for it, whoever on the trip adds it", (t) => {
+  const store = createStore(":memory:", OWNER_EMAIL);
+  t.after(() => store.close());
+  const owner = store.authorizeAccount(OWNER_EMAIL).id;
+  const editor = store.authorizeAccount("editor@example.com").id;
+  const other = store.authorizeAccount("other@example.com").id;
+  const change = (input, account = owner) => store.applyMutation(account, input).id;
+  const trip = (account = owner) => change({ type: "trip.save", ...newItem(), name: "Trip", dateLabel: "", homeCity: "Boston", travelers: 2, notes: "" }, account);
+  const tripId = trip();
+  change({ type: "trip.share", tripId, email: "editor@example.com" });
+  // The owner researched Lisbon in Destinations, and the editor has a Lisbon of their own.
+  const lisbon = change({ type: "destination.create", city: "Lisbon, Lisbon, Portugal" });
+  change({ type: "destination.save", id: lisbon, notes: "The owner's research", hotelNightlyAmount: "150" });
+  const editorLisbon = change({ type: "destination.create", city: "Lisbon, Lisbon, Portugal" }, editor);
+  assert.equal(store.getDestinationSnapshot(editor, lisbon), undefined);
+
+  // Added by the editor, the trip visits the owner's Lisbon, with the owner's research, never the editor's own.
+  const stop = change({ type: "stop.add", tripId, city: "lisbon, LISBON, portugal" }, editor);
+  const { data } = store.getTripSnapshot(editor, tripId);
+  assert.deepEqual(data.stops.map((item) => [item.id, item.destinationId, item.nights]), [[stop, lisbon, null]]);
+  assert.deepEqual([data.destinations[0].notes, data.destinations[0].hotelNightlyMinor], ["The owner's research", 15000]);
+  assert.deepEqual(store.getDestinationSnapshot(editor, lisbon).access, { role: "editor", owner: { email: OWNER_EMAIL, name: null } });
+  assert.deepEqual(store.getDestinationSnapshot(editor, editorLisbon).data.stops, [], "the editor's own Lisbon is in no trip");
+  // A city new to the owner is a new destination of the owner's.
+  const porto = change({ type: "stop.add", tripId, city: "Porto, Porto, Portugal" }, editor);
+  assert.deepEqual(store.getDestinationsOverview(owner).access[porto], { role: "owner" });
+
+  // Someone the trip isn't shared with can't add to it, and their own trips never visit the owner's destinations.
+  const before = store.getSnapshot();
+  assert.throws(() => change({ type: "stop.add", tripId, city: "Sintra" }, other), NOT_AVAILABLE);
+  assert.deepEqual(store.getSnapshot(), before);
+  const theirLisbon = change({ type: "stop.add", tripId: trip(other), city: "Lisbon, Lisbon, Portugal" }, other);
+  assert.equal(new Set([lisbon, editorLisbon, theirLisbon]).size, 3);
+  assert.equal(store.getDestinationSnapshot(other, lisbon), undefined);
+});
+
+test("adding a city an upgraded trip visits twice opens its first stay there", (t) => {
+  const plans = legacyPlans(t);
+  const { store, change } = upgraded(t, plans);
+  const before = store.getSnapshot();
+  assert.equal(change({ type: "stop.add", tripId: plans.ids.loop, city: "ROME" }).id, plans.ids.firstRome);
+  assert.deepEqual(store.getSnapshot(), before);
 });
 
 test("an upgrade that would leave saved items without their parents is refused, changing nothing", (t) => {

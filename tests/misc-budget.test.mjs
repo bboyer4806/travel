@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 import test from "node:test";
 import { calculateBudget, calculateDestinationBudget, calculateFoodEstimate, calculateHotelEstimate, calculateMiscellaneous } from "../src/lib/budget.ts";
-import { newItem, setup, tripInput, destinationInput, candidateInput, stopEdit, visit } from "./budget-fixtures.mjs";
+import { newItem, setup, tripInput, addDestination, candidateInput, destinationEdit, stopEdit, visit } from "./budget-fixtures.mjs";
 
 // The largest amount the store accepts, in cents, and the most nights it can multiply while the subtotal stays exact.
 const largestAmountMinor = 10_000_000_000;
@@ -26,9 +26,9 @@ test("miscellaneous and food subtotals too large to stay exact are unknown, neve
 });
 test("all USD categories reconcile exactly once, isolate trips, and retain active-source semantics",t=>{
  const {store,tripId}=setup(t);
- const id=store.applyMutation(destinationInput(tripId,{nights:3,hotelNightlyAmount:"100",miscDailyAmount:"10",foodBudgetMode:"daily",foodDailyAmount:"40",activitiesBudgetMode:"general",activitiesGeneralAmount:"50",shoppingAmount:"25"})).id;
+ const id=addDestination(store, tripId,{nights:3,hotelNightlyAmount:"100",miscDailyAmount:"10",foodBudgetMode:"daily",foodDailyAmount:"40",activitiesBudgetMode:"general",activitiesGeneralAmount:"50",shoppingAmount:"25"});
  const other=store.applyMutation(tripInput({name:"Other"})).id;
- store.applyMutation(destinationInput(other,{city:"Lyon",nights:99,hotelNightlyAmount:"9999"}));
+ addDestination(store, other,{city:"Lyon",nights:99,hotelNightlyAmount:"9999"});
  store.applyMutation(candidateInput(id,"restaurants",{price:"9999"}));
  store.applyMutation(candidateInput(id,"activities",{price:""}));
  store.applyMutation(candidateInput(id,"hotels",{price:"9999",included:false}));
@@ -54,10 +54,11 @@ for (const [label, amount, message, subtotal] of [
 ]) test(`destination saves reject a ${label} subtotal too large to stay exact, keeping saved data`, t => {
  const { store, tripId } = setup(t);
  const tooLarge = { name: "ValidationError", message };
- const empty = store.getSnapshot();
- assert.throws(() => store.applyMutation(destinationInput(tripId, { nights: exactNights + 1, [amount]: "100000000" })), tooLarge);
- assert.deepEqual(store.getSnapshot(), empty, "no partial destination is created");
- const id = store.applyMutation(destinationInput(tripId, { nights: exactNights, [amount]: "100000000" })).id;
+ const id = addDestination(store, tripId, { nights: exactNights + 1 });
+ const unpriced = store.getSnapshot();
+ assert.throws(() => store.applyMutation(destinationEdit(id, { [amount]: "100000000" })), tooLarge);
+ assert.deepEqual(store.getSnapshot(), unpriced, "a rejected amount keeps the saved destination");
+ store.applyMutation(stopEdit(id, { nights: exactNights, [amount]: "100000000" }));
  assert.equal(subtotal(visit(store, id)), exactNights * largestAmountMinor, "the largest exact subtotal is accepted");
  const saved = store.getSnapshot();
  assert.throws(() => store.applyMutation(stopEdit(id, { nights: exactNights + 1 })), tooLarge);
@@ -65,7 +66,7 @@ for (const [label, amount, message, subtotal] of [
 });
 test("budgets for an unknown trip count one missing estimate and are never complete, and a stop needs its destination", t => {
  const { store, tripId } = setup(t);
- store.applyMutation(destinationInput(tripId, { nights: 3, hotelNightlyAmount: "100", miscDailyAmount: "10" }));
+ addDestination(store, tripId, { nights: 3, hotelNightlyAmount: "100", miscDailyAmount: "10" });
  const snapshot = store.getSnapshot();
  assert.throws(() => calculateBudget({ ...snapshot, destinations: [] }, tripId), /must come with the destination it visits/);
  const budget = calculateBudget(snapshot, randomUUID());

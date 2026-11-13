@@ -1,11 +1,11 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { calculateBudget, calculateAccommodation } from "../src/lib/budget.ts";
-import { setup, destination, tripInput, destinationInput, candidateInput, validateMoney, destinationEdit, stopEdit, stop, visit } from "./budget-fixtures.mjs";
+import { setup, destination, tripInput, addDestination, candidateInput, validateMoney, destinationEdit, stopEdit, stop, visit } from "./budget-fixtures.mjs";
 
 test("hotel estimates use entered nights, independently of dates, notes and party size", (t) => {
   const {store, tripId} = setup(t);
-  const id = store.applyMutation(destinationInput(tripId, {nights:3, hotelNightlyAmount:"100.25"})).id;
+  const id = addDestination(store, tripId, {nights:3, hotelNightlyAmount:"100.25"});
   const total = () => calculateAccommodation(store.getSnapshot(), visit(store, id)).totalMinor;
   assert.equal(total(),30075);
   store.applyMutation(stopEdit(id, {nights:5})); assert.equal(total(),50125);
@@ -18,7 +18,7 @@ test("hotel estimates use entered nights, independently of dates, notes and part
 });
 test("chosen hotels replace rather than add to the estimate; removal restores current nights", (t) => {
   const {store,tripId}=setup(t);
-  const id=store.applyMutation(destinationInput(tripId,{nights:3,hotelNightlyAmount:"100.25"})).id;
+  const id=addDestination(store, tripId,{nights:3,hotelNightlyAmount:"100.25"});
   const first=store.applyMutation(candidateInput(id,"hotels",{included:false,price:"200.33"})).id;
   const second=store.applyMutation(candidateInput(id,"hotels",{included:false,price:"400"})).id;
   const total=()=>calculateAccommodation(store.getSnapshot(),visit(store, id));

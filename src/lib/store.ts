@@ -12,6 +12,7 @@ import { ENTRY_REQUIREMENT_FIELDS, normalizeEntryRequirements } from "./entry-re
 import { normalizeHealthSafety } from "./health-safety.ts";
 import { SESSION_DAYS } from "./session-cookie.ts";
 import { alreadyTagged, cleanTagName, MAX_TAG_LENGTH, tagKey } from "./trip-tags.ts";
+import { PLANNER_UPDATED } from "./planner-updated.ts";
 import type { EntryRequirements } from "./entry-requirements.ts";
 import type { HealthSafety } from "./health-safety.ts";
 import type { DestinationFields, DestinationGalleryUpdate } from "./types";
@@ -105,8 +106,16 @@ function tagNameField(input: Input): string {
   if (name.length > MAX_TAG_LENGTH) throw new ValidationError(`A tag must be ${MAX_TAG_LENGTH} characters or fewer.`);
   return name;
 }
-function optionalId(input: Input): string | undefined {
-  return input.id === undefined ? undefined : idField(input);
+/** The ID of the item a save adds or changes. A page opened before saves named their new items (TRA-75) adds one without it, and needs a reload. */
+function saveIdField(input: Input): string {
+  if (input.id === undefined) throw new ValidationError(PLANNER_UPDATED);
+  return idField(input);
+}
+/** `true` when a save adds the new item its editor named, and left out when it changes a saved one. */
+function createField(input: Input): true | undefined {
+  if (input.create === undefined) return undefined;
+  if (input.create !== true) throw new ValidationError("create must be true or left out.");
+  return true;
 }
 function booleanField(input: Input, key: string): boolean {
   if (typeof input[key] !== "boolean") throw new ValidationError(`${key} must be true or false.`);
@@ -309,7 +318,7 @@ function validate(input: unknown): Mutation {
       if (typeof value.travelers !== "number" || !Number.isInteger(value.travelers) || value.travelers < 1 || value.travelers > 999) {
         throw new ValidationError("Number of travelers must be a whole number between 1 and 999.");
       }
-      return { type: value.type, id: optionalId(value), name: textField(value, "name", 120, true), startDate: destinationDateField(value, "startDate"), dateLabel: textField(value, "dateLabel", 120), homeCity: textField(value, "homeCity", 120), returnCity: returnCityField(value), travelers: value.travelers, notes: textField(value, "notes", 8000) };
+      return { type: value.type, id: saveIdField(value), create: createField(value), name: textField(value, "name", 120, true), startDate: destinationDateField(value, "startDate"), dateLabel: textField(value, "dateLabel", 120), homeCity: textField(value, "homeCity", 120), returnCity: returnCityField(value), travelers: value.travelers, notes: textField(value, "notes", 8000) };
     }
     case "trip.delete":
     case "stop.remove":
@@ -324,25 +333,26 @@ function validate(input: unknown): Mutation {
     case "trip.untag":
       return { type: value.type, tripId: idField(value, "tripId"), name: tagNameField(value) };
     case "homeItem.save":
-      return { type: value.type, id: optionalId(value), tripId: idField(value, "tripId"), name: textField(value, "name", 160, true), price: priceField(value), notes: textField(value, "notes", 8000), completed: booleanField(value, "completed") };
+      return { type: value.type, id: saveIdField(value), create: createField(value), tripId: idField(value, "tripId"), name: textField(value, "name", 160, true), price: priceField(value), notes: textField(value, "notes", 8000), completed: booleanField(value, "completed") };
     case "homeItem.delete":
       return { type: value.type, id: idField(value), tripId: idField(value, "tripId") };
     case "homeItem.complete":
       return { type: value.type, id: idField(value), tripId: idField(value, "tripId"), completed: booleanField(value, "completed") };
     case "destination.save": {
       if (value.arrivalDate !== undefined || value.departureDate !== undefined) throw new ValidationError("Destination dates are calculated. Edit the trip start date or destination nights instead.");
+      const id = saveIdField(value);
       const fields = { city: value.city === undefined ? undefined : textField(value, "city", 120, true), stay: value.stay === undefined ? undefined : textField(value, "stay", 120), nights: nightsField(value), miscDailyAmount: value.miscDailyAmount === undefined ? undefined : textField(value, "miscDailyAmount", 32), hotelNightlyAmount: value.hotelNightlyAmount === undefined ? undefined : textField(value, "hotelNightlyAmount", 32), activitiesBudgetMode: activitiesModeField(value), activitiesGeneralAmount: value.activitiesGeneralAmount === undefined ? undefined : textField(value, "activitiesGeneralAmount", 32), foodBudgetMode: foodModeField(value), foodDailyAmount: value.foodDailyAmount === undefined ? undefined : textField(value, "foodDailyAmount", 32), shoppingAmount: value.shoppingAmount === undefined ? undefined : textField(value, "shoppingAmount", 32), weatherHighF: temperatureField(value, "weatherHighF"), weatherLowF: temperatureField(value, "weatherLowF"), weatherRainfall: value.weatherRainfall === undefined ? undefined : textField(value, "weatherRainfall", 4000), weatherPeriod: value.weatherPeriod === undefined ? undefined : textField(value, "weatherPeriod", 120), weatherSource: value.weatherSource === undefined ? undefined : textField(value, "weatherSource", 2048), notes: value.notes === undefined ? undefined : textField(value, "notes", 8000), image: imageField(value), gallery: destinationGalleryField(value) };
       // A new destination joins a trip as its last stop. A saved one is changed by its own ID, and only a trip's
       // stop has stay notes and nights, so a save that changes them names that stop.
-      if (value.id === undefined) {
+      if (createField(value)) {
         if (value.tripId === undefined) throw new ValidationError("Add a destination from a trip's page.");
         if (value.stopId !== undefined) throw new ValidationError("A new destination has no stop yet. Please refresh and try again.");
-        return { type: value.type, tripId: idField(value, "tripId"), ...fields, city: textField(value, "city", 120, true) };
+        return { type: value.type, id, create: true, tripId: idField(value, "tripId"), ...fields, city: textField(value, "city", 120, true) };
       }
       if (value.tripId !== undefined) throw new ValidationError("A saved destination is changed by its own ID. Please refresh and try again.");
       const stopId = value.stopId === undefined ? undefined : idField(value, "stopId");
       if (stopId === undefined && (fields.stay !== undefined || fields.nights !== undefined)) throw new ValidationError("Stay notes and nights belong to a trip. Change them from the trip's page.");
-      return { type: value.type, id: idField(value), stopId, ...fields };
+      return { type: value.type, id, stopId, ...fields };
     }
     case "destination.create":
       return { type: value.type, city: textField(value, "city", 120, true) };
@@ -361,7 +371,7 @@ function validate(input: unknown): Mutation {
     case "destination.churchVisibility":
       return { type: value.type, id: idField(value), enabled: booleanField(value, "enabled") };
     case "church.save":
-      return { type: value.type, id: optionalId(value), destinationId: idField(value, "destinationId"), name: textField(value, "name", 160, true), address: textField(value, "address", 500), denomination: textField(value, "denomination", 160), url: urlField(value), massTimes: massTimesField(value), gallery: galleryField(value, "Church") };
+      return { type: value.type, id: saveIdField(value), create: createField(value), destinationId: idField(value, "destinationId"), name: textField(value, "name", 160, true), address: textField(value, "address", 500), denomination: textField(value, "denomination", 160), url: urlField(value), massTimes: massTimesField(value), gallery: galleryField(value, "Church") };
     case "church.delete":
       return { type: value.type, id: idField(value), destinationId: idField(value, "destinationId") };
     case "stop.move":
@@ -370,7 +380,7 @@ function validate(input: unknown): Mutation {
     case "leg.save":
       return { type: value.type, id: idField(value), method: textField(value, "method", 120), price: priceField(value), departure: textField(value, "departure", 120), arrival: textField(value, "arrival", 120), url: urlField(value), notes: textField(value, "notes", 8000), itinerary: itineraryField(value), links: linksField(value) };
     case "candidate.save":
-      return { type: value.type, id: optionalId(value), destinationId: idField(value, "destinationId"), category: categoryField(value), name: textField(value, "name", 160, true), price: priceField(value), address: textField(value, "address", 500), url: urlField(value), notes: textField(value, "notes", 8000), included: booleanField(value, "included"), mustDo: value.mustDo === undefined ? undefined : booleanField(value, "mustDo"), links: linksField(value), gallery: galleryField(value) };
+      return { type: value.type, id: saveIdField(value), create: createField(value), destinationId: idField(value, "destinationId"), category: categoryField(value), name: textField(value, "name", 160, true), price: priceField(value), address: textField(value, "address", 500), url: urlField(value), notes: textField(value, "notes", 8000), included: booleanField(value, "included"), mustDo: value.mustDo === undefined ? undefined : booleanField(value, "mustDo"), links: linksField(value), gallery: galleryField(value) };
     case "candidate.move":
       if (value.direction !== "up" && value.direction !== "down") throw new ValidationError("Choose a valid direction for this idea.");
       return { type: value.type, id: idField(value), direction: value.direction };
@@ -1153,18 +1163,20 @@ export function createStore(databasePath: string, ownerEmail: string) {
     }
     const existingIds = new Set(current.map((photo) => photo.id));
     if (gallery.remove.some((id) => !existingIds.has(id))) throw new ValidationError("A destination photo has changed or no longer exists. Refresh and try again.");
-    for (const photo of gallery.add) {
+    // A photo the destination already has was added by a save whose response was lost. Saving again keeps it.
+    const added = gallery.add.filter((photo) => !existingIds.has(photo.id));
+    for (const photo of added) {
       if (db.prepare("SELECT 1 FROM destination_images WHERE lower(id) = lower(?)").get(photo.id)) throw new ValidationError("This destination photo already exists. Refresh and try again.");
     }
     const removed = new Set(gallery.remove);
-    const remaining = [...current.filter((photo) => !removed.has(photo.id)).map((photo) => photo.id), ...gallery.add.map((photo) => photo.id)];
+    const remaining = [...current.filter((photo) => !removed.has(photo.id)).map((photo) => photo.id), ...added.map((photo) => photo.id)];
     if (remaining.length > MAX_DESTINATION_IMAGES) throw new ValidationError(`A destination can have up to ${MAX_DESTINATION_IMAGES} photos. Remove a photo before adding more.`);
     const order = gallery.order ?? remaining;
     if (order.length !== remaining.length || order.some((id) => !remaining.includes(id))) throw new ValidationError("The destination photos have changed. Refresh before rearranging them.");
     const main = gallery.mainImageId === undefined ? (currentMain && !removed.has(currentMain) ? currentMain : order[0] ?? null) : gallery.mainImageId;
     if ((main === null && order.length > 0) || (main !== null && !order.includes(main))) throw new ValidationError("Choose a primary photo from the remaining destination photos. Refresh if the gallery has changed.");
     for (const id of gallery.remove) db.prepare("DELETE FROM destination_images WHERE destinationId = ? AND id = ?").run(destinationId, id);
-    gallery.add.forEach((photo) => db.prepare("INSERT INTO destination_images(id,destinationId,version,data,position,isMain) VALUES(?,?,?,?,?,0)").run(photo.id, destinationId, randomUUID(), photo.data, order.indexOf(photo.id)));
+    added.forEach((photo) => db.prepare("INSERT INTO destination_images(id,destinationId,version,data,position,isMain) VALUES(?,?,?,?,?,0)").run(photo.id, destinationId, randomUUID(), photo.data, order.indexOf(photo.id)));
     order.forEach((id, position) => db.prepare("UPDATE destination_images SET position = ? WHERE destinationId = ? AND id = ?").run(position, destinationId, id));
     db.prepare("UPDATE destination_images SET isMain = 0 WHERE destinationId = ? AND isMain = 1").run(destinationId);
     if (main) db.prepare("UPDATE destination_images SET isMain = 1 WHERE destinationId = ? AND id = ?").run(destinationId, main);
@@ -1178,18 +1190,20 @@ export function createStore(databasePath: string, ownerEmail: string) {
     const currentMain = current.find((photo) => photo.isMain === 1)?.id;
     const existingIds = new Set(current.map((photo) => photo.id));
     if (gallery.remove.some((id) => !existingIds.has(id))) throw new ValidationError("A photo has changed or no longer exists. Refresh and try again.");
-    for (const photo of gallery.add) {
+    // A photo the item already has was added by a save whose response was lost. Saving again keeps it.
+    const added = gallery.add.filter((photo) => !existingIds.has(photo.id));
+    for (const photo of added) {
       if (db.prepare(`SELECT 1 FROM ${table} WHERE lower(id) = lower(?)`).get(photo.id)) throw new ValidationError("This photo already exists. Refresh and try again.");
     }
     const removed = new Set(gallery.remove);
     const retained = current.filter((photo) => !removed.has(photo.id));
-    const finalIds = [...retained.map((photo) => photo.id), ...gallery.add.map((photo) => photo.id)];
+    const finalIds = [...retained.map((photo) => photo.id), ...added.map((photo) => photo.id)];
     if (finalIds.length > MAX_CANDIDATE_IMAGES) throw new ValidationError(`${label} can have up to ${MAX_CANDIDATE_IMAGES} photos. Remove a photo before adding more.`);
     const main = gallery.mainImageId === undefined ? (currentMain && !removed.has(currentMain) ? currentMain : finalIds[0] ?? null) : gallery.mainImageId;
     if ((main === null && finalIds.length > 0) || (main !== null && !finalIds.includes(main))) throw new ValidationError("Choose a main photo from the remaining photos. Refresh if the gallery has changed.");
     for (const id of gallery.remove) db.prepare(`DELETE FROM ${table} WHERE ${ownerColumn} = ? AND id = ?`).run(ownerId, id);
     const nextPosition = current.reduce((next, photo) => Math.max(next, photo.position + 1), 0);
-    gallery.add.forEach((photo, index) => db.prepare(`INSERT INTO ${table}(id,${ownerColumn},version,data,position,isMain) VALUES(?,?,?,?,?,0)`).run(photo.id, ownerId, randomUUID(), photo.data, nextPosition + index));
+    added.forEach((photo, index) => db.prepare(`INSERT INTO ${table}(id,${ownerColumn},version,data,position,isMain) VALUES(?,?,?,?,?,0)`).run(photo.id, ownerId, randomUUID(), photo.data, nextPosition + index));
     db.prepare(`UPDATE ${table} SET isMain = 0 WHERE ${ownerColumn} = ? AND isMain = 1`).run(ownerId);
     if (main) db.prepare(`UPDATE ${table} SET isMain = 1 WHERE ${ownerColumn} = ? AND id = ?`).run(ownerId, main);
   }
@@ -1197,6 +1211,13 @@ export function createStore(databasePath: string, ownerEmail: string) {
     const row = db.prepare(`SELECT * FROM ${table} WHERE id = ?`).get(id);
     if (!row) throw new ValidationError("This item no longer exists. Please refresh and try again.");
     return row as unknown as T;
+  }
+  /**
+   * Whether a save changes a saved item rather than adding a new one: always without `create`, and with it once the
+   * new item is saved, so saving it again after a response is lost changes it instead of adding another.
+   */
+  function changesSaved(table: "trips" | "home_items" | "churches" | "candidates", input: { id: string; create?: true }): boolean {
+    return !input.create || db.prepare(`SELECT 1 FROM ${table} WHERE id = ?`).get(input.id) !== undefined;
   }
   function homeItemForTrip(id: string, tripId: string): StoredHomeItem {
     const item = existing<StoredHomeItem>("home_items", id);
@@ -1292,11 +1313,20 @@ export function createStore(databasePath: string, ownerEmail: string) {
     const row = { id, ownerId, ...columns };
     db.prepare(`INSERT INTO destinations(${Object.keys(row).join(",")}) VALUES(${Object.keys(row).map(() => "?").join(",")})`).run(...Object.values(row));
   }
-  /** A new destination, as a trip's last stop. It belongs to the trip's owner, whoever on the trip adds it. */
-  function addDestination(input: Extract<DestinationSave, { id?: undefined }>): string {
+  /**
+   * A new destination, as a trip's last stop. It belongs to the trip's owner, whoever on the trip adds it. Saving it
+   * again after a response is lost changes the destination and its stay instead of adding another.
+   */
+  function addDestination(input: Extract<DestinationSave, { create: true }>): string {
     const trip = existing<Trip & { ownerId: string }>("trips", input.tripId);
     // The stop shares the new destination's ID, as each destination's original stop does since schema 21.
-    const id = randomUUID();
+    const id = input.id;
+    const stop = db.prepare("SELECT tripId FROM trip_stops WHERE id = ?").get(id);
+    if (stop || db.prepare("SELECT 1 FROM destinations WHERE id = ?").get(id)) {
+      // Saved already, unless the ID is another destination's, or a stop in another trip.
+      if (stop?.tripId !== trip.id) throw new ValidationError(NOT_AVAILABLE);
+      return saveDestination({ ...input, create: undefined, tripId: undefined, stopId: id });
+    }
     const columns = destinationColumns(input);
     claimCity(trip.ownerId, columns.cityKey, id, "Adding a saved destination to a trip isn't available yet.");
     const nights = input.nights ?? null;
@@ -1320,7 +1350,7 @@ export function createStore(databasePath: string, ownerEmail: string) {
     return id;
   }
   /** Changes a destination everywhere it is used, and with a stop, that trip's stay notes and nights too. */
-  function saveDestination(input: Extract<DestinationSave, { id: string }>): string {
+  function saveDestination(input: Extract<DestinationSave, { create?: undefined }>): string {
     const before = existing<StoredDestination>("destinations", input.id);
     const stop = input.stopId === undefined ? undefined : existing<TripStop>("trip_stops", input.stopId);
     if (stop && stop.destinationId !== input.id) throw new ValidationError("This stop belongs to a different destination.");
@@ -1343,8 +1373,8 @@ export function createStore(databasePath: string, ownerEmail: string) {
   function mutate(accountId: string, input: Mutation): string | undefined {
     switch (input.type) {
       case "trip.save": {
-        const id = input.id ?? randomUUID();
-        if (input.id) {
+        const id = input.id;
+        if (changesSaved("trips", input)) {
           const before = existing<Trip>("trips", id);
           const returnCity = input.returnCity === undefined ? before.returnCity : input.returnCity;
           db.prepare("UPDATE trips SET name = ?, dateLabel = ?, homeCity = ?, returnCity = ?, travelers = ?, notes = ? WHERE id = ?").run(input.name, input.dateLabel, input.homeCity, returnCity, input.travelers, input.notes, id);
@@ -1394,8 +1424,8 @@ export function createStore(databasePath: string, ownerEmail: string) {
       }
       case "homeItem.save": {
         existing<Trip>("trips", input.tripId);
-        const id = input.id ?? randomUUID();
-        if (input.id) {
+        const id = input.id;
+        if (changesSaved("home_items", input)) {
           homeItemForTrip(id, input.tripId);
           db.prepare("UPDATE home_items SET name = ?, priceCents = ?, notes = ?, completed = ? WHERE id = ? AND tripId = ?").run(input.name, priceCents(input.price), input.notes, Number(input.completed), id, input.tripId);
         } else {
@@ -1412,7 +1442,7 @@ export function createStore(databasePath: string, ownerEmail: string) {
         db.prepare("UPDATE home_items SET completed = ? WHERE id = ? AND tripId = ?").run(Number(input.completed), input.id, input.tripId);
         return input.id;
       case "destination.save":
-        return input.id === undefined ? addDestination(input) : saveDestination(input);
+        return input.create ? addDestination(input) : saveDestination(input);
       case "destination.create":
         return createDestination(accountId, input.city);
       case "destination.delete": {
@@ -1451,8 +1481,8 @@ export function createStore(databasePath: string, ownerEmail: string) {
         return input.id;
       case "church.save": {
         existing<Destination>("destinations", input.destinationId);
-        const id = input.id ?? randomUUID();
-        if (input.id) {
+        const id = input.id;
+        if (changesSaved("churches", input)) {
           const before = existing<StoredChurch>("churches", id);
           if (before.destinationId !== input.destinationId) throw new ValidationError("This church belongs to a different destination.");
           db.prepare("UPDATE churches SET name = ?, address = ?, denomination = ?, url = ?, massTimesJson = ? WHERE id = ? AND destinationId = ?").run(input.name, input.address, input.denomination, input.url, JSON.stringify(input.massTimes), id, input.destinationId);
@@ -1500,8 +1530,8 @@ export function createStore(databasePath: string, ownerEmail: string) {
         return input.id;
       case "candidate.save": {
         existing<Destination>("destinations", input.destinationId);
-        const id = input.id ?? randomUUID();
-        const before = input.id ? existing<StoredCandidate>("candidates", input.id) : undefined;
+        const id = input.id;
+        const before = changesSaved("candidates", input) ? existing<StoredCandidate>("candidates", id) : undefined;
         if (before) {
           if (before.destinationId !== input.destinationId || before.category !== input.category) throw new ValidationError("This idea belongs to a different destination or list.");
         }
@@ -1510,7 +1540,7 @@ export function createStore(databasePath: string, ownerEmail: string) {
         const mustDo = input.mustDo === undefined ? (before?.mustDo ?? 0) : Number(input.mustDo);
         if (input.category === "hotels" && mustDo) throw new ValidationError("Must do is available for activities and restaurants only.");
         if (input.included && input.category === "hotels") clearHotelSelection(input.destinationId);
-        if (input.id) {
+        if (before) {
           db.prepare("UPDATE candidates SET name = ?, priceCents = ?, address = ?, url = ?, notes = ?, included = ?, mustDo = ?, linksJson = ? WHERE id = ?").run(input.name, priceCents(input.price), input.address, url, input.notes, Number(input.included), mustDo, JSON.stringify(links), id);
         } else {
           const position = Number(db.prepare("SELECT coalesce(max(position), -1) + 1 AS position FROM candidates WHERE destinationId = ? AND category = ?").get(input.destinationId, input.category)!.position);
@@ -1551,27 +1581,28 @@ export function createStore(databasePath: string, ownerEmail: string) {
   }
   /**
    * The trip or destination a change applies to, found from the most specific saved item it names, so a browser can't
-   * claim an item belongs to one it can open. `mutate` still checks that the item matches the rest.
+   * claim an item belongs to one it can open. `mutate` still checks that the item matches the rest. A new item's save
+   * applies to the trip or destination it names until the item is saved, and then, sent again, to the one it was saved in.
    */
   function mutationScope(input: Mutation): { trip: string | undefined } | { destination: string | undefined } {
     switch (input.type) {
-      case "trip.save": case "trip.delete": return { trip: input.id && tripOf("trips", input.id) };
+      case "trip.save": case "trip.delete": return { trip: tripOf("trips", input.id) };
       case "trip.share": case "trip.unshare": case "trip.tag": case "trip.untag": return { trip: tripOf("trips", input.tripId) };
-      case "homeItem.save": return { trip: input.id ? tripOf("home_items", input.id) : tripOf("trips", input.tripId) };
+      case "homeItem.save": return { trip: tripOf("home_items", input.id) ?? (input.create && tripOf("trips", input.tripId)) };
       case "homeItem.delete": case "homeItem.complete": return { trip: tripOf("home_items", input.id) };
       case "stop.move": case "stop.remove": return { trip: tripOf("trip_stops", input.id) };
       case "leg.save": case "leg.clear": return { trip: tripOf("legs", input.id) };
       // Adding one is a change to its trip, and so is changing a trip's stay there along with it.
       case "destination.save":
-        if (input.id === undefined) return { trip: tripOf("trips", input.tripId) };
+        if (input.create) return { trip: tripOf("trip_stops", input.id) ?? tripOf("trips", input.tripId) };
         return input.stopId === undefined ? { destination: destinationOf("destinations", input.id) } : { trip: tripOf("trip_stops", input.stopId) };
       case "destination.churchVisibility": case "destination.entryRequirements": case "destination.healthSafety": case "destination.delete": return { destination: destinationOf("destinations", input.id) };
       // Creating a destination outside a trip changes no saved trip or destination, so nothing places it; authorize
       // lets an account create its own, as it does a new trip.
       case "destination.create": return { destination: undefined };
-      case "church.save": return { destination: input.id ? destinationOf("churches", input.id) : destinationOf("destinations", input.destinationId) };
+      case "church.save": return { destination: destinationOf("churches", input.id) ?? (input.create && destinationOf("destinations", input.destinationId)) };
       case "church.delete": return { destination: destinationOf("churches", input.id) };
-      case "candidate.save": return { destination: input.id ? destinationOf("candidates", input.id) : destinationOf("destinations", input.destinationId) };
+      case "candidate.save": return { destination: destinationOf("candidates", input.id) ?? (input.create && destinationOf("destinations", input.destinationId)) };
       case "candidate.move": case "candidate.mustDo": case "candidate.delete": case "candidate.include": return { destination: destinationOf("candidates", input.id) };
     }
   }
@@ -1581,7 +1612,7 @@ export function createStore(databasePath: string, ownerEmail: string) {
    */
   function authorize(accountId: string, input: Mutation): void {
     // A new trip, and a destination created outside a trip, belong to the account that creates them.
-    if ((input.type === "trip.save" && input.id === undefined) || input.type === "destination.create") return;
+    if ((input.type === "trip.save" && input.create && !tripOf("trips", input.id)) || input.type === "destination.create") return;
     const scope = mutationScope(input);
     const role = "trip" in scope ? tripRole(accountId, scope.trip) : destinationRole(accountId, scope.destination);
     if (!role) throw new ValidationError(NOT_AVAILABLE);
@@ -1596,9 +1627,10 @@ export function createStore(databasePath: string, ownerEmail: string) {
       authorize(accountId, valid);
       let scheduleTrip: string | undefined;
       if (valid.type === "trip.save" && valid.startDate !== undefined) {
-        if (valid.id && db.prepare("SELECT startDate FROM trips WHERE id = ?").get(valid.id)?.startDate !== valid.startDate) scheduleTrip = valid.id;
+        // A new trip's start, or a changed one, sets its dates.
+        if (db.prepare("SELECT startDate FROM trips WHERE id = ?").get(valid.id)?.startDate !== valid.startDate) scheduleTrip = valid.id;
       } else if (valid.type === "destination.save") {
-        if (valid.id === undefined) scheduleTrip = valid.tripId;
+        if (valid.create) scheduleTrip = valid.tripId;
         else if (valid.stopId !== undefined && valid.nights !== undefined) {
           const stop = db.prepare("SELECT tripId, nights FROM trip_stops WHERE id = ?").get(valid.stopId);
           if (stop && stop.nights !== valid.nights) scheduleTrip = stop.tripId as string;
@@ -1607,7 +1639,6 @@ export function createStore(databasePath: string, ownerEmail: string) {
         scheduleTrip = existing<TripStop>("trip_stops", valid.id).tripId;
       }
       const id = mutate(accountId, valid);
-      if (valid.type === "trip.save" && !valid.id && valid.startDate !== undefined) scheduleTrip = id;
       if (scheduleTrip) refreshDates(scheduleTrip);
       db.exec("COMMIT");
       return id ? { id } : {};

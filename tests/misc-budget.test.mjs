@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 import test from "node:test";
 import { calculateBudget, calculateDestinationBudget, calculateFoodEstimate, calculateHotelEstimate, calculateMiscellaneous } from "../src/lib/budget.ts";
-import { setup, tripInput, destinationInput, candidateInput, stopEdit, visit } from "./budget-fixtures.mjs";
+import { newItem, setup, tripInput, destinationInput, candidateInput, stopEdit, visit } from "./budget-fixtures.mjs";
 
 // The largest amount the store accepts, in cents, and the most nights it can multiply while the subtotal stays exact.
 const largestAmountMinor = 10_000_000_000;
@@ -33,7 +33,7 @@ test("all USD categories reconcile exactly once, isolate trips, and retain activ
  store.applyMutation(candidateInput(id,"activities",{price:""}));
  store.applyMutation(candidateInput(id,"hotels",{price:"9999",included:false}));
  for(const leg of store.getSnapshot().legs.filter(x=>x.tripId===tripId)) store.applyMutation({type:"leg.save",id:leg.id,method:"Train",price:"10.01",departure:"",arrival:"",url:"",notes:""});
- for(const price of ["2.02","","0"]) store.applyMutation({type:"homeItem.save",tripId,name:"Task",price,notes:"",completed:true});
+ for(const price of ["2.02","","0"]) store.applyMutation({type:"homeItem.save",...newItem(),tripId,name:"Task",price,notes:"",completed:true});
  const budget=()=>calculateBudget(store.getSnapshot(),tripId);
  assert.deepEqual(calculateDestinationBudget(store.getSnapshot(),visit(store,id)).totalsByCurrency,{USD:52500});
  assert.equal(budget().totalsByCurrency.USD,54704); assert.equal(budget().complete,true);

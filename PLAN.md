@@ -280,3 +280,10 @@ This replaces TRA-62's destination Save in a sticky header.
 - Every image is built with the same Server Actions key, the `NEXT_SERVER_ACTIONS_ENCRYPTION_KEY` deploy secret, so the save action keeps its ID across deploys and a page opened before a deploy can still save. A deploy without the secret stops before building.
 - When a save reaches a server that doesn't recognize its action, because the key or the action itself changed, the save error says the planner was updated and asks for a reload, instead of the connection error that retrying never cleared. An open editor keeps its entries until the page reloads.
 - Not included: keeping unsaved changes across a reload, announcing a new version before saving, reloading automatically, and changes to other save errors.
+
+## Added scope: November 13, 2026, saving again after a lost response (TRA-75)
+- Each editor that adds a trip, destination, idea, church or At home item gives the new item its ID once, when it opens, and sends it with every save. The server adds the item when no item has that ID and treats the same ID sent again as the same item, saving the details sent last, so saving again after a lost response never adds a second one. Photos a save already added to an item are kept once when it is sent again.
+- A change to an item that no longer exists is still refused, never recreated, and a new item's ID can't save over another item.
+- A save whose response doesn't arrive says the changes couldn't be confirmed, instead of saying they weren't saved.
+- A page opened before this change adds items without IDs. Adding from it saves nothing and shows TRA-74's message asking for a reload, while its changes to saved items keep working.
+- **New destination** in Destinations already opens the saved destination for a city it has, so it is unchanged.

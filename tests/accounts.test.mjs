@@ -4,7 +4,7 @@ import { DatabaseSync } from "node:sqlite";
 import test from "node:test";
 import { authorizeGoogleSignIn, createStore, SCHEMA_VERSION, ValidationError } from "../src/lib/store.ts";
 import { UNDO_SCHEMA_20, UNDO_SCHEMA_21 } from "./owned-store.mjs";
-import { fileDatabase } from "./budget-fixtures.mjs";
+import { fileDatabase, newItem } from "./budget-fixtures.mjs";
 
 const google = (subject, email, emailVerified = true, name = null) => ({ subject, email, emailVerified, name });
 const DAY = 24 * 60 * 60 * 1000;
@@ -99,7 +99,7 @@ test("sessions last thirty days from last use, keep only a token hash, and end o
 test("schema 19 adds accounts and sessions without changing trips, and replay keeps both", (t) => {
   const path = fileDatabase(t);
   let store = createStore(path, "owner@example.com");
-  const { id: tripId } = store.applyMutation(store.authorizeAccount("owner@example.com").id, { type: "trip.save", name: "Lisbon", dateLabel: "Spring", homeCity: "Boston", travelers: 2, notes: "Keep me" });
+  const { id: tripId } = store.applyMutation(store.authorizeAccount("owner@example.com").id, { type: "trip.save", ...newItem(), name: "Lisbon", dateLabel: "Spring", homeCity: "Boston", travelers: 2, notes: "Keep me" });
   store.close();
   let db = new DatabaseSync(path);
   db.exec(UNDO_SCHEMA_21 + UNDO_SCHEMA_20 + "DROP TABLE sessions; DROP TABLE accounts; PRAGMA user_version = 18;");

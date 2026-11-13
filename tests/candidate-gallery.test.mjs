@@ -4,7 +4,7 @@ import { DatabaseSync } from "node:sqlite";
 import test from "node:test";
 import { SCHEMA_VERSION, ValidationError } from "../src/lib/store.ts";
 import { createOwnedStore } from "./owned-store.mjs";
-import { fileDatabase } from "./budget-fixtures.mjs";
+import { fileDatabase, newItem } from "./budget-fixtures.mjs";
 import { calculateBudget } from "../src/lib/budget.ts";
 
 const webp = new Uint8Array(Buffer.from("UklGRiIAAABXRUJQVlA4IBYAAAAwAQCdASoBAAEADsD+JaQAA3AAAAAA", "base64"));
@@ -12,10 +12,10 @@ const alternative = new Uint8Array(webp);
 alternative[alternative.length - 1] = 1;
 const photo = (data = webp) => ({ id: randomUUID(), data });
 const tripInput = { type: "trip.save", name: "Photo research", dateLabel: "Spring", homeCity: "Boston", travelers: 2, notes: "" };
-const destinationInput = (tripId, city = "Vienna") => ({ type: "destination.save", tripId, city, stay: "3 nights", notes: "" });
-const ideaInput = (destinationId, overrides = {}) => ({ type: "candidate.save", destinationId, category: "hotels", name: "An idea", price: "275.50", address: "City center", url: "https://example.com", notes: "Keep these details", included: true, ...overrides });
+const destinationInput = (tripId, city = "Vienna") => ({ type: "destination.save", ...newItem(), tripId, city, stay: "3 nights", notes: "" });
+const ideaInput = (destinationId, overrides = {}) => ({ type: "candidate.save", destinationId, category: "hotels", name: "An idea", price: "275.50", address: "City center", url: "https://example.com", notes: "Keep these details", included: true, ...overrides, ...newItem(overrides) });
 function seed(store) {
-  const tripId = store.applyMutation(tripInput).id;
+  const tripId = store.applyMutation({ ...tripInput, ...newItem() }).id;
   const destinationId = store.applyMutation(destinationInput(tripId)).id;
   return { tripId, destinationId };
 }

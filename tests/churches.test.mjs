@@ -6,11 +6,11 @@ import { containsSunday } from "../src/lib/destination-duration.ts";
 import { SCHEMA_VERSION, ValidationError } from "../src/lib/store.ts";
 import { createOwnedStore, UNDO_SCHEMA_21 } from "./owned-store.mjs";
 import { calculateBudget, calculateDestinationBudget } from "../src/lib/budget.ts";
-import { fileDatabase, setup, stopEdit, stop } from "./budget-fixtures.mjs";
+import { fileDatabase, newItem, setup, stopEdit, stop } from "./budget-fixtures.mjs";
 
-const tripInput = (overrides = {}) => ({ type: "trip.save", name: "Church planning", dateLabel: "May 2027", homeCity: "New York", travelers: 2, notes: "", ...overrides });
-const destinationInput = (tripId, overrides = {}) => ({ type: "destination.save", tripId, city: "Rome", stay: "Spring", notes: "", ...overrides });
-const churchInput = (destinationId, overrides = {}) => ({ type: "church.save", destinationId, name: "St. Mary's", address: "", denomination: "", url: "", massTimes: [], ...overrides });
+const tripInput = (overrides = {}) => ({ type: "trip.save", name: "Church planning", dateLabel: "May 2027", homeCity: "New York", travelers: 2, notes: "", ...overrides, ...newItem(overrides) });
+const destinationInput = (tripId, overrides = {}) => ({ type: "destination.save", tripId, city: "Rome", stay: "Spring", notes: "", ...overrides, ...newItem(overrides) });
+const churchInput = (destinationId, overrides = {}) => ({ type: "church.save", destinationId, name: "St. Mary's", address: "", denomination: "", url: "", massTimes: [], ...overrides, ...newItem(overrides) });
 const mass = (day = "Sunday", time = "9:00 AM") => ({ id: randomUUID(), day, time });
 const webp = new Uint8Array([82, 73, 70, 70, 4, 0, 0, 0, 87, 69, 66, 80]);
 const photo = () => ({ id: randomUUID(), data: webp });
@@ -182,8 +182,8 @@ test("churches never change candidate counts, selections, trip budgets or destin
     activitiesBudgetMode: "general", activitiesGeneralAmount: "20",
     foodBudgetMode: "daily", foodDailyAmount: "30", shoppingAmount: "12.34",
     weatherHighF: 70, weatherLowF: 40, weatherRainfall: "Low", weatherPeriod: "May", weatherSource: "Local archive", }));
-  for (const category of ["hotels", "activities", "restaurants"]) store.applyMutation({ type: "candidate.save", destinationId, category, name: category, price: category === "hotels" ? "0" : "", address: "", url: "", notes: "", included: true, gallery: { add: [photo()], remove: [] } });
-  store.applyMutation({ type: "homeItem.save", tripId, name: "Mail hold", price: "", notes: "", completed: false });
+  for (const category of ["hotels", "activities", "restaurants"]) store.applyMutation({ type: "candidate.save", ...newItem(), destinationId, category, name: category, price: category === "hotels" ? "0" : "", address: "", url: "", notes: "", included: true, gallery: { add: [photo()], remove: [] } });
+  store.applyMutation({ type: "homeItem.save", ...newItem(), tripId, name: "Mail hold", price: "", notes: "", completed: false });
   store.applyMutation({type:"destination.churchVisibility",id:destinationId,enabled:false});
   const before = store.getSnapshot();
   const visitIn = (snapshot) => ({ ...snapshot.destinations.find((item) => item.id === destinationId), nights: snapshot.stops.find((item) => item.id === destinationId).nights });
@@ -237,8 +237,8 @@ test("schema 13 upgrade initializes Sunday visibility, preserves prior data and 
     const partialId = store.applyMutation(destinationInput(tripId, { city: "Naples", nights: null })).id;
     const unknownId = store.applyMutation(destinationInput(tripId, { city: "Turin" })).id;
     const hotelPhoto = photo();
-    const candidateId = store.applyMutation({ type: "candidate.save", destinationId: id, category: "hotels", name: "Saved hotel", price: "123.45", address: "Main street", url: "", notes: "", included: true, gallery: { add: [hotelPhoto], remove: [] } }).id;
-    store.applyMutation({ type: "homeItem.save", tripId, name: "House sitting", price: "23.95", notes: "Leave a key", completed: true });
+    const candidateId = store.applyMutation({ type: "candidate.save", ...newItem(), destinationId: id, category: "hotels", name: "Saved hotel", price: "123.45", address: "Main street", url: "", notes: "", included: true, gallery: { add: [hotelPhoto], remove: [] } }).id;
+    store.applyMutation({ type: "homeItem.save", ...newItem(), tripId, name: "House sitting", price: "23.95", notes: "Leave a key", completed: true });
     for (const hidden of [weekdayId,partialId,unknownId]) store.applyMutation({type:"destination.churchVisibility",id:hidden,enabled:false});
     const before = store.getSnapshot(), budget = calculateBudget(before, tripId);
     const destinationImage = store.getDestinationImage(id), candidateImage = store.getCandidatePhoto(candidateId, hotelPhoto.id);

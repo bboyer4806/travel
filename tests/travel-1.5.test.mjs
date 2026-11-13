@@ -1,16 +1,17 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { createOwnedStore } from "./owned-store.mjs";
+import { newItem } from "./budget-fixtures.mjs";
 import { calculateBudget } from "../src/lib/budget.ts";
 
 const trip = (name, startDate) => ({
-  type: "trip.save", name, startDate, dateLabel: "", homeCity: "New York", travelers: 2, notes: "",
+  type: "trip.save", ...newItem(), name, startDate, dateLabel: "", homeCity: "New York", travelers: 2, notes: "",
 });
 const destination = (tripId, city, nights) => ({
-  type: "destination.save", tripId, city, stay: "", notes: "", nights,
+  type: "destination.save", ...newItem(), tripId, city, stay: "", notes: "", nights,
 });
 const hotel = (destinationId) => ({
-  type: "candidate.save", destinationId, category: "hotels", name: "Hotel",
+  type: "candidate.save", ...newItem(), destinationId, category: "hotels", name: "Hotel",
   price: "100.50", address: "", url: "", notes: "", included: true,
 });
 

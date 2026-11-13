@@ -6,7 +6,7 @@ import { DatabaseSync } from "node:sqlite";
 import test from "node:test";
 import { SCHEMA_VERSION, ValidationError } from "../src/lib/store.ts";
 import { calculateBudget } from "../src/lib/budget.ts";
-import { fileDatabase } from "./budget-fixtures.mjs";
+import { fileDatabase, newItem } from "./budget-fixtures.mjs";
 import { createOwnedStore } from "./owned-store.mjs";
 
 const details = () => ({
@@ -19,8 +19,8 @@ const details = () => ({
 const requirements = () => ({ passportNationality: "United States", travelPurpose: "Tourism", travelerCircumstances: "", visaRequirements: "None for short stays", passportValidity: "", requiredDocuments: "", transitRequirements: "", notes: "", sources: [], lastCheckedDate: "2026-11-03" });
 const destination = (snapshot, id) => snapshot.destinations.find((item) => item.id === id);
 function seed(store, city = "Destination") {
-  const tripId = store.applyMutation({ type: "trip.save", name: "Health and safety", startDate: "2026-11-01", dateLabel: "", homeCity: "Home", travelers: 2, notes: "" }).id;
-  const id = store.applyMutation({ type: "destination.save", tripId, city, stay: "Keep stay", notes: "Keep notes", nights: 3, hotelNightlyAmount: "150", miscDailyAmount: "20" }).id;
+  const tripId = store.applyMutation({ type: "trip.save", ...newItem(), name: "Health and safety", startDate: "2026-11-01", dateLabel: "", homeCity: "Home", travelers: 2, notes: "" }).id;
+  const id = store.applyMutation({ type: "destination.save", ...newItem(), tripId, city, stay: "Keep stay", notes: "Keep notes", nights: 3, hotelNightlyAmount: "150", miscDailyAmount: "20" }).id;
   return { tripId, id };
 }
 

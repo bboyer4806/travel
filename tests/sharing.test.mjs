@@ -8,7 +8,7 @@ import test from "node:test";
 import { calculateBudget } from "../src/lib/budget.ts";
 import { createStore, SCHEMA_VERSION, ValidationError } from "../src/lib/store.ts";
 import { UNDO_SCHEMA_20, UNDO_SCHEMA_21 } from "./owned-store.mjs";
-import { fileDatabase } from "./budget-fixtures.mjs";
+import { fileDatabase, newItem } from "./budget-fixtures.mjs";
 
 const OWNER = "owner@example.com";
 const NOT_AVAILABLE = { name: "ValidationError", message: "This item no longer exists or isn't shared with you. Please refresh and try again." };
@@ -34,13 +34,13 @@ function setup(t, path = ":memory:") {
  */
 function plannedTrip(store, accountId, name = "Portugal", [firstCity, secondCity] = ["Lisbon", "Porto"]) {
   const change = (input) => store.applyMutation(accountId, input).id;
-  const tripId = change({ type: "trip.save", name, startDate: "2027-05-02", dateLabel: "Spring", homeCity: "Boston", travelers: 2, notes: "Trip notes" });
-  const lisbon = change({ type: "destination.save", tripId, city: firstCity, stay: "", notes: "", nights: 3, hotelNightlyAmount: "150", gallery: { add: [photo(), photo()], remove: [] } });
-  const porto = change({ type: "destination.save", tripId, city: secondCity, stay: "", notes: "", nights: 2 });
-  const hotel = change({ type: "candidate.save", destinationId: lisbon, category: "hotels", name: "Hotel", price: "400", address: "", url: "", notes: "", included: true, gallery: { add: [photo()], remove: [] } });
-  const activity = change({ type: "candidate.save", destinationId: lisbon, category: "activities", name: "Tram 28", price: "20", address: "", url: "", notes: "", included: true });
-  const church = change({ type: "church.save", destinationId: lisbon, name: "Sé", address: "", denomination: "", url: "", massTimes: [], gallery: { add: [photo()], remove: [] } });
-  const homeItem = change({ type: "homeItem.save", tripId, name: "House sitting", price: "100", notes: "", completed: false });
+  const tripId = change({ type: "trip.save", ...newItem(), name, startDate: "2027-05-02", dateLabel: "Spring", homeCity: "Boston", travelers: 2, notes: "Trip notes" });
+  const lisbon = change({ type: "destination.save", ...newItem(), tripId, city: firstCity, stay: "", notes: "", nights: 3, hotelNightlyAmount: "150", gallery: { add: [photo(), photo()], remove: [] } });
+  const porto = change({ type: "destination.save", ...newItem(), tripId, city: secondCity, stay: "", notes: "", nights: 2 });
+  const hotel = change({ type: "candidate.save", ...newItem(), destinationId: lisbon, category: "hotels", name: "Hotel", price: "400", address: "", url: "", notes: "", included: true, gallery: { add: [photo()], remove: [] } });
+  const activity = change({ type: "candidate.save", ...newItem(), destinationId: lisbon, category: "activities", name: "Tram 28", price: "20", address: "", url: "", notes: "", included: true });
+  const church = change({ type: "church.save", ...newItem(), destinationId: lisbon, name: "Sé", address: "", denomination: "", url: "", massTimes: [], gallery: { add: [photo()], remove: [] } });
+  const homeItem = change({ type: "homeItem.save", ...newItem(), tripId, name: "House sitting", price: "100", notes: "", completed: false });
   change({ type: "destination.entryRequirements", id: lisbon, requirements: requirements() });
   change({ type: "destination.healthSafety", id: lisbon, healthSafety: healthSafety() });
   const snapshot = store.getTripSnapshot(accountId, tripId).data;
@@ -76,7 +76,7 @@ const everything = (value) => ({ home: value, page: value, category: value, trip
 test("a new trip belongs to whoever creates it, and only its owner can open it until it is shared", (t) => {
   const { store, owner, editor, outsider } = setup(t);
   const trip = plannedTrip(store, owner);
-  const ownTrip = store.applyMutation(editor, { type: "trip.save", name: "Editor's own trip", dateLabel: "", homeCity: "", travelers: 1, notes: "" }).id;
+  const ownTrip = store.applyMutation(editor, { type: "trip.save", ...newItem(), name: "Editor's own trip", dateLabel: "", homeCity: "", travelers: 1, notes: "" }).id;
 
   assert.deepEqual(readsAs(store, owner, trip), everything(true));
   assert.deepEqual(readsAs(store, editor, trip), everything(false));
@@ -142,7 +142,7 @@ test("people a trip is shared with change everything in it, but only its owner d
   change({ type: "trip.tag", tripId, name: "Together" });
   change({ type: "leg.save", id: legs[0], method: "Train", price: "45", departure: "", arrival: "", url: "", notes: "" });
   change({ type: "leg.clear", id: legs[1] });
-  change({ type: "candidate.save", destinationId: porto, category: "restaurants", name: "Cantinho", price: "60", address: "", url: "", notes: "", included: true });
+  change({ type: "candidate.save", ...newItem(), destinationId: porto, category: "restaurants", name: "Cantinho", price: "60", address: "", url: "", notes: "", included: true });
   change({ type: "candidate.save", id: hotel, destinationId: lisbon, category: "hotels", name: "Better hotel", price: "450", address: "", url: "", notes: "", included: true });
   change({ type: "candidate.mustDo", id: activity, mustDo: true });
   change({ type: "candidate.include", id: activity, included: false });
@@ -153,9 +153,9 @@ test("people a trip is shared with change everything in it, but only its owner d
   change({ type: "destination.healthSafety", id: porto, healthSafety: healthSafety() });
   change({ type: "destination.save", id: porto, notes: "Port wine", gallery: { add: [portoPhoto], remove: [] } });
   change({ type: "destination.save", id: porto, stopId: porto, stay: "By the river", nights: 4 });
-  change({ type: "homeItem.save", tripId, name: "Pet care", price: "50", notes: "", completed: false });
+  change({ type: "homeItem.save", ...newItem(), tripId, name: "Pet care", price: "50", notes: "", completed: false });
   change({ type: "homeItem.complete", id: homeItem, tripId, completed: true });
-  const sintra = change({ type: "destination.save", tripId, city: "Sintra", stay: "", notes: "", nights: 1 });
+  const sintra = change({ type: "destination.save", ...newItem(), tripId, city: "Sintra", stay: "", notes: "", nights: 1 });
   change({ type: "stop.move", id: sintra, direction: "up" });
   change({ type: "candidate.delete", id: activity });
   change({ type: "church.delete", id: church, destinationId: lisbon });
@@ -205,11 +205,11 @@ test("an account a trip isn't shared with can neither read nor change any part o
     { type: "trip.unshare", tripId, email: "editor@example.com" },
     { type: "trip.tag", tripId, name: "Mine" },
     { type: "trip.untag", tripId, name: "Mine" },
-    { type: "homeItem.save", tripId, name: "Mine", price: "", notes: "", completed: false },
+    { type: "homeItem.save", ...newItem(), tripId, name: "Mine", price: "", notes: "", completed: false },
     { type: "homeItem.save", id: homeItem, tripId, name: "Mine", price: "", notes: "", completed: false },
     { type: "homeItem.complete", id: homeItem, tripId, completed: true },
     { type: "homeItem.delete", id: homeItem, tripId },
-    { type: "destination.save", tripId, city: "Mine" },
+    { type: "destination.save", ...newItem(), tripId, city: "Mine" },
     { type: "destination.save", id: lisbon, notes: "Mine" },
     { type: "destination.save", id: lisbon, stopId: lisbon, nights: 9 },
     { type: "stop.remove", id: lisbon },
@@ -218,12 +218,12 @@ test("an account a trip isn't shared with can neither read nor change any part o
     { type: "destination.entryRequirements", id: lisbon, requirements: null },
     { type: "destination.healthSafety", id: lisbon, healthSafety: null },
     { type: "destination.healthSafety", id: lisbon, healthSafety: healthSafety() },
-    { type: "church.save", destinationId: lisbon, name: "Mine", address: "", denomination: "", url: "", massTimes: [] },
+    { type: "church.save", ...newItem(), destinationId: lisbon, name: "Mine", address: "", denomination: "", url: "", massTimes: [] },
     { type: "church.save", id: church, destinationId: lisbon, name: "Mine", address: "", denomination: "", url: "", massTimes: [] },
     { type: "church.delete", id: church, destinationId: lisbon },
     { type: "leg.save", id: legs[0], method: "Mine", price: "", departure: "", arrival: "", url: "", notes: "" },
     { type: "leg.clear", id: legs[0] },
-    { type: "candidate.save", destinationId: lisbon, category: "activities", name: "Mine", ...idea },
+    { type: "candidate.save", ...newItem(), destinationId: lisbon, category: "activities", name: "Mine", ...idea },
     { type: "candidate.save", id: hotel, destinationId: lisbon, category: "hotels", name: "Mine", ...idea },
     { type: "candidate.move", id: activity, direction: "up" },
     { type: "candidate.mustDo", id: activity, mustDo: false },
@@ -235,6 +235,12 @@ test("an account a trip isn't shared with can neither read nor change any part o
     { type: "church.save", id: church, destinationId: own.lisbon, name: "Mine", address: "", denomination: "", url: "", massTimes: [] },
     { type: "church.delete", id: church, destinationId: own.lisbon },
     { type: "candidate.save", id: hotel, destinationId: own.lisbon, category: "hotels", name: "Mine", ...idea },
+    // Nor as the IDs of new items, which would save over the other trip's.
+    { type: "trip.save", id: tripId, create: true, name: "Mine now", dateLabel: "", homeCity: "", travelers: 1, notes: "" },
+    { type: "homeItem.save", id: homeItem, create: true, tripId: own.tripId, name: "Mine", price: "", notes: "", completed: false },
+    { type: "destination.save", id: lisbon, create: true, tripId: own.tripId, city: "Mine" },
+    { type: "church.save", id: church, create: true, destinationId: own.lisbon, name: "Mine", address: "", denomination: "", url: "", massTimes: [] },
+    { type: "candidate.save", id: hotel, create: true, destinationId: own.lisbon, category: "hotels", name: "Mine", ...idea },
   ]) {
     assert.throws(() => store.applyMutation(outsider, input), NOT_AVAILABLE, input.type);
   }
@@ -322,7 +328,7 @@ test("everyone with a trip sees and changes its tags, and a tag only on trips an
 test("removing someone's access ends it at once and changes nothing in the trip", (t) => {
   const { store, owner, editor } = setup(t);
   const trip = plannedTrip(store, owner);
-  const editorsTrip = store.applyMutation(editor, { type: "trip.save", name: "Editor's own trip", dateLabel: "", homeCity: "", travelers: 1, notes: "" }).id;
+  const editorsTrip = store.applyMutation(editor, { type: "trip.save", ...newItem(), name: "Editor's own trip", dateLabel: "", homeCity: "", travelers: 1, notes: "" }).id;
   store.applyMutation(owner, { type: "trip.share", tripId: trip.tripId, email: "editor@example.com" });
   assert.deepEqual(readsAs(store, editor, trip), everything(true));
   const before = store.getSnapshot();

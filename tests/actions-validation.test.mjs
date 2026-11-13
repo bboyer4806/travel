@@ -8,6 +8,7 @@ import * as imageUpload from "../src/lib/image-upload.ts";
 import * as candidateGallery from "../src/lib/candidate-gallery-upload.ts";
 import * as destinationGallery from "../src/lib/destination-gallery-upload.ts";
 import { OWNER_EMAIL } from "./owned-store.mjs";
+import { newItem } from "./budget-fixtures.mjs";
 
 // Execute the real action with only Next's request/cache boundaries replaced.
 const source = ts.transpileModule(readFileSync(new URL("../src/app/actions.ts", import.meta.url), "utf8"), {
@@ -41,8 +42,8 @@ for (const [label, initializingModule] of [["page-first", actionStore], ["API-fi
     t.after(() => store.close());
     const account = store.authorizeAccount(OWNER_EMAIL);
     const action = actionHarness({ applyMutation: store.applyMutation }, account);
-    assert.deepEqual(await action.save({ ...trip, name: "" }), { ok: false, error: "Please enter name." });
-    const saved = await action.save(trip);
+    assert.deepEqual(await action.save({ ...trip, ...newItem(), name: "" }), { ok: false, error: "Please enter name." });
+    const saved = await action.save({ ...trip, ...newItem() });
     assert.equal(saved.ok, true);
     assert.equal(store.getSnapshot().trips.length, 1);
     assert.equal(action.revalidated.length, 1);

@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { MAX_AMOUNT_CENTS, MAX_AMOUNT_DOLLARS, parseMinorAmount } from "../src/lib/money.ts";
-import { candidateInput, destinationInput, setup, destinationEdit } from "./budget-fixtures.mjs";
+import { candidateInput, destinationInput, newItem, setup, destinationEdit } from "./budget-fixtures.mjs";
 
 const formatMessage = (label) => `${label} must be a positive USD amount or zero, with up to 2 decimal places. Leave it blank if unknown.`;
 const limitMessage = (label) => `${label} must be $100,000,000 or less.`;
@@ -21,7 +21,7 @@ test("destination amounts and estimated prices reject equivalent amounts with on
   const fields = [
     ["Estimated price", (price) => candidateInput(destinationId, "activities", { price })],
     ["Estimated price", (price) => ({ type: "leg.save", id: legId, method: "Train", price, departure: "", arrival: "", url: "", notes: "" })],
-    ["Estimated price", (price) => ({ type: "homeItem.save", tripId, name: "Pet sitter", price, notes: "", completed: false })],
+    ["Estimated price", (price) => ({ type: "homeItem.save", ...newItem(), tripId, name: "Pet sitter", price, notes: "", completed: false })],
     ["Daily miscellaneous amount", (miscDailyAmount) => destinationEdit(destinationId, { miscDailyAmount })],
     ["Nightly hotel amount", (hotelNightlyAmount) => destinationEdit(destinationId, { hotelNightlyAmount })],
     ["General activities amount", (activitiesGeneralAmount) => destinationEdit(destinationId, { activitiesGeneralAmount })],

@@ -4,13 +4,13 @@ import { DatabaseSync } from "node:sqlite";
 import test from "node:test";
 import { SCHEMA_VERSION, ValidationError } from "../src/lib/store.ts";
 import { createOwnedStore } from "./owned-store.mjs";
-import { fileDatabase, setup, destinationEdit, stopEdit } from "./budget-fixtures.mjs";
+import { fileDatabase, newItem, setup, destinationEdit, stopEdit } from "./budget-fixtures.mjs";
 import { calculateBudget } from "../src/lib/budget.ts";
 import { formatCurrency } from "../src/lib/money.ts";
 
-const tripInput = (overrides = {}) => ({ type: "trip.save", name: "Japan in spring", dateLabel: "Spring 2027", homeCity: "New York", travelers: 2, notes: "An idea worth exploring.", ...overrides });
-const destinationInput = (tripId, overrides = {}) => ({ type: "destination.save", tripId, city: "Tokyo", stay: "4 nights", notes: "", ...overrides });
-const candidateInput = (destinationId, overrides = {}) => ({ type: "candidate.save", destinationId, category: "hotels", name: "A lovely hotel", price: "200.33", address: "", url: "https://example.com", notes: "", included: true, ...overrides });
+const tripInput = (overrides = {}) => ({ type: "trip.save", name: "Japan in spring", dateLabel: "Spring 2027", homeCity: "New York", travelers: 2, notes: "An idea worth exploring.", ...overrides, ...newItem(overrides) });
+const destinationInput = (tripId, overrides = {}) => ({ type: "destination.save", tripId, city: "Tokyo", stay: "4 nights", notes: "", ...overrides, ...newItem(overrides) });
+const candidateInput = (destinationId, overrides = {}) => ({ type: "candidate.save", destinationId, category: "hotels", name: "A lovely hotel", price: "200.33", address: "", url: "https://example.com", notes: "", included: true, ...overrides, ...newItem(overrides) });
 const legInput = (id, overrides = {}) => ({ type: "leg.save", id, method: "Flight", price: "100.01", departure: "Morning", arrival: "Evening", url: "https://example.com/flights", notes: "Two passengers", ...overrides });
 const legsFor = (store, tripId) => store.getSnapshot().legs.filter((leg) => leg.tripId === tripId);
 const pair = (leg) => JSON.stringify([leg.fromId, leg.toId]);
@@ -22,7 +22,7 @@ function saveResearch(store, destinationId) {
   store.applyMutation(candidateInput(destinationId, { gallery: photo() }));
   store.applyMutation(candidateInput(destinationId, { category: "activities", name: "A temple walk", mustDo: true }));
   store.applyMutation(candidateInput(destinationId, { category: "restaurants", name: "A market lunch", included: false }));
-  store.applyMutation({ type: "church.save", destinationId, name: "A cathedral", address: "", denomination: "Catholic", url: "", massTimes: [{ id: randomUUID(), day: "Sunday", time: "9:00" }], gallery: photo() });
+  store.applyMutation({ type: "church.save", ...newItem(), destinationId, name: "A cathedral", address: "", denomination: "Catholic", url: "", massTimes: [{ id: randomUUID(), day: "Sunday", time: "9:00" }], gallery: photo() });
   store.applyMutation({ type: "destination.entryRequirements", id: destinationId, requirements: { passportNationality: "United States", travelPurpose: "Tourism", travelerCircumstances: "", visaRequirements: "None for short stays", passportValidity: "", requiredDocuments: "", transitRequirements: "", notes: "", sources: [], lastCheckedDate: "2026-11-12" } });
   store.applyMutation({ type: "destination.healthSafety", id: destinationId, healthSafety: { advisoryLevel: "Level 1", advisoryWarnings: "", healthPrecautions: "", localSafety: "", emergencyContacts: [{ id: randomUUID(), name: "Emergency services", phone: "110", notes: "" }], sources: [], lastCheckedDate: "2026-11-12" } });
 }

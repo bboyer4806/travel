@@ -1,3 +1,5 @@
+import type { AiPlatform } from "./ai-auth";
+import type { PreviewChange } from "./ai-preview";
 import type { EntryRequirements } from "./entry-requirements";
 import type { HealthSafety } from "./health-safety";
 export type FoodBudgetMode = "itemized" | "daily";
@@ -82,4 +84,11 @@ export interface TripMember { email: string; name: string | null; }
 export type TripAccess = { role: "owner"; owner: TripMember; sharedWith: TripMember[] } | { role: "editor"; owner: TripMember };
 /** What the signed-in account may do with a destination: one it owns, or one that a trip shared with it visits. */
 export type DestinationAccess = { role: "owner" } | { role: "editor"; owner: TripMember };
+/** A ChatGPT or Claude connection the designated owner allowed (TRA-115). Times are milliseconds since the epoch. */
+export interface AiConnection { id: string; platform: AiPlatform; connectedAt: number; lastUsedAt: number; }
+/**
+ * Changes ChatGPT or Claude proposed (TRA-115), with what each does, and what has become of them. `digest` names the
+ * proposal's exact contents, which a decision must name. Times are milliseconds since the epoch.
+ */
+export interface AiProposal { id: string; platform: AiPlatform; summary: string; preview: PreviewChange[]; status: "pending" | "applied" | "rejected" | "failed" | "expired"; createdAt: number; expiresAt: number; decidedAt: number | null; error: string | null; digest: string; }
 export interface Budget { shoppingByCurrency: Record<string, number>; travelMissingCount: number; foodByCurrency: Record<string, number>; foodMissingCount: number; activitiesByCurrency: Record<string, number>; activitiesMissingCount: number; hotelsByCurrency: Record<string, number>; hotelMissingCount: number; totalsByCurrency: Record<string, number>; miscellaneousByCurrency: Record<string, number>; miscMissingCount: number; homeCents: number; travelCents: number; knownCount: number; missingCount: number; complete: boolean; }

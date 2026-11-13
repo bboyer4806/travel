@@ -312,7 +312,8 @@ assert.match(await login.text(), /href="\/auth\/google"[^>]*>Sign in with Google
 
 const manifest = JSON.parse(readFileSync("/app/.next/server/server-reference-manifest.json", "utf8"));
 const actions = Object.fromEntries(Object.entries(manifest.node ?? {}).map(([id, entry]) => [entry.exportedName, id]));
-assert.deepEqual(Object.keys(actions).sort(), ["mutatePlanner", "signOutOfTravel"], "Only the planner and sign-out Server Actions may be exposed");
+// The planner, sign out, and the owner's AI connection, proposal and revocation decisions (TRA-115).
+assert.deepEqual(Object.keys(actions).sort(), ["answerAiConnection", "decideProposal", "mutatePlanner", "revokeConnection", "signOutOfTravel"], "Only the planner, sign-out and AI assistant Server Actions may be exposed");
 async function action(name, args, headers) {
   const response = await fetch(origin + "/", {
     method: "POST",
@@ -340,7 +341,9 @@ async function mutation(input, headers = owner) {
 // The seeded trip's pages, and its destination's pages in Destinations.
 const tripPages = ["/trips/container-smoke", "/trips/container-smoke/destinations/22222222-2222-4222-8222-222222222222/hotels"];
 const destinationPages = ["/destinations/22222222-2222-4222-8222-222222222222", "/destinations/22222222-2222-4222-8222-222222222222/hotels"];
-const pages = ["/", "/destinations", ...tripPages, ...destinationPages, "/whats-new"];
+// The owner's AI assistant pages (TRA-115), whose proposal and connection IDs reveal nothing.
+const aiPages = ["/ai", "/ai/authorize?response_type=code&client_id=c1000000-0000-4000-8000-000000000001&redirect_uri=https%3A%2F%2Fclaude.ai%2Fapi%2Fmcp%2Fauth_callback", "/ai/proposals/c2000000-0000-4000-8000-000000000001"];
+const pages = ["/", "/destinations", ...tripPages, ...destinationPages, "/whats-new", ...aiPages];
 const dataRoutes = ["/api/destination-images/22222222-2222-4222-8222-222222222222?v=33333333-3333-4333-8333-333333333333",
   "/api/destination-images/22222222-2222-4222-8222-222222222222/a2000000-0000-4000-8000-000000000001?v=33333333-3333-4333-8333-333333333333",
   "/api/candidate-images/66666666-6666-4666-8666-666666666666/90000000-0000-4000-8000-000000000002?v=bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
@@ -362,6 +365,14 @@ async function assertRefused(label, headers) {
   }
   const feedback = await fetch(origin + "/api/feedback", { method: "POST", headers: { ...headers, "Content-Type": "application/json", Origin: origin }, body: JSON.stringify({ action: "open" }), signal: signal() });
   assert.equal(feedback.status, 401, `${label} feedback must be refused`);
+  await assertMcpRefused(label, headers);
+}
+// The MCP endpoint takes only an AI connection's access token: no session, current or not, opens it (TRA-115).
+async function assertMcpRefused(label, headers) {
+  const response = await fetch(origin + "/api/mcp", { method: "POST", headers: { ...headers, "Content-Type": "application/json", Accept: "application/json, text/event-stream" }, body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "tools/call", params: { name: "list_trips", arguments: {} } }), signal: signal() });
+  assert.equal(response.status, 401, `${label} MCP must be refused`);
+  assert.match(response.headers.get("www-authenticate") ?? "", /^Bearer resource_metadata="http:\/\/127\.0\.0\.1(:80)?\/\.well-known\/oauth-protected-resource\/api\/mcp"/, `${label} MCP must say where to authorize`);
+  assert.ok(!(await response.text()).includes("Persistence test"), `${label} MCP must not include trip data`);
 }
 // Signed in, but the trip isn't theirs: it and its destination are missing from their lists, their pages are not
 // found, and their photos aren't served.
@@ -382,6 +393,10 @@ async function assertHidden(label, headers) {
     assert.equal(response.status, 404, `${label} ${path} must not be served`);
     assert.ok(!response.headers.get("content-type")?.startsWith("image/"), `${label} ${path} must not return image bytes`);
   }
+  // Only the designated owner manages AI assistants.
+  assert.ok((await (await get("/ai", headers)).text()).includes("This page has moved on."), `${label} must not find AI assistants`);
+  assert.match(await (await get(aiPages[1], headers)).text(), /Only Travel(&#x27;|')s owner can connect AI assistants/, `${label} can't connect an assistant`);
+  await assertMcpRefused(label, headers);
 }
 
 const db = new DatabaseSync("/data/travel.sqlite", { readOnly: true });
@@ -421,6 +436,17 @@ try {
   }
   for (const path of dataRoutes.slice(0, 4)) assert.equal((await get(path, editor)).status, 200, `The editor can load ${path}`);
   await assertHidden("outsider", outsider);
+  // The editor a trip is shared with is no more able to manage AI assistants than an outsider.
+  assert.ok((await (await get("/ai", editor)).text()).includes("This page has moved on."), "editor must not find AI assistants");
+  // OAuth metadata is public, so Claude and ChatGPT can find how to connect; the owner's page offers to connect them.
+  for (const path of ["/.well-known/oauth-authorization-server", "/.well-known/oauth-protected-resource", "/.well-known/oauth-protected-resource/api/mcp"]) {
+    const response = await get(path);
+    assert.equal(response.status, 200, `${path} must be public`);
+    assert.ok(Object.keys(await response.json()).length > 0, `${path} must be metadata`);
+  }
+  const aiPage = await get("/ai", owner);
+  assert.equal(aiPage.status, 200, "The owner manages AI assistants");
+  assert.match(await aiPage.text(), /http:\/\/127\.0\.0\.1(:80)?\/api\/mcp/, "The owner's page gives the MCP address");
 
   const saved = await mutation(newTrip);
   assert.deepEqual(saved, { ok: true, id: newTrip.id }, "Server Action returned a save error");

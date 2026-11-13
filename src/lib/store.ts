@@ -13,9 +13,13 @@ import { normalizeHealthSafety } from "./health-safety.ts";
 import { SESSION_DAYS } from "./session-cookie.ts";
 import { alreadyTagged, cleanTagName, MAX_TAG_LENGTH, tagKey } from "./trip-tags.ts";
 import { PLANNER_UPDATED } from "./planner-updated.ts";
+import { ACCESS_TOKEN_MS, AUTHORIZATION_CODE_MS, CONNECTION_MS, PROPOSAL_MS, aiPlatform, isPkceChallenge, pkceMatches } from "./ai-auth.ts";
+import { DATA_TABLES, UNREAD_COLUMNS, effectsBetween, previewChange } from "./ai-preview.ts";
+import type { AiPlatform } from "./ai-auth.ts";
+import type { Effect, PreviewChange, Row, Tables } from "./ai-preview.ts";
 import type { EntryRequirements } from "./entry-requirements.ts";
 import type { HealthSafety } from "./health-safety.ts";
-import type { DestinationFields, DestinationGalleryUpdate } from "./types";
+import type { AiConnection, AiProposal, DestinationFields, DestinationGalleryUpdate } from "./types";
 import type { AuthorizedAccount, DestinationAccess, GoogleIdentity, TripAccess, TripMember, TripStop } from "./types";
 import type { FoodBudgetMode, ActivitiesBudgetMode, Candidate, CandidateImage, CandidateGalleryUpdate, Category, Church, MassTime, Destination, HomeItem, StoredImage, ItineraryStop, Mutation, ResearchLink, Snapshot, TravelLeg, Trip } from "./types";
 
@@ -242,13 +246,13 @@ function storedLinks(row: { id: string; url: string; linksJson: string }): Resea
   if (links.length) return [{ ...links[0], url: row.url }, ...links.slice(1)];
   return [{ id: row.id, url: row.url, description: "" }];
 }
-function savedLinks(input: { url: string; links?: ResearchLink[] }, before?: { id: string; url: string; linksJson: string }): ResearchLink[] {
+function savedLinks(input: { url: string; links?: ResearchLink[] }, before: { id: string; url: string; linksJson: string } | undefined, newId: () => string): ResearchLink[] {
   if (input.links !== undefined) return input.links;
   const links = before ? storedLinks(before) : [];
   if ((links[0]?.url ?? "") === input.url) return links;
   if (!input.url) return links.slice(1);
   if (links.length) return [{ ...links[0], url: input.url }, ...links.slice(1)];
-  return [{ id: randomUUID(), url: input.url, description: "" }];
+  return [{ id: newId(), url: input.url, description: "" }];
 }
 function imageField(input: Input, label = "Destination"): Uint8Array | null | undefined {
   const value = input.image;
@@ -391,11 +395,16 @@ function validate(input: unknown): Mutation {
   }
 }
 
+/** The IDs and time a change gives the rows it adds. */
+interface Make { id: () => string; now: () => string }
+/** A save's: random IDs, and the time it is made. An AI proposal's make the same rows every time it runs (TRA-115). */
+const LIVE: Make = { id: () => randomUUID(), now: () => new Date().toISOString() };
+
 /**
  * The schema this build upgrades every database to, as SQLite's user_version. A schema change adds the next
  * upgrade in createStore and raises this to match; earlier upgrades keep their own numbers.
  */
-export const SCHEMA_VERSION = 23;
+export const SCHEMA_VERSION = 24;
 
 /** A destination as schema 20 saved it, inside one trip, with that trip's owner and name. */
 type TripDestinationRow = Omit<StoredDestination, "cityKey"> & Omit<TripStop, "destinationId"> & { tripName: string };
@@ -887,6 +896,48 @@ export function createStore(databasePath: string, ownerEmail: string) {
         PRAGMA user_version = 23;
       `);
     }
+    if (version < 24) {
+      // ChatGPT and Claude connections, and the changes they propose for the designated owner to approve (TRA-115).
+      // Codes and tokens are kept only as hashes, as sessions are. A proposal can't be changed once it is made, and is
+      // decided once. A replay keeps every row.
+      db.exec(`
+        CREATE TABLE IF NOT EXISTS ai_clients (
+          id TEXT PRIMARY KEY, redirectUrisJson TEXT NOT NULL, registeredAt INTEGER NOT NULL
+        ) STRICT;
+        CREATE TABLE IF NOT EXISTS ai_authorization_codes (
+          codeHash TEXT PRIMARY KEY,
+          clientId TEXT NOT NULL REFERENCES ai_clients(id) ON DELETE CASCADE,
+          accountId TEXT NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
+          redirectUri TEXT NOT NULL, codeChallenge TEXT NOT NULL, expiresAt INTEGER NOT NULL
+        ) STRICT;
+        CREATE TABLE IF NOT EXISTS ai_connections (
+          id TEXT PRIMARY KEY,
+          clientId TEXT NOT NULL REFERENCES ai_clients(id) ON DELETE CASCADE,
+          accountId TEXT NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
+          platform TEXT NOT NULL CHECK(platform IN ('Claude', 'ChatGPT')),
+          connectedAt INTEGER NOT NULL, lastUsedAt INTEGER NOT NULL,
+          accessTokenHash TEXT NOT NULL UNIQUE, accessExpiresAt INTEGER NOT NULL,
+          refreshTokenHash TEXT NOT NULL UNIQUE, refreshExpiresAt INTEGER NOT NULL
+        ) STRICT;
+        CREATE TABLE IF NOT EXISTS ai_proposals (
+          id TEXT PRIMARY KEY,
+          connectionId TEXT NOT NULL REFERENCES ai_connections(id) ON DELETE CASCADE,
+          summary TEXT NOT NULL, changesJson TEXT NOT NULL, previewJson TEXT NOT NULL, effectsJson TEXT NOT NULL,
+          createdAt INTEGER NOT NULL, expiresAt INTEGER NOT NULL,
+          status TEXT NOT NULL DEFAULT 'pending' CHECK(status IN ('pending', 'applied', 'rejected', 'failed')),
+          decidedAt INTEGER, error TEXT,
+          CHECK((status = 'pending') = (decidedAt IS NULL))
+        ) STRICT;
+        CREATE INDEX IF NOT EXISTS ai_proposals_connection ON ai_proposals(connectionId);
+        CREATE TRIGGER IF NOT EXISTS ai_proposals_unchanged
+          BEFORE UPDATE OF id, connectionId, summary, changesJson, previewJson, effectsJson, createdAt, expiresAt ON ai_proposals
+          BEGIN SELECT RAISE(ABORT, 'A proposal can''t be changed once it is made.'); END;
+        CREATE TRIGGER IF NOT EXISTS ai_proposals_decided_once
+          BEFORE UPDATE OF status, decidedAt, error ON ai_proposals WHEN OLD.status != 'pending'
+          BEGIN SELECT RAISE(ABORT, 'A proposal is decided once.'); END;
+        PRAGMA user_version = 24;
+      `);
+    }
     if (version < SCHEMA_VERSION && db.prepare("PRAGMA foreign_key_check").get()) {
       throw new Error("This upgrade would leave saved items without the trip or destination they belong to. Nothing was changed; review the database against a backup before upgrading.");
     }
@@ -902,6 +953,8 @@ export function createStore(databasePath: string, ownerEmail: string) {
     throw error;
   }
   db.exec("PRAGMA foreign_keys = ON;");
+  /** The designated owner, authorized at startup: the only account that connects AI assistants and decides what they propose. */
+  const designatedOwnerId = db.prepare("SELECT id FROM accounts WHERE email = ?").get(owner)!.id as string;
 
   /** A WHERE clause limiting `column` to the given IDs, with its argument, or nothing when every row is wanted. */
   function among(column: string, ids: readonly string[] | null): [string, string[]] {
@@ -1110,15 +1163,19 @@ export function createStore(databasePath: string, ownerEmail: string) {
   function member(row: Record<string, unknown>): TripMember {
     return { email: row.email as string, name: row.name as string | null };
   }
+  /** Who owns a trip, and who it is shared with. */
+  function tripMembers(tripId: string): { owner: TripMember; sharedWith: TripMember[] } {
+    const owner = member(db.prepare("SELECT accounts.email, accounts.name FROM trips JOIN accounts ON accounts.id = trips.ownerId WHERE trips.id = ?").get(tripId)!);
+    const sharedWith = db.prepare("SELECT accounts.email, accounts.name FROM trip_shares JOIN accounts ON accounts.id = trip_shares.accountId WHERE trip_shares.tripId = ? ORDER BY accounts.email")
+      .all(tripId).map(member);
+    return { owner, sharedWith };
+  }
   /** Who owns the trip, and, for its owner only, who it is shared with. */
   function tripAccess(accountId: string, tripId: string): TripAccess | undefined {
     const role = tripRole(accountId, tripId);
     if (!role) return undefined;
-    const owner = member(db.prepare("SELECT accounts.email, accounts.name FROM trips JOIN accounts ON accounts.id = trips.ownerId WHERE trips.id = ?").get(tripId)!);
-    if (role === "editor") return { role, owner };
-    const sharedWith = db.prepare("SELECT accounts.email, accounts.name FROM trip_shares JOIN accounts ON accounts.id = trip_shares.accountId WHERE trip_shares.tripId = ? ORDER BY accounts.email")
-      .all(tripId).map(member);
-    return { role, owner, sharedWith };
+    const { owner, sharedWith } = tripMembers(tripId);
+    return role === "editor" ? { role, owner } : { role, owner, sharedWith };
   }
   /** Whether the destination is the account's own, or whose it is when a trip shared with the account visits it. */
   function destinationAccess(accountId: string, destinationId: string): DestinationAccess | undefined {
@@ -1230,7 +1287,7 @@ export function createStore(databasePath: string, ownerEmail: string) {
   function orderedStops(tripId: string): TripStop[] {
     return db.prepare("SELECT * FROM trip_stops WHERE tripId = ? ORDER BY position, id").all(tripId) as unknown as TripStop[];
   }
-  function reconcileRoute(tripId: string) {
+  function reconcileRoute(tripId: string, make: Make) {
     const stops = orderedStops(tripId);
     stops.forEach((stop, position) => db.prepare("UPDATE trip_stops SET position = ? WHERE id = ?").run(position, stop.id));
     const route: (string | null)[] = stops.length ? [null, ...stops.map((stop) => stop.id), null] : [];
@@ -1245,7 +1302,7 @@ export function createStore(databasePath: string, ownerEmail: string) {
     }
     for (let index = 1; index < route.length; index += 1) {
       if (!retained.has(JSON.stringify([route[index - 1], route[index]]))) {
-        db.prepare("INSERT INTO legs(id,tripId,fromId,toId) VALUES(?,?,?,?)").run(randomUUID(), tripId, route[index - 1], route[index]);
+        db.prepare("INSERT INTO legs(id,tripId,fromId,toId) VALUES(?,?,?,?)").run(make.id(), tripId, route[index - 1], route[index]);
       }
     }
   }
@@ -1327,14 +1384,14 @@ export function createStore(databasePath: string, ownerEmail: string) {
    * or a new one whose first stop shares its ID. A city the trip already visits returns that stop instead of adding
    * another, so adding it again after a lost response adds it once.
    */
-  function addStop(tripId: string, city: string): string {
+  function addStop(tripId: string, city: string, make: Make): string {
     const trip = existing<Trip & { ownerId: string }>("trips", tripId);
-    const id = randomUUID();
+    const id = make.id();
     const destinationId = destinationFor(trip.ownerId, city, id);
     const visiting = db.prepare("SELECT id FROM trip_stops WHERE tripId = ? AND destinationId = ? ORDER BY position, id").get(trip.id, destinationId);
     if (visiting) return visiting.id as string;
     db.prepare("INSERT INTO trip_stops(id,tripId,destinationId,position,stay,nights) VALUES(?,?,?,?,'',NULL)").run(id, trip.id, destinationId, orderedStops(trip.id).length);
-    reconcileRoute(trip.id);
+    reconcileRoute(trip.id, make);
     return id;
   }
   /** Changes a destination everywhere it is used, and with a stop, that trip's stay notes and nights too. */
@@ -1358,7 +1415,7 @@ export function createStore(databasePath: string, ownerEmail: string) {
     saveDestinationGallery(input.id, input.gallery, input.image);
     return input.id;
   }
-  function mutate(accountId: string, input: Mutation): string | undefined {
+  function mutate(accountId: string, input: Mutation, make: Make): string | undefined {
     switch (input.type) {
       case "trip.save": {
         const id = input.id;
@@ -1372,7 +1429,7 @@ export function createStore(databasePath: string, ownerEmail: string) {
           for (const leg of affectedLegs) clearLeg(leg.id as string);
         } else {
           // A new trip belongs to the account that creates it.
-          db.prepare("INSERT INTO trips(id,name,dateLabel,homeCity,returnCity,travelers,notes,createdAt,ownerId) VALUES(?,?,?,?,?,?,?,?,?)").run(id, input.name, input.dateLabel, input.homeCity, input.returnCity ?? null, input.travelers, input.notes, new Date().toISOString(), accountId);
+          db.prepare("INSERT INTO trips(id,name,dateLabel,homeCity,returnCity,travelers,notes,createdAt,ownerId) VALUES(?,?,?,?,?,?,?,?,?)").run(id, input.name, input.dateLabel, input.homeCity, input.returnCity ?? null, input.travelers, input.notes, make.now(), accountId);
         }
         if (input.startDate !== undefined) db.prepare("UPDATE trips SET startDate = ? WHERE id = ?").run(input.startDate, id);
         return id;
@@ -1383,9 +1440,9 @@ export function createStore(databasePath: string, ownerEmail: string) {
         return;
       case "trip.share": {
         // Sharing authorizes the email to sign in, even before that person ever has. Nothing is sent to them.
-        const recipient = authorizeAccount(input.email);
+        const recipient = authorizeAccount(input.email, make);
         if (db.prepare("SELECT 1 FROM trips WHERE id = ? AND ownerId = ?").get(input.tripId, recipient.id)) throw new ValidationError("You own this trip, so you already have access.");
-        const shared = db.prepare("INSERT INTO trip_shares(tripId, accountId, sharedAt) VALUES(?, ?, ?) ON CONFLICT DO NOTHING").run(input.tripId, recipient.id, new Date().toISOString());
+        const shared = db.prepare("INSERT INTO trip_shares(tripId, accountId, sharedAt) VALUES(?, ?, ?) ON CONFLICT DO NOTHING").run(input.tripId, recipient.id, make.now());
         if (shared.changes === 0) throw new ValidationError(`This trip is already shared with ${recipient.email}.`);
         return input.tripId;
       }
@@ -1417,7 +1474,7 @@ export function createStore(databasePath: string, ownerEmail: string) {
           homeItemForTrip(id, input.tripId);
           db.prepare("UPDATE home_items SET name = ?, priceCents = ?, notes = ?, completed = ? WHERE id = ? AND tripId = ?").run(input.name, priceCents(input.price), input.notes, Number(input.completed), id, input.tripId);
         } else {
-          db.prepare("INSERT INTO home_items(id,tripId,name,priceCents,notes,completed,createdAt) VALUES(?,?,?,?,?,?,?)").run(id, input.tripId, input.name, priceCents(input.price), input.notes, Number(input.completed), new Date().toISOString());
+          db.prepare("INSERT INTO home_items(id,tripId,name,priceCents,notes,completed,createdAt) VALUES(?,?,?,?,?,?,?)").run(id, input.tripId, input.name, priceCents(input.price), input.notes, Number(input.completed), make.now());
         }
         return id;
       }
@@ -1433,7 +1490,7 @@ export function createStore(databasePath: string, ownerEmail: string) {
         return saveDestination(input);
       case "destination.create":
         // A destination outside any trip belongs to the account that creates it. A city it already has opens that one.
-        return destinationFor(accountId, input.city, randomUUID());
+        return destinationFor(accountId, input.city, make.id());
       case "destination.delete": {
         const before = existing<StoredDestination>("destinations", input.id);
         // A destination a trip visits keeps everything saved for it.
@@ -1488,12 +1545,12 @@ export function createStore(databasePath: string, ownerEmail: string) {
         return;
       }
       case "stop.add":
-        return addStop(input.tripId, input.city);
+        return addStop(input.tripId, input.city, make);
       case "stop.remove": {
         // Only this trip's stay goes. The destination and everything saved with it stay, for other trips and Destinations.
         const stop = existing<TripStop>("trip_stops", input.id);
         db.prepare("DELETE FROM trip_stops WHERE id = ?").run(input.id);
-        reconcileRoute(stop.tripId);
+        reconcileRoute(stop.tripId, make);
         return;
       }
       case "stop.move": {
@@ -1504,14 +1561,14 @@ export function createStore(databasePath: string, ownerEmail: string) {
         if (nextIndex >= 0 && nextIndex < ordered.length) {
           [ordered[index], ordered[nextIndex]] = [ordered[nextIndex], ordered[index]];
           ordered.forEach((item, position) => db.prepare("UPDATE trip_stops SET position = ? WHERE id = ?").run(position, item.id));
-          reconcileRoute(stop.tripId);
+          reconcileRoute(stop.tripId, make);
         }
         return input.id;
       }
       case "leg.save": {
         const before = existing<StoredLeg>("legs", input.id);
         const itineraryJson = input.itinerary === undefined ? before.itineraryJson : JSON.stringify(input.itinerary);
-        const links = savedLinks(input, before);
+        const links = savedLinks(input, before, make.id);
         db.prepare("UPDATE legs SET method = ?, priceCents = ?, departure = ?, arrival = ?, url = ?, notes = ?, itineraryJson = ?, linksJson = ? WHERE id = ?").run(input.method, priceCents(input.price), input.departure, input.arrival, links[0]?.url ?? "", input.notes, itineraryJson, JSON.stringify(links), input.id);
         return input.id;
       }
@@ -1526,7 +1583,7 @@ export function createStore(databasePath: string, ownerEmail: string) {
         if (before) {
           if (before.destinationId !== input.destinationId || before.category !== input.category) throw new ValidationError("This idea belongs to a different destination or list.");
         }
-        const links = savedLinks(input, before);
+        const links = savedLinks(input, before, make.id);
         const url = links[0]?.url ?? "";
         const mustDo = input.mustDo === undefined ? (before?.mustDo ?? 0) : Number(input.mustDo);
         if (input.category === "hotels" && mustDo) throw new ValidationError("Must do is available for activities and restaurants only.");
@@ -1601,38 +1658,24 @@ export function createStore(databasePath: string, ownerEmail: string) {
    * destination and changing who has a trip are for its owner.
    */
   function authorize(accountId: string, input: Mutation): void {
-    // A new trip, and a destination created outside a trip, belong to the account that creates them.
-    if ((input.type === "trip.save" && input.create && !tripOf("trips", input.id)) || input.type === "destination.create") return;
+    if (addsOwnItem(input)) return;
     const scope = mutationScope(input);
     const role = "trip" in scope ? tripRole(accountId, scope.trip) : destinationRole(accountId, scope.destination);
     if (!role) throw new ValidationError(NOT_AVAILABLE);
     const ownerOnly = OWNER_ONLY[input.type];
     if (ownerOnly && role !== "owner") throw new ValidationError(ownerOnly);
   }
-  /** `accountId` is the signed-in account from the server's session, never anything the browser sent. */
-  function applyMutation(accountId: string, input: unknown): { id?: string } {
-    const valid = validate(input);
+  /** A new trip, or a destination created outside a trip: each belongs to the account that creates it, and changes no saved trip or destination. */
+  function addsOwnItem(input: Mutation): boolean {
+    return (input.type === "trip.save" && input.create === true && !tripOf("trips", input.id)) || input.type === "destination.create";
+  }
+  /** Runs `work` in one immediate transaction, committing only when it returns. */
+  function transaction<T>(work: () => T): T {
     db.exec("BEGIN IMMEDIATE");
     try {
-      authorize(accountId, valid);
-      let scheduleTrip: string | undefined;
-      if (valid.type === "trip.save" && valid.startDate !== undefined) {
-        // A new trip's start, or a changed one, sets its dates.
-        if (db.prepare("SELECT startDate FROM trips WHERE id = ?").get(valid.id)?.startDate !== valid.startDate) scheduleTrip = valid.id;
-      } else if (valid.type === "destination.save") {
-        if (valid.stopId !== undefined && valid.nights !== undefined) {
-          const stop = db.prepare("SELECT tripId, nights FROM trip_stops WHERE id = ?").get(valid.stopId);
-          if (stop && stop.nights !== valid.nights) scheduleTrip = stop.tripId as string;
-        }
-      } else if (valid.type === "stop.add") {
-        scheduleTrip = valid.tripId;
-      } else if (valid.type === "stop.remove" || valid.type === "stop.move") {
-        scheduleTrip = existing<TripStop>("trip_stops", valid.id).tripId;
-      }
-      const id = mutate(accountId, valid);
-      if (scheduleTrip) refreshDates(scheduleTrip);
+      const result = work();
       db.exec("COMMIT");
-      return id ? { id } : {};
+      return result;
     } catch (error) {
       // SQLite has already rolled back after some failures, such as a full disk, and a second ROLLBACK would throw
       // and hide the real error.
@@ -1640,14 +1683,356 @@ export function createStore(databasePath: string, ownerEmail: string) {
       throw error;
     }
   }
+  /** Makes one checked change inside the caller's transaction, and works out again the dates of a trip it reschedules. */
+  function execute(accountId: string, valid: Mutation, make: Make): string | undefined {
+    let scheduleTrip: string | undefined;
+    if (valid.type === "trip.save" && valid.startDate !== undefined) {
+      // A new trip's start, or a changed one, sets its dates.
+      if (db.prepare("SELECT startDate FROM trips WHERE id = ?").get(valid.id)?.startDate !== valid.startDate) scheduleTrip = valid.id;
+    } else if (valid.type === "destination.save") {
+      if (valid.stopId !== undefined && valid.nights !== undefined) {
+        const stop = db.prepare("SELECT tripId, nights FROM trip_stops WHERE id = ?").get(valid.stopId);
+        if (stop && stop.nights !== valid.nights) scheduleTrip = stop.tripId as string;
+      }
+    } else if (valid.type === "stop.add") {
+      scheduleTrip = valid.tripId;
+    } else if (valid.type === "stop.remove" || valid.type === "stop.move") {
+      scheduleTrip = existing<TripStop>("trip_stops", valid.id).tripId;
+    }
+    const id = mutate(accountId, valid, make);
+    if (scheduleTrip) refreshDates(scheduleTrip);
+    return id;
+  }
+  /** `accountId` is the signed-in account from the server's session, never anything the browser sent. */
+  function applyMutation(accountId: string, input: unknown): { id?: string } {
+    const valid = validate(input);
+    return transaction(() => {
+      authorize(accountId, valid);
+      const id = execute(accountId, valid, LIVE);
+      return id ? { id } : {};
+    });
+  }
+
+  /*
+   * ChatGPT and Claude (TRA-115). An AI connection reads every trip, destination and account, whoever owns them, but
+   * never an account's Google subject, a session, or the AI integration's own credentials. It changes nothing itself:
+   * it proposes changes, which Travel's designated owner approves or rejects on Travel's own page. Approving makes them
+   * as the owner, through the planner's own rules, without the owner and sharing checks that limit what each signed-in
+   * account may change; `applyMutation` keeps those for everyone.
+   */
+
+  /** Whether an account is Travel's designated owner, who alone connects AI assistants and decides their proposals. */
+  function isAiOwner(accountId: string): boolean {
+    return accountId === designatedOwnerId;
+  }
+  /** Every authorized account: its email, its Google name, whether it has signed in, and which is the designated owner. */
+  function aiAccounts() {
+    return db.prepare("SELECT email, name, googleSubject IS NOT NULL AS signedIn FROM accounts ORDER BY email").all()
+      .map((row) => ({ email: row.email as string, name: row.name as string | null, hasSignedIn: row.signedIn === 1, designatedOwner: row.email === owner }));
+  }
+  /** Every trip, with its owner, who it is shared with, and its stays in route order. */
+  function aiTrips() {
+    const stops = readStops(null);
+    const cities = new Map(db.prepare("SELECT id, city FROM destinations").all().map((row) => [row.id as string, row.city as string]));
+    return readTrips(null).map((trip) => ({
+      ...trip, ...tripMembers(trip.id),
+      stops: stops.filter((stop) => stop.tripId === trip.id)
+        .map((stop) => ({ id: stop.id, destinationId: stop.destinationId, city: cities.get(stop.destinationId)!, stay: stop.stay, nights: stop.nights, arrivalDate: stop.arrivalDate, departureDate: stop.departureDate })),
+    }));
+  }
+  /** One trip with everything its page has, and its budget. Undefined when there is no such trip. */
+  function aiTrip(tripId: string) {
+    if (!tripOf("trips", tripId)) return undefined;
+    const stops = readStops([tripId]);
+    const destinationIds = [...new Set(stops.map((stop) => stop.destinationId))];
+    const data: Snapshot = { trips: readTrips([tripId]), stops, destinations: readDestinations(destinationIds), legs: readLegs([tripId]), candidates: readCandidates(destinationIds), churches: readChurches(destinationIds), homeItems: readHomeItems([tripId]), tags: [] };
+    return { trip: data.trips[0], ...tripMembers(tripId), stops, travel: data.legs, atHome: data.homeItems, destinations: data.destinations, ideas: data.candidates, churches: data.churches, budget: calculateBudget(data, tripId) };
+  }
+  /** Each trip's stays at the given destinations, or at every destination, with the trip's name. */
+  function visitsOf(destinationIds: readonly string[] | null) {
+    const [where, args] = among("trip_stops.destinationId", destinationIds);
+    return db.prepare(`SELECT trip_stops.destinationId, trip_stops.id AS stopId, trip_stops.tripId, trips.name AS tripName, trip_stops.nights, trip_stops.arrivalDate, trip_stops.departureDate
+      FROM trip_stops JOIN trips ON trips.id = trip_stops.tripId${where} ORDER BY trips.createdAt DESC, trips.id, trip_stops.position`).all(...args).map((row) => ({ ...row }));
+  }
+  /** Every destination, with its owner, the trips that stay there, and how many ideas and churches it has. */
+  function aiDestinations() {
+    const owners = new Map(db.prepare("SELECT destinations.id, accounts.email, accounts.name FROM destinations JOIN accounts ON accounts.id = destinations.ownerId").all().map((row) => [row.id as string, member(row)]));
+    const visits = visitsOf(null);
+    const ideas = db.prepare("SELECT destinationId, category, count(*) AS count FROM candidates GROUP BY destinationId, category").all();
+    const churches = db.prepare("SELECT destinationId, count(*) AS count FROM churches GROUP BY destinationId").all();
+    const count = (rows: Record<string, unknown>[], id: string, category?: Category) => Number(rows.find((row) => row.destinationId === id && (category === undefined || row.category === category))?.count ?? 0);
+    return db.prepare("SELECT id, city FROM destinations ORDER BY city COLLATE NOCASE, id").all().map((row) => {
+      const id = row.id as string;
+      return { id, city: row.city as string, owner: owners.get(id)!, visits: visits.filter((visit) => visit.destinationId === id),
+        hotels: count(ideas, id, "hotels"), activities: count(ideas, id, "activities"), restaurants: count(ideas, id, "restaurants"), churches: count(churches, id) };
+    });
+  }
+  /** One destination with everything its page has, and every trip's stay there. Undefined when there is no such destination. */
+  function aiDestination(destinationId: string) {
+    const [destination] = readDestinations([destinationId]);
+    if (!destination) return undefined;
+    const owner = member(db.prepare("SELECT accounts.email, accounts.name FROM destinations JOIN accounts ON accounts.id = destinations.ownerId WHERE destinations.id = ?").get(destinationId)!);
+    return { destination, owner, visits: visitsOf([destinationId]), ideas: readCandidates([destinationId]), churches: readChurches([destinationId]) };
+  }
+  /** One of a destination's, idea's or church's photos. Undefined when it has no such photo. */
+  function aiPhoto(kind: "destination" | "idea" | "church", ownerId: string, photoId: string): StoredImage | undefined {
+    const [table, column] = { destination: ["destination_images", "destinationId"], idea: ["candidate_images", "candidateId"], church: ["church_images", "churchId"] }[kind];
+    const row = db.prepare(`SELECT version, data FROM ${table} WHERE ${column} = ? AND id = ?`).get(ownerId, photoId);
+    return row ? { version: row.version as string, data: new Uint8Array(row.data as Uint8Array) } : undefined;
+  }
+
+  /** Every row of Travel's own data, which a proposal's effects are worked out from: no photo bytes or Google subjects. */
+  function readTables(): Tables {
+    return Object.fromEntries(DATA_TABLES.map((table) => {
+      const columns = db.prepare(`PRAGMA table_info(${table})`).all() as unknown as { name: string; pk: number }[];
+      const key = columns.filter((column) => column.pk > 0).sort((a, b) => a.pk - b.pk).map((column) => column.name);
+      const read = columns.map((column) => column.name).filter((name) => !UNREAD_COLUMNS[table].includes(name));
+      const rows = db.prepare(`SELECT ${read.join(", ")} FROM ${table}`).all().map((row) => ({ ...row }) as Row);
+      return [table, new Map(rows.map((row) => [JSON.stringify(key.map((column) => row[column])), row]))];
+    })) as Tables;
+  }
+  /** The IDs and time a proposal gives the rows it adds: the same every time it runs, so approving it makes exactly the rows it previewed. */
+  function replay(proposalId: string, createdAt: number): Make {
+    let count = 0;
+    return {
+      id: () => {
+        const bytes = createHash("sha256").update(`${proposalId}/${count++}`).digest().subarray(0, 16);
+        bytes[6] = (bytes[6] & 0x0f) | 0x40; // version 4
+        bytes[8] = (bytes[8] & 0x3f) | 0x80; // RFC 9562 variant
+        const hex = bytes.toString("hex");
+        return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
+      },
+      now: () => new Date(createdAt).toISOString(),
+    };
+  }
+  /** Runs `work` for the change at `index`, naming that change, from 1, in any refusal. */
+  function numbered<T>(index: number, work: () => T): T {
+    try {
+      return work();
+    } catch (error) {
+      if (isValidationError(error)) throw new ValidationError(`Change ${index + 1}: ${error.message}`);
+      throw error;
+    }
+  }
+  /** An AI change, checked by the planner's rules. Photos are added and changed only in Travel, which checks the image files. */
+  function aiChange(input: unknown): Mutation {
+    if (!input || typeof input !== "object" || Array.isArray(input)) throw new ValidationError("Each change must be an object.");
+    const value = input as Input;
+    if ("image" in value || "gallery" in value) throw new ValidationError("Photos can only be added, removed and arranged in Travel itself.");
+    if (value.type === "destination.save" && (value.create !== undefined || value.tripId !== undefined)) throw new ValidationError("Add a destination to a trip with stop.add, or outside any trip with destination.create.");
+    if (["trip.save", "homeItem.save", "destination.save", "church.save", "candidate.save"].includes(value.type as string) && value.id === undefined) {
+      throw new ValidationError("Give the id of the item to change, or a new UUID with create: true to add a trip, idea, church or At home item.");
+    }
+    return validate(input);
+  }
+  /**
+   * Places an AI change as `authorize` places a signed-in account's, refusing one that names no saved trip or
+   * destination, but whoever owns it. An item a change adds must be new: a proposal never changes a saved item it says
+   * it adds, as an editor's repeated save does.
+   */
+  function placeAiChange(change: Mutation): void {
+    if ("create" in change && change.create) {
+      const table = ({ "trip.save": "trips", "homeItem.save": "home_items", "church.save": "churches", "candidate.save": "candidates" } as const)[change.type];
+      if (db.prepare(`SELECT 1 FROM ${table} WHERE id = ?`).get(change.id)) throw new ValidationError("This id is already a saved item's. Leave out create to change it, or give the new item a new UUID.");
+    }
+    if (addsOwnItem(change)) return;
+    const scope = mutationScope(change);
+    if (("trip" in scope ? scope.trip : scope.destination) === undefined) throw new ValidationError("This item doesn't exist. Read Travel again for current IDs.");
+  }
+  /**
+   * Makes a proposal's changes in order, as the designated owner, inside the caller's transaction, with the IDs and
+   * time the proposal gives new rows. Returns what each change did to Travel's data, and how the owner sees it.
+   */
+  function runAiChanges(proposalId: string, createdAt: number, changes: Mutation[]): { effects: Effect[][]; preview: PreviewChange[] } {
+    const make = replay(proposalId, createdAt);
+    let before = readTables();
+    const effects: Effect[][] = [];
+    const preview: PreviewChange[] = [];
+    changes.forEach((change, index) => numbered(index, () => {
+      placeAiChange(change);
+      execute(designatedOwnerId, change, make);
+      const after = readTables();
+      effects.push(effectsBetween(before, after));
+      preview.push(previewChange(change, effects[index], before, after));
+      before = after;
+    }));
+    return { effects, preview };
+  }
+  type StoredProposal = { id: string; summary: string; changesJson: string; previewJson: string; effectsJson: string; createdAt: number; expiresAt: number; status: "pending" | "applied" | "rejected" | "failed"; decidedAt: number | null; error: string | null; platform: AiPlatform };
+  /** What an approval must name: a digest of everything the proposal holds, which can't change once it is made. */
+  function proposalDigest(row: StoredProposal): string {
+    return createHash("sha256").update(JSON.stringify([row.id, row.summary, row.changesJson, row.previewJson, row.effectsJson, row.createdAt, row.expiresAt])).digest("base64url");
+  }
+  function proposalOf(row: StoredProposal, now: number): AiProposal {
+    return {
+      id: row.id, platform: row.platform, summary: row.summary, preview: JSON.parse(row.previewJson) as PreviewChange[],
+      status: row.status === "pending" && row.expiresAt <= now ? "expired" : row.status,
+      createdAt: row.createdAt, expiresAt: row.expiresAt, decidedAt: row.decidedAt, error: row.error, digest: proposalDigest(row),
+    };
+  }
+  const PROPOSALS = "SELECT ai_proposals.*, ai_connections.platform FROM ai_proposals JOIN ai_connections ON ai_connections.id = ai_proposals.connectionId";
+  /**
+   * Records the changes an AI connection proposes, for the designated owner to approve within a day. Each change is
+   * checked by the planner's rules, in order, by making them all and undoing them, so the preview shows exactly what
+   * approving makes. A change may name an item an earlier one adds. Nothing in Travel changes until approval.
+   */
+  function proposeAiChanges(connectionId: string, input: Input, now: number): AiProposal {
+    const summary = textField(input, "summary", 200, true);
+    if (!Array.isArray(input.changes) || input.changes.length < 1 || input.changes.length > 50) throw new ValidationError("Propose from 1 to 50 changes.");
+    const changes = input.changes.map((change, index) => numbered(index, () => aiChange(change)));
+    const id = randomUUID();
+    db.exec("BEGIN IMMEDIATE");
+    let rehearsal: { effects: Effect[][]; preview: PreviewChange[] };
+    try {
+      rehearsal = runAiChanges(id, now, changes);
+    } finally {
+      if (db.isTransaction) db.exec("ROLLBACK");
+    }
+    db.prepare("INSERT INTO ai_proposals(id, connectionId, summary, changesJson, previewJson, effectsJson, createdAt, expiresAt) VALUES(?, ?, ?, ?, ?, ?, ?, ?)")
+      .run(id, connectionId, summary, JSON.stringify(changes), JSON.stringify(rehearsal.preview), JSON.stringify(rehearsal.effects), now, now + PROPOSAL_MS);
+    return proposalOf(db.prepare(`${PROPOSALS} WHERE ai_proposals.id = ?`).get(id) as unknown as StoredProposal, now);
+  }
+  /** A proposal and what has become of it. Undefined when there is no such proposal, or the account isn't the designated owner. */
+  function getAiProposal(accountId: string, proposalId: string, now: number): AiProposal | undefined {
+    if (!isAiOwner(accountId)) return undefined;
+    const row = db.prepare(`${PROPOSALS} WHERE ai_proposals.id = ?`).get(proposalId);
+    return row ? proposalOf(row as unknown as StoredProposal, now) : undefined;
+  }
+  /**
+   * The designated owner's decision on a proposal. `digest` must be the one the owner was shown, so a decision applies
+   * only to the proposal as shown. Rejecting changes nothing in Travel. Approving makes every change and records the
+   * approval in one transaction, and only when they make exactly the rows previewed; when they don't, or the planner
+   * refuses one, nothing changes and the proposal fails with the reason. A proposal is decided once.
+   */
+  function decideAiProposal(accountId: string, proposalId: string, digest: string, approve: boolean, now: number): AiProposal {
+    const proposal = getAiProposal(accountId, proposalId, now);
+    if (!proposal) throw new ValidationError("This proposal doesn't exist.");
+    if (proposal.digest !== digest) throw new ValidationError("This isn't the proposal you were shown. Reload the page, review it, and decide again.");
+    if (proposal.status === "expired") throw new ValidationError("This proposal has expired. Ask the assistant to propose the changes again.");
+    if (proposal.status !== "pending") throw new ValidationError("This proposal has already been decided.");
+    const stored = db.prepare("SELECT changesJson, effectsJson, createdAt FROM ai_proposals WHERE id = ?").get(proposalId)!;
+    try {
+      transaction(() => {
+        // Only the first decision finds the proposal pending, even when two arrive at once.
+        const decided = db.prepare("UPDATE ai_proposals SET status = ?, decidedAt = ? WHERE id = ? AND status = 'pending' AND expiresAt > ?").run(approve ? "applied" : "rejected", now, proposalId, now);
+        if (decided.changes !== 1) throw new ValidationError("This proposal has already been decided, or has expired.");
+        if (!approve) return;
+        const changes = (JSON.parse(stored.changesJson as string) as unknown[]).map((change, index) => numbered(index, () => aiChange(change)));
+        const { effects } = runAiChanges(proposalId, stored.createdAt as number, changes);
+        if (JSON.stringify(effects) !== stored.effectsJson) {
+          throw new ValidationError("Travel has changed since this was proposed, so approving it would no longer make exactly the changes shown. Ask the assistant to propose them again.");
+        }
+      });
+    } catch (error) {
+      // A refused approval fails for good, since trying again can't succeed; anything else, such as a full disk, leaves
+      // the proposal to approve again. Either way nothing in Travel changed.
+      if (!approve || !isValidationError(error)) throw error;
+      db.prepare("UPDATE ai_proposals SET status = 'failed', decidedAt = ?, error = ? WHERE id = ? AND status = 'pending'").run(now, error.message, proposalId);
+    }
+    return getAiProposal(accountId, proposalId, now)!;
+  }
+  /** The designated owner's live AI connections and the latest proposals. Undefined for any other account. */
+  function aiOverview(accountId: string, now: number): { connections: AiConnection[]; proposals: AiProposal[] } | undefined {
+    if (!isAiOwner(accountId)) return undefined;
+    return {
+      connections: db.prepare("SELECT id, platform, connectedAt, lastUsedAt FROM ai_connections WHERE accountId = ? AND refreshExpiresAt > ? ORDER BY connectedAt DESC, id")
+        .all(accountId, now).map((row) => ({ ...row }) as unknown as AiConnection),
+      proposals: db.prepare(`${PROPOSALS} ORDER BY ai_proposals.createdAt DESC, ai_proposals.id LIMIT 50`).all().map((row) => proposalOf(row as unknown as StoredProposal, now)),
+    };
+  }
+
+  /**
+   * Registers an assistant's OAuth client (RFC 7591), which grants nothing until the designated owner allows it. Only
+   * Claude's and ChatGPT's own callbacks can be registered. A registration never allowed is removed after a day, and at
+   * most 100 wait at once, so registering can't fill the database.
+   */
+  function registerAiClient(input: unknown, now: number): { clientId: string; redirectUris: string[] } {
+    const redirectUris = input && typeof input === "object" && !Array.isArray(input) ? (input as Input).redirect_uris : undefined;
+    if (!Array.isArray(redirectUris) || redirectUris.length < 1 || redirectUris.length > 5 || !redirectUris.every((uri) => typeof uri === "string" && aiPlatform(uri))) {
+      throw new ValidationError("Travel connects only to Claude and ChatGPT, through their own OAuth callbacks.");
+    }
+    return transaction(() => {
+      db.prepare("DELETE FROM ai_clients WHERE registeredAt <= ? AND id NOT IN (SELECT clientId FROM ai_connections) AND id NOT IN (SELECT clientId FROM ai_authorization_codes)").run(now - DAY_MS);
+      if (Number(db.prepare("SELECT count(*) AS count FROM ai_clients WHERE id NOT IN (SELECT clientId FROM ai_connections)").get()!.count) >= 100) {
+        throw new ValidationError("Too many connections are waiting to be allowed. Try again tomorrow.");
+      }
+      const clientId = randomUUID();
+      db.prepare("INSERT INTO ai_clients(id, redirectUrisJson, registeredAt) VALUES(?, ?, ?)").run(clientId, JSON.stringify(redirectUris), now);
+      return { clientId, redirectUris: redirectUris as string[] };
+    });
+  }
+  /** The assistant a registered client is, when it registered this callback. Undefined otherwise. */
+  function aiClientPlatform(clientId: string, redirectUri: string): AiPlatform | undefined {
+    const row = db.prepare("SELECT redirectUrisJson FROM ai_clients WHERE id = ?").get(clientId);
+    if (!row || !(JSON.parse(row.redirectUrisJson as string) as string[]).includes(redirectUri)) return undefined;
+    return aiPlatform(redirectUri);
+  }
+  /** The code a client exchanges for its connection's tokens, once the designated owner allows it. The code works once, for ten minutes. */
+  function allowAiConnection(accountId: string, request: { clientId: string; redirectUri: string; codeChallenge: string }, now: number): string {
+    if (!isAiOwner(accountId)) throw new ValidationError("Only Travel's owner can connect AI assistants.");
+    if (!aiClientPlatform(request.clientId, request.redirectUri)) throw new ValidationError("This connection request isn't from Claude or ChatGPT.");
+    if (!isPkceChallenge(request.codeChallenge)) throw new ValidationError("This connection request has no valid code challenge.");
+    const code = randomBytes(32).toString("base64url");
+    db.prepare("DELETE FROM ai_authorization_codes WHERE expiresAt <= ?").run(now);
+    db.prepare("INSERT INTO ai_authorization_codes(codeHash, clientId, accountId, redirectUri, codeChallenge, expiresAt) VALUES(?, ?, ?, ?, ?, ?)")
+      .run(tokenHash(code), request.clientId, accountId, request.redirectUri, request.codeChallenge, now + AUTHORIZATION_CODE_MS);
+    return code;
+  }
+  type AiTokens = { accessToken: string; refreshToken: string; expiresIn: number };
+  function newTokens(): AiTokens {
+    return { accessToken: randomBytes(32).toString("base64url"), refreshToken: randomBytes(32).toString("base64url"), expiresIn: ACCESS_TOKEN_MS / 1000 };
+  }
+  /**
+   * Exchanges an authorization code for a new connection's tokens. The code works once, whatever comes of it.
+   * Undefined when the code is unknown or expired, or the client, callback or PKCE verifier doesn't match it.
+   */
+  function exchangeAiCode(input: { code: string; clientId: string; redirectUri: string; codeVerifier: string }, now: number): AiTokens | undefined {
+    return transaction(() => {
+      const hash = tokenHash(input.code);
+      const code = db.prepare("SELECT * FROM ai_authorization_codes WHERE codeHash = ?").get(hash);
+      db.prepare("DELETE FROM ai_authorization_codes WHERE codeHash = ?").run(hash);
+      if (!code || (code.expiresAt as number) <= now || code.clientId !== input.clientId || code.redirectUri !== input.redirectUri || !isAiOwner(code.accountId as string) || !pkceMatches(input.codeVerifier, code.codeChallenge as string)) return undefined;
+      // Connections unused for thirty days are swept on the way, with their proposals.
+      db.prepare("DELETE FROM ai_connections WHERE refreshExpiresAt <= ?").run(now);
+      const tokens = newTokens();
+      db.prepare("INSERT INTO ai_connections(id, clientId, accountId, platform, connectedAt, lastUsedAt, accessTokenHash, accessExpiresAt, refreshTokenHash, refreshExpiresAt) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?)")
+        .run(randomUUID(), input.clientId, designatedOwnerId, aiPlatform(input.redirectUri)!, now, now, tokenHash(tokens.accessToken), now + ACCESS_TOKEN_MS, tokenHash(tokens.refreshToken), now + CONNECTION_MS);
+      return tokens;
+    });
+  }
+  /**
+   * New tokens for a connection, from the refresh token it was last given, which then stops working. Undefined when the
+   * token is unknown, used, expired or revoked, or isn't this client's.
+   */
+  function refreshAiTokens(input: { refreshToken: string; clientId: string }, now: number): AiTokens | undefined {
+    return transaction(() => {
+      const connection = db.prepare("SELECT id FROM ai_connections WHERE refreshTokenHash = ? AND refreshExpiresAt > ? AND clientId = ? AND accountId = ?")
+        .get(tokenHash(input.refreshToken), now, input.clientId, designatedOwnerId);
+      if (!connection) return undefined;
+      const tokens = newTokens();
+      db.prepare("UPDATE ai_connections SET accessTokenHash = ?, accessExpiresAt = ?, refreshTokenHash = ?, refreshExpiresAt = ?, lastUsedAt = ? WHERE id = ?")
+        .run(tokenHash(tokens.accessToken), now + ACCESS_TOKEN_MS, tokenHash(tokens.refreshToken), now + CONNECTION_MS, now, connection.id);
+      return tokens;
+    });
+  }
+  /** The connection an access token belongs to. Undefined when the token is unknown, expired or revoked, or isn't the designated owner's. */
+  function readAiConnection(accessToken: string, now: number): { id: string; accountId: string; platform: AiPlatform } | undefined {
+    const row = db.prepare("SELECT id, accountId, platform FROM ai_connections WHERE accessTokenHash = ? AND accessExpiresAt > ? AND accountId = ?").get(tokenHash(accessToken), now, designatedOwnerId);
+    return row ? { id: row.id as string, accountId: row.accountId as string, platform: row.platform as AiPlatform } : undefined;
+  }
+  /** Ends a connection at once: its tokens stop working, and its proposals go with it, so none can be approved. */
+  function revokeAiConnection(accountId: string, connectionId: string): void {
+    if (!isAiOwner(accountId)) throw new ValidationError("Only Travel's owner can manage AI connections.");
+    db.prepare("DELETE FROM ai_connections WHERE id = ?").run(connectionId);
+  }
 
   // Declared, not assigned, because the startup transaction above already authorizes the owner.
   function account(row: Record<string, unknown>): AuthorizedAccount {
     return { id: row.id as string, email: row.email as string, name: row.name as string | null };
   }
-  function authorizeAccount(email: string): AuthorizedAccount {
+  function authorizeAccount(email: string, make: Make = LIVE): AuthorizedAccount {
     const address = emailAddress(email);
-    db.prepare("INSERT INTO accounts(id, email, authorizedAt) VALUES(?, ?, ?) ON CONFLICT(email) DO NOTHING").run(randomUUID(), address, new Date().toISOString());
+    db.prepare("INSERT INTO accounts(id, email, authorizedAt) VALUES(?, ?, ?) ON CONFLICT(email) DO NOTHING").run(make.id(), address, make.now());
     return account(db.prepare("SELECT id, email, name FROM accounts WHERE email = ?").get(address)!);
   }
   function getAccountByGoogleSubject(subject: string): AuthorizedAccount | undefined {
@@ -1690,8 +2075,14 @@ export function createStore(databasePath: string, ownerEmail: string) {
     db.prepare("DELETE FROM sessions WHERE tokenHash = ?").run(tokenHash(token));
   }
 
-  // getSnapshot reads everything, for checks and tests. Everything the app shows or changes takes the signed-in account.
-  return { getSnapshot, getHomeOverview, getTripSnapshot, getDestinationsOverview, getDestinationSnapshot, getTripName, getStopName, getDestinationName, checkHealth, getDestinationImage, getDestinationPhoto, getCandidatePhoto, getChurchPhoto, applyMutation, authorizeAccount, getAccountByGoogleSubject, authorizeGoogleSignIn, createSession, readSession, deleteSession, close: () => db.close() };
+  // getSnapshot reads everything, for checks and tests. Everything the app shows or changes takes the signed-in account,
+  // or an AI connection of the designated owner's.
+  return {
+    getSnapshot, getHomeOverview, getTripSnapshot, getDestinationsOverview, getDestinationSnapshot, getTripName, getStopName, getDestinationName, checkHealth, getDestinationImage, getDestinationPhoto, getCandidatePhoto, getChurchPhoto, applyMutation, authorizeAccount, getAccountByGoogleSubject, authorizeGoogleSignIn, createSession, readSession, deleteSession,
+    isAiOwner, aiAccounts, aiTrips, aiTrip, aiDestinations, aiDestination, aiPhoto, proposeAiChanges, getAiProposal, decideAiProposal, aiOverview,
+    registerAiClient, aiClientPlatform, allowAiConnection, exchangeAiCode, refreshAiTokens, readAiConnection, revokeAiConnection,
+    close: () => db.close(),
+  };
 }
 
 /** The Google account authorized during initial setup. src/instrumentation.ts checks it as the server starts. */
@@ -1741,3 +2132,24 @@ export function authorizeGoogleSignIn(identity: GoogleIdentity) { return default
 export function createSession(accountId: string) { return defaultStore().createSession(accountId, Date.now()); }
 export function readSession(token: string) { return defaultStore().readSession(token, Date.now()); }
 export function deleteSession(token: string) { defaultStore().deleteSession(token); }
+
+// ChatGPT and Claude (TRA-115). Pages and actions pass the signed-in account; the MCP endpoint reads as a connection of
+// the designated owner's, which `readAiConnection` found from its access token.
+export function isAiOwner(accountId: string) { return defaultStore().isAiOwner(accountId); }
+export function aiAccounts() { return defaultStore().aiAccounts(); }
+export function aiTrips() { return defaultStore().aiTrips(); }
+export function aiTrip(tripId: string) { return defaultStore().aiTrip(tripId); }
+export function aiDestinations() { return defaultStore().aiDestinations(); }
+export function aiDestination(destinationId: string) { return defaultStore().aiDestination(destinationId); }
+export function aiPhoto(kind: "destination" | "idea" | "church", ownerId: string, photoId: string) { return defaultStore().aiPhoto(kind, ownerId, photoId); }
+export function proposeAiChanges(connectionId: string, input: Record<string, unknown>) { return defaultStore().proposeAiChanges(connectionId, input, Date.now()); }
+export function getAiProposal(accountId: string, proposalId: string) { return defaultStore().getAiProposal(accountId, proposalId, Date.now()); }
+export function decideAiProposal(accountId: string, proposalId: string, digest: string, approve: boolean) { return defaultStore().decideAiProposal(accountId, proposalId, digest, approve, Date.now()); }
+export function aiOverview(accountId: string) { return defaultStore().aiOverview(accountId, Date.now()); }
+export function registerAiClient(input: unknown) { return defaultStore().registerAiClient(input, Date.now()); }
+export function aiClientPlatform(clientId: string, redirectUri: string) { return defaultStore().aiClientPlatform(clientId, redirectUri); }
+export function allowAiConnection(accountId: string, request: { clientId: string; redirectUri: string; codeChallenge: string }) { return defaultStore().allowAiConnection(accountId, request, Date.now()); }
+export function exchangeAiCode(input: { code: string; clientId: string; redirectUri: string; codeVerifier: string }) { return defaultStore().exchangeAiCode(input, Date.now()); }
+export function refreshAiTokens(input: { refreshToken: string; clientId: string }) { return defaultStore().refreshAiTokens(input, Date.now()); }
+export function readAiConnection(accessToken: string) { return defaultStore().readAiConnection(accessToken, Date.now()); }
+export function revokeAiConnection(accountId: string, connectionId: string) { defaultStore().revokeAiConnection(accountId, connectionId); }

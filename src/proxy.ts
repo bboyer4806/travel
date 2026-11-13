@@ -8,8 +8,12 @@ import { isHttps, sessionCookieName, sessionCookieOptions } from "@/lib/session-
  * This turns "not signed in" into a redirect rather than a page that streams one.
  */
 
-/** Reachable without signing in. /auth/google covers its callback, where Google sends people back to. */
-const PUBLIC_PATHS = ["/login", "/auth/google"];
+/**
+ * Reachable without signing in. /auth/google covers its callback, where Google sends people back to. Claude and
+ * ChatGPT read OAuth metadata under /.well-known before connecting (TRA-115); the MCP and OAuth endpoints they then use
+ * are under /api, which answers for itself.
+ */
+const PUBLIC_PATHS = ["/login", "/auth/google", "/.well-known/oauth-authorization-server", "/.well-known/oauth-protected-resource"];
 
 export function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl;

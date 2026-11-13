@@ -1,8 +1,8 @@
-// Production HTTP regressions for TRA-73, TRA-75 and TRA-94. Run after pnpm build with Node 24.
+// Production HTTP regressions for TRA-73, TRA-75, TRA-94 and TRA-115. Run after pnpm build with Node 24.
 // All writes and failure injection use a new, isolated database under test-results.
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { once } from "node:events";
 import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { createServer } from "node:net";
@@ -163,6 +163,101 @@ for (const [label, firstPath] of [
       assert.equal((await server.request("/api/health")).status, 200);
     }
     console.log(`Passed ${label}: validation, stale-record handling, and valid saves.`);
+  } finally { await server.stop(); }
+}
+
+// TRA-115: Claude connects as an assistant does, through the OAuth endpoints and the owner's consent on Travel's page,
+// reads a trip nobody shared with the owner, proposes a change, and the owner approves it on the proposal's page.
+{
+  const seed = createStore(database, ownerEmail);
+  const guest = seed.authorizeAccount("guest@example.test");
+  assert.equal(seed.authorizeGoogleSignIn({ subject: "review-smoke-guest", email: "guest@example.test", emailVerified: true, name: "Smoke Guest" })?.id, guest.id);
+  const guestCookie = `${sessionCookieName(false)}=${seed.createSession(guest.id, Date.now())}`;
+  const guestTripId = seed.applyMutation(guest.id, { ...tripInput, ...newItem(), name: "Guest smoke trip" }).id;
+  seed.close();
+  const aiActions = Object.fromEntries(Object.entries(manifest.node ?? {}).filter(([, action]) => action.filename === "src/app/ai/actions.ts").map(([id, action]) => [action.exportedName, id]));
+  assert.deepEqual(Object.keys(aiActions).sort(), ["answerAiConnection", "decideProposal", "revokeConnection"]);
+  const server = await startServer("ai-connection");
+  try {
+    const origin = new URL((await server.request("/api/health")).url).origin;
+    const claude = "https://claude.ai/api/mcp/auth_callback";
+    const json = (path, body, headers = {}) => server.request(path, { method: "POST", headers: { "Content-Type": "application/json", Cookie: "", ...headers }, body: JSON.stringify(body) });
+    // Server Actions as React sends a form: its fields under _1_, then the arguments in field 0, which name them $K1.
+    async function formAction(path, name, args, fields, cookie) {
+      const body = new FormData();
+      for (const [key, value] of Object.entries(fields)) body.append(`_1_${key}`, value);
+      body.append("0", JSON.stringify(args));
+      return server.request(path, { method: "POST", headers: { "Next-Action": aiActions[name], Accept: "text/x-component", Origin: origin, ...(cookie === undefined ? {} : { Cookie: cookie }) }, body });
+    }
+
+    // Before connecting: the metadata is public, and the MCP endpoint says where to authorize.
+    const metadata = await (await server.request("/.well-known/oauth-authorization-server", { headers: { Cookie: "" } })).json();
+    assert.equal(metadata.issuer, origin);
+    assert.equal(metadata.authorization_endpoint, `${origin}/ai/authorize`);
+    const resource = await (await server.request("/.well-known/oauth-protected-resource/api/mcp", { headers: { Cookie: "" } })).json();
+    assert.deepEqual(resource.authorization_servers, [origin]);
+    const unauthorized = await json("/api/mcp", { jsonrpc: "2.0", id: 1, method: "initialize", params: { protocolVersion: "2025-06-18" } });
+    assert.equal(unauthorized.status, 401);
+    assert.equal(unauthorized.headers.get("www-authenticate"), `Bearer resource_metadata="${origin}/.well-known/oauth-protected-resource/api/mcp"`);
+
+    const registered = await json("/api/oauth/register", { client_name: "Claude", redirect_uris: [claude], token_endpoint_auth_method: "none" });
+    assert.equal(registered.status, 201);
+    const { client_id: clientId } = await registered.json();
+    const verifier = "review-smoke-verifier-".padEnd(64, "v");
+    const codeChallenge = createHash("sha256").update(verifier).digest("base64url");
+    const authorize = `/ai/authorize?${new URLSearchParams({ response_type: "code", client_id: clientId, redirect_uri: claude, code_challenge: codeChallenge, code_challenge_method: "S256", state: "smoke-state", scope: "" })}`;
+    assert.match(await (await server.request(authorize)).text(), /Connect Claude to Travel\?/);
+    assert.match(await (await server.request(authorize, { headers: { Cookie: guestCookie } })).text(), /Only Travel(&#x27;|')s owner can connect AI assistants/);
+    const plain = await server.request(authorize.replace("S256", "plain"));
+    assert.equal(plain.status, 307, "a malformed request goes back to the assistant");
+    assert.equal(new URL(plain.headers.get("location")).searchParams.get("error"), "invalid_request");
+    // The guest can't allow it even by calling the action directly.
+    const consent = { clientId, redirectUri: claude, codeChallenge, state: "smoke-state", decision: "allow" };
+    assert.equal((await formAction("/ai/authorize", "answerAiConnection", ["$K1"], consent, guestCookie)).headers.get("x-action-redirect"), null);
+    const allowed = await formAction("/ai/authorize", "answerAiConnection", ["$K1"], consent);
+    const callback = new URL(allowed.headers.get("x-action-redirect").split(";")[0]);
+    assert.equal(callback.origin + callback.pathname, claude, "the code goes only to Claude's callback");
+    assert.deepEqual([callback.searchParams.get("state"), callback.searchParams.get("iss")], ["smoke-state", origin]);
+
+    const tokenResponse = await server.request("/api/oauth/token", { method: "POST", headers: { "Content-Type": "application/x-www-form-urlencoded", Cookie: "" }, body: new URLSearchParams({ grant_type: "authorization_code", code: callback.searchParams.get("code"), redirect_uri: claude, client_id: clientId, code_verifier: verifier }) });
+    assert.equal(tokenResponse.status, 200);
+    const { access_token: accessToken } = await tokenResponse.json();
+    const mcp = async (method, params) => (await (await json("/api/mcp", { jsonrpc: "2.0", id: 2, method, params }, { Authorization: `Bearer ${accessToken}` })).json()).result;
+    assert.equal((await mcp("initialize", { protocolVersion: "2025-06-18", capabilities: {}, clientInfo: { name: "smoke", version: "1" } })).serverInfo.name, "travel");
+    const trips = JSON.parse((await mcp("tools/call", { name: "list_trips", arguments: {} })).content[0].text).trips;
+    assert.ok(trips.some((trip) => trip.id === guestTripId && trip.owner.email === "guest@example.test"), "Claude reads a trip nobody shared with the owner");
+    const proposed = JSON.parse((await mcp("tools/call", { name: "propose_changes", arguments: { summary: "Rename the guest's trip", changes: [{ type: "trip.save", id: guestTripId, name: "Renamed by Claude", dateLabel: "", homeCity: "Test", travelers: 2, notes: "" }] } })).content[0].text);
+    assert.equal(proposed.approve_at, `${origin}/ai/proposals/${proposed.proposal_id}`);
+    const proposalPath = `/ai/proposals/${proposed.proposal_id}`;
+
+    // Only the owner, signed in, sees the proposal; the decision names its digest, as the page's form does.
+    assert.equal((await server.request(proposalPath, { headers: { Cookie: guestCookie } })).status, 404);
+    assert.equal((await server.request(proposalPath, { headers: { Cookie: "" } })).status, 307);
+    const page = await (await server.request(proposalPath)).text();
+    assert.match(page, /Rename the guest(&#x27;|')s trip/);
+    const digest = page.match(/name="digest" value="([^"]+)"/)[1];
+    const decision = { proposalId: proposed.proposal_id, digest, decision: "approve" };
+    await formAction(proposalPath, "decideProposal", [null, "$K1"], decision, guestCookie);
+    await formAction(proposalPath, "decideProposal", [null, "$K1"], { ...decision, digest: "tampered" });
+    const check = new DatabaseSync(database, { readOnly: true });
+    try {
+      assert.equal(check.prepare("SELECT name FROM trips WHERE id = ?").get(guestTripId).name, "Guest smoke trip", "neither the guest nor a tampered decision approves it");
+      assert.equal((await formAction(proposalPath, "decideProposal", [null, "$K1"], decision)).status, 200);
+      assert.equal(check.prepare("SELECT name FROM trips WHERE id = ?").get(guestTripId).name, "Renamed by Claude");
+      assert.equal(JSON.parse((await mcp("tools/call", { name: "get_change_proposal", arguments: { proposal_id: proposed.proposal_id } })).content[0].text).status, "applied");
+      const overview = await (await server.request("/ai")).text();
+      assert.match(overview, /AI assistants/);
+      assert.match(overview, /Rename the guest(&#x27;|')s trip/);
+      assert.equal((await server.request("/ai", { headers: { Cookie: guestCookie } })).status, 404, "only the owner manages AI assistants");
+      // Revoking ends the connection at once.
+      const connectionId = check.prepare("SELECT id FROM ai_connections").get().id;
+      await formAction("/ai", "revokeConnection", ["$K1"], { connectionId });
+      assert.equal(check.prepare("SELECT count(*) AS count FROM ai_connections").get().count, 0);
+    } finally {
+      check.close();
+    }
+    assert.equal((await json("/api/mcp", { jsonrpc: "2.0", id: 3, method: "tools/list" }, { Authorization: `Bearer ${accessToken}` })).status, 401);
+    console.log("Passed TRA-115: OAuth metadata, registration, owner-only consent, token exchange, MCP reads and proposals, owner-only approval, and revocation.");
   } finally { await server.stop(); }
 }
 

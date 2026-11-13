@@ -35,10 +35,11 @@ is no stand-in for Google. Never commit or log their values.
 Use targeted checks while iterating. Before pushing, run the checks from
 `.github/workflows/check.yml`: `pnpm lint`, `pnpm typecheck`, `pnpm test` and `pnpm build`.
 CI also runs `bash scripts/smoke-container.sh`, which needs Docker and Bash and checks the
-container, persistent storage, sign-in enforcement and trip and destination isolation. A Next.js build alone does
-not verify those.
+container, persistent storage, sign-in enforcement, trip and destination isolation, and AI access
+limits. A Next.js build alone does not verify those.
 After building, CI runs `node scripts/review-errors-smoke.mjs` against disposable databases and
-fixture sessions to check production HTTP errors, recovery and cross-bundle save validation.
+fixture sessions to check production HTTP errors, recovery, cross-bundle save validation, and
+connecting Claude through OAuth, MCP and the owner's Server Actions.
 Fix regressions caused by your change; report unrelated baseline failures and blocked checks.
 Repeat passing checks when subsequent changes affect their coverage or required gates demand it.
 
@@ -49,7 +50,9 @@ Repeat passing checks when subsequent changes affect their coverage or required 
   settings. Every page and its `generateMetadata` call `requireAccount()` first; every Server Action
   and route handler checks `currentAccount()` before using input. `src/proxy.ts` only checks that a
   session cookie exists, so it protects nothing on its own. Only `/login`, `/auth/google/*` and
-  `/api/health` are public. Only the Google callback route may start a session, never an action.
+  `/api/health` are public, with what ChatGPT and Claude need to connect: OAuth metadata under
+  `/.well-known` and `/api/oauth/register` and `/api/oauth/token`. `/api/mcp` takes only an AI
+  connection's access token. Only the Google callback route may start a session, never an action.
 - Authorized accounts and sessions are the store's `accounts` and `sessions` tables: emails, each
   bound to Google's stable subject at first sign-in, and hashed session tokens.
 - Each trip has one owner (`trips.ownerId`) and is shared through `trip_shares` (TRA-104). The
@@ -65,10 +68,20 @@ Repeat passing checks when subsequent changes affect their coverage or required 
   returns the trip's existing stop there instead of adding another. Removing a stop or deleting a trip
   never deletes a destination or what is saved with it. Only its owner deletes a destination, and only
   while no trip visits it.
+- ChatGPT and Claude (TRA-115) use the MCP endpoint in `src/lib/mcp.ts`, with tools in
+  `src/lib/mcp-tools.ts` and OAuth in `src/lib/ai-auth.ts` and `src/lib/oauth-handlers.ts`. Only the
+  designated owner (`isAiOwner`) connects them, on `/ai/authorize`, and decides their proposals. They
+  read every trip through the store's `ai*` reads, never credentials, and change Travel only by
+  proposing `Mutation`s: `proposeAiChanges` rehearses them and records each one's preview and effect
+  rows (`src/lib/ai-preview.ts`); `decideAiProposal` makes them through `execute`, without
+  `authorize`, in one transaction, only when they make exactly the rows previewed. Rows a change adds
+  take their IDs and time from the `Make` it is given, so a proposal replays exactly. A new table or
+  column needs a label in `PREVIEW_COLUMNS`, or a place among the integration's own tables; tests check.
 - Application writes go through `mutatePlanner` in `src/app/actions.ts`, into `applyMutation`
-  in `src/lib/store.ts`. A new operation adds a `Mutation` variant in `src/lib/types.ts` and
-  a case in `validate`, `mutationScope` and `mutate` in the store. `mutationScope` finds the trip
-  or destination a change applies to from saved rows; a change it doesn't place is refused.
+  in `src/lib/store.ts`, or come from an approved AI proposal. A new operation adds a `Mutation`
+  variant in `src/lib/types.ts`, a case in `validate`, `mutationScope` and `mutate` in the store, a
+  schema in `src/lib/mcp-tools.ts` and a title in `operationTitle`. `mutationScope` finds the trip or
+  destination a change applies to from saved rows; a change it doesn't place is refused.
 - A save that adds a trip, an idea, a church or an At home item sends the
   ID its editor gave it when it opened, with `create: true` (TRA-75). The store adds the item when no
   item has that ID, and the same save sent again after a lost response changes that item instead of
@@ -124,7 +137,8 @@ schema and add a note for the new version, with only what its rollback adds to t
   Planning tests use `createOwnedStore` from `tests/owned-store.mjs`, which reads and writes as the
   designated owner; access tests call `createStore(path, ownerEmail)` with several accounts, as
   `tests/sharing.test.mjs` does. Tests of older databases turn a new one back with
-  `UNDO_SCHEMA_21` (then `UNDO_SCHEMA_20`) from `tests/owned-store.mjs`.
+  `UNDO_SCHEMA_21` (then `UNDO_SCHEMA_20`) from `tests/owned-store.mjs`. AI integration tests use
+  `aiSetup` from `tests/ai-fixtures.mjs`: an owner, a guest with an unshared trip, and a Claude connection.
 - Node runs that TypeScript by stripping types, without path aliases. Code in `src/lib` uses
   relative imports for values (type-only `@/` imports are fine) and only erasable TypeScript: no
   enums or parameter properties. Passing type checks alone does not verify these runtime rules.

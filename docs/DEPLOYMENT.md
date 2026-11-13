@@ -29,7 +29,7 @@ pnpm build
 bash scripts/smoke-container.sh
 ```
 
-The container smoke script needs Docker and Bash. It builds the image with a throwaway [Server Actions key](#server-actions-key-tra-74) and checks that the image carries it, then checks persistent storage across container replacement, rendered pages and Server Actions, sign-in enforcement, trip and destination isolation, photo routes, and the refusal to start without the storage marker or the sign-in settings. The Docker image must be tested on a Docker-capable machine or CI; a local Next build alone does not prove the container or host mount works.
+The container smoke script needs Docker and Bash. It builds the image with a throwaway [Server Actions key](#server-actions-key-tra-74) and checks that the image carries it, then checks persistent storage across container replacement, rendered pages and Server Actions, sign-in enforcement, trip and destination isolation, photo routes, that only the designated owner reaches AI assistants and only an access token reaches the MCP endpoint, and the refusal to start without the storage marker or the sign-in settings. The Docker image must be tested on a Docker-capable machine or CI; a local Next build alone does not prove the container or host mount works.
 
 - After the checks pass, a push to `main` builds the image, pushes it to GitHub's container registry tagged with its commit SHA, requires a verified [off-host backup](#travel-15-encrypted-off-host-backups-to-windows-11), and then deploys the image to Dokku (`.github/workflows/deploy.yml`). A failed check or backup stops the deployment.
 - Retain the existing DOKKU_SSH_KEY and DOKKU_HOST secrets, the TRAVEL_BACKUP_HOST_SSH_KEY and TRAVEL_BACKUP_KNOWN_HOSTS secrets the backup step uses, and the NEXT_SERVER_ACTIONS_ENCRYPTION_KEY secret the image build uses ([Server Actions key](#server-actions-key-tra-74)).
@@ -99,6 +99,16 @@ Each owner's destinations become shared by their trips, one per city, and appear
    ```
 
 3. **Verify after deployment.** Confirm `/api/health` returns HTTP 200. Sign in as the owner and confirm each trip lists its destinations in the same order, with the same nights, dates, stay notes and connections, and that **Destinations** lists each city once, with the ideas, photos and churches of every destination combined into it. Re-enter any cleared values the rehearsal found. Sign in as someone a trip is shared with and confirm **Destinations** lists only the destinations of trips shared with them, marked **Shared by** the owner.
+
+## ChatGPT and Claude (TRA-115)
+
+The designated owner, `TRAVEL_OWNER_EMAIL`, can connect ChatGPT and Claude to Travel's MCP endpoint, `https://travel.dev.boyersoftware.com/api/mcp`, to read every trip and propose changes that the owner approves on Travel's own pages (see [README](../README.md#ai-assistants)). No new settings are needed: Travel is its own OAuth authorization server, and the upgrade to [schema 24](#schema-24-chatgpt-and-claude-connections-and-proposals-tra-115) adds its tables.
+
+- **Public endpoints.** Claude and ChatGPT read `/.well-known/oauth-protected-resource` and `/.well-known/oauth-authorization-server`, register at `/api/oauth/register` and get tokens at `/api/oauth/token`, so these answer without a session. Registering grants nothing, and tokens come only from a code the owner's consent produced, or a connection's current refresh token. `/api/mcp` answers only an access token, with a `WWW-Authenticate` challenge otherwise. Keep the proxy passing `Host` and `X-Forwarded-Proto`: the metadata, the `iss` sent back to the assistant, and the approval links are built from them, as Google's redirect URI is.
+- **Callbacks.** Travel accepts only Claude's (`https://claude.ai/api/mcp/auth_callback`, or `https://claude.com/api/mcp/auth_callback`) and ChatGPT's (`https://chatgpt.com/connector_platform_oauth_redirect`, or `https://chatgpt.com/connector/oauth/<id>`) OAuth callbacks. If either assistant moves its callback, connecting fails with a registration error until `aiPlatform` in `src/lib/ai-auth.ts` accepts the new one.
+- **Logs.** Unexpected MCP and approval failures are logged with their cause; codes, tokens and request bodies never are.
+
+**Verify after deployment.** Confirm `/api/health` returns HTTP 200 and `/.well-known/oauth-authorization-server` names `https://travel.dev.boyersoftware.com` as its issuer. Signed in as the owner, open **AI assistants** and connect Claude, then ChatGPT, each from its own app; confirm each appears as its own connection. Ask each to list trips, including one the owner doesn't own, and to propose a small change to such a trip; open the link, check the preview, and reject it. Propose again and approve, and confirm the change. Sign in as another account and confirm **AI assistants** isn't in the header, `/ai` shows "This page has moved on.", and the Connect page refuses. Revoke one connection and confirm that assistant can no longer read Travel while the other still can.
 
 ## Deployment safeguards (TRA-98)
 
@@ -191,7 +201,7 @@ Prefer fixing forward. Rolling back an image does not reverse a database schema 
 
 ## Schema history
 
-The schema version is SQLite's `user_version`; the current schema is 23, `SCHEMA_VERSION` in `src/lib/store.ts`. At every start, `createStore` in `src/lib/store.ts` upgrades an older database in one transaction, through each version in turn. Each upgrade checks what already exists, so running it again on a database that already has its changes (a replay) keeps saved data. The notes below are in schema order. **Superseded** marks behavior that a later schema replaced; the current behavior is in [README.md](../README.md).
+The schema version is SQLite's `user_version`; the current schema is 24, `SCHEMA_VERSION` in `src/lib/store.ts`. At every start, `createStore` in `src/lib/store.ts` upgrades an older database in one transaction, through each version in turn. Each upgrade checks what already exists, so running it again on a database that already has its changes (a replay) keeps saved data. The notes below are in schema order. **Superseded** marks behavior that a later schema replaced; the current behavior is in [README.md](../README.md).
 
 ### Schema 1: first shared planner
 The first release creates the `trips`, `destinations`, `legs` and `candidates` tables, with prices in integer USD cents for the whole party. Anyone with the URL can view and edit every trip. The schema 1 build sets `user_version` to 1 at every start and does not refuse a newer database, so later upgrades check what already exists as well as the version: redeploying a newer build after a rollback to schema 1 cannot repeat an `ALTER TABLE` or replace saved links.
@@ -315,6 +325,11 @@ Restoring the pre-upgrade backup to run a schema 21 build again loses every heal
 Trip tags upgrade the database to schema 23 in the startup transaction with a `trip_tags` table: one row per trip and tag, keyed by the trip's ID and the tag's `tagKey` (its name with letter case, extra spaces and Unicode form made uniform), holding the name as shown. A tag has no row of its own; it exists while a trip has it. Existing trips start without tags, and nothing else changes. Deleting a trip deletes its tags, and other trips keep theirs. The table is in the same online backups, and a replay keeps saved tags.
 
 Restoring the pre-upgrade backup to run a schema 22 build again loses every tag.
+
+### Schema 24: ChatGPT and Claude connections and proposals (TRA-115)
+The ChatGPT and Claude integration upgrades the database to schema 24 in the startup transaction with four tables of its own, changing no trip. `ai_clients` holds each registration and the callbacks it named; `ai_authorization_codes` a hash of each consent's one-use code, with its client, callback and PKCE challenge; `ai_connections` each allowed connection's assistant, times, and hashes of its current access and refresh tokens; and `ai_proposals` each proposal's summary, its changes as validated, its preview, the rows each change makes, its expiry and its decision. Triggers refuse any change to a proposal once it is made, and a second decision. Revoking a connection deletes it with its proposals. The tables are in the same online backups, which therefore hold hashes of live tokens, as they do of sessions. A replay keeps every row.
+
+Restoring the pre-upgrade backup to run a schema 23 build again loses every connection and proposal, and that build has no MCP endpoint, so ChatGPT and Claude must connect again after a later upgrade.
 
 ## Feedback and release notes
 Configure server-only JIRA_URL (HTTPS Jira base URL), JIRA_EMAIL, and JIRA_API_TOKEN with permission to create Tasks in TRA. Use the host's secret configuration; never put credentials in source, image layers, client variables, or logs. Preserve the browser Host and Origin headers through the proxy; the feedback endpoint compares them and ignores forwarded-host claims. The HttpOnly feedback cookie is Secure for HTTPS origins.

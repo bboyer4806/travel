@@ -57,7 +57,9 @@ function legacyDatabase(path, version) {
   const before = {
     homeItems: [],
     churches: [],
-    trips: db.prepare("SELECT * FROM trips").all().map((row) => ({ ...row, startDate: null, endDate: null, returnCity: version === 2 ? "Boston" : null })),
+    // Trips from before tags upgrade with none.
+    tags: [],
+    trips: db.prepare("SELECT * FROM trips").all().map((row) => ({ ...row, startDate: null, endDate: null, returnCity: version === 2 ? "Boston" : null, tags: [] })),
     // Each destination becomes a shared one, visited by a stop with its ID that keeps the trip's own details.
     destinations: db.prepare("SELECT * FROM destinations").all().map((row) => ({ id: row.id, city: row.city, notes: row.notes, imageVersion: null, miscDailyMinor: null, miscCurrency: null, hotelNightlyMinor: null, hotelCurrency: null, activitiesBudgetMode: "itemized", activitiesGeneralMinor: null, activitiesCurrency: null, foodBudgetMode: "itemized", foodDailyMinor: null, foodCurrency: null, shoppingMinor: null, shoppingCurrency: null, weatherHighF: null, weatherLowF: null, weatherRainfall: "", weatherPeriod: "", weatherSource: "", churchEnabled: false })),
     stops: db.prepare("SELECT * FROM destinations").all().map((row) => ({ id: row.id, tripId: row.tripId, destinationId: row.id, position: row.position, stay: row.stay, nights: null, arrivalDate: null, departureDate: null, legacyArrivalDate: null, legacyDepartureDate: null })),

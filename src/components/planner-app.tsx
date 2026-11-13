@@ -22,6 +22,8 @@ import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState, type FormEvent, type ReactNode } from "react";
 import { ArrowDown, ArrowLeft, ArrowRight, ArrowUp, BedDouble, Bike, Binoculars, Bus, CalendarDays, Car, CheckCircle2, Compass, Footprints, MapPin, MoreHorizontal, Pencil, Plane, Plus, Route, Search, Share2, Ship, TrainFront, Trash2, UserPlus, Users, Utensils, Wallet, X, type LucideIcon } from "lucide-react";
 import TripSharing, { memberLabel } from "@/components/trip-sharing";
+import { TripTagFilter, TripTagList, TripTagsEditor } from "@/components/trip-tags";
+import { hasEveryTag, tagKey } from "@/lib/trip-tags";
 import { mutatePlanner } from "@/app/actions";
 import { formatSavedDestinationLabel } from "@/lib/destination-label";
 import { transportationIcons, type TransportationIcon } from "@/lib/transportation-methods";
@@ -133,6 +135,8 @@ export default function PlannerApp({ initialData, initialBudgets, access = {}, d
   const [error, setError] = useState("");
   const [message, setMessage] = useState("");
   const [search, setSearch] = useState("");
+  // The trip list's selected tag filters, as tag keys.
+  const [tagFilter, setTagFilter] = useState<string[]>([]);
   if (lastInitial !== initialData) { setLastInitial(initialData); setData(initialData); }
   const trip = data.trips.find((item) => item.id === tripId);
   // Only owners see Share and Delete; the server refuses those changes from anyone else.
@@ -165,18 +169,20 @@ export default function PlannerApp({ initialData, initialBudgets, access = {}, d
     setEditor(value); setError(""); setMessage("");
   };
   const close = () => { if (!busy) { setEditor(null); setDestinationGallery(createDestinationGalleryDraft()); setCandidateGallery(createCandidateGalleryDraft()); setError(""); } };
-  async function perform(mutation: Mutation, success = "Changes saved.", redirect?: string, imageForm?: FormData) {
-    if (busy) return;
+  /** Saves a change and refreshes the page, resolving to whether it was saved. A refused change shows its error. */
+  async function perform(mutation: Mutation, success = "Changes saved.", redirect?: string, imageForm?: FormData): Promise<boolean> {
+    if (busy) return false;
     setBusy(true); setError(""); setMessage("");
     try {
       const result = await mutatePlanner(mutation, imageForm);
-      if (!result.ok) { setError(result.error); return; }
+      if (!result.ok) { setError(result.error); return false; }
       setEditor(null); setDestinationGallery(createDestinationGalleryDraft()); setCandidateGallery(createCandidateGalleryDraft()); setMessage(success);
       if (redirect) router.push(redirect);
       else if (mutation.type === "trip.save" && !mutation.id && result.id) router.push("/trips/" + result.id);
       else if (mutation.type === "destination.create" && result.id) router.push("/destinations/" + result.id);
       else router.refresh();
-    } catch { setError("We couldn't reach the planner. Your changes haven't been saved. Please try again."); }
+      return true;
+    } catch { setError("We couldn't reach the planner. Your changes haven't been saved. Please try again."); return false; }
     finally { setBusy(false); }
   }
   function confirmDelete(mutation: Mutation, title: string, description: string, redirect?: string) {
@@ -341,7 +347,11 @@ export default function PlannerApp({ initialData, initialBudgets, access = {}, d
       </aside></div>
     </>;
   }
-  const visibleTrips = data.trips.filter((item) => [item.name, item.dateLabel, ...tripCities(item.id).flatMap((city) => [city, formatSavedDestinationLabel(city)])].join(" ").toLowerCase().includes(search.toLowerCase()));
+  // Selected tags no trip has any longer drop out of the filter.
+  const filterTags = data.tags.filter((tag) => tagFilter.includes(tagKey(tag)));
+  const toggleTagFilter = (tag: string) => setTagFilter((keys) => keys.includes(tagKey(tag)) ? keys.filter((key) => key !== tagKey(tag)) : [...keys, tagKey(tag)]);
+  // A trip shows when it matches the search and has every selected tag.
+  const visibleTrips = data.trips.filter((item) => hasEveryTag(item.tags, filterTags) && [item.name, item.dateLabel, ...tripCities(item.id).flatMap((city) => [city, formatSavedDestinationLabel(city)])].join(" ").toLowerCase().includes(search.toLowerCase()));
   const visibleDestinations = data.destinations.filter((item) => [item.city, formatSavedDestinationLabel(item.city), ...visitsOf(item.id).map((visit) => visit.trip.name)].join(" ").toLowerCase().includes(search.toLowerCase()));
   /** Same-named cities can share a short label, so the list shows their full saved names. */
   const sharesLabel = (item: Destination) => data.destinations.some((other) => other.id !== item.id && formatSavedDestinationLabel(other.city) === formatSavedDestinationLabel(item.city));
@@ -355,8 +365,9 @@ export default function PlannerApp({ initialData, initialBudgets, access = {}, d
         </section>
         <section className="trips-section"><div className="section-heading"><div className="heading-inline"><h2>Your possibilities</h2><span className="count-pill">{data.trips.length}</span></div>
           {data.trips.length > 0 && <label className="search-field"><Search size={17} /><input aria-label="Search trips" value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Find a trip or city" /></label>}</div>
+          {data.tags.length > 0 && <TripTagFilter tags={data.tags} selected={filterTags} onToggle={toggleTagFilter} onClear={() => setTagFilter([])} />}
           {data.trips.length === 0 ? <div className="empty-state home-empty"><span className="empty-icon"><MapPin size={28} strokeWidth={1.5} /></span><h3>Every trip starts with a possibility.</h3><p>A weekend away? A place you have always wanted to see?<br />Add your first trip and work out the details as you go.</p><button className="button secondary" onClick={() => open({ kind: "trip" })}><Plus size={17} />Create your first trip</button></div>
-            : visibleTrips.length === 0 ? <div className="empty-state"><h3>No trips match that search.</h3><button className="text-button" onClick={() => setSearch("")}>Clear search</button></div>
+            : visibleTrips.length === 0 ? <div className="empty-state"><h3>{!filterTags.length ? "No trips match that search." : search ? "No trips match that search and every selected tag." : "No trips have every selected tag."}</h3>{search && <button className="text-button" onClick={() => setSearch("")}>Clear search</button>}{filterTags.length > 0 && <button className="text-button" onClick={() => setTagFilter([])}>Clear tag filters</button>}</div>
             : <div className="trip-grid">{visibleTrips.map((item, index) => {
               const cities = tripCities(item.id);
               const estimate = homeBudgets[item.id];
@@ -365,6 +376,7 @@ export default function PlannerApp({ initialData, initialBudgets, access = {}, d
                 <Link className="trip-card-main" href={"/trips/" + item.id}><div className="trip-card-top"><span className="trip-number">TRIP {String(index + 1).padStart(2, "0")}</span><Compass size={38} strokeWidth={1} /></div>
                   <h3>{item.name}</h3><p className="city-list"><MapPin size={15} />{cities.length ? cities.map((city) => formatSavedDestinationLabel(city)).join(" → ") : "Destinations to be decided"}</p>
                   <div className="trip-meta"><span><CalendarDays size={15} />{item.startDate ? formatCalendarDate(item.startDate) + " → " + formatCalendarDate(item.endDate) : item.dateLabel || "Whenever the time is right"}</span><span><Users size={15} />{item.travelers} {item.travelers === 1 ? "traveler" : "travelers"}</span>{itemAccess.role === "editor" && <span><Share2 size={15} />{"Shared by " + memberLabel(itemAccess.owner)}</span>}</div>
+                  <TripTagList tags={item.tags} />
                   <div className="card-budget"><div><span className="small-label">ESTIMATED BUDGET</span><BudgetValue budget={estimate} /></div><span className="round-arrow"><ArrowRight size={19} /></span></div>
                 </Link><div className="card-tools"><button className="text-button" aria-label={"Edit " + item.name} onClick={() => open({ kind: "trip", item })}><Pencil size={14} />Edit</button>{itemAccess.role === "owner" && <button className="icon-button muted" aria-label={"Delete " + item.name} onClick={() => confirmDelete({ type: "trip.delete", id: item.id }, "Delete “" + item.name + "”?", "This removes the trip, its travel plans, and At home items. Its destinations, with their saved ideas and research, stay in Destinations." + sharedDeleteNote(itemAccess))}><Trash2 size={15} /></button>}</div>
               </article>;
@@ -374,7 +386,9 @@ export default function PlannerApp({ initialData, initialBudgets, access = {}, d
 
       {trip && !stopId && <>
         <Link href="/" className="breadcrumb"><ArrowLeft size={16} />All trips</Link>
-        <section className="trip-heading"><div><p className="eyebrow">AN ADVENTURE IN THE MAKING</p><h1>{trip.name}</h1><div className="trip-meta"><span><CalendarDays size={17} />{trip.startDate ? formatCalendarDate(trip.startDate) + " → " + formatCalendarDate(trip.endDate) : trip.dateLabel || "Dates to be decided"}</span><span><Users size={17} />{trip.travelers} {trip.travelers === 1 ? "traveler" : "travelers"}</span><span><MapPin size={17} />{trip.homeCity ? "Departing: " + trip.homeCity : "Add departing city"}</span>{trip.returnCity && <span><MapPin size={17} />Returning: {trip.returnCity}</span>}{tripAccess?.role === "editor" && <span><Share2 size={17} />{"Shared by " + memberLabel(tripAccess.owner)}</span>}{tripAccess?.role === "owner" && tripAccess.sharedWith.length > 0 && <span><Share2 size={17} />{"Shared with " + tripAccess.sharedWith.length + (tripAccess.sharedWith.length === 1 ? " person" : " people")}</span>}</div>{trip.notes && <p className="trip-notes">{trip.notes}</p>}</div>
+        <section className="trip-heading"><div><p className="eyebrow">AN ADVENTURE IN THE MAKING</p><h1>{trip.name}</h1><div className="trip-meta"><span><CalendarDays size={17} />{trip.startDate ? formatCalendarDate(trip.startDate) + " → " + formatCalendarDate(trip.endDate) : trip.dateLabel || "Dates to be decided"}</span><span><Users size={17} />{trip.travelers} {trip.travelers === 1 ? "traveler" : "travelers"}</span><span><MapPin size={17} />{trip.homeCity ? "Departing: " + trip.homeCity : "Add departing city"}</span>{trip.returnCity && <span><MapPin size={17} />Returning: {trip.returnCity}</span>}{tripAccess?.role === "editor" && <span><Share2 size={17} />{"Shared by " + memberLabel(tripAccess.owner)}</span>}{tripAccess?.role === "owner" && tripAccess.sharedWith.length > 0 && <span><Share2 size={17} />{"Shared with " + tripAccess.sharedWith.length + (tripAccess.sharedWith.length === 1 ? " person" : " people")}</span>}</div>
+          <TripTagsEditor tags={trip.tags} available={data.tags} busy={busy} onAdd={(name) => perform({ type: "trip.tag", tripId: trip.id, name }, "Tag added.")} onRemove={(name) => void perform({ type: "trip.untag", tripId: trip.id, name }, "Tag removed.")} />
+          {trip.notes && <p className="trip-notes">{trip.notes}</p>}</div>
           <div className="heading-actions"><button className="button secondary" onClick={() => open({ kind: "trip", item: trip })}><Pencil size={15} />Edit trip</button>{tripAccess?.role === "owner" && <><button className="button secondary" onClick={() => open({ kind: "share" })}><UserPlus size={15} />Share</button><button className="icon-button" aria-label="Delete trip" onClick={() => confirmDelete({ type: "trip.delete", id: trip.id }, "Delete this trip?", "“" + trip.name + "”, its travel plans, and At home items will be removed. Its destinations, with their saved ideas and research, stay in Destinations." + sharedDeleteNote(tripAccess), "/")}><Trash2 size={18} /></button></>}</div>
         </section>
         <div className="trip-layout"><div className="trip-main">

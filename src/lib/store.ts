@@ -12,6 +12,7 @@ import { ENTRY_REQUIREMENT_FIELDS, normalizeEntryRequirements } from "./entry-re
 import { normalizeHealthSafety } from "./health-safety.ts";
 import { SESSION_DAYS } from "./session-cookie.ts";
 import { alreadyTagged, cleanTagName, MAX_TAG_LENGTH, tagKey } from "./trip-tags.ts";
+import { PLANNER_UPDATED } from "./planner-updated.ts";
 import type { EntryRequirements } from "./entry-requirements.ts";
 import type { HealthSafety } from "./health-safety.ts";
 import type { DestinationFields, DestinationGalleryUpdate } from "./types";
@@ -104,6 +105,11 @@ function tagNameField(input: Input): string {
   if (!name) throw new ValidationError("Please enter a tag.");
   if (name.length > MAX_TAG_LENGTH) throw new ValidationError(`A tag must be ${MAX_TAG_LENGTH} characters or fewer.`);
   return name;
+}
+/** The ID of the item a save adds or changes. A page opened before saves named their new items (TRA-75) adds one without it, and needs a reload. */
+function saveIdField(input: Input): string {
+  if (input.id === undefined) throw new ValidationError(PLANNER_UPDATED);
+  return idField(input);
 }
 /** `true` when a save adds the new item its editor named, and left out when it changes a saved one. */
 function createField(input: Input): true | undefined {
@@ -312,7 +318,7 @@ function validate(input: unknown): Mutation {
       if (typeof value.travelers !== "number" || !Number.isInteger(value.travelers) || value.travelers < 1 || value.travelers > 999) {
         throw new ValidationError("Number of travelers must be a whole number between 1 and 999.");
       }
-      return { type: value.type, id: idField(value), create: createField(value), name: textField(value, "name", 120, true), startDate: destinationDateField(value, "startDate"), dateLabel: textField(value, "dateLabel", 120), homeCity: textField(value, "homeCity", 120), returnCity: returnCityField(value), travelers: value.travelers, notes: textField(value, "notes", 8000) };
+      return { type: value.type, id: saveIdField(value), create: createField(value), name: textField(value, "name", 120, true), startDate: destinationDateField(value, "startDate"), dateLabel: textField(value, "dateLabel", 120), homeCity: textField(value, "homeCity", 120), returnCity: returnCityField(value), travelers: value.travelers, notes: textField(value, "notes", 8000) };
     }
     case "trip.delete":
     case "stop.remove":
@@ -327,25 +333,26 @@ function validate(input: unknown): Mutation {
     case "trip.untag":
       return { type: value.type, tripId: idField(value, "tripId"), name: tagNameField(value) };
     case "homeItem.save":
-      return { type: value.type, id: idField(value), create: createField(value), tripId: idField(value, "tripId"), name: textField(value, "name", 160, true), price: priceField(value), notes: textField(value, "notes", 8000), completed: booleanField(value, "completed") };
+      return { type: value.type, id: saveIdField(value), create: createField(value), tripId: idField(value, "tripId"), name: textField(value, "name", 160, true), price: priceField(value), notes: textField(value, "notes", 8000), completed: booleanField(value, "completed") };
     case "homeItem.delete":
       return { type: value.type, id: idField(value), tripId: idField(value, "tripId") };
     case "homeItem.complete":
       return { type: value.type, id: idField(value), tripId: idField(value, "tripId"), completed: booleanField(value, "completed") };
     case "destination.save": {
       if (value.arrivalDate !== undefined || value.departureDate !== undefined) throw new ValidationError("Destination dates are calculated. Edit the trip start date or destination nights instead.");
+      const id = saveIdField(value);
       const fields = { city: value.city === undefined ? undefined : textField(value, "city", 120, true), stay: value.stay === undefined ? undefined : textField(value, "stay", 120), nights: nightsField(value), miscDailyAmount: value.miscDailyAmount === undefined ? undefined : textField(value, "miscDailyAmount", 32), hotelNightlyAmount: value.hotelNightlyAmount === undefined ? undefined : textField(value, "hotelNightlyAmount", 32), activitiesBudgetMode: activitiesModeField(value), activitiesGeneralAmount: value.activitiesGeneralAmount === undefined ? undefined : textField(value, "activitiesGeneralAmount", 32), foodBudgetMode: foodModeField(value), foodDailyAmount: value.foodDailyAmount === undefined ? undefined : textField(value, "foodDailyAmount", 32), shoppingAmount: value.shoppingAmount === undefined ? undefined : textField(value, "shoppingAmount", 32), weatherHighF: temperatureField(value, "weatherHighF"), weatherLowF: temperatureField(value, "weatherLowF"), weatherRainfall: value.weatherRainfall === undefined ? undefined : textField(value, "weatherRainfall", 4000), weatherPeriod: value.weatherPeriod === undefined ? undefined : textField(value, "weatherPeriod", 120), weatherSource: value.weatherSource === undefined ? undefined : textField(value, "weatherSource", 2048), notes: value.notes === undefined ? undefined : textField(value, "notes", 8000), image: imageField(value), gallery: destinationGalleryField(value) };
       // A new destination joins a trip as its last stop. A saved one is changed by its own ID, and only a trip's
       // stop has stay notes and nights, so a save that changes them names that stop.
       if (createField(value)) {
         if (value.tripId === undefined) throw new ValidationError("Add a destination from a trip's page.");
         if (value.stopId !== undefined) throw new ValidationError("A new destination has no stop yet. Please refresh and try again.");
-        return { type: value.type, id: idField(value), create: true, tripId: idField(value, "tripId"), ...fields, city: textField(value, "city", 120, true) };
+        return { type: value.type, id, create: true, tripId: idField(value, "tripId"), ...fields, city: textField(value, "city", 120, true) };
       }
       if (value.tripId !== undefined) throw new ValidationError("A saved destination is changed by its own ID. Please refresh and try again.");
       const stopId = value.stopId === undefined ? undefined : idField(value, "stopId");
       if (stopId === undefined && (fields.stay !== undefined || fields.nights !== undefined)) throw new ValidationError("Stay notes and nights belong to a trip. Change them from the trip's page.");
-      return { type: value.type, id: idField(value), stopId, ...fields };
+      return { type: value.type, id, stopId, ...fields };
     }
     case "destination.create":
       return { type: value.type, city: textField(value, "city", 120, true) };
@@ -364,7 +371,7 @@ function validate(input: unknown): Mutation {
     case "destination.churchVisibility":
       return { type: value.type, id: idField(value), enabled: booleanField(value, "enabled") };
     case "church.save":
-      return { type: value.type, id: idField(value), create: createField(value), destinationId: idField(value, "destinationId"), name: textField(value, "name", 160, true), address: textField(value, "address", 500), denomination: textField(value, "denomination", 160), url: urlField(value), massTimes: massTimesField(value), gallery: galleryField(value, "Church") };
+      return { type: value.type, id: saveIdField(value), create: createField(value), destinationId: idField(value, "destinationId"), name: textField(value, "name", 160, true), address: textField(value, "address", 500), denomination: textField(value, "denomination", 160), url: urlField(value), massTimes: massTimesField(value), gallery: galleryField(value, "Church") };
     case "church.delete":
       return { type: value.type, id: idField(value), destinationId: idField(value, "destinationId") };
     case "stop.move":
@@ -373,7 +380,7 @@ function validate(input: unknown): Mutation {
     case "leg.save":
       return { type: value.type, id: idField(value), method: textField(value, "method", 120), price: priceField(value), departure: textField(value, "departure", 120), arrival: textField(value, "arrival", 120), url: urlField(value), notes: textField(value, "notes", 8000), itinerary: itineraryField(value), links: linksField(value) };
     case "candidate.save":
-      return { type: value.type, id: idField(value), create: createField(value), destinationId: idField(value, "destinationId"), category: categoryField(value), name: textField(value, "name", 160, true), price: priceField(value), address: textField(value, "address", 500), url: urlField(value), notes: textField(value, "notes", 8000), included: booleanField(value, "included"), mustDo: value.mustDo === undefined ? undefined : booleanField(value, "mustDo"), links: linksField(value), gallery: galleryField(value) };
+      return { type: value.type, id: saveIdField(value), create: createField(value), destinationId: idField(value, "destinationId"), category: categoryField(value), name: textField(value, "name", 160, true), price: priceField(value), address: textField(value, "address", 500), url: urlField(value), notes: textField(value, "notes", 8000), included: booleanField(value, "included"), mustDo: value.mustDo === undefined ? undefined : booleanField(value, "mustDo"), links: linksField(value), gallery: galleryField(value) };
     case "candidate.move":
       if (value.direction !== "up" && value.direction !== "down") throw new ValidationError("Choose a valid direction for this idea.");
       return { type: value.type, id: idField(value), direction: value.direction };

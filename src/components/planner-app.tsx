@@ -26,6 +26,7 @@ import { TripTagFilter, TripTagList, TripTagsEditor } from "@/components/trip-ta
 import { hasEveryTag, tagKey } from "@/lib/trip-tags";
 import { mutatePlanner } from "@/app/actions";
 import { randomUuid } from "@/lib/uuid";
+import { PLANNER_UPDATED } from "@/lib/planner-updated";
 import { formatSavedDestinationLabel } from "@/lib/destination-label";
 import { transportationIcons, type TransportationIcon } from "@/lib/transportation-methods";
 import { calculateBudget, calculateDestinationBudget, tripVisits } from "@/lib/budget";
@@ -190,7 +191,7 @@ export default function PlannerApp({ initialData, initialBudgets, access = {}, d
       return true;
     } catch (failure) {
       // A page opened before a deploy whose build changed the save action's ID: retrying never works, reloading does.
-      setError(unstable_isUnrecognizedActionError(failure) ? "The planner was updated. Your changes haven't been saved. Please reload the page and try again." : "We couldn't confirm that your changes were saved. Please try again.");
+      setError(unstable_isUnrecognizedActionError(failure) ? PLANNER_UPDATED : "We couldn't confirm that your changes were saved. Please try again.");
       return false;
     }
     finally { setBusy(false); }

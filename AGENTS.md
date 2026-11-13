@@ -71,8 +71,10 @@ Repeat passing checks when subsequent changes affect their coverage or required 
   ID its editor gave it when it opened, with `create: true` (TRA-75). The store adds the item when no
   item has that ID, and the same save sent again after a lost response changes that item instead of
   adding another. Without `create`, a save changes a saved item and is refused when it no longer
-  exists. `destination.create` instead opens the saved destination for its city, or adds one with an
-  ID the store gives it.
+  exists. A save without an ID comes from a page opened before this and is refused with
+  `PLANNER_UPDATED` from `src/lib/planner-updated.ts`, the message `perform()` also shows for an
+  unrecognized action. `destination.create` instead opens the saved destination for its city, or
+  adds one with an ID the store gives it.
 - `src/lib/store.ts` is the application's database boundary. Home pages read `getHomeOverview`,
   trip and category pages read `getTripSnapshot`, Destinations pages read
   `getDestinationsOverview` and `getDestinationSnapshot`, and saves return only an ID or error.

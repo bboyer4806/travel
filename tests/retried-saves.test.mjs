@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 import test from "node:test";
-import { ValidationError } from "../src/lib/store.ts";
+import { PLANNER_UPDATED } from "../src/lib/planner-updated.ts";
 import { candidateInput, destinationInput, newItem, setup, stop, tripInput } from "./budget-fixtures.mjs";
 import { createOwnedStore } from "./owned-store.mjs";
 
@@ -76,8 +76,12 @@ test("only a new item's save adds it, and a new item's ID can't be another item'
   for (const input of [tripInput({ id: missing }), homeInput(tripId, { id: missing }), candidateInput(florence, "hotels", { id: missing }), churchInput(florence, { id: missing }), { type: "destination.save", id: missing, notes: "Missing" }]) {
     assert.throws(() => store.applyMutation(input), { name: "ValidationError", message: NOT_AVAILABLE }, input.type);
   }
-  // A new item needs the ID its editor gave it, and `create` is only ever true.
-  assert.throws(() => store.applyMutation({ ...tripInput(), id: undefined }), ValidationError);
+  // A page opened before saves named their new items adds one without an ID. Nothing is saved, and it is asked to reload.
+  const outdated = { id: undefined, create: undefined };
+  for (const input of [{ ...tripInput(), ...outdated }, { ...homeInput(tripId), ...outdated }, { ...destinationInput(tripId, { city: "Elsewhere" }), ...outdated }, { ...churchInput(florence), ...outdated }, { ...candidateInput(florence, "hotels"), ...outdated }]) {
+    assert.throws(() => store.applyMutation(input), { name: "ValidationError", message: PLANNER_UPDATED }, input.type);
+  }
+  // `create` is only ever true.
   assert.throws(() => store.applyMutation({ ...tripInput(), create: false }), { name: "ValidationError", message: "create must be true or left out." });
   // A new item's ID never saves over another item, even one in the account's other trip.
   for (const [input, message] of [

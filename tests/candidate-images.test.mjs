@@ -4,7 +4,7 @@ import { DatabaseSync } from "node:sqlite";
 import test from "node:test";
 import { SCHEMA_VERSION, ValidationError } from "../src/lib/store.ts";
 import { createOwnedStore } from "./owned-store.mjs";
-import { fileDatabase, newItem } from "./budget-fixtures.mjs";
+import { addCity, fileDatabase, newItem } from "./budget-fixtures.mjs";
 import { calculateBudget } from "../src/lib/budget.ts";
 
 const webp = new Uint8Array(Buffer.from("UklGRiIAAABXRUJQVlA4IBYAAAAwAQCdASoBAAEADsD+JaQAA3AAAAAA", "base64"));
@@ -12,7 +12,7 @@ const replacement = new Uint8Array(webp);
 replacement[replacement.length - 1] = 1;
 const categories = ["hotels", "activities", "restaurants"];
 const tripInput = { type: "trip.save", name: "Ideas with images", dateLabel: "Next spring", homeCity: "Boston", returnCity: "New York", travelers: 2, notes: "Shared research" };
-const destinationInput = (tripId, overrides = {}) => ({ type: "destination.save", tripId, city: "Vienna", stay: "4 nights", notes: "Stay downtown", ...overrides, ...newItem(overrides) });
+const addDestination = (store, tripId, { city = "Vienna", ...overrides } = {}) => addCity((input) => store.applyMutation(input).id, tripId, city, { stay: "4 nights", notes: "Stay downtown", ...overrides });
 const candidateInput = (destinationId, overrides = {}) => ({ type: "candidate.save", destinationId, category: "hotels", name: "An idea", price: "200.33", address: "City center", url: "https://example.com/booking", notes: "Worth considering", included: true, ...overrides, ...newItem(overrides) });
 const linksInput = () => [{ id: randomUUID(), url: "https://example.com/booking", description: "Booking options" }, { id: randomUUID(), url: "https://example.com/review", description: "Research notes" }];
 const photo = (data = webp) => ({ id: randomUUID(), data });
@@ -39,7 +39,7 @@ for (const category of categories) {
     let store = createOwnedStore(path);
     try {
       const tripId = store.applyMutation({ ...tripInput, ...newItem() }).id;
-      const destinationId = store.applyMutation(destinationInput(tripId, { image: replacement })).id;
+      const destinationId = addDestination(store, tripId, { image: replacement });
       planConnections(store);
       const links = linksInput();
       const input = candidateInput(destinationId, { category, links });
@@ -105,8 +105,8 @@ test("candidate deletion removes only its own images, and removing stops or trip
   const observer = new DatabaseSync(path);
   try {
     const tripId = store.applyMutation({ ...tripInput, ...newItem() }).id;
-    const firstDestination = store.applyMutation(destinationInput(tripId, { image: webp })).id;
-    const secondDestination = store.applyMutation(destinationInput(tripId, { city: "Paris", image: replacement })).id;
+    const firstDestination = addDestination(store, tripId, { image: webp });
+    const secondDestination = addDestination(store, tripId, { city: "Paris", image: replacement });
     const hotelPhoto = photo(webp), activityPhoto = photo(replacement), restaurantPhoto = photo(webp);
     const hotelId = store.applyMutation(candidateInput(firstDestination, { gallery: gallery(hotelPhoto) })).id;
     const activityId = store.applyMutation(candidateInput(firstDestination, { category: "activities", gallery: gallery(activityPhoto) })).id;
@@ -133,7 +133,7 @@ test("invalid candidate images leave fields, selection, and existing image uncha
   const store = createOwnedStore(":memory:");
   t.after(() => store.close());
   const tripId = store.applyMutation({ ...tripInput, ...newItem() }).id;
-  const destinationId = store.applyMutation(destinationInput(tripId)).id;
+  const destinationId = addDestination(store, tripId);
   store.applyMutation(candidateInput(destinationId, { name: "Chosen hotel", gallery: gallery(photo(webp)) }));
   const savedPhoto = photo(replacement);
   const candidateId = store.applyMutation(candidateInput(destinationId, { name: "Alternative hotel", included: false, gallery: gallery(savedPhoto) })).id;
@@ -152,7 +152,7 @@ test("invalid candidate images leave fields, selection, and existing image uncha
     assert.throws(() => store.applyMutation(candidateInput(destinationId, { name: "Unsaved new hotel", gallery: gallery(photo(image)) })), ValidationError);
     assert.deepEqual(store.getSnapshot(), before);
   }
-  const otherDestinationId = store.applyMutation(destinationInput(tripId, { city: "Paris" })).id;
+  const otherDestinationId = addDestination(store, tripId, { city: "Paris" });
   assert.throws(() => store.applyMutation(candidateInput(otherDestinationId, { id: candidateId, gallery: gallery(photo(webp)) })), ValidationError);
   assert.throws(() => store.applyMutation(candidateInput(destinationId, { id: candidateId, category: "activities", gallery: gallery(photo(webp)) })), ValidationError);
   assert.deepEqual(store.getCandidatePhoto(candidateId, savedPhoto.id), beforeImage);
@@ -169,7 +169,7 @@ test("image write or removal failures roll back candidate edits and chosen hotel
   const observer = new DatabaseSync(path);
   try {
     const tripId = store.applyMutation({ ...tripInput, ...newItem() }).id;
-    const destinationId = store.applyMutation(destinationInput(tripId)).id;
+    const destinationId = addDestination(store, tripId);
     store.applyMutation(candidateInput(destinationId, { name: "Chosen hotel", gallery: gallery(photo(webp)) }));
     const savedPhoto = photo(replacement);
     const candidateId = store.applyMutation(candidateInput(destinationId, { name: "Alternative hotel", included: false, gallery: gallery(savedPhoto) })).id;
@@ -203,7 +203,7 @@ test("schema 4 upgrade preserves destination images and every record, and schema
   let store = createOwnedStore(path);
   try {
     const tripId = store.applyMutation({ ...tripInput, ...newItem() }).id;
-    const destinationId = store.applyMutation(destinationInput(tripId, { image: webp })).id;
+    const destinationId = addDestination(store, tripId, { image: webp });
     planConnections(store);
     const candidateIds = categories.map((category) => store.applyMutation(candidateInput(destinationId, { category, name: category + " idea", links: linksInput() })).id);
     const before = store.getSnapshot();

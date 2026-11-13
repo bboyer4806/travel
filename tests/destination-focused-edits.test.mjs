@@ -9,7 +9,7 @@ import * as money from "../src/lib/money.ts";
 import { ValidationError } from "../src/lib/store.ts";
 import * as tripDates from "../src/lib/trip-dates.ts";
 import { createOwnedStore } from "./owned-store.mjs";
-import { newItem } from "./budget-fixtures.mjs";
+import { addCity, newItem } from "./budget-fixtures.mjs";
 
 const { calculateBudget } = budget;
 
@@ -27,7 +27,7 @@ for (const edit of edits) test(`focused ${Object.keys(edit)[0]} save preserves n
   const store = createOwnedStore(":memory:");
   t.after(() => store.close());
   const tripId = store.applyMutation({ type: "trip.save", ...newItem(), name: "Shared trip", startDate: "2026-11-01", dateLabel: "", homeCity: "Home", travelers: 2, notes: "" }).id;
-  const id = store.applyMutation({ type: "destination.save", ...newItem(), tripId, city: "Original", stay: "Old stay", notes: "Old notes", nights: 2 }).id;
+  const id = addCity((input) => store.applyMutation(input).id, tripId, "Original", { stay: "Old stay", notes: "Old notes", nights: 2 });
   // Another traveler saves while a focused editor remains open on the old snapshot.
   store.applyMutation({ type: "destination.save", id, stopId: id, city: "New city", stay: "New stay", notes: "New notes", nights: 4, hotelNightlyAmount: "100", miscDailyAmount: "20" });
   for (const leg of store.getSnapshot().legs) store.applyMutation({ type: "leg.save", id: leg.id, method: "Train", price: "40.50", departure: "Morning", arrival: "Afternoon", url: "https://example.com/train", notes: "Latest connection", itinerary: [{ id: randomUUID(), kind: "stop", place: "Transfer", arrival: "11 am", departure: "Noon", notes: "Keep this" }], links: [{ id: randomUUID(), url: "https://example.com/train", description: "Timetable" }] });
@@ -50,7 +50,7 @@ for (const edit of edits) test(`focused ${Object.keys(edit)[0]} save preserves n
   assert.deepEqual(store.getSnapshot().legs, before.legs);
   store.applyMutation({ type: "destination.save", id, city: "Intentional rename" });
   assert.ok(store.getSnapshot().legs.every(leg => leg.priceCents === null && leg.itinerary.length === 0 && leg.links.length === 0));
-  for (const city of [undefined, null, "", "   "]) assert.throws(() => store.applyMutation({ type: "destination.save", ...newItem(), tripId, city }), ValidationError);
+  for (const city of [undefined, null, "", "   "]) assert.throws(() => store.applyMutation({ type: "stop.add", tripId, city }), ValidationError);
   for (const field of ["city", "stay", "notes"]) assert.throws(() => store.applyMutation({ type: "destination.save", id, stopId: id, [field]: null }), ValidationError);
 });
 
@@ -62,8 +62,8 @@ function twoStayTrip(t) {
   const store = createOwnedStore(":memory:");
   t.after(() => store.close());
   const tripId = store.applyMutation({ type: "trip.save", ...newItem(), name: "Shared trip", startDate: "2026-11-01", dateLabel: "", homeCity: "Home", travelers: 2, notes: "" }).id;
-  const id = store.applyMutation({ type: "destination.save", ...newItem(), tripId, city: "Original", stay: "Old stay", notes: "Old notes", nights: 2 }).id;
-  const next = store.applyMutation({ type: "destination.save", ...newItem(), tripId, city: "Next", stay: "Next stay", nights: 3, hotelNightlyAmount: "80" }).id;
+  const id = addCity((input) => store.applyMutation(input).id, tripId, "Original", { stay: "Old stay", notes: "Old notes", nights: 2 });
+  const next = addCity((input) => store.applyMutation(input).id, tripId, "Next", { stay: "Next stay", nights: 3, hotelNightlyAmount: "80" });
   store.applyMutation({ type: "destination.save", id, stopId: id, city: "New city", stay: "New stay", notes: "New notes", nights: 4, hotelNightlyAmount: "100", miscDailyAmount: "20", foodBudgetMode: "daily", foodDailyAmount: "50" });
   for (const leg of store.getSnapshot().legs) store.applyMutation({ type: "leg.save", id: leg.id, method: "Train", price: "40.50", departure: "Morning", arrival: "Afternoon", url: "https://example.com/train", notes: "Latest connection", itinerary: [{ id: randomUUID(), kind: "stop", place: "Transfer", arrival: "11 am", departure: "Noon", notes: "Keep this" }], links: [{ id: randomUUID(), url: "https://example.com/train", description: "Timetable" }] });
   return { store, tripId, id, next };

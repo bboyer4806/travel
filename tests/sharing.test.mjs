@@ -8,7 +8,7 @@ import test from "node:test";
 import { calculateBudget } from "../src/lib/budget.ts";
 import { createStore, SCHEMA_VERSION, ValidationError } from "../src/lib/store.ts";
 import { UNDO_SCHEMA_20, UNDO_SCHEMA_21 } from "./owned-store.mjs";
-import { fileDatabase, newItem } from "./budget-fixtures.mjs";
+import { addCity, fileDatabase, newItem } from "./budget-fixtures.mjs";
 
 const OWNER = "owner@example.com";
 const NOT_AVAILABLE = { name: "ValidationError", message: "This item no longer exists or isn't shared with you. Please refresh and try again." };
@@ -35,8 +35,8 @@ function setup(t, path = ":memory:") {
 function plannedTrip(store, accountId, name = "Portugal", [firstCity, secondCity] = ["Lisbon", "Porto"]) {
   const change = (input) => store.applyMutation(accountId, input).id;
   const tripId = change({ type: "trip.save", ...newItem(), name, startDate: "2027-05-02", dateLabel: "Spring", homeCity: "Boston", travelers: 2, notes: "Trip notes" });
-  const lisbon = change({ type: "destination.save", ...newItem(), tripId, city: firstCity, stay: "", notes: "", nights: 3, hotelNightlyAmount: "150", gallery: { add: [photo(), photo()], remove: [] } });
-  const porto = change({ type: "destination.save", ...newItem(), tripId, city: secondCity, stay: "", notes: "", nights: 2 });
+  const lisbon = addCity(change, tripId, firstCity, { nights: 3, hotelNightlyAmount: "150", gallery: { add: [photo(), photo()], remove: [] } });
+  const porto = addCity(change, tripId, secondCity, { nights: 2 });
   const hotel = change({ type: "candidate.save", ...newItem(), destinationId: lisbon, category: "hotels", name: "Hotel", price: "400", address: "", url: "", notes: "", included: true, gallery: { add: [photo()], remove: [] } });
   const activity = change({ type: "candidate.save", ...newItem(), destinationId: lisbon, category: "activities", name: "Tram 28", price: "20", address: "", url: "", notes: "", included: true });
   const church = change({ type: "church.save", ...newItem(), destinationId: lisbon, name: "Sé", address: "", denomination: "", url: "", massTimes: [], gallery: { add: [photo()], remove: [] } });
@@ -155,7 +155,7 @@ test("people a trip is shared with change everything in it, but only its owner d
   change({ type: "destination.save", id: porto, stopId: porto, stay: "By the river", nights: 4 });
   change({ type: "homeItem.save", ...newItem(), tripId, name: "Pet care", price: "50", notes: "", completed: false });
   change({ type: "homeItem.complete", id: homeItem, tripId, completed: true });
-  const sintra = change({ type: "destination.save", ...newItem(), tripId, city: "Sintra", stay: "", notes: "", nights: 1 });
+  const sintra = addCity(change, tripId, "Sintra", { nights: 1 });
   change({ type: "stop.move", id: sintra, direction: "up" });
   change({ type: "candidate.delete", id: activity });
   change({ type: "church.delete", id: church, destinationId: lisbon });
@@ -209,7 +209,7 @@ test("an account a trip isn't shared with can neither read nor change any part o
     { type: "homeItem.save", id: homeItem, tripId, name: "Mine", price: "", notes: "", completed: false },
     { type: "homeItem.complete", id: homeItem, tripId, completed: true },
     { type: "homeItem.delete", id: homeItem, tripId },
-    { type: "destination.save", ...newItem(), tripId, city: "Mine" },
+    { type: "stop.add", tripId, city: "Mine" },
     { type: "destination.save", id: lisbon, notes: "Mine" },
     { type: "destination.save", id: lisbon, stopId: lisbon, nights: 9 },
     { type: "stop.remove", id: lisbon },
@@ -238,7 +238,6 @@ test("an account a trip isn't shared with can neither read nor change any part o
     // Nor as the IDs of new items, which would save over the other trip's.
     { type: "trip.save", id: tripId, create: true, name: "Mine now", dateLabel: "", homeCity: "", travelers: 1, notes: "" },
     { type: "homeItem.save", id: homeItem, create: true, tripId: own.tripId, name: "Mine", price: "", notes: "", completed: false },
-    { type: "destination.save", id: lisbon, create: true, tripId: own.tripId, city: "Mine" },
     { type: "church.save", id: church, create: true, destinationId: own.lisbon, name: "Mine", address: "", denomination: "", url: "", massTimes: [] },
     { type: "candidate.save", id: hotel, create: true, destinationId: own.lisbon, category: "hotels", name: "Mine", ...idea },
   ]) {

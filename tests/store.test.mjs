@@ -5,12 +5,13 @@ import { DatabaseSync } from "node:sqlite";
 import test from "node:test";
 import { SCHEMA_VERSION, ValidationError } from "../src/lib/store.ts";
 import { createOwnedStore } from "./owned-store.mjs";
-import { fileDatabase, newItem, setup, destinationEdit, stopEdit } from "./budget-fixtures.mjs";
-import { calculateBudget } from "../src/lib/budget.ts";
+import { addCity, fileDatabase, newItem, setup, destinationEdit, stopEdit } from "./budget-fixtures.mjs";
+import { calculateBudget, calculateDestinationBudget } from "../src/lib/budget.ts";
 import { formatCurrency } from "../src/lib/money.ts";
+import { PLANNER_UPDATED } from "../src/lib/planner-updated.ts";
 
 const tripInput = (overrides = {}) => ({ type: "trip.save", name: "Japan in spring", dateLabel: "Spring 2027", homeCity: "New York", travelers: 2, notes: "An idea worth exploring.", ...overrides, ...newItem(overrides) });
-const destinationInput = (tripId, overrides = {}) => ({ type: "destination.save", tripId, city: "Tokyo", stay: "4 nights", notes: "", ...overrides, ...newItem(overrides) });
+const addDestination = (store, tripId, { city = "Tokyo", ...overrides } = {}) => addCity((input) => store.applyMutation(input).id, tripId, city, { stay: "4 nights", notes: "", ...overrides });
 const candidateInput = (destinationId, overrides = {}) => ({ type: "candidate.save", destinationId, category: "hotels", name: "A lovely hotel", price: "200.33", address: "", url: "https://example.com", notes: "", included: true, ...overrides, ...newItem(overrides) });
 const legInput = (id, overrides = {}) => ({ type: "leg.save", id, method: "Flight", price: "100.01", departure: "Morning", arrival: "Evening", url: "https://example.com/flights", notes: "Two passengers", ...overrides });
 const legsFor = (store, tripId) => store.getSnapshot().legs.filter((leg) => leg.tripId === tripId);
@@ -31,7 +32,7 @@ function saveResearch(store, destinationId) {
 test("complete create, edit, clear, and delete flows preserve the trip relationships", (t) => {
   const { store, tripId } = setup(t, tripInput());
   assert.deepEqual(store.getSnapshot().legs, []);
-  const { id: destinationId } = store.applyMutation(destinationInput(tripId));
+  const destinationId = addDestination(store, tripId);
   const route = legsFor(store, tripId);
   assert.equal(route.length, 2);
   assert.deepEqual(route.map((leg) => [leg.fromId, leg.toId]), [[null, destinationId], [destinationId, null]]);
@@ -61,11 +62,11 @@ test("complete create, edit, clear, and delete flows preserve the trip relations
 
 test("route changes retain only unchanged connections, and removing a destination from the trip keeps its ideas", (t) => {
   const { store, tripId } = setup(t, tripInput());
-  const a = store.applyMutation(destinationInput(tripId, { city: "Tokyo" })).id;
+  const a = addDestination(store, tripId, { city: "Tokyo" });
   const homeToA = legsFor(store, tripId)[0];
   store.applyMutation(legInput(homeToA.id));
-  const b = store.applyMutation(destinationInput(tripId, { city: "Kyoto" })).id;
-  const c = store.applyMutation(destinationInput(tripId, { city: "Osaka" })).id;
+  const b = addDestination(store, tripId, { city: "Kyoto" });
+  const c = addDestination(store, tripId, { city: "Osaka" });
   assert.equal(legsFor(store, tripId)[0].id, homeToA.id);
   assert.equal(legsFor(store, tripId)[0].priceCents, 10001);
   const oldLegs = legsFor(store, tripId);
@@ -92,9 +93,9 @@ test("route changes retain only unchanged connections, and removing a destinatio
 
 test("home and city changes clear affected transport details; notes edits preserve them", (t) => {
   const { store, tripId } = setup(t, tripInput());
-  const a = store.applyMutation(destinationInput(tripId)).id;
-  const b = store.applyMutation(destinationInput(tripId, { city: "Kyoto" })).id;
-  const c = store.applyMutation(destinationInput(tripId, { city: "Osaka" })).id;
+  const a = addDestination(store, tripId);
+  const b = addDestination(store, tripId, { city: "Kyoto" });
+  const c = addDestination(store, tripId, { city: "Osaka" });
   for (const leg of legsFor(store, tripId)) store.applyMutation(legInput(leg.id));
   store.applyMutation(tripInput({ id: tripId, notes: "New notes" }));
   assert.ok(legsFor(store, tripId).every((leg) => leg.priceCents === 10001));
@@ -108,7 +109,7 @@ test("home and city changes clear affected transport details; notes edits preser
 
 test("budget totals use selected ideas, exact cents, and whole-party transport costs", (t) => {
   const { store, tripId } = setup(t, tripInput());
-  const destinationId = store.applyMutation(destinationInput(tripId)).id;
+  const destinationId = addDestination(store, tripId);
   const route = legsFor(store, tripId);
   store.applyMutation(legInput(route[0].id));
   store.applyMutation(legInput(route[1].id, { price: "20.25" }));
@@ -132,7 +133,7 @@ test("budget totals use selected ideas, exact cents, and whole-party transport c
 test("incomplete budgets distinguish unknown values from a known zero", (t) => {
   const { store, tripId } = setup(t, tripInput());
   assert.equal(calculateBudget(store.getSnapshot(), tripId).missingCount, 1);
-  const destinationId = store.applyMutation(destinationInput(tripId)).id;
+  const destinationId = addDestination(store, tripId);
   assert.equal(calculateBudget(store.getSnapshot(), tripId).missingCount, 4);
   assert.equal(calculateBudget(store.getSnapshot(), tripId).knownCount, 0);
   const hotelId = store.applyMutation(candidateInput(destinationId, { price: "" })).id;
@@ -151,8 +152,8 @@ test("the budget counts each travel connection without a price, as the trip page
   const budget = () => calculateBudget(store.getSnapshot(), tripId);
   const unpriced = () => legsFor(store, tripId).filter((leg) => leg.priceCents === null).length;
   assert.equal(budget().travelMissingCount, 0, "a trip without destinations has no connections");
-  const first = store.applyMutation(destinationInput(tripId)).id;
-  store.applyMutation(destinationInput(tripId, { city: "Osaka" }));
+  const first = addDestination(store, tripId);
+  addDestination(store, tripId, { city: "Osaka" });
   const route = legsFor(store, tripId);
   assert.equal(budget().travelMissingCount, 3);
   store.applyMutation(legInput(route[0].id, { price: "0" }));
@@ -171,7 +172,7 @@ test("the budget counts each travel connection without a price, as the trip page
 
 test("runtime validation rejects malformed values without modifying saved information", (t) => {
   const { store, tripId } = setup(t, tripInput());
-  const destinationId = store.applyMutation(destinationInput(tripId)).id;
+  const destinationId = addDestination(store, tripId);
   store.applyMutation(candidateInput(destinationId));
   const before = store.getSnapshot();
   const invalidInputs = [
@@ -198,15 +199,15 @@ test("runtime validation rejects malformed values without modifying saved inform
 test("updates cannot move records into unrelated trips, destinations, or lists", (t) => {
   const { store, tripId } = setup(t, tripInput());
   const otherTripId = store.applyMutation(tripInput({ name: "Europe" })).id;
-  const destinationId = store.applyMutation(destinationInput(tripId)).id;
-  const otherDestinationId = store.applyMutation(destinationInput(otherTripId, { city: "Paris" })).id;
+  const destinationId = addDestination(store, tripId);
+  const otherDestinationId = addDestination(store, otherTripId, { city: "Paris" });
   const hotelId = store.applyMutation(candidateInput(destinationId)).id;
   const before = store.getSnapshot();
   for (const input of [
     destinationEdit(destinationId, { stopId: otherDestinationId, notes: "Through another trip's stop" }),
     candidateInput(otherDestinationId, { id: hotelId }),
     candidateInput(destinationId, { id: hotelId, category: "activities" }),
-    destinationInput(randomUUID()),
+    { type: "stop.add", tripId: randomUUID(), city: "Lyon" },
     candidateInput(randomUUID()),
     { type: "destination.delete", id: randomUUID() },
   ]) {
@@ -220,7 +221,7 @@ test("saved trips, routes, and selected ideas survive closing and reopening the 
   let store = createOwnedStore(path);
   try {
     const tripId = store.applyMutation(tripInput()).id;
-    const destinationId = store.applyMutation(destinationInput(tripId)).id;
+    const destinationId = addDestination(store, tripId);
     store.applyMutation(candidateInput(destinationId));
     store.applyMutation(legInput(legsFor(store, tripId)[0].id));
     const before = store.getSnapshot();
@@ -240,7 +241,7 @@ test("a database failure rolls back hotel deselection and every partial mutation
   const observer = new DatabaseSync(path);
   try {
     const tripId = store.applyMutation(tripInput()).id;
-    const destinationId = store.applyMutation(destinationInput(tripId)).id;
+    const destinationId = addDestination(store, tripId);
     store.applyMutation(candidateInput(destinationId));
     const before = store.getSnapshot();
     observer.exec("CREATE TRIGGER reject_test_hotel BEFORE INSERT ON candidates WHEN NEW.name = 'Fail me' BEGIN SELECT RAISE(ABORT, 'Injected database failure'); END;");
@@ -308,7 +309,7 @@ test("a destination created outside a trip needs only a city, opens again for th
     assert.deepEqual([data.trips, data.stops, access], [[], [], { role: "owner" }], "it is in no trip, and it is its creator's");
     // It starts as a destination added to a trip with only its city does.
     const tripId = store.applyMutation(tripInput()).id;
-    const tokyo = store.applyMutation(destinationInput(tripId)).id;
+    const tokyo = store.applyMutation({ type: "stop.add", tripId, city: "Tokyo" }).id;
     const fresh = (id) => ({ ...store.getSnapshot().destinations.find((item) => item.id === id), id: undefined, city: undefined });
     assert.deepEqual(fresh(paris), fresh(tokyo));
 
@@ -347,7 +348,7 @@ test("only a destination no trip visits can be deleted, and everything saved for
   const db = new DatabaseSync(path);
   t.after(() => { db.close(); store.close(); });
   const tripId = store.applyMutation(tripInput()).id;
-  const tokyo = store.applyMutation(destinationInput(tripId)).id;
+  const tokyo = addDestination(store, tripId);
   const kyoto = store.applyMutation({ type: "destination.create", city: "Kyoto" }).id;
   saveResearch(store, tokyo);
   saveResearch(store, kyoto);
@@ -375,6 +376,110 @@ test("only a destination no trip visits can be deleted, and everything saved for
   const again = store.applyMutation({ type: "destination.create", city: "Kyoto" }).id;
   assert.notEqual(again, kyoto);
   assert.deepEqual(store.getDestinationSnapshot(again).data.candidates, []);
+});
+
+test("adding a researched city to a trip visits its destination, sharing its research, while each trip keeps its own stay", (t) => {
+  const { store, tripId } = setup(t, tripInput({ startDate: "2027-04-01" }));
+  const add = (trip, city) => store.applyMutation({ type: "stop.add", tripId: trip, city }).id;
+  // Kyoto was researched for an autumn trip, with ideas, selections, photos and budget amounts.
+  const autumnId = store.applyMutation(tripInput({ name: "Autumn", startDate: "2027-10-01" })).id;
+  const kyoto = add(autumnId, "Kyoto, Kyoto, Japan");
+  saveResearch(store, kyoto);
+  store.applyMutation(stopEdit(kyoto, { stay: "Autumn leaves", nights: 4 }));
+  const autumn = store.getTripSnapshot(autumnId).data;
+
+  // A new city is a new destination, whose first stop shares its ID, added with nights unset.
+  const tokyo = add(tripId, "Tokyo, Tokyo, Japan");
+  assert.deepEqual(store.getSnapshot().destinations.map((item) => item.id).sort(), [kyoto, tokyo].sort());
+  store.applyMutation(stopEdit(tokyo, { nights: 3 }));
+  const toTokyo = legsFor(store, tripId)[0];
+  store.applyMutation(legInput(toTokyo.id));
+
+  // A saved city, however it is spelled, adds its destination after the last stop, copying nothing.
+  const springKyoto = add(tripId, " kyoto,  KYOTO , japan ");
+  const spring = store.getTripSnapshot(tripId).data;
+  assert.equal(store.getSnapshot().destinations.length, 2, "no destination is added");
+  assert.deepEqual(spring.stops.map((item) => [item.id, item.destinationId, item.position, item.stay, item.nights, item.arrivalDate, item.departureDate]),
+    [[tokyo, tokyo, 0, "", 3, "2027-04-01", "2027-04-04"], [springKyoto, kyoto, 1, "", null, null, null]]);
+  assert.equal(spring.trips[0].endDate, null, "the trip end waits for Kyoto's nights");
+  // The route continues through it, keeping the planned connection to Tokyo.
+  assert.deepEqual(spring.legs.map((leg) => [leg.fromId, leg.toId]), [[null, tokyo], [tokyo, springKyoto], [springKyoto, null]]);
+  assert.deepEqual(spring.legs[0], legsFor(store, tripId).find((leg) => leg.id === toTokyo.id));
+  assert.equal(spring.legs[0].method, "Flight");
+
+  // Its notes, photos, research, ideas, selections, churches and budget amounts are the same in both trips.
+  const kyotoIn = (data) => ({ destination: data.destinations.find((item) => item.id === kyoto), candidates: data.candidates.filter((item) => item.destinationId === kyoto), churches: data.churches.filter((item) => item.destinationId === kyoto) });
+  assert.deepEqual(kyotoIn(spring), kyotoIn(autumn));
+  assert.deepEqual(store.getTripSnapshot(autumnId).data, autumn, "the autumn trip is unchanged");
+  store.applyMutation({ type: "candidate.include", id: kyotoIn(autumn).candidates.find((item) => item.category === "restaurants").id, included: true });
+  assert.deepEqual(kyotoIn(store.getTripSnapshot(autumnId).data), kyotoIn(store.getTripSnapshot(tripId).data), "a selection made in one trip is the other's too");
+
+  // Each trip's nights give it its own dates and estimate.
+  store.applyMutation({ type: "destination.save", id: kyoto, stopId: springKyoto, nights: 2 });
+  const after = store.getSnapshot();
+  const stay = (id) => after.stops.find((item) => item.id === id);
+  assert.deepEqual([springKyoto, kyoto].map((id) => [stay(id).arrivalDate, stay(id).departureDate]), [["2027-04-04", "2027-04-06"], ["2027-10-01", "2027-10-05"]]);
+  const estimate = (id) => calculateDestinationBudget(after, { ...after.destinations.find((item) => item.id === kyoto), nights: stay(id).nights }).totalsByCurrency.USD;
+  // The chosen hotel's whole-stay price, daily food and miscellaneous for each trip's nights, shopping, and the general activities amount.
+  assert.deepEqual([estimate(springKyoto), estimate(kyoto)], [20033 + (7500 + 4000) * 2 + 12000 + 30000, 20033 + (7500 + 4000) * 4 + 12000 + 30000]);
+
+  // Removing it from this trip keeps its research and the autumn trip's stay there.
+  const researched = kyotoIn(store.getTripSnapshot(autumnId).data);
+  store.applyMutation({ type: "stop.remove", id: springKyoto });
+  assert.deepEqual(kyotoIn(store.getTripSnapshot(autumnId).data), researched);
+  assert.deepEqual(store.getTripSnapshot(autumnId).data.stops, autumn.stops);
+  assert.deepEqual(store.getTripSnapshot(tripId).data.legs.map((leg) => [leg.fromId, leg.toId]), [[null, tokyo], [tokyo, null]]);
+});
+
+test("a city already in the trip opens its stop instead of adding another, and a removed one comes back as a new stay", (t) => {
+  const { store, tripId } = setup(t, tripInput({ startDate: "2027-04-01" }));
+  const add = (city) => store.applyMutation({ type: "stop.add", tripId, city }).id;
+  const tokyo = add("Tokyo, Tokyo, Japan");
+  store.applyMutation(stopEdit(tokyo, { stay: "Cherry blossoms", nights: 3 }));
+  const kyoto = add("Kyoto, Kyoto, Japan");
+  for (const leg of legsFor(store, tripId)) store.applyMutation(legInput(leg.id));
+  const before = store.getSnapshot();
+  // However the city is spelled, and when Add destination is saved again after a lost response.
+  assert.equal(add("tokyo,  TOKYO, japan"), tokyo);
+  assert.equal(add("Kyoto, Kyoto, Japan"), kyoto);
+  assert.deepEqual(store.getSnapshot(), before, "nothing is added or changed");
+
+  // Removed, its city adds the same destination again, with everything saved for it, as a new stay at the end.
+  saveResearch(store, tokyo);
+  const researched = store.getSnapshot().destinations.find((item) => item.id === tokyo);
+  store.applyMutation({ type: "stop.remove", id: tokyo });
+  const again = add("Tokyo, Tokyo, Japan");
+  const after = store.getSnapshot();
+  assert.notEqual(again, tokyo);
+  assert.deepEqual(after.stops.map((item) => [item.id, item.destinationId, item.stay, item.nights]), [[kyoto, kyoto, "", null], [again, tokyo, "", null]]);
+  assert.deepEqual(after.destinations.find((item) => item.id === tokyo), researched);
+  assert.deepEqual(after.legs.map((leg) => [leg.fromId, leg.toId]), [[null, kyoto], [kyoto, again], [again, null]]);
+});
+
+test("adding a city needs a city and a trip the account can open, and a failed add saves nothing", (t) => {
+  const path = fileDatabase(t);
+  const store = createOwnedStore(path);
+  const observer = new DatabaseSync(path);
+  t.after(() => { observer.close(); store.close(); });
+  const tripId = store.applyMutation(tripInput()).id;
+  store.applyMutation({ type: "stop.add", tripId, city: "Tokyo" });
+  const before = store.getSnapshot();
+  for (const [input, error] of [
+    [{ type: "stop.add", tripId, city: "   " }, { name: "ValidationError", message: "Please enter city." }],
+    [{ type: "stop.add", tripId }, { name: "ValidationError", message: "city must be text." }],
+    [{ type: "stop.add", tripId, city: "K".repeat(121) }, { name: "ValidationError", message: "city must be 120 characters or fewer." }],
+    [{ type: "stop.add", tripId: "kyoto", city: "Kyoto" }, { name: "ValidationError", message: "This item has an invalid identifier. Please refresh and try again." }],
+    [{ type: "stop.add", tripId: randomUUID(), city: "Kyoto" }, NOT_AVAILABLE],
+    // A page opened before this change adds a destination with the destination editor's save, and is asked to reload.
+    [{ type: "destination.save", ...newItem(), tripId, city: "Kyoto", stay: "", notes: "", nights: 2 }, { name: "ValidationError", message: PLANNER_UPDATED }],
+  ]) {
+    assert.throws(() => store.applyMutation(input), error);
+    assert.deepEqual(store.getSnapshot(), before);
+  }
+  // A failure partway through adding a new city leaves no destination, stop or connection behind.
+  observer.exec("CREATE TRIGGER reject_leg BEFORE INSERT ON legs BEGIN SELECT RAISE(ABORT, 'Injected connection failure'); END;");
+  assert.throws(() => store.applyMutation({ type: "stop.add", tripId, city: "Kyoto" }), /Injected connection failure/);
+  assert.deepEqual(store.getSnapshot(), before);
 });
 
 test("a trip's tags are added and removed one at a time, keep one spelling each, and are kept after reopening", (t) => {
@@ -451,7 +556,7 @@ test("schema 23 adds trip tags to an existing database without changing it, and 
   const path = fileDatabase(t);
   let store = createOwnedStore(path);
   const tripId = store.applyMutation(tripInput()).id;
-  store.applyMutation(destinationInput(tripId));
+  addDestination(store, tripId);
   const before = store.getSnapshot();
   store.close();
   // A schema 22 database, from before tags.

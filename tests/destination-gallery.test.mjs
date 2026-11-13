@@ -4,18 +4,18 @@ import { DatabaseSync } from "node:sqlite";
 import test from "node:test";
 import { ValidationError } from "../src/lib/store.ts";
 import { createOwnedStore } from "./owned-store.mjs";
-import { fileDatabase, newItem, stop } from "./budget-fixtures.mjs";
+import { addCity, fileDatabase, newItem, stop } from "./budget-fixtures.mjs";
 import { calculateBudget } from "../src/lib/budget.ts";
 import { storedImageResponse } from "../src/lib/stored-image-response.ts";
 
 const webp = new Uint8Array(Buffer.from("UklGRiIAAABXRUJQVlA4IBYAAAAwAQCdASoBAAEADsD+JaQAA3AAAAAA", "base64"));
 const photo = () => ({ id: randomUUID(), data: new Uint8Array(webp) });
 const tripInput = { type: "trip.save", name: "Gallery trip", dateLabel: "Next spring", homeCity: "Boston", travelers: 2, notes: "", startDate: "2027-05-01" };
-const destinationInput = (tripId, overrides = {}) => ({ type: "destination.save", tripId, city: "Vienna", nights: 4, stay: "Near the station", notes: "Walk the old town", ...overrides, ...newItem(overrides) });
+const addDestination = (store, tripId, { city = "Vienna", ...overrides } = {}) => addCity((input) => store.applyMutation(input).id, tripId, city, { nights: 4, stay: "Near the station", notes: "Walk the old town", ...overrides });
 const destination = (store, id) => store.getSnapshot().destinations.find((item) => item.id === id);
 function plan(store) {
   const tripId = store.applyMutation({ ...tripInput, ...newItem() }).id;
-  const id = store.applyMutation(destinationInput(tripId)).id;
+  const id = addDestination(store, tripId);
   for (const leg of store.getSnapshot().legs) store.applyMutation({ type: "leg.save", id: leg.id, method: "Flight", price: "300", departure: "Morning", arrival: "Evening", url: "", notes: "Keep this connection" });
   return { tripId, id };
 }
@@ -62,7 +62,7 @@ test("destination galleries validate ownership, ordering, limits and photo data 
   const { tripId, id } = plan(store);
   const own = photo(), foreign = photo(), extra = photo();
   store.applyMutation({ type: "destination.save", id, gallery: { add: [own], remove: [] } });
-  const otherId = store.applyMutation(destinationInput(tripId, { city: "Paris", gallery: { add: [foreign], remove: [] } })).id;
+  const otherId = addDestination(store, tripId, { city: "Paris", gallery: { add: [foreign], remove: [] } });
   const before = store.getSnapshot();
   assert.equal(store.getDestinationPhoto(id, foreign.id), undefined);
   assert.equal(store.getDestinationPhoto(otherId, own.id), undefined);
@@ -176,7 +176,7 @@ test("legacy image changes affect only primary, and a destination keeps its gall
   assert.deepEqual(store.getDestinationImage(id), first);
   assert.deepEqual(store.getSnapshot().candidates[0], candidate);
   const otherPhoto = photo();
-  const otherId = store.applyMutation(destinationInput(tripId, { city: "Paris", gallery: { add: [otherPhoto], remove: [] } })).id;
+  const otherId = addDestination(store, tripId, { city: "Paris", gallery: { add: [otherPhoto], remove: [] } });
   store.applyMutation({ type: "stop.remove", id });
   assert.deepEqual(store.getDestinationPhoto(id, photos[0].id), first);
   assert.ok(store.getCandidatePhoto(candidateId, candidatePhoto.id));

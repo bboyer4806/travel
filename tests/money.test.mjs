@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { MAX_AMOUNT_CENTS, MAX_AMOUNT_DOLLARS, parseMinorAmount } from "../src/lib/money.ts";
-import { candidateInput, destinationInput, newItem, setup, destinationEdit } from "./budget-fixtures.mjs";
+import { candidateInput, addDestination, newItem, setup, destinationEdit } from "./budget-fixtures.mjs";
 
 const formatMessage = (label) => `${label} must be a positive USD amount or zero, with up to 2 decimal places. Leave it blank if unknown.`;
 const limitMessage = (label) => `${label} must be $100,000,000 or less.`;
@@ -16,7 +16,7 @@ test("the amount limit is $100,000,000, in dollars for inputs and in cents for s
 
 test("destination amounts and estimated prices reject equivalent amounts with one message, named for the field", (t) => {
   const { store, tripId } = setup(t);
-  const destinationId = store.applyMutation(destinationInput(tripId, { nights: 3 })).id;
+  const destinationId = addDestination(store, tripId, { nights: 3 });
   const legId = store.getSnapshot().legs[0].id;
   const fields = [
     ["Estimated price", (price) => candidateInput(destinationId, "activities", { price })],

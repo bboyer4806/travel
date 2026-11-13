@@ -470,6 +470,16 @@ try {
   assert.ok((await (await get("/destinations/" + outsiderVienna.id, outsider)).text()).includes('aria-label="Delete destination"'), "Its owner can delete a destination in no trip");
   assert.deepEqual(await mutation({ type: "destination.delete", id: outsiderVienna.id }, outsider), { ok: true });
   assert.deepEqual(db.prepare("SELECT id FROM destinations WHERE city = 'Vienna'").all().map((row) => row.id), [vienna], "Only the outsider's own destination was deleted");
+  // Adding a city to a trip visits its owner's destination for it, whoever on the trip adds it, and a city the trip
+  // already visits opens that stop. Someone the trip isn't shared with can't add one.
+  const addStop = (city) => ({ type: "stop.add", tripId: saved.id, city });
+  assert.deepEqual(await mutation(addStop("Vienna"), outsider), notAvailable);
+  const viennaStop = await mutation(addStop(" VIENNA "), editor);
+  assert.ok(viennaStop.ok && viennaStop.id !== vienna, "The editor adds the owner's Vienna as a new stop");
+  assert.deepEqual({ ...db.prepare("SELECT tripId, destinationId, nights FROM trip_stops WHERE id = ?").get(viennaStop.id) }, { tripId: saved.id, destinationId: vienna, nights: null });
+  assert.deepEqual(await mutation(addStop("Vienna")), viennaStop, "A city the trip visits opens its stop");
+  assert.deepEqual(db.prepare("SELECT id FROM destinations WHERE city = 'Vienna'").all().map((row) => row.id), [vienna], "Adding a city copies no destination");
+  assert.match(await (await get("/trips/" + saved.id, editor)).text(), /Edited from Destinations/, "The trip shows its new stop with the destination's saved notes");
   assert.deepEqual(await mutation({ type: "trip.unshare", tripId: saved.id, email: "editor@example.test" }), { ok: true, id: saved.id });
   assert.deepEqual(await mutation(edit("Editor, after removal"), editor), notAvailable, "Removing access ends it at once");
   const revoked = await (await get("/trips/" + saved.id, editor)).text();

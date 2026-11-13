@@ -1,11 +1,11 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { calculateActivitiesBudget } from "../src/lib/budget.ts";
-import { setup, destination, destinationInput, candidateInput, validateMoney, verifyPersistence, destinationEdit } from "./budget-fixtures.mjs";
+import { setup, destination, addDestination, candidateInput, validateMoney, verifyPersistence, destinationEdit } from "./budget-fixtures.mjs";
 
 test("activities methods preserve general estimates, items and selections without double-counting", (t)=>{
   const {store,tripId}=setup(t);
-  const id=store.applyMutation(destinationInput(tripId,{nights:3})).id;
+  const id=addDestination(store, tripId,{nights:3});
   assert.equal(destination(store,id).activitiesBudgetMode,"itemized");
   const item=store.applyMutation(candidateInput(id,"activities")).id;
   const unknown=store.applyMutation(candidateInput(id,"activities",{price:""})).id;
@@ -30,7 +30,7 @@ test("activities methods preserve general estimates, items and selections withou
 });
 test("activities amount and mode validation is atomic",t=>{
   validateMoney(t,"activitiesGeneralAmount","activitiesGeneralMinor","activitiesCurrency");
-  const {store,tripId}=setup(t); const before=store.getSnapshot();
-  assert.throws(()=>store.applyMutation(destinationInput(tripId,{activitiesBudgetMode:"invalid"}))); assert.deepEqual(store.getSnapshot(),before);
+  const {store,tripId}=setup(t); const id=addDestination(store,tripId); const before=store.getSnapshot();
+  assert.throws(()=>store.applyMutation(destinationEdit(id,{activitiesBudgetMode:"invalid"}))); assert.deepEqual(store.getSnapshot(),before);
 });
 test("activities persists and upgrades additively with migration replay",t=>verifyPersistence(t,"activitiesGeneralAmount","activitiesGeneralMinor","activitiesCurrency",9,["activitiesBudgetMode","activitiesGeneralMinor","activitiesCurrency"],{activitiesBudgetMode:"general"}));

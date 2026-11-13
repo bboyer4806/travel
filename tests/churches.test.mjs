@@ -6,10 +6,10 @@ import { containsSunday } from "../src/lib/destination-duration.ts";
 import { SCHEMA_VERSION, ValidationError } from "../src/lib/store.ts";
 import { createOwnedStore, UNDO_SCHEMA_21 } from "./owned-store.mjs";
 import { calculateBudget, calculateDestinationBudget } from "../src/lib/budget.ts";
-import { fileDatabase, newItem, setup, stopEdit, stop } from "./budget-fixtures.mjs";
+import { addCity, fileDatabase, newItem, setup, stopEdit, stop } from "./budget-fixtures.mjs";
 
 const tripInput = (overrides = {}) => ({ type: "trip.save", name: "Church planning", dateLabel: "May 2027", homeCity: "New York", travelers: 2, notes: "", ...overrides, ...newItem(overrides) });
-const destinationInput = (tripId, overrides = {}) => ({ type: "destination.save", tripId, city: "Rome", stay: "Spring", notes: "", ...overrides, ...newItem(overrides) });
+const addDestination = (store, tripId, { city = "Rome", ...overrides } = {}) => addCity((input) => store.applyMutation(input).id, tripId, city, { stay: "Spring", notes: "", ...overrides });
 const churchInput = (destinationId, overrides = {}) => ({ type: "church.save", destinationId, name: "St. Mary's", address: "", denomination: "", url: "", massTimes: [], ...overrides, ...newItem(overrides) });
 const mass = (day = "Sunday", time = "9:00 AM") => ({ id: randomUUID(), day, time });
 const webp = new Uint8Array([82, 73, 70, 70, 4, 0, 0, 0, 87, 69, 66, 80]);
@@ -33,7 +33,7 @@ test("Sunday detection includes either endpoint, multiple Sundays, DST, leap day
 
 test("editing a destination's details or nights keeps its hidden Church section and its churches", (t) => {
   const { store, tripId } = setup(t, tripInput({ startDate: "2027-05-01" }));
-  const destinationId = store.applyMutation(destinationInput(tripId, { nights: 2 })).id;
+  const destinationId = addDestination(store, tripId, { nights: 2 });
   store.applyMutation(churchInput(destinationId, { massTimes: [mass()], gallery: { add: [photo()], remove: [] } }));
   store.applyMutation({ type: "destination.churchVisibility", id: destinationId, enabled: false });
   const churches = store.getSnapshot().churches;
@@ -55,7 +55,7 @@ test("church details, multiple Mass times, gallery, manual hiding and optional u
   let store = createOwnedStore(path);
   try {
     const tripId = store.applyMutation(tripInput()).id;
-    const destinationId = store.applyMutation(destinationInput(tripId)).id;
+    const destinationId = addDestination(store, tripId);
     store.applyMutation({ type: "destination.churchVisibility", id: destinationId, enabled: true });
     const first = photo(), second = photo();
     const times = [mass(), mass("2027-05-02", "11:30 AM (English)")];
@@ -96,8 +96,8 @@ test("church details, multiple Mass times, gallery, manual hiding and optional u
 
 test("church ownership and photo ownership are enforced with atomic gallery updates", (t) => {
   const { store, tripId } = setup(t, tripInput());
-  const destinationId = store.applyMutation(destinationInput(tripId)).id;
-  const otherDestinationId = store.applyMutation(destinationInput(tripId, { city: "Florence" })).id;
+  const destinationId = addDestination(store, tripId);
+  const otherDestinationId = addDestination(store, tripId, { city: "Florence" });
   const first = photo(), otherPhoto = photo();
   const id = store.applyMutation(churchInput(destinationId, { gallery: { add: [first], remove: [] } })).id;
   const otherId = store.applyMutation(churchInput(otherDestinationId, { gallery: { add: [otherPhoto], remove: [] } })).id;
@@ -126,7 +126,7 @@ test("church ownership and photo ownership are enforced with atomic gallery upda
 
 test("church validation accepts unknown optional details, trims text, and rejects invalid times, websites, photos and flags", (t) => {
   const { store, tripId } = setup(t, tripInput());
-  const destinationId = store.applyMutation(destinationInput(tripId)).id;
+  const destinationId = addDestination(store, tripId);
   const id = store.applyMutation(churchInput(destinationId)).id;
   const duplicate = mass();
   const duplicatePhoto = photo();
@@ -159,7 +159,7 @@ test("church validation accepts unknown optional details, trims text, and reject
 
 test("gallery limits include saved photos and failed additions preserve all church details", (t) => {
   const { store, tripId } = setup(t, tripInput());
-  const destinationId = store.applyMutation(destinationInput(tripId)).id;
+  const destinationId = addDestination(store, tripId);
   const photos = Array.from({ length: 10 }, () => photo());
   const id = store.applyMutation(churchInput(destinationId, { gallery: { add: photos, remove: [] } })).id;
   const before = store.getSnapshot();
@@ -176,7 +176,7 @@ test("gallery limits include saved photos and failed additions preserve all chur
 
 test("churches never change candidate counts, selections, trip budgets or destination budgets", (t) => {
   const { store, tripId } = setup(t, tripInput());
-  const destinationId = store.applyMutation(destinationInput(tripId)).id;
+  const destinationId = addDestination(store, tripId);
   store.applyMutation(stopEdit(destinationId, { nights: 3,
     miscDailyAmount: "0", hotelNightlyAmount: "100",
     activitiesBudgetMode: "general", activitiesGeneralAmount: "20",
@@ -202,9 +202,9 @@ test("churches never change candidate counts, selections, trip budgets or destin
 
 test("deleting a church removes its photos; removing its destination from a trip or deleting the trip keeps both", (t) => {
   const { store, tripId } = setup(t, tripInput());
-  const destinationId = store.applyMutation(destinationInput(tripId)).id;
+  const destinationId = addDestination(store, tripId);
   const otherTrip = store.applyMutation(tripInput({ name: "Other trip" })).id;
-  const otherDestination = store.applyMutation(destinationInput(otherTrip, { city: "Milan" })).id;
+  const otherDestination = addDestination(store, otherTrip, { city: "Milan" });
   const first = photo(), second = photo(), third = photo();
   const id = store.applyMutation(churchInput(destinationId, { gallery: { add: [first], remove: [] } })).id;
   const kept = store.applyMutation(churchInput(destinationId, { name: "Kept", gallery: { add: [third], remove: [] } })).id;
@@ -226,16 +226,16 @@ test("schema 13 upgrade initializes Sunday visibility, preserves prior data and 
   let store = createOwnedStore(path);
   try {
     const tripId = store.applyMutation(tripInput({startDate:"2027-05-01"})).id;
-    const id = store.applyMutation(destinationInput(tripId, {
+    const id = addDestination(store, tripId, {
       nights: 2, image: webp,
       miscDailyAmount: "0", hotelNightlyAmount: "125.25",
       activitiesBudgetMode: "general", activitiesGeneralAmount: "55.55",
       foodBudgetMode: "daily", foodDailyAmount: "20", shoppingAmount: "12.34",
       weatherHighF: 70.5, weatherLowF: 40, weatherRainfall: "Some rain", weatherPeriod: "May", weatherSource: "Historical averages",
-    })).id;
-    const weekdayId = store.applyMutation(destinationInput(tripId, { city: "Milan", nights: 5 })).id;
-    const partialId = store.applyMutation(destinationInput(tripId, { city: "Naples", nights: null })).id;
-    const unknownId = store.applyMutation(destinationInput(tripId, { city: "Turin" })).id;
+    });
+    const weekdayId = addDestination(store, tripId, { city: "Milan", nights: 5 });
+    const partialId = addDestination(store, tripId, { city: "Naples", nights: null });
+    const unknownId = addDestination(store, tripId, { city: "Turin" });
     const hotelPhoto = photo();
     const candidateId = store.applyMutation({ type: "candidate.save", ...newItem(), destinationId: id, category: "hotels", name: "Saved hotel", price: "123.45", address: "Main street", url: "", notes: "", included: true, gallery: { add: [hotelPhoto], remove: [] } }).id;
     store.applyMutation({ type: "homeItem.save", ...newItem(), tripId, name: "House sitting", price: "23.95", notes: "Leave a key", completed: true });

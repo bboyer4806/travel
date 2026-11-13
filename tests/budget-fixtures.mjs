@@ -14,12 +14,22 @@ import { createOwnedStore } from "./owned-store.mjs";
  */
 export const newItem = (overrides = {}) => (overrides.id === undefined ? { id: randomUUID(), create: true } : {});
 export const tripInput = (overrides = {}) => ({ type: "trip.save", name: "Trip", dateLabel: "Someday", homeCity: "Boston", travelers: 2, notes: "Trip notes", ...overrides, ...newItem(overrides) });
-/** A new destination added to a trip, as the trip's Add destination saves it. */
-export const destinationInput = (tripId, overrides = {}) => ({ type: "destination.save", tripId, city: "Paris", stay: "Stay notes", notes: "Destination notes", ...overrides, ...newItem(overrides) });
 /** A change to a saved destination, shared by every trip that visits it. */
 export const destinationEdit = (id, overrides = {}) => ({ type: "destination.save", id, ...overrides });
 /** A change to a destination and to its stay in the trip it was added to, whose stop shares its ID. */
 export const stopEdit = (id, overrides = {}) => ({ type: "destination.save", id, stopId: id, ...overrides });
+/**
+ * Adds a new city to a trip, as the trip's Add destination does, then saves `details` for the destination and the
+ * trip's stay there, as its editor does. `save` applies a change as an account and returns its ID. The returned ID is
+ * the new destination's, which its stop shares.
+ */
+export function addCity(save, tripId, city, details = {}) {
+  const id = save({ type: "stop.add", tripId, city });
+  save(stopEdit(id, details));
+  return id;
+}
+/** Paris, or the city in `overrides`, added to a trip by its owner, with stay notes, notes and any other `overrides`. */
+export const addDestination = (store, tripId, { city = "Paris", ...overrides } = {}) => addCity((input) => store.applyMutation(input).id, tripId, city, { stay: "Stay notes", notes: "Destination notes", ...overrides });
 export const candidateInput = (destinationId, category, overrides = {}) => ({ type: "candidate.save", destinationId, category, name: "Idea", price: "12.25", included: true, address: "", url: "", notes: "", ...overrides, ...newItem(overrides) });
 export const destination = (store, id) => store.getSnapshot().destinations.find((item) => item.id === id);
 /** A trip's stop: one trip's stay at a destination. */
@@ -33,13 +43,13 @@ export function fileDatabase(t) { const dir = mkdtempSync(join(tmpdir(), "travel
 
 export function validateMoney(t, amount, minor, currency, extra = {}) {
   const { store, tripId } = setup(t);
-  const id = store.applyMutation(destinationInput(tripId, { nights: 3, [amount]: "12.34", ...extra })).id;
+  const id = addDestination(store, tripId, { nights: 3, [amount]: "12.34", ...extra });
   assert.equal(destination(store, id)[minor], 1234);
   assert.equal(destination(store, id)[currency], "USD", "no currency selection required");
   const before = store.getSnapshot();
   for (const value of ["-1", "1.001", "1e2", "NaN", "100000001", 5]) {
-    // Adding a destination, then editing the saved one.
-    for (const input of [destinationInput(tripId, { city: "Elsewhere", nights: 3, ...extra, [amount]: value }), destinationEdit(id, { [amount]: value })]) {
+    // Editing the destination with its stay in the trip, then on its own.
+    for (const input of [stopEdit(id, { nights: 4, ...extra, [amount]: value }), destinationEdit(id, { [amount]: value })]) {
       assert.throws(() => store.applyMutation(input), ValidationError);
       assert.deepEqual(store.getSnapshot(), before, "no partial destination or change is saved");
     }
@@ -51,7 +61,7 @@ export function validateMoney(t, amount, minor, currency, extra = {}) {
   }
   // Another trip's stop can't carry this destination's changes.
   const otherTrip = store.applyMutation(tripInput({ name: "Other" })).id;
-  const otherStop = store.applyMutation(destinationInput(otherTrip, { city: "Other city" })).id;
+  const otherStop = addDestination(store, otherTrip, { city: "Other city" });
   assert.throws(() => store.applyMutation(destinationEdit(id, { stopId: otherStop, [amount]: "5" })), ValidationError);
   store.applyMutation(destinationEdit(id, { notes: "Only notes" }));
   assert.equal(destination(store, id)[minor], 1234);
@@ -71,7 +81,7 @@ export function verifyPersistence(t, amount, minor, currency, version, columns, 
   let store = createOwnedStore(path);
   try {
     const tripId = store.applyMutation(tripInput({ startDate: "2027-06-01" })).id;
-    const id = store.applyMutation(destinationInput(tripId, { nights: 3, [amount]: "81.25", ...extra })).id;
+    const id = addDestination(store, tripId, { nights: 3, [amount]: "81.25", ...extra });
     store.applyMutation(candidateInput(id, "hotels"));
     const saved = store.getSnapshot();
     // Clearing `store` after each close means the finally block never closes a closed store, which would hide the real failure.

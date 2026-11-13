@@ -2,6 +2,17 @@ export interface Release { version: string; date: string; changes: readonly stri
 
 // Add only verified, deployed changes and their actual release dates at release close.
 export const releases: readonly Release[] = [{
+  version: "1.9",
+  date: "2026-11-13",
+  changes: [
+    "Add tags such as Europe or Beach to a trip from its page, and see them on its card. On All trips, Filter by tag narrows the list to trips with every tag you select, and works with the search.",
+    "Bring an already researched destination into a trip with everything saved for it. Add destination now asks only for the city and uses the trip owner's destination for that city when there is one. A city already in the trip shows its card instead.",
+    "Keep saving in a tab you opened before Travel was updated. If a reload is ever needed, Travel now says so instead of reporting a connection problem.",
+    "Save again after a dropped connection without adding a second trip, destination, idea, church, or At home item. Travel now says it couldn't confirm the save, instead of saying your changes weren't saved.",
+    "See errors from controls that save right away, such as Must do, Mark complete, or moving a destination, at the bottom of your screen wherever you've scrolled, instead of at the end of the page.",
+    "Connect ChatGPT and Claude from AI assistants in the header. They can read all of Travel and propose changes, which take effect only after you approve them in Travel. Only Travel's owner sees AI assistants and can connect them.",
+  ],
+}, {
   version: "1.8",
   date: "2026-11-11",
   changes: [

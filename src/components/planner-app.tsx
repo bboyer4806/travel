@@ -22,7 +22,7 @@ import TripRouteFields from "@/components/trip-route-fields";
 import { ConnectionItinerary, ConnectionItineraryEditor } from "@/components/connection-itinerary";
 import { ResearchLinks, ResearchLinksEditor } from "@/components/research-links";
 import { unstable_isUnrecognizedActionError, useRouter } from "next/navigation";
-import { useEffect, useRef, useState, useTransition, type FormEvent, type ReactNode } from "react";
+import { useEffect, useId, useRef, useState, useTransition, type FormEvent, type ReactNode } from "react";
 import { controlOrNeighbor, useFocusAfter } from "@/components/focus-after";
 import { ArrowDown, ArrowLeft, ArrowRight, ArrowUp, BedDouble, Bike, Binoculars, Bus, CalendarDays, Car, CheckCircle2, CircleAlert, Compass, Footprints, MapPin, MoreHorizontal, Pencil, Plane, Plus, Route, Search, Share2, Ship, TrainFront, Trash2, UserPlus, Users, Utensils, Wallet, X, type LucideIcon } from "lucide-react";
 import TripSharing, { memberLabel } from "@/components/trip-sharing";
@@ -60,7 +60,8 @@ type Editor =
   | { kind: "foodBudget"; item: Destination; nights: number | null }
   | { kind: "leg"; item: TravelLeg }
   // An idea's editor, which adds one to the destination without `item`. Opened from its details, Cancel and saving return there.
-  | { kind: "candidate"; destinationId: string; category: Category; item?: Candidate; details?: true }
+  // `deleting` shows a saved idea's Delete confirmation above it, which leaves the editor and its draft as they are (TRA-128).
+  | { kind: "candidate"; destinationId: string; category: Category; item?: Candidate; details?: true; deleting?: boolean }
   // An idea's details, read only, from its destination's carousels (TRA-120).
   | { kind: "ideaDetails"; item: Candidate }
   | { kind: "church"; destinationId: string; item?: Church }
@@ -110,14 +111,15 @@ function Notes({ name = "notes", value = "" }: { name?: string; value?: string }
  * before `showModal()`, while the fields can't take focus.
  * Send feedback is inside the dialog so it shows above the backdrop; opening it leaves this editor and its draft open.
  * A confirmation (`confirm`) is centered over a darker backdrop, and its title and message scroll together above its
- * buttons (TRA-32).
+ * buttons (TRA-32). One can open above an editor, which stays open beneath it with its draft (TRA-128).
  */
 function Dialog({ title, view, confirm, children, busy, onClose }: { title: string; view: string; confirm: boolean; children: ReactNode; busy: boolean; onClose: () => void }) {
   const ref = useRef<HTMLDialogElement>(null);
+  const titleId = useId();
   useEffect(() => { const dialog = ref.current; const opener = document.activeElement instanceof HTMLElement ? document.activeElement : null; dialog?.showModal(); return () => { dialog?.close(); if (opener?.isConnected) opener.focus(); }; }, []);
   useEffect(() => { ref.current?.querySelector<HTMLElement>("input:not([type=hidden]), select, textarea, [data-autofocus]")?.focus(); }, [view]);
-  return <dialog ref={ref} className={confirm ? "editor-dialog confirm-dialog" : "editor-dialog"} aria-labelledby="editor-title" onCancel={(event) => { event.preventDefault(); if (!busy) onClose(); }}>
-    <div className="dialog-heading"><h2 id="editor-title">{title}</h2><button className="icon-button" aria-label="Close" onClick={onClose} disabled={busy}><X size={20} /></button></div>{children}<FeedbackButton />
+  return <dialog ref={ref} className={confirm ? "editor-dialog confirm-dialog" : "editor-dialog"} aria-labelledby={titleId} onCancel={(event) => { event.preventDefault(); if (!busy) onClose(); }}>
+    <div className="dialog-heading"><h2 id={titleId}>{title}</h2><button className="icon-button" aria-label="Close" onClick={onClose} disabled={busy}><X size={20} /></button></div>{children}<FeedbackButton />
   </dialog>;
 }
 
@@ -192,6 +194,8 @@ export default function PlannerApp({ initialData, initialBudgets, access = {}, d
   const legName = (id: string | null, end: "from" | "to") => id === null ? (end === "from" ? (trip?.homeCity || "Departing city") : (trip?.returnCity ?? trip?.homeCity) || "Return city") : (formatSavedDestinationLabel(placeOf(stops.find((item) => item.id === id)?.destinationId ?? "")) || "Destination");
   /** The trips this account can open that visit a destination, with their stops there. */
   const visitsOf = (id: string) => data.stops.filter((item) => item.destinationId === id).flatMap((item) => data.trips.filter((visiting) => visiting.id === item.tripId).map((visiting) => ({ trip: visiting, stop: item })));
+  /** An idea's Delete confirmation, the same from its page's list and from its editor (TRA-128). */
+  const ideaDeletion = (item: Candidate) => ({ title: "Delete “" + item.name + "”?", description: "This idea will be removed from " + formatSavedDestinationLabel(placeOf(item.destinationId)) + ", in every trip that visits it." });
   const open = (value: Editor) => {
     if (busy) return;
     if (value.kind === "leg") setItinerary(value.item.itinerary ?? []);
@@ -213,6 +217,10 @@ export default function PlannerApp({ initialData, initialBudgets, access = {}, d
   const cancel = () => { const details = detailsOf(editor); if (details) open(details); else close(); };
   /** An idea as the page last loaded it, so its details show what was saved once the page refreshes. */
   const latest = (item: Candidate) => data.candidates.find((saved) => saved.id === item.id) ?? item;
+  /** The saved idea whose Delete confirmation shows above its editor (TRA-128). */
+  const deleting = editor?.kind === "candidate" && editor.deleting ? editor.item : undefined;
+  /** Shows or hides the Delete confirmation above an idea's editor, which keeps its draft either way. */
+  const setDeleting = (value: boolean) => { if (!busy && editor?.kind === "candidate") { setEditor({ ...editor, deleting: value }); setError(""); } };
   /** Saves a change and refreshes the page, resolving to whether it was saved. A refused change shows its error. */
   async function perform(mutation: Mutation, success = "Changes saved.", redirect?: string, imageForm?: FormData): Promise<boolean> {
     if (busy) return false;
@@ -220,7 +228,8 @@ export default function PlannerApp({ initialData, initialBudgets, access = {}, d
     try {
       const result = await mutatePlanner(mutation, imageForm);
       if (!result.ok) { setError(result.error); return false; }
-      const details = detailsOf(editor);
+      // A deleted idea has no details to return to (TRA-128).
+      const details = mutation.type === "candidate.delete" ? null : detailsOf(editor);
       const finish = () => { setEditor(details); setDestinationGallery(createGalleryDraft()); setCandidateGallery(createGalleryDraft()); };
       if (details) startReturning(finish); else finish();
       setMessage(success);
@@ -388,7 +397,7 @@ export default function PlannerApp({ initialData, initialBudgets, access = {}, d
       {data.candidates.filter((item) => item.destinationId === place.id && item.category === category).length === 0 && <div className="empty-state ideas-empty"><h3>{category === "hotels" ? "A good night's sleep starts here." : category === "activities" ? "Leave a little room for discovery." : "Something delicious to look forward to."}</h3><p>Save your first {singular[category]} idea for {label}.<br />You can add a price now or come back to it later.</p></div>}
       <CandidateList items={data.candidates.filter((item) => item.destinationId === place.id && item.category === category)} category={category} destination={place} busy={busy}
         onEdit={(item) => open({ kind: "candidate", destinationId: place.id, category, item })}
-        onDelete={(item) => confirmDelete({ type: "candidate.delete", id: item.id }, "Delete “" + item.name + "”?", "This idea will be removed from " + label + ", in every trip that visits it.")}
+        onDelete={(item) => { const { title, description } = ideaDeletion(item); confirmDelete({ type: "candidate.delete", id: item.id }, title, description); }}
         onMutate={(mutation, success, control) => saveFrom(control, mutation, success)} />
       </>}
     </>;
@@ -604,6 +613,9 @@ export default function PlannerApp({ initialData, initialBudgets, access = {}, d
         {editor.category !== "hotels" && <label className="checkbox-field wide"><input name="mustDo" type="checkbox" defaultChecked={editor.item?.mustDo ?? false} disabled={busy} /><span>Must do<small>A planning priority. Budget inclusion and list order stay separate.</small></span></label>}
         <label className="checkbox-field wide"><input name="included" type="checkbox" defaultChecked={editor.item?.included ?? false} /><span>{selectionLabels[editor.category]}<small>{editor.category === "hotels" ? "Replaces the general estimate or other chosen hotel. Your general estimate stays saved." : editor.category === "activities" ? "Applies only in Itemized activity costs mode. This does not change your budgeting method." : "Applies only in Itemized restaurant costs mode. This does not change your budgeting method."}</small></span></label>
       </>}
-    </div><div className="dialog-footer">{error && <p className="form-error" role="alert">{error}</p>}<div className="dialog-actions"><button type="button" className="button secondary" onClick={cancel} disabled={busy}>Cancel</button><button className={editor.kind === "delete" ? "button danger" : "button primary"} type="submit" disabled={busy}>{busy ? "Saving…" : editor.kind === "delete" ? (editor.mutation.type === "leg.clear" ? "Clear travel plan" : editor.mutation.type === "destination.entryRequirements" ? "Clear entry requirements" : editor.mutation.type === "destination.healthSafety" ? "Clear health and safety" : editor.mutation.type === "stop.remove" ? "Remove from trip" : "Delete") : editor.kind === "trip" && !editor.item ? "Create trip" : editor.kind === "addStop" ? "Add destination" : editor.kind === "newDestination" ? "Create destination" : editor.kind === "share" ? "Share" : "Save changes"}</button></div></div></form>}</Dialog>}
+    </div><div className="dialog-footer">{error && !deleting && <p className="form-error" role="alert">{error}</p>}<div className="dialog-actions"><button type="button" className="button secondary" onClick={cancel} disabled={busy}>Cancel</button>{editor.kind === "candidate" && editor.item && <button type="button" className="button danger editor-delete" onClick={() => setDeleting(true)} disabled={busy}>Delete</button>}<button className={editor.kind === "delete" ? "button danger" : "button primary"} type="submit" disabled={busy}>{busy ? "Saving…" : editor.kind === "delete" ? (editor.mutation.type === "leg.clear" ? "Clear travel plan" : editor.mutation.type === "destination.entryRequirements" ? "Clear entry requirements" : editor.mutation.type === "destination.healthSafety" ? "Clear health and safety" : editor.mutation.type === "stop.remove" ? "Remove from trip" : "Delete") : editor.kind === "trip" && !editor.item ? "Create trip" : editor.kind === "addStop" ? "Add destination" : editor.kind === "newDestination" ? "Create destination" : editor.kind === "share" ? "Share" : "Save changes"}</button></div></div></form>}</Dialog>}
+    {/* An idea's Delete confirmation, above its editor (TRA-128). It deletes the saved idea without saving the draft, which Cancel keeps. */}
+    {deleting && <Dialog title={ideaDeletion(deleting).title} view="delete" confirm busy={busy} onClose={() => setDeleting(false)}><div className="form-grid dialog-body"><p className="delete-description wide">{ideaDeletion(deleting).description} This cannot be undone.</p></div>
+      <div className="dialog-footer">{error && <p className="form-error" role="alert">{error}</p>}<div className="dialog-actions"><button type="button" className="button secondary" onClick={() => setDeleting(false)} disabled={busy}>Cancel</button><button type="button" className="button danger" onClick={() => void perform({ type: "candidate.delete", id: deleting.id }, "Removed from your notebook.")} disabled={busy}>{busy ? "Saving…" : "Delete"}</button></div></div></Dialog>}
   </div>;
 }

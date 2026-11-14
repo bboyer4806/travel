@@ -336,3 +336,8 @@ This replaces TRA-62's destination Save in a sticky header.
 - Each section has **Edit budget**, opening the existing accommodation, activities or food budget editor, an **Add** button opening the existing editor for a new idea, and a **Manage** link to the category's full page, which keeps reordering, Must do, choosing or including, and deleting ideas.
 - The budget's Hotels, Activities and Restaurants links and their arrows are removed; Shopping and Miscellaneous keep their editors.
 - Not included: changes to the idea, destination or budget data, calculations, validation or editors' fields; new filtering, searching or sorting beyond chosen ideas first; changes to the full Hotels, Activities and Restaurants pages, other destination sections, navigation, permissions or sharing.
+
+## Added scope: November 14, 2026, connection price without arrows (TRA-49)
+- The Estimated price field in Plan this connection has no increment and decrement arrows. That one editor fills in a new connection and changes a planned one, since the route adds connections itself. People type the price, with cents if needed, such as 12.50, and change or clear it as before.
+- Only the arrows go, with TRA-46's class: the field keeps its validation, from $0 to $100,000,000 in whole cents, the Up and Down keys still step it, and saving and saved prices are unchanged.
+- Not included: other price fields, changes to validation, precision, stored data or budget totals, and other changes to the connection editor.

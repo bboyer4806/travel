@@ -202,7 +202,7 @@ Prefer fixing forward. Rolling back an image does not reverse a database schema 
 
 ## Schema history
 
-The schema version is SQLite's `user_version`; the current schema is 26, `SCHEMA_VERSION` in `src/lib/store.ts`. At every start, `createStore` in `src/lib/store.ts` upgrades an older database in one transaction, through each version in turn. Each upgrade checks what already exists, so running it again on a database that already has its changes (a replay) keeps saved data. The notes below are in schema order. **Superseded** marks behavior that a later schema replaced; the current behavior is in [README.md](../README.md).
+The schema version is SQLite's `user_version`; the current schema is 27, `SCHEMA_VERSION` in `src/lib/store.ts`. At every start, `createStore` in `src/lib/store.ts` upgrades an older database in one transaction, through each version in turn. Each upgrade checks what already exists, so running it again on a database that already has its changes (a replay) keeps saved data. The notes below are in schema order. **Superseded** marks behavior that a later schema replaced; the current behavior is in [README.md](../README.md).
 
 ### Schema 1: first shared planner
 The first release creates the `trips`, `destinations`, `legs` and `candidates` tables, with prices in integer USD cents for the whole party. Anyone with the URL can view and edit every trip. The schema 1 build sets `user_version` to 1 at every start and does not refuse a newer database, so later upgrades check what already exists as well as the version: redeploying a newer build after a rollback to schema 1 cannot repeat an `ALTER TABLE` or replace saved links.
@@ -341,6 +341,13 @@ Restoring the pre-upgrade backup to run a schema 24 build again loses every prop
 Keeping custom city text intact upgrades the database to schema 26 in the startup transaction, adding `cityFromSuggestion` to `destinations`: 1 when the destination's city is the label of a city suggestion chosen for it, the only city shown shorter, and 0 for any other text. No saved city is known to have come from a suggestion, so every existing destination starts at 0 and shows its full saved city until its city is chosen from a suggestion again in its editor. Nothing else changes. The column is in the same online backups, and a replay keeps saved records.
 
 Restoring the pre-upgrade backup to run a schema 25 build again loses these records, and that build again shortens custom text that looks like a city, region and country, such as `Tokyo, Kyoto, Japan`.
+
+**Superseded:** [schema 27](#schema-27-older-cities-chosen-from-suggestions) records each existing city in a suggestion's shape.
+
+### Schema 27: older cities chosen from suggestions
+Showing older cities chosen from suggestions shorter again upgrades the database to schema 27 in the startup transaction, changing only `destinations.cityFromSuggestion`. Schema 26 started every existing destination at 0, so a city chosen from a suggestion before then showed in full. Schema 27 sets it to 1, once, for each destination at 0 whose city has a suggestion's shape: three parts ending in a country's full name, such as `Vienna, State of Vienna, Austria`. Text typed in that shape is recorded too, including any typed at schema 26, such as `Tokyo, Kyoto, Japan`; a country code is not a full name, so `Chicago, Cook County, IL` stays as typed. It runs when upgrading a schema 26 database, or one that schema 26 starts recording in the same upgrade. Nothing else changes, and a replay keeps saved records.
+
+Restoring the pre-upgrade backup to run a schema 26 build again shows those cities in full again.
 
 ## Feedback and release notes
 Configure server-only JIRA_URL (HTTPS Jira base URL), JIRA_EMAIL, and JIRA_API_TOKEN with permission to create Tasks in TRA. Use the host's secret configuration; never put credentials in source, image layers, client variables, or logs. Preserve the browser Host and Origin headers through the proxy; the feedback endpoint compares them and ignores forwarded-host claims. The HttpOnly feedback cookie is Secure for HTTPS origins.

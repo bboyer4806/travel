@@ -145,37 +145,49 @@ test("a suggestion is recorded only as true, with the city it describes", (t) =>
   assert.deepEqual(store.getSnapshot(), before);
 });
 
-/** Turns a new database back into one at `version`, before cities chosen from suggestions were recorded. */
-const UNDO_SCHEMA_26 = {
+/**
+ * Turns a new database back into one at `version`, where every city saved before Travel 1.10 is unrecorded: schema 26
+ * started them so, and before it nothing was recorded.
+ */
+const UNDO_SCHEMA_27 = {
+  26: "PRAGMA user_version = 26;",
   25: "ALTER TABLE destinations DROP COLUMN cityFromSuggestion; PRAGMA user_version = 25;",
   24: "ALTER TABLE destinations DROP COLUMN cityFromSuggestion; DROP TRIGGER ai_proposal_photos_unchanged; DROP TABLE ai_proposal_photos; PRAGMA user_version = 24;",
 };
-for (const version of [25, 24]) {
-  test(`schema 26 shows every city saved at schema ${version} exactly as saved, and a replay keeps later records`, (t) => {
+/** Cities saved before Travel 1.10, whether the upgrade records each as a suggestion's label, and how it shows then. */
+const SAVED_CITIES = [
+  { city: "Vienna, State of Vienna, Austria", recorded: true, shown: "Vienna, Austria" },
+  { city: "Austin, Texas, United States", recorded: true, shown: "Austin, Texas" },
+  // A suggestion names its country in full, so this is typed text, not a Chicago in Israel.
+  { city: "Chicago, Cook County, IL", recorded: false, shown: "Chicago, Cook County, IL" },
+];
+for (const version of [26, 25, 24]) {
+  test(`upgrading from schema ${version} records each saved city in a suggestion's shape, and a replay keeps later records`, (t) => {
     const path = fileDatabase(t);
     let store = createOwnedStore(path);
     try {
       const tripId = store.applyMutation(tripInput()).id;
-      const chosen = store.applyMutation({ type: "stop.add", tripId, city: "Wooster, Ohio, United States", cityFromSuggestion: true }).id;
-      store.applyMutation({ type: "stop.add", tripId, city: "Tokyo, Kyoto, Japan" });
+      for (const { city } of SAVED_CITIES) store.applyMutation({ type: "stop.add", tripId, city });
       bookConnections(store, tripId);
       const saved = store.getSnapshot();
       store.close(); store = null;
-      // An older database records no suggestions.
       const db = new DatabaseSync(path);
-      db.exec(UNDO_SCHEMA_26[version]);
+      db.exec(UNDO_SCHEMA_27[version]);
       db.close();
       store = createOwnedStore(path);
-      assert.deepEqual(store.getSnapshot(), { ...saved, destinations: saved.destinations.map((item) => ({ ...item, cityFromSuggestion: false })) }, "only the record changes");
-      assert.deepEqual(store.getSnapshot().destinations.map((item) => formatSavedDestinationLabel(item)), ["Tokyo, Kyoto, Japan", "Wooster, Ohio, United States"]);
-      store.applyMutation(destinationEdit(chosen, { city: "Wooster, Ohio, United States", cityFromSuggestion: true }));
-      const recorded = store.getSnapshot();
+      const recorded = (city) => SAVED_CITIES.find((item) => item.city === city).recorded;
+      assert.deepEqual(store.getSnapshot(), { ...saved, destinations: saved.destinations.map((item) => ({ ...item, cityFromSuggestion: recorded(item.city) })) }, "only the records change");
+      assert.deepEqual(Object.fromEntries(store.getSnapshot().destinations.map((item) => [item.city, formatSavedDestinationLabel(item)])),
+        Object.fromEntries(SAVED_CITIES.map(({ city, shown }) => [city, shown])));
+      // A city typed in that shape since stays typed text, also after the schema 1 build resets the schema version.
+      store.applyMutation({ type: "stop.add", tripId, city: "Nara, Kansai, Japan" });
+      const later = store.getSnapshot();
       store.close(); store = null;
       const replay = new DatabaseSync(path);
-      replay.exec(`PRAGMA user_version = ${version};`);
+      replay.exec("PRAGMA user_version = 1;");
       replay.close();
       store = createOwnedStore(path);
-      assert.deepEqual(store.getSnapshot(), recorded, "a replay keeps saved records");
+      assert.deepEqual(store.getSnapshot(), later, "a replay keeps saved records");
       const observer = new DatabaseSync(path);
       try {
         assert.equal(observer.prepare("PRAGMA user_version").get().user_version, SCHEMA_VERSION);

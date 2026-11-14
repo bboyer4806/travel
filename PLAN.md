@@ -354,3 +354,9 @@ This replaces TRA-62's destination Save in a sticky header.
 - The destination editor starts from the full saved city, so saving other changes, or the city unchanged, keeps the city and its travel connections. Edited text is saved exactly as typed, and choosing a suggestion records it.
 - Destinations saved before schema 26 record no suggestion, so each shows its full saved city until its city is chosen from a suggestion again in its editor, which keeps its connections when the city is the same. Adding a city to a trip keeps an existing destination as it is. Cities ChatGPT or Claude propose are shown as written.
 - Not included: guessing which saved cities came from suggestions, changes to how suggestions are labeled or matched, and departing or return cities, which already show as saved.
+
+## Added scope: November 14, 2026, older cities chosen from suggestions shown shorter
+- This replaces TRA-76's start for destinations saved before schema 26. Schema 27 records once, as chosen from a suggestion, each one whose city has a suggestion's shape (city, region and a country's full name), so it shows as before Travel 1.10: `Vienna, State of Vienna, Austria` as `Vienna, Austria`, and `Austin, Texas, United States` as `Austin, Texas`.
+- Text typed in that shape before then is recorded too: `Tokyo, Kyoto, Japan` shows as `Tokyo, Japan`. A country code is not a full name, so `Chicago, Cook County, IL` still shows as typed. Saving a recorded city unchanged keeps its record; changing its text saves it as typed.
+- Every city saved since keeps TRA-76's rule: only one chosen from a suggestion is shown shorter.
+- Not included: checking older cities against the suggestion provider, and departing or return cities, which already show as saved.

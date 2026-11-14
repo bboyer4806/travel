@@ -2003,3 +2003,27 @@ body:has(.editor-dialog[open])>.feedback-launcher { visibility:hidden; }
   .account-identity { flex-direction:row; gap:8px; align-items:baseline; }
   .account-email { max-width:none; }
 }
+/* TRA-32: a confirmation is centered in the viewport over a darker backdrop, clear of Send feedback (43px tall, 24px
+   from the bottom, or 12px on phones) by keeping the same margin at the top. Its title and message wrap and scroll
+   together, while Cancel and its confirming action stay in view at the bottom, each at least 44 × 44px. The form
+   gives up its box, so the footer sticks to the bottom of the dialog itself however long the title is. */
+.confirm-dialog { top:67px; bottom:67px; max-height:calc(100dvh - 134px); overscroll-behavior:contain; }
+.confirm-dialog[open] { display:block; }
+.confirm-dialog::backdrop { background:#20382e99; }
+.confirm-dialog form { display:contents; }
+.confirm-dialog .dialog-body { overflow:visible; }
+.confirm-dialog .delete-description { overflow-wrap:anywhere; }
+.confirm-dialog .dialog-footer { position:sticky; bottom:0; background:var(--white); }
+.confirm-dialog .dialog-actions .button { min-width:44px; min-height:44px; }
+@media(max-width:600px) {
+  .confirm-dialog { top:55px; bottom:55px; max-height:calc(100dvh - 110px); }
+  /* Cancel and the confirming action share the width, so a long label wraps instead of running past the edge. */
+  .confirm-dialog .dialog-actions .button { flex:1 1 0; white-space:normal; text-align:center; }
+}
+/* A phone turned sideways leaves little height, so the title is smaller and the spacing tighter. */
+@media(max-height:500px) {
+  .confirm-dialog .dialog-heading { padding-block:14px 12px; }
+  .confirm-dialog .dialog-heading h2 { font-size:18px; }
+  .confirm-dialog .dialog-body { padding-block:14px; }
+  .confirm-dialog .dialog-footer { padding-block:10px 12px; }
+}

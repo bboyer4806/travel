@@ -5,6 +5,7 @@ import { Check, ImagePlus, RotateCcw, Trash2 } from "lucide-react";
 import { formatMegabytes, IMAGE_UPLOAD_TYPES, MAX_CANDIDATE_IMAGES, MAX_GALLERY_UPLOAD_BYTES, MAX_IMAGE_UPLOAD_BYTES } from "@/lib/image-limits";
 import type { Candidate } from "@/lib/types";
 import { randomUuid } from "@/lib/uuid";
+import { useFocusAfter } from "./focus-after";
 import styles from "./candidate-gallery.module.css";
 
 type ImageSubject = "hotel" | "activity" | "restaurant" | "church";
@@ -28,7 +29,7 @@ export function candidateGalleryForm(draft: CandidateGalleryDraft, candidate?: G
   return form;
 }
 
-function photoUrl(candidateId: string, image: { id: string; version?: string }, imageKind: ImageKind) {
+export function photoUrl(candidateId: string, image: { id: string; version?: string }, imageKind: ImageKind) {
   return `/api/${imageKind}-images/${candidateId}/${image.id}?v=${image.version}`;
 }
 
@@ -84,6 +85,9 @@ export function CandidateGalleryEditor({ candidate, subject, draft, onChange, di
 }) {
   const id = useId();
   const input = useRef<HTMLInputElement>(null);
+  const focusAfter = useFocusAfter();
+  const removeButtons = useRef(new Map<string, HTMLButtonElement>());
+  const addButton = useRef<HTMLButtonElement>(null);
   const [error, setError] = useState("");
   const changed = draft.removedIds.length > 0 || draft.images.some((image) => image.file) || draft.mainImageId !== (candidate?.mainImageId ?? null);
 
@@ -104,11 +108,23 @@ export function CandidateGalleryEditor({ candidate, subject, draft, onChange, di
     onChange({ ...draft, images, mainImageId: draft.mainImageId ?? images[0].id });
   }
 
+  /** Removes a photo and focuses the next photo's Remove, or Add photos after the last. */
   function remove(image: DraftImage) {
     if (disabled) return;
     setError("");
+    const next = draft.images[draft.images.indexOf(image) + 1];
+    focusAfter(() => next ? removeButtons.current.get(next.id) : addButton.current);
     const images = draft.images.filter((item) => item.id !== image.id);
     onChange({ images, removedIds: image.file ? draft.removedIds : [...draft.removedIds, image.id], mainImageId: draft.mainImageId === image.id ? (images[0]?.id ?? null) : draft.mainImageId });
+  }
+
+  /** Undo photo changes goes away with the changes, so it focuses Add photos, or the last photo's Remove when the saved photos fill the gallery. */
+  function undo() {
+    const saved = createCandidateGalleryDraft(candidate);
+    const last = saved.images.at(-1);
+    focusAfter(() => last && saved.images.length >= MAX_CANDIDATE_IMAGES ? removeButtons.current.get(last.id) : addButton.current);
+    setError("");
+    onChange(saved);
   }
 
   return <fieldset className={styles.editor} disabled={disabled} aria-describedby={`${id}-hint`}>
@@ -124,14 +140,15 @@ export function CandidateGalleryEditor({ candidate, subject, draft, onChange, di
         <p className={styles.filename} title={image.file?.name}>{image.file?.name ?? `Photo ${photoIndex + 1}`}</p>
         <div className={styles.photoActions}>
           <label className={styles.mainChoice}><input type="radio" name={`${id}-main-photo`} checked={image.id === draft.mainImageId} onChange={() => { setError(""); onChange({ ...draft, mainImageId: image.id }); }} disabled={disabled} aria-label={`Use photo ${photoIndex + 1} as the main photo`} /><span>Main photo</span></label>
-          <button type="button" className={styles.remove} aria-label={`Remove photo ${photoIndex + 1}${image.file ? ` (${image.file.name})` : ""}`} disabled={disabled} onClick={() => remove(image)}><Trash2 size={14} aria-hidden="true" /><span>Remove</span></button>
+          <button type="button" className={styles.remove} aria-label={`Remove photo ${photoIndex + 1}${image.file ? ` (${image.file.name})` : ""}`} disabled={disabled} onClick={() => remove(image)}
+            ref={(button) => { if (button) removeButtons.current.set(image.id, button); else removeButtons.current.delete(image.id); }}><Trash2 size={14} aria-hidden="true" /><span>Remove</span></button>
         </div>
       </div>)}
     </div>}
     <div className={styles.actions}>
-      <button type="button" className="button secondary small" disabled={disabled || draft.images.length >= MAX_CANDIDATE_IMAGES} onClick={() => input.current?.click()}><ImagePlus size={15} aria-hidden="true" />Add photos</button>
+      <button type="button" ref={addButton} className="button secondary small" disabled={disabled || draft.images.length >= MAX_CANDIDATE_IMAGES} onClick={() => input.current?.click()}><ImagePlus size={15} aria-hidden="true" />Add photos</button>
       <span className={styles.photoCount}>{draft.images.length} / {MAX_CANDIDATE_IMAGES} photos</span>
-      {changed && <button type="button" className={styles.restore} disabled={disabled} onClick={() => { setError(""); onChange(createCandidateGalleryDraft(candidate)); }}><RotateCcw size={14} aria-hidden="true" />Undo photo changes</button>}
+      {changed && <button type="button" className={styles.restore} disabled={disabled} onClick={undo}><RotateCcw size={14} aria-hidden="true" />Undo photo changes</button>}
     </div>
     {error && <p id={`${id}-error`} className={styles.error} role="alert">{error}</p>}
     {changed && <p className={styles.status} role="status">Photo changes will be applied when you save this {subject}.</p>}

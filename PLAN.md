@@ -313,6 +313,35 @@ This replaces TRA-62's destination Save in a sticky header.
 - Owner-only pages: AI assistants (connections, with revoke, and proposals), the connection consent page and each proposal's page. Schema 24 adds the integration's own tables.
 - Not included: other assistants, development or staging integrations, photo changes through an assistant, arbitrary SQL or schema changes, returning to the consent page after signing in, and connections for anyone but the designated owner.
 
+## Added scope: November 14, 2026, At home price without arrows (TRA-46)
+- The Estimated price field in the At home editor has no increment and decrement arrows, when adding an item or editing one. People type the price, with cents if needed, such as 12.50, and change or clear it as before.
+- Only the arrows go: the field keeps its validation, from $0 to $100,000,000 in whole cents, the Up and Down keys still step it, and saving and saved prices are unchanged.
+- Not included: other price fields, including connections (TRA-49), changes to validation, precision, stored data or budget totals, and other changes to the At home editor.
+
+## Added scope: November 14, 2026, save messages clear of Send feedback (TRA-84)
+- A save's message appears above **Send feedback** at every screen size, where the errors of changes made without an editor appear, so neither covers the other and its X closes it. Before, on phones and narrow windows, Send feedback covered the message's X and selecting it opened the feedback form.
+- The message closes itself after five seconds. Errors still stay until they are dismissed or another change starts (TRA-82).
+- Not included: changes to the messages or errors themselves, the errors' timing, or Send feedback.
+
+## Added scope: November 14, 2026, keyboard focus after changes (TRA-86)
+- Changes made without an editor return keyboard focus to the control used once the page shows the change, so Enter repeats it: destination arrows, an idea's Up, Down, Must do and budget selection, Mark complete and Reopen, and Show Church and Hide Church. A destination or idea moved to the first or last place focuses its other arrow, and Show Church and Hide Church focus the one that replaces them. A failed change leaves focus on its control, and focus the person moves elsewhere during a save stays there.
+- In editors, removing a Mass time or photo focuses the next one's Remove, or Add Mass time or Add photos after the last. Undo photo changes focuses Add photos, or the last photo's Remove when the saved photos fill the gallery. A destination photo or travel stop moved to the first or last place focuses its other move control.
+- Ideas returned focus as soon as their save ended, before the page showed the new order, so an idea moved to the first or last place could still lose focus. They now share the timing above.
+- Not included: removing a tag, added after this review, and controls that already kept focus, such as research links and adding or removing a travel stop.
+
+## Added scope: November 14, 2026, destination idea carousels (TRA-120)
+- Each destination card on a trip's page, and each destination's page in Destinations, shows Hotels, Activities and Restaurants sections directly below its budget, each with its idea count. They start expanded each time the page loads and open and close independently, saving nothing.
+- Each section has a carousel with left and right arrows and a card for each idea: its main photo, or an icon without one, its name and its price. Ideas chosen for the budget come first, marked as on their full pages, then the rest, each group in its saved order.
+- Selecting a card opens the idea's details, read only and laid out like its editor. **Edit** opens the editor; saving returns to the details once they show what was saved, and Cancel returns to them without saving.
+- Each section has **Edit budget**, opening the existing accommodation, activities or food budget editor, an **Add** button opening the existing editor for a new idea, and a **Manage** link to the category's full page, which keeps reordering, Must do, choosing or including, and deleting ideas.
+- The budget's Hotels, Activities and Restaurants links and their arrows are removed; Shopping and Miscellaneous keep their editors.
+- Not included: changes to the idea, destination or budget data, calculations, validation or editors' fields; new filtering, searching or sorting beyond chosen ideas first; changes to the full Hotels, Activities and Restaurants pages, other destination sections, navigation, permissions or sharing.
+
+## Added scope: November 14, 2026, connection price without arrows (TRA-49)
+- The Estimated price field in Plan this connection has no increment and decrement arrows. That one editor fills in a new connection and changes a planned one, since the route adds connections itself. People type the price, with cents if needed, such as 12.50, and change or clear it as before.
+- Only the arrows go, with TRA-46's class: the field keeps its validation, from $0 to $100,000,000 in whole cents, the Up and Down keys still step it, and saving and saved prices are unchanged.
+- Not included: other price fields, changes to validation, precision, stored data or budget totals, and other changes to the connection editor.
+
 ## Added scope: November 14, 2026, photo changes through ChatGPT and Claude (TRA-122)
 - Through normal chat, without browser control or agent mode, ChatGPT and Claude propose photo changes for destinations, hotels, activities, restaurants and churches: adding photos from the https:// addresses of image files, removing saved photos, choosing the primary or main photo, and ordering a destination's photos, the only gallery whose editor orders photos. Each is a photo change of its own, `destination.photos`, `candidate.photos` or `church.photos`, reusing the gallery editors' changes and rules, which changes nothing but photos.
 - Travel downloads each new photo as it is proposed, only over HTTPS and only from public internet addresses, refusing private, loopback and link-local ones for the address given, each of up to 3 redirects and every address a host name resolves to as it connects. A proposal downloads at most 10 new photos and 15 MiB, up to 5 MiB each, within 15 seconds, and each photo is then checked and prepared by `prepareImage`, as an upload is. A proposal with any photo Travel can't download or prepare is refused, naming the change, the address and the reason, and isn't recorded.

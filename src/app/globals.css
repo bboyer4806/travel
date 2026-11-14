@@ -994,9 +994,10 @@ button svg,a svg {
 .ideas-empty {
   padding:56px 24px
 }
+/* A save's message or the error of a change made without an editor. It sits above the bottom-right Send feedback button (43px tall, 24px from the bottom or 12px on phones), so neither covers the other. */
 .toast {
   position:fixed;
-  bottom:26px;
+  bottom:79px;
   left:50%;
   transform:translateX(-50%);
   background:#244c3f;
@@ -1020,9 +1021,7 @@ button svg,a svg {
 .toast .icon-button:hover {
   background:#456759
 }
-/* The error of a change made without an editor. It sits above the bottom-right Send feedback button (43px tall, 24px from the bottom or 12px on phones), so neither covers the other. */
 .error-toast {
-  bottom:79px;
   background:#9b3b32
 }
 .error-toast .icon-button:hover {
@@ -1123,6 +1122,15 @@ button svg,a svg {
 .field input::placeholder,.field textarea::placeholder {
   color:#99a196;
   font-size:12px
+}
+/* A number field without its increment and decrement arrows (TRA-46), hidden by appearance in
+   Firefox and on the spin button in Chrome, Edge and Safari. Typing, the Up and Down keys and
+   validation are unchanged. */
+.no-spin-buttons {
+  appearance:textfield
+}
+.no-spin-buttons::-webkit-inner-spin-button {
+  appearance:none
 }
 .field small {
   font-size:10px;
@@ -1611,7 +1619,7 @@ button svg,a svg {
 }
 .toast {
   font-size:11px;
-  bottom:14px;
+  bottom:67px;
   max-width:calc(100vw - 24px);
   padding:10px;
   align-items:flex-start
@@ -1619,9 +1627,6 @@ button svg,a svg {
 .toast .icon-button {
   margin-left:auto;
   flex-shrink:0
-}
-.error-toast {
-  bottom:67px
 }
 
 }
@@ -1921,7 +1926,8 @@ button svg,a svg {
 .budget-toggle svg { transition: transform .16s; }
 .budget-toggle[aria-expanded="true"] svg { transform: rotate(180deg); }
 .budget-categories { display: grid; margin: 0 0 12px; font-size: 13px; }
-.budget-category { display: grid; grid-template-columns: 8.5em minmax(0, 1fr) auto; grid-template-areas: "name action amount"; align-items: baseline; column-gap: 16px; }
+/* TRA-120: every row keeps the height of the rows with an editor, whose buttons are 44px tall. */
+.budget-category { display: grid; grid-template-columns: 8.5em minmax(0, 1fr) auto; grid-template-areas: "name action amount"; align-items: baseline; align-content: center; min-height: 44px; column-gap: 16px; }
 .budget-category dt { grid-area: name; }
 .budget-category dd { margin: 0; }
 .budget-category-amount { grid-area: amount; text-align: right; font-weight: 600; }

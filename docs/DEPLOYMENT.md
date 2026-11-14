@@ -201,7 +201,7 @@ Prefer fixing forward. Rolling back an image does not reverse a database schema 
 
 ## Schema history
 
-The schema version is SQLite's `user_version`; the current schema is 24, `SCHEMA_VERSION` in `src/lib/store.ts`. At every start, `createStore` in `src/lib/store.ts` upgrades an older database in one transaction, through each version in turn. Each upgrade checks what already exists, so running it again on a database that already has its changes (a replay) keeps saved data. The notes below are in schema order. **Superseded** marks behavior that a later schema replaced; the current behavior is in [README.md](../README.md).
+The schema version is SQLite's `user_version`; the current schema is 25, `SCHEMA_VERSION` in `src/lib/store.ts`. At every start, `createStore` in `src/lib/store.ts` upgrades an older database in one transaction, through each version in turn. Each upgrade checks what already exists, so running it again on a database that already has its changes (a replay) keeps saved data. The notes below are in schema order. **Superseded** marks behavior that a later schema replaced; the current behavior is in [README.md](../README.md).
 
 ### Schema 1: first shared planner
 The first release creates the `trips`, `destinations`, `legs` and `candidates` tables, with prices in integer USD cents for the whole party. Anyone with the URL can view and edit every trip. The schema 1 build sets `user_version` to 1 at every start and does not refuse a newer database, so later upgrades check what already exists as well as the version: redeploying a newer build after a rollback to schema 1 cannot repeat an `ALTER TABLE` or replace saved links.
@@ -330,6 +330,11 @@ Restoring the pre-upgrade backup to run a schema 22 build again loses every tag.
 The ChatGPT and Claude integration upgrades the database to schema 24 in the startup transaction with four tables of its own, changing no trip. `ai_clients` holds each registration and the callbacks it named; `ai_authorization_codes` a hash of each consent's one-use code, with its client, callback and PKCE challenge; `ai_connections` each allowed connection's assistant, times, and hashes of its current access and refresh tokens; and `ai_proposals` each proposal's summary, its changes as validated, its preview, the rows each change makes, its expiry and its decision. Triggers refuse any change to a proposal once it is made, and a second decision. Revoking a connection deletes it with its proposals. The tables are in the same online backups, which therefore hold hashes of live tokens, as they do of sessions. A replay keeps every row.
 
 Restoring the pre-upgrade backup to run a schema 23 build again loses every connection and proposal, and that build has no MCP endpoint, so ChatGPT and Claude must connect again after a later upgrade.
+
+### Schema 25: cities chosen from suggestions (TRA-76)
+Keeping custom city text intact upgrades the database to schema 25 in the startup transaction, adding `cityFromSuggestion` to `destinations`: 1 when the destination's city is the label of a city suggestion chosen for it, the only city shown shorter, and 0 for any other text. No saved city is known to have come from a suggestion, so every existing destination starts at 0 and shows its full saved city until its city is chosen from a suggestion again in its editor. Nothing else changes. The column is in the same online backups, and a replay keeps saved records.
+
+Restoring the pre-upgrade backup to run a schema 24 build again loses these records, and that build again shortens custom text that looks like a city, region and country, such as `Tokyo, Kyoto, Japan`.
 
 ## Feedback and release notes
 Configure server-only JIRA_URL (HTTPS Jira base URL), JIRA_EMAIL, and JIRA_API_TOKEN with permission to create Tasks in TRA. Use the host's secret configuration; never put credentials in source, image layers, client variables, or logs. Preserve the browser Host and Origin headers through the proxy; the feedback endpoint compares them and ignores forwarded-host claims. The HttpOnly feedback cookie is Secure for HTTPS origins.

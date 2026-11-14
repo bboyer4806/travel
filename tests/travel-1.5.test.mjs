@@ -49,7 +49,7 @@ test("scoped trip and destination snapshots omit unrelated data", (t) => {
   assert.equal(home.data.trips.length, 2);
   assert.equal(home.data.candidates.length, 0, "Home sends no idea details to the browser");
   assert.equal(home.data.legs.length, 0);
-  assert.equal(Object.keys(home.data.destinations[0]).sort().join(","), "city,id");
+  assert.equal(Object.keys(home.data.destinations[0]).sort().join(","), "city,cityFromSuggestion,id", "a trip card shows its cities as Destinations does");
   assert.equal(Object.keys(home.data.stops[0]).sort().join(","), "destinationId,id,position,tripId");
   for (const record of full.trips) {
     assert.deepEqual(home.budgets[record.id], calculateBudget(full, record.id));

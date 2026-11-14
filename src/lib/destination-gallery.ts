@@ -1,6 +1,6 @@
 import type { Destination } from "./types";
 
-export type DestinationGalleryOwner = Pick<Destination, "id" | "city" | "images" | "mainImageId">;
+export type DestinationGalleryOwner = Pick<Destination, "id" | "city" | "cityFromSuggestion" | "images" | "mainImageId">;
 export type DestinationDraftImage = { id: string; version?: string; file?: File };
 export type DestinationGalleryDraft = { images: DestinationDraftImage[]; removedIds: string[]; mainImageId: string | null };
 

@@ -1,11 +1,11 @@
 import { ImageValidationError, prepareImage } from "./image-upload.ts";
 import { formatMegabytes, MAX_CANDIDATE_IMAGES, MAX_GALLERY_UPLOAD_BYTES } from "./image-limits.ts";
-import type { CandidateGalleryUpdate } from "./types";
+import type { GalleryUpdate } from "./types";
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
-function ids(value: unknown): string[] {
-  if (!Array.isArray(value) || value.length > MAX_CANDIDATE_IMAGES || value.some((id) => typeof id !== "string" || !UUID.test(id))) {
+function ids(value: unknown, maxImages: number): string[] {
+  if (!Array.isArray(value) || value.length > maxImages || value.some((id) => typeof id !== "string" || !UUID.test(id))) {
     throw new ImageValidationError("These photo changes are invalid. Refresh and try again.");
   }
   if (new Set(value.map((id: string) => id.toLowerCase())).size !== value.length) {
@@ -14,8 +14,19 @@ function ids(value: unknown): string[] {
   return value;
 }
 
-/** Validate the complete batch before decoding; persistence happens only after every file succeeds. */
-export async function prepareCandidateGallery(form?: FormData): Promise<CandidateGalleryUpdate | undefined> {
+/** A rearranged gallery's order: each photo it keeps and adds, by ID, once (TRA-126). */
+function photoOrder(value: unknown, maxImages: number): string[] {
+  if (!Array.isArray(value) || value.length > maxImages || value.some((id) => typeof id !== "string" || !UUID.test(id)) || new Set(value.map((id: string) => id.toLowerCase())).size !== value.length) {
+    throw new ImageValidationError("These photo positions are invalid. Refresh and try again.");
+  }
+  return value;
+}
+
+/**
+ * A gallery save's photo changes, for a destination, idea or church, with at most `maxImages` photos. Validate the
+ * complete batch before decoding; persistence happens only after every file succeeds.
+ */
+export async function prepareCandidateGallery(form?: FormData, maxImages = MAX_CANDIDATE_IMAGES): Promise<GalleryUpdate | undefined> {
   if (form === undefined) return undefined;
   if (!(form instanceof FormData)) throw new ImageValidationError("Choose your photos and try again.");
   if (!form.has("gallery")) return undefined;
@@ -31,14 +42,15 @@ export async function prepareCandidateGallery(form?: FormData): Promise<Candidat
   } catch {
     throw new ImageValidationError("These photo changes are invalid. Refresh and try again.");
   }
-  const addIds = ids(manifest.addIds);
-  const remove = ids(manifest.removeIds);
+  const addIds = ids(manifest.addIds, maxImages);
+  const remove = ids(manifest.removeIds, maxImages);
   const removedIds = new Set(remove.map((id) => id.toLowerCase()));
   if (addIds.some((id) => removedIds.has(id.toLowerCase()))) throw new ImageValidationError("A photo cannot be added and removed at the same time.");
   const main = manifest.mainImageId;
   if (main !== undefined && main !== null && (typeof main !== "string" || !UUID.test(main))) {
     throw new ImageValidationError("Choose a valid main photo.");
   }
+  const order = manifest.order === undefined ? undefined : photoOrder(manifest.order, maxImages);
   const expectedFields = new Set(addIds.map((id) => "image:" + id));
   for (const key of form.keys()) {
     if (key.startsWith("image:") && !expectedFields.has(key)) throw new ImageValidationError("An uploaded photo was not included in your changes. Try again.");
@@ -51,7 +63,7 @@ export async function prepareCandidateGallery(form?: FormData): Promise<Candidat
   if (files.reduce((total, { file }) => total + file.size, 0) > MAX_GALLERY_UPLOAD_BYTES) {
     throw new ImageValidationError(`Add up to ${formatMegabytes(MAX_GALLERY_UPLOAD_BYTES)} of new photos at a time. Save these photos before adding more.`);
   }
-  const add: CandidateGalleryUpdate["add"] = [];
+  const add: GalleryUpdate["add"] = [];
   for (const { id, file } of files) {
     const single = new FormData();
     single.set("image", file);
@@ -59,5 +71,5 @@ export async function prepareCandidateGallery(form?: FormData): Promise<Candidat
     if (!data) throw new ImageValidationError("One of your photos could not be read. Select it again.");
     add.push({ id, data });
   }
-  return { add, remove, ...(main !== undefined ? { mainImageId: main } : {}) };
+  return { add, remove, ...(main !== undefined ? { mainImageId: main } : {}), ...(order === undefined ? {} : { order }) };
 }

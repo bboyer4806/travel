@@ -145,10 +145,10 @@ const CHANGES = [
   change("destination.photos", "Changes a destination's photos and nothing else: adds photos from their addresses, removes saved ones, chooses the primary photo and puts them in order.", {
     id: id("The destination's id."), gallery: gallery("destination", MAX_DESTINATION_IMAGES, "primary", true),
   }, ["id", "gallery"]),
-  change("candidate.photos", "Changes a hotel's, activity's or restaurant's photos and nothing else: adds photos from their addresses, removes saved ones and chooses the main photo. Its photos stay in the order they were added.", {
+  change("candidate.photos", "Changes a hotel's, activity's or restaurant's photos and nothing else: adds photos from their addresses, removes saved ones and chooses the main photo. Its photos keep their saved order, with new photos last.", {
     id: id("The idea's id."), gallery: gallery("idea", MAX_CANDIDATE_IMAGES, "main", false),
   }, ["id", "gallery"]),
-  change("church.photos", "Changes a church's photos and nothing else: adds photos from their addresses, removes saved ones and chooses the main photo. Its photos stay in the order they were added.", {
+  change("church.photos", "Changes a church's photos and nothing else: adds photos from their addresses, removes saved ones and chooses the main photo. Its photos keep their saved order, with new photos last.", {
     id: id("The church's id."), gallery: gallery("church", MAX_CANDIDATE_IMAGES, "main", false),
   }, ["id", "gallery"]),
 ];

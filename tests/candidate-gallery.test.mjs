@@ -248,3 +248,68 @@ test("deleting an idea removes only its gallery photos, and ideas keep theirs wh
     assert.deepEqual(observer.prepare("PRAGMA foreign_key_check").all(), []);
   } finally { observer.close(); store.close(); }
 });
+
+/** An idea's photo IDs, in gallery order. */
+const photoOrder = (store, id) => candidate(store, id).images.map((item) => item.id);
+
+for (const category of ["hotels", "activities", "restaurants"]) {
+  test(`rearranged ${category} photos keep their new order, main photo, files and details (TRA-126)`, (t) => {
+    const path = fileDatabase(t);
+    let store = createOwnedStore(path);
+    try {
+      const { tripId, destinationId } = seed(store);
+      const [first, second, third] = [photo(), photo(alternative), photo()];
+      const input = ideaInput(destinationId, { category });
+      const id = store.applyMutation({ ...input, gallery: { add: [first, second, third], remove: [], mainImageId: second.id } }).id;
+      const saved = candidate(store, id);
+      const files = saved.images.map((item) => store.getCandidatePhoto(id, item.id));
+      const budget = calculateBudget(store.getSnapshot(), tripId);
+      store.applyMutation({ ...input, id, gallery: { add: [], remove: [], mainImageId: second.id, order: [third.id, first.id, second.id] } });
+      const rearranged = candidate(store, id);
+      assert.deepEqual(photoOrder(store, id), [third.id, first.id, second.id]);
+      assert.equal(rearranged.mainImageId, second.id, "the main photo stays the same photo");
+      assert.deepEqual(rearranged.images.toSorted((a, b) => a.id.localeCompare(b.id)), saved.images.toSorted((a, b) => a.id.localeCompare(b.id)), "no photo is added, removed or given a new version");
+      assert.deepEqual(saved.images.map((item) => store.getCandidatePhoto(id, item.id)), files, "no photo file changes");
+      assert.deepEqual(planningFields(rearranged), planningFields(saved));
+      assert.deepEqual(calculateBudget(store.getSnapshot(), tripId), budget);
+      store.applyMutation({ ...input, id, notes: "Updated notes" });
+      assert.deepEqual(photoOrder(store, id), [third.id, first.id, second.id], "a save without photo changes keeps the order");
+      store.close();
+      store = createOwnedStore(path);
+      assert.deepEqual(photoOrder(store, id), [third.id, first.id, second.id], "the order persists");
+    } finally { store.close(); }
+  });
+}
+
+test("new photos placed among saved ones keep that order, and an order the gallery no longer matches is refused (TRA-126)", (t) => {
+  const store = createOwnedStore(":memory:");
+  t.after(() => store.close());
+  const { destinationId } = seed(store);
+  const [first, second, added] = [photo(), photo(), photo(alternative)];
+  const input = ideaInput(destinationId);
+  const id = store.applyMutation({ ...input, gallery: { add: [first, second], remove: [] } }).id;
+  // Removing the main photo without choosing another chooses the first photo in the new order.
+  store.applyMutation({ ...input, id, gallery: { add: [added], remove: [first.id], order: [added.id, second.id] } });
+  assert.deepEqual(photoOrder(store, id), [added.id, second.id]);
+  assert.equal(candidate(store, id).mainImageId, added.id);
+  assert.deepEqual(store.getCandidatePhoto(id, added.id).data, alternative);
+  // Saving again after a lost response keeps the photo the first save added, in the same order.
+  store.applyMutation({ ...input, id, gallery: { add: [added], remove: [], mainImageId: added.id, order: [added.id, second.id] } });
+  assert.deepEqual(photoOrder(store, id), [added.id, second.id]);
+  const before = store.getSnapshot();
+  for (const [gallery, message] of [
+    // Another editor removed or added a photo since this one opened.
+    [{ add: [], remove: [], order: [second.id] }, /The photos have changed\. Refresh before rearranging them\./],
+    [{ add: [], remove: [], order: [second.id, added.id, randomUUID()] }, /The photos have changed/],
+    [{ add: [], remove: [], order: [second.id, randomUUID()] }, /The photos have changed/],
+    [{ add: [], remove: [second.id], order: [second.id, added.id] }, /The photos have changed/],
+    [{ add: [], remove: [], order: [second.id, second.id] }, /Each photo must appear once in the photo order\./],
+    [{ add: [], remove: [], order: [second.id, second.id.toUpperCase()] }, /Each photo must appear once/],
+    [{ add: [], remove: [], order: ["not-an-id", second.id] }, ValidationError],
+    [{ add: [], remove: [], order: second.id }, /An idea can have up to 10 photos\./],
+    [{ add: [], remove: [], order: Array.from({ length: 11 }, randomUUID) }, /An idea can have up to 10 photos\./],
+  ]) {
+    assert.throws(() => store.applyMutation({ ...input, id, name: "Unsaved", gallery }), message);
+    assert.deepEqual(store.getSnapshot(), before, "a refused order changes nothing");
+  }
+});

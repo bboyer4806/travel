@@ -12,10 +12,11 @@ import { HealthSafetyPanel, HealthSafetyEditor } from "@/components/health-safet
 import { healthSafetyFromForm, type EmergencyContact } from "@/lib/health-safety";
 import { ChurchOptions, ChurchEditor } from "@/components/churches";
 import { TypicalWeatherPanel, TypicalWeatherEditor } from "@/components/typical-weather";
-import { DestinationGallery, DestinationGalleryEditor, createDestinationGalleryDraft, destinationGalleryForm, type DestinationGalleryDraft } from "@/components/destination-gallery";
+import { DestinationGallery, DestinationGalleryEditor } from "@/components/destination-gallery";
 import CandidateList from "@/components/candidate-list";
 import { DestinationIdeas, IdeaDetails, priceNotes, selectionLabels } from "@/components/destination-ideas";
-import { CandidateGalleryEditor, candidateGalleryForm, createCandidateGalleryDraft, type CandidateGalleryDraft } from "@/components/candidate-gallery";
+import { CandidateGalleryEditor } from "@/components/candidate-gallery";
+import { createGalleryDraft, galleryForm, type GalleryDraft } from "@/lib/gallery-draft";
 import TripRouteFields from "@/components/trip-route-fields";
 import { ConnectionItinerary, ConnectionItineraryEditor } from "@/components/connection-itinerary";
 import { ResearchLinks, ResearchLinksEditor } from "@/components/research-links";
@@ -146,8 +147,8 @@ export default function PlannerApp({ initialData, initialBudgets, access = {}, d
   const [massTimes, setMassTimes] = useState<MassTime[]>([]);
   const [researchLinks, setResearchLinks] = useState<ResearchLink[]>([]);
   const [emergencyContacts, setEmergencyContacts] = useState<EmergencyContact[]>([]);
-  const [destinationGallery, setDestinationGallery] = useState<DestinationGalleryDraft>(() => createDestinationGalleryDraft());
-  const [candidateGallery, setCandidateGallery] = useState<CandidateGalleryDraft>(() => createCandidateGalleryDraft());
+  const [destinationGallery, setDestinationGallery] = useState<GalleryDraft>(() => createGalleryDraft());
+  const [candidateGallery, setCandidateGallery] = useState<GalleryDraft>(() => createGalleryDraft());
   // The ID of the item an editor adds, given once when it opens, so saving again after a response is lost changes that item instead of adding another.
   const [newId, setNewId] = useState("");
   const [error, setError] = useState("");
@@ -196,14 +197,14 @@ export default function PlannerApp({ initialData, initialBudgets, access = {}, d
     if (value.kind === "entryRequirements") setResearchLinks(value.item.entryRequirements?.sources ?? []);
     if (value.kind === "healthSafety") { setResearchLinks(value.item.healthSafety?.sources ?? []); setEmergencyContacts(value.item.healthSafety?.emergencyContacts ?? []); }
     if (value.kind === "church") setMassTimes(value.item?.massTimes ?? []);
-    setDestinationGallery(createDestinationGalleryDraft(value.kind === "destination" ? value.item : undefined));
-    setCandidateGallery(createCandidateGalleryDraft(value.kind === "candidate" || value.kind === "church" ? value.item : undefined));
+    setDestinationGallery(createGalleryDraft(value.kind === "destination" ? value.item : undefined));
+    setCandidateGallery(createGalleryDraft(value.kind === "candidate" || value.kind === "church" ? value.item : undefined));
     setNewId(randomUuid());
     setEditor(value); setError(""); setMessage("");
   };
   /** The item a save is for: the saved one an editor changes, or the new one it adds. */
   const itemToSave = (item?: { id: string }) => item ? { id: item.id } : { id: newId, create: true as const };
-  const close = () => { if (!busy) { setEditor(null); setDestinationGallery(createDestinationGalleryDraft()); setCandidateGallery(createCandidateGalleryDraft()); setError(""); } };
+  const close = () => { if (!busy) { setEditor(null); setDestinationGallery(createGalleryDraft()); setCandidateGallery(createGalleryDraft()); setError(""); } };
   /** Where saving or Cancel leaves an editor: an idea's editor opened from its details returns to them, and others close. */
   const detailsOf = (value: Editor | null): Editor | null => value?.kind === "candidate" && value.details && value.item ? { kind: "ideaDetails", item: value.item } : null;
   /** Cancel discards the draft: an idea's editor opened from its details returns there, and any other editor closes. */
@@ -218,7 +219,7 @@ export default function PlannerApp({ initialData, initialBudgets, access = {}, d
       const result = await mutatePlanner(mutation, imageForm);
       if (!result.ok) { setError(result.error); return false; }
       const details = detailsOf(editor);
-      const finish = () => { setEditor(details); setDestinationGallery(createDestinationGalleryDraft()); setCandidateGallery(createCandidateGalleryDraft()); };
+      const finish = () => { setEditor(details); setDestinationGallery(createGalleryDraft()); setCandidateGallery(createGalleryDraft()); };
       if (details) startReturning(finish); else finish();
       setMessage(success);
       if (mutation.type === "stop.add" && result.id) {
@@ -279,7 +280,7 @@ export default function PlannerApp({ initialData, initialBudgets, access = {}, d
         break;
       }
       case "destination": {
-        const imageForm = destinationGalleryForm(destinationGallery, editor.item);
+        const imageForm = galleryForm(destinationGallery, editor.item);
         const shared = { city: text("city"), cityFromSuggestion, notes: text("notes"), miscDailyAmount: text("miscDailyAmount"), hotelNightlyAmount: text("hotelNightlyAmount"), activitiesBudgetMode: text("activitiesBudgetMode") as ActivitiesBudgetMode, activitiesGeneralAmount: text("activitiesGeneralAmount"), foodBudgetMode: text("foodBudgetMode") as FoodBudgetMode, foodDailyAmount: text("foodDailyAmount"), shoppingAmount: text("shoppingAmount") };
         const stay = { stay: text("stay"), nights };
         if (editor.stop) void perform({ type: "destination.save", id: editor.item.id, stopId: editor.stop.id, ...shared, ...stay }, "Destination saved. Review any new travel connections.", undefined, imageForm);
@@ -321,11 +322,11 @@ export default function PlannerApp({ initialData, initialBudgets, access = {}, d
       }
       case "leg": void perform({ type: "leg.save", id: editor.item.id, method: text("method"), price: text("price"), departure: text("departure"), arrival: text("arrival"), url: researchLinks[0]?.url ?? "", links: researchLinks, notes: text("notes"), itinerary }); break;
       case "church": {
-        void perform({ type: "church.save", ...itemToSave(editor.item), destinationId: editor.destinationId, name: text("name"), address: text("address"), denomination: text("denomination"), url: text("url"), massTimes }, "Church saved.", undefined, candidateGalleryForm(candidateGallery, editor.item));
+        void perform({ type: "church.save", ...itemToSave(editor.item), destinationId: editor.destinationId, name: text("name"), address: text("address"), denomination: text("denomination"), url: text("url"), massTimes }, "Church saved.", undefined, galleryForm(candidateGallery, editor.item));
         break;
       }
       case "candidate": {
-        const imageForm = candidateGalleryForm(candidateGallery, editor.item);
+        const imageForm = galleryForm(candidateGallery, editor.item);
         void perform({ type: "candidate.save", ...itemToSave(editor.item), destinationId: editor.destinationId, category: editor.category, name: text("name"), price: text("price"), address: text("address"), url: researchLinks[0]?.url ?? "", links: researchLinks, notes: text("notes"), included: fields.has("included"), mustDo: fields.has("mustDo") }, "Changes saved.", undefined, imageForm);
         break;
       }

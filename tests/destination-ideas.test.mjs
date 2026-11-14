@@ -5,6 +5,7 @@ import test from "node:test";
 import { runInNewContext } from "node:vm";
 import ts from "typescript";
 import * as budget from "../src/lib/budget.ts";
+import * as galleryDraft from "../src/lib/gallery-draft.ts";
 import * as imageLimits from "../src/lib/image-limits.ts";
 import * as money from "../src/lib/money.ts";
 import * as tripDates from "../src/lib/trip-dates.ts";
@@ -17,7 +18,7 @@ const shared = {
   "react": { useId: () => "id", useState: (initial) => [initial, () => {}], useRef: (current) => ({ current }), useEffect: () => {} },
   "react/jsx-runtime": { jsx: element, jsxs: element, Fragment: "fragment" },
   "next/link": { default: "a" }, "lucide-react": new Proxy({}, { get: (_, name) => "icon:" + String(name) }),
-  "@/lib/budget": budget, "@/lib/image-limits": imageLimits, "@/lib/money": money, "@/lib/trip-dates": tripDates, "@/lib/uuid": uuid,
+  "@/lib/budget": budget, "@/lib/gallery-draft": galleryDraft, "@/lib/image-limits": imageLimits, "@/lib/money": money, "@/lib/trip-dates": tripDates, "@/lib/uuid": uuid,
 };
 /** A component module, given the components it imports. A CSS module's class names are their own names. */
 function load(file, modules = {}) {
@@ -35,7 +36,7 @@ function load(file, modules = {}) {
   return exports;
 }
 const { DestinationIdeas, IdeaDetails } = load("../src/components/destination-ideas.tsx", {
-  "./candidate-gallery": load("../src/components/candidate-gallery.tsx", { "./focus-after": load("../src/components/focus-after.ts") }),
+  "./candidate-gallery": load("../src/components/candidate-gallery.tsx", { "./focus-after": load("../src/components/focus-after.ts"), "./photo-drag": load("../src/components/photo-drag.ts") }),
   "./research-links": load("../src/components/research-links.tsx"),
 });
 const { DestinationBudget } = load("../src/components/destination-budget.tsx");

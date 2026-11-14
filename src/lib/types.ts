@@ -28,8 +28,8 @@ export interface ItineraryStop { id: string; kind: "layover" | "stop"; place: st
 export interface TravelLeg { id: string; tripId: string; fromId: string | null; toId: string | null; method: string; priceCents: number | null; departure: string; arrival: string; url: string; notes: string; itinerary: ItineraryStop[]; links: ResearchLink[]; }
 export interface CandidateImage { id: string; version: string; }
 export interface DestinationPhotos { images: CandidateImage[]; mainImageId: string | null; }
-export interface DestinationGalleryUpdate { add: { id: string; data: Uint8Array }[]; remove: string[]; mainImageId?: string | null; order?: string[]; }
-export interface CandidateGalleryUpdate { add: { id: string; data: Uint8Array }[]; remove: string[]; mainImageId?: string | null; }
+/** A photo editor's changes to a destination's, idea's or church's photos. `order` lists every photo it keeps and adds, and is sent only when they are rearranged (TRA-126). */
+export interface GalleryUpdate { add: { id: string; data: Uint8Array }[]; remove: string[]; mainImageId?: string | null; order?: string[]; }
 /** A hotel, activity or restaurant idea. `restaurantTypes` is empty for hotels and activities, and for a restaurant without any. */
 export interface Candidate { id: string; destinationId: string; category: Category; position: number; mustDo: boolean; name: string; priceCents: number | null; address: string; url: string; notes: string; included: boolean; links: ResearchLink[]; images: CandidateImage[]; mainImageId: string | null; restaurantTypes: RestaurantType[]; }
 export interface MassTime { id: string; day: string; time: string; }
@@ -40,7 +40,7 @@ export interface Snapshot { churches: Church[]; trips: Trip[]; homeItems: HomeIt
  * A destination's shared research and budget amounts as a save sends them. A field left out keeps its saved value, except
  * that a new city sent without `cityFromSuggestion` was entered some other way.
  */
-export interface DestinationFields { city?: string; cityFromSuggestion?: true; notes?: string; miscDailyAmount?: string; hotelNightlyAmount?: string; activitiesBudgetMode?: ActivitiesBudgetMode; activitiesGeneralAmount?: string; foodBudgetMode?: FoodBudgetMode; foodDailyAmount?: string; shoppingAmount?: string; weatherHighF?: number | null; weatherLowF?: number | null; weatherRainfall?: string; weatherPeriod?: string; weatherSource?: string; image?: Uint8Array | null; gallery?: DestinationGalleryUpdate }
+export interface DestinationFields { city?: string; cityFromSuggestion?: true; notes?: string; miscDailyAmount?: string; hotelNightlyAmount?: string; activitiesBudgetMode?: ActivitiesBudgetMode; activitiesGeneralAmount?: string; foodBudgetMode?: FoodBudgetMode; foodDailyAmount?: string; shoppingAmount?: string; weatherHighF?: number | null; weatherLowF?: number | null; weatherRainfall?: string; weatherPeriod?: string; weatherSource?: string; image?: Uint8Array | null; gallery?: GalleryUpdate }
 /** One trip's stay notes and nights at a destination. */
 export interface StopFields { stay?: string; nights?: number | null }
 /**
@@ -69,7 +69,7 @@ export type Mutation =
  | { type: "destination.entryRequirements"; id: string; requirements: EntryRequirements | null }
  | { type: "destination.healthSafety"; id: string; healthSafety: HealthSafety | null }
  | { type: "destination.churchVisibility"; id: string; enabled: boolean }
- | { type: "church.save"; id: string; create?: true; destinationId: string; name: string; address: string; denomination: string; url: string; massTimes: MassTime[]; gallery?: CandidateGalleryUpdate }
+ | { type: "church.save"; id: string; create?: true; destinationId: string; name: string; address: string; denomination: string; url: string; massTimes: MassTime[]; gallery?: GalleryUpdate }
  | { type: "church.delete"; id: string; destinationId: string }
  // Adds a city to a trip as its last stop, without stay notes or nights: the trip owner's saved destination for the
  // city, or a new one. A city the trip already visits opens that stop instead of adding another.
@@ -80,16 +80,16 @@ export type Mutation =
  | { type: "leg.save"; id: string; method: string; price: string; departure: string; arrival: string; url: string; notes: string; itinerary?: ItineraryStop[]; links?: ResearchLink[] }
  | { type: "leg.clear"; id: string }
  // A restaurant's `restaurantTypes` replace its saved ones, and left out keep them. Hotels and activities have none.
- | { type: "candidate.save"; id: string; create?: true; destinationId: string; category: Category; name: string; price: string; address: string; url: string; notes: string; included: boolean; mustDo?: boolean; restaurantTypes?: RestaurantType[]; links?: ResearchLink[]; gallery?: CandidateGalleryUpdate }
+ | { type: "candidate.save"; id: string; create?: true; destinationId: string; category: Category; name: string; price: string; address: string; url: string; notes: string; included: boolean; mustDo?: boolean; restaurantTypes?: RestaurantType[]; links?: ResearchLink[]; gallery?: GalleryUpdate }
  | { type: "candidate.move"; id: string; direction: "up" | "down" }
  | { type: "candidate.mustDo"; id: string; mustDo: boolean }
  | { type: "candidate.delete"; id: string }
  | { type: "candidate.include"; id: string; included: boolean }
  // Change a destination's, idea's or church's photos, and nothing else, with the photos Travel downloaded and prepared
  // for a ChatGPT or Claude proposal (TRA-122). Only those proposals make them; people change photos with each item's save.
- | { type: "destination.photos"; id: string; gallery: DestinationGalleryUpdate }
- | { type: "candidate.photos"; id: string; gallery: CandidateGalleryUpdate }
- | { type: "church.photos"; id: string; gallery: CandidateGalleryUpdate };
+ | { type: "destination.photos"; id: string; gallery: GalleryUpdate }
+ | { type: "candidate.photos"; id: string; gallery: GalleryUpdate }
+ | { type: "church.photos"; id: string; gallery: GalleryUpdate };
 export type ActionResult = { ok: true; id?: string } | { ok: false; error: string };
 /** An email authorized to use Travel. Its Google subject is bound privately at the first sign-in. */
 export interface AuthorizedAccount { id: string; email: string; name: string | null; }

@@ -4,7 +4,7 @@ import { readFileSync } from "node:fs";
 import test from "node:test";
 import { runInNewContext } from "node:vm";
 import ts from "typescript";
-import * as destinationGallery from "../src/lib/destination-gallery.ts";
+import * as galleryDraft from "../src/lib/gallery-draft.ts";
 import * as destinationLabel from "../src/lib/destination-label.ts";
 import * as imageLimits from "../src/lib/image-limits.ts";
 import * as uuid from "../src/lib/uuid.ts";
@@ -38,7 +38,7 @@ function harness(destination) {
     },
     "react/jsx-runtime": { jsx: element, jsxs: element, Fragment: "fragment" },
     "lucide-react": new Proxy({}, { get: (_, name) => "icon:" + String(name) }),
-    "@/lib/destination-gallery": destinationGallery, "@/lib/destination-label": destinationLabel, "@/lib/image-limits": imageLimits, "@/lib/uuid": uuid,
+    "@/lib/gallery-draft": galleryDraft, "@/lib/destination-label": destinationLabel, "@/lib/image-limits": imageLimits, "@/lib/uuid": uuid,
   };
   const require = (name) => {
     // A CSS module's class names are their own names.
@@ -47,6 +47,7 @@ function harness(destination) {
     return modules[name];
   };
   modules["./focus-after"] = load("../src/components/focus-after.ts", require);
+  modules["./photo-drag"] = load("../src/components/photo-drag.ts", require);
   const { DestinationGallery } = load("../src/components/destination-gallery.tsx", require);
   /** The host elements an element renders to, rendering each component once, in order, so its hooks keep their places. */
   const hosts = (node) => {

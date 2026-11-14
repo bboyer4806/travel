@@ -117,3 +117,18 @@ test("the new-photo batch limit is checked before image decoding", async () => {
   const { form } = uploadForm(Array.from({ length: 4 }, () => file(bytes)));
   await assert.rejects(prepareCandidateGallery(form), /15 MB/);
 });
+
+test("idea and church uploads keep a rearranged order and reject malformed ones before decoding photos (TRA-126)", async () => {
+  const first = randomUUID(), second = randomUUID();
+  assert.deepEqual(await prepareCandidateGallery(manifestForm({ addIds: [], removeIds: [], order: [second, first] })), { add: [], remove: [], order: [second, first] });
+  const { form, photos } = uploadForm([file(await fixture("png")), file(await fixture("webp"), "image/webp")]);
+  form.set("gallery", JSON.stringify({ addIds: photos.map((photo) => photo.id), removeIds: [], mainImageId: first, order: [photos[1].id, first, photos[0].id] }));
+  const result = await prepareCandidateGallery(form);
+  assert.deepEqual(result.order, [photos[1].id, first, photos[0].id]);
+  assert.deepEqual(result.add.map((photo) => photo.id), photos.map((photo) => photo.id), "new photos decode in the order they were added");
+  const id = randomUUID();
+  for (const order of [null, "first", {}, [null], [4], ["invalid"], [id, id], [id, id.toUpperCase()], Array.from({ length: 11 }, randomUUID)]) {
+    // Missing upload bytes would produce a different error if the order were checked too late.
+    await assert.rejects(prepareCandidateGallery(manifestForm({ addIds: [randomUUID()], removeIds: [], order })), /photo positions/);
+  }
+});

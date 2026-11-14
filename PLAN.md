@@ -392,6 +392,13 @@ This replaces TRA-62's destination Save in a sticky header.
 - Destinations' search and cards share these styles and show focus the same way; before, its cards showed no ring at all.
 - Not included: other focus styles or colors, and the cards' Edit and Delete buttons, whose rings already showed.
 
+## Added scope: November 14, 2026, dragging photos into order (TRA-126)
+- From feedback: with a mouse or trackpad, people drag photos into a new order while editing the photos of a destination, hotel, activity, restaurant or church. A photo dropped on another takes its place. The photo being dragged is outlined, and a bar on one side of the photo under the pointer shows whether it goes before or after it.
+- The editor shows the new order at once, new photos not yet saved included, and saving the destination or item saves it. Cancel discards it, Undo photo changes restores the saved order, and the main or primary photo stays the same photo. Galleries show photos in their saved order everywhere.
+- Hotels, activities, restaurants and churches save photo order as destinations do: a save sends the order only when it isn't the saved order with new photos last, and an order that no longer lists every photo, because the gallery changed meanwhile, is refused. Dragging changes no photo or other detail. The destination editor keeps Move left and Move right.
+- Dragging needs a main pointer that hovers and points precisely, so phones and tablets keep their editors unchanged. ChatGPT and Claude still order only a destination's photos (TRA-122).
+- Not included: dragging on touchscreens; Move left and Move right, or other keyboard ordering, for hotel, activity, restaurant and church photos; photo editing, upload limits or storage; choosing the main photo automatically; gallery redesign; and dragging anything but photos.
+
 ## Added scope: November 14, 2026, restaurant types (TRA-36)
 - Each restaurant can have any of five types, Breakfast, Lunch, Dinner, Snack and Drinks, to show which meals and visits it suits. Its editor has an independent checkbox for each, so any combination can be chosen, such as Lunch and Drinks, or none. Editing shows the saved types checked, to add, change or clear them all.
 - A restaurant's types show as labeled tags, always in that order, on its card in the destination's Restaurants carousel, on the Restaurants page, and in its details. A restaurant without types shows no tags or placeholder. Checkboxes and tags wrap to fit phones, where each checkbox is at least 44 pixels tall.

@@ -275,3 +275,28 @@ test("schema 13 upgrade initializes Sunday visibility, preserves prior data and 
     } finally { observer.close(); }
   } finally { store?.close(); }
 });
+
+test("rearranged church photos keep their new order and main photo, and persist (TRA-126)", (t) => {
+  const path = fileDatabase(t);
+  let store = createOwnedStore(path);
+  try {
+    const tripId = store.applyMutation(tripInput()).id;
+    const destinationId = addDestination(store, tripId);
+    const [first, second, third] = [photo(), photo(), photo()];
+    const input = churchInput(destinationId, { massTimes: [mass()] });
+    const id = store.applyMutation({ ...input, gallery: { add: [first, second, third], remove: [], mainImageId: first.id } }).id;
+    const saved = church(store, id);
+    store.applyMutation({ ...input, id, gallery: { add: [], remove: [], mainImageId: first.id, order: [second.id, third.id, first.id] } });
+    const rearranged = church(store, id);
+    assert.deepEqual(rearranged.images.map((image) => image.id), [second.id, third.id, first.id]);
+    assert.equal(rearranged.mainImageId, first.id, "the main photo stays the same photo");
+    assert.deepEqual({ ...rearranged, images: [] }, { ...saved, images: [] }, "the church's details and Mass times are unchanged");
+    assert.deepEqual(store.getChurchPhoto(id, third.id).data, webp);
+    store.close();
+    store = createOwnedStore(path);
+    assert.deepEqual(church(store, id).images.map((image) => image.id), [second.id, third.id, first.id]);
+    const before = store.getSnapshot();
+    assert.throws(() => store.applyMutation({ ...input, id, gallery: { add: [], remove: [], order: [second.id, first.id] } }), /The photos have changed\. Refresh before rearranging them\./);
+    assert.deepEqual(store.getSnapshot(), before);
+  } finally { store.close(); }
+});

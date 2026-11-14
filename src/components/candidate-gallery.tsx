@@ -2,32 +2,18 @@
 
 import { useEffect, useId, useRef, useState, type ChangeEvent } from "react";
 import { Check, ImagePlus, RotateCcw, Trash2 } from "lucide-react";
+import { createGalleryDraft, galleryChanged, placePhoto, removePhoto, type DraftImage, type GalleryDraft } from "@/lib/gallery-draft";
 import { formatMegabytes, IMAGE_UPLOAD_TYPES, MAX_CANDIDATE_IMAGES, MAX_GALLERY_UPLOAD_BYTES, MAX_IMAGE_UPLOAD_BYTES } from "@/lib/image-limits";
 import type { Candidate } from "@/lib/types";
 import { randomUuid } from "@/lib/uuid";
 import { useFocusAfter } from "./focus-after";
+import { usePhotoDrag } from "./photo-drag";
 import styles from "./candidate-gallery.module.css";
 
 type ImageSubject = "hotel" | "activity" | "restaurant" | "church";
 type GalleryOwner = Pick<Candidate, "id" | "name" | "images" | "mainImageId">;
 type ImageKind = "candidate" | "church";
 const subjectLabels: Record<ImageSubject, string> = { hotel: "Hotel", activity: "Activity", restaurant: "Restaurant", church: "Church" };
-
-type DraftImage = { id: string; version?: string; file?: File };
-export type CandidateGalleryDraft = { images: DraftImage[]; removedIds: string[]; mainImageId: string | null };
-
-export function createCandidateGalleryDraft(candidate?: GalleryOwner): CandidateGalleryDraft {
-  return { images: (candidate?.images ?? []).map((image) => ({ ...image })), removedIds: [], mainImageId: candidate?.mainImageId ?? null };
-}
-
-export function candidateGalleryForm(draft: CandidateGalleryDraft, candidate?: GalleryOwner): FormData | undefined {
-  const added = draft.images.filter((image) => image.file);
-  if (!added.length && !draft.removedIds.length && draft.mainImageId === (candidate?.mainImageId ?? null)) return undefined;
-  const form = new FormData();
-  form.set("gallery", JSON.stringify({ addIds: added.map((image) => image.id), removeIds: draft.removedIds, mainImageId: draft.mainImageId }));
-  for (const image of added) if (image.file) form.set(`image:${image.id}`, image.file);
-  return form;
-}
 
 export function photoUrl(candidateId: string, image: { id: string; version?: string }, imageKind: ImageKind) {
   return `/api/${imageKind}-images/${candidateId}/${image.id}?v=${image.version}`;
@@ -79,8 +65,8 @@ export function CandidateGalleryEditor({ candidate, subject, draft, onChange, di
   candidate?: GalleryOwner;
   subject: ImageSubject;
   imageKind?: ImageKind;
-  draft: CandidateGalleryDraft;
-  onChange: (draft: CandidateGalleryDraft) => void;
+  draft: GalleryDraft;
+  onChange: (draft: GalleryDraft) => void;
   disabled?: boolean;
 }) {
   const id = useId();
@@ -89,7 +75,8 @@ export function CandidateGalleryEditor({ candidate, subject, draft, onChange, di
   const removeButtons = useRef(new Map<string, HTMLButtonElement>());
   const addButton = useRef<HTMLButtonElement>(null);
   const [error, setError] = useState("");
-  const changed = draft.removedIds.length > 0 || draft.images.some((image) => image.file) || draft.mainImageId !== (candidate?.mainImageId ?? null);
+  const changed = galleryChanged(draft, candidate);
+  const drag = usePhotoDrag(draft.images.map((image) => image.id), (photoId, index) => { setError(""); onChange(placePhoto(draft, photoId, index)); }, disabled);
 
   function choose(event: ChangeEvent<HTMLInputElement>) {
     const files = Array.from(event.currentTarget.files ?? []);
@@ -114,13 +101,12 @@ export function CandidateGalleryEditor({ candidate, subject, draft, onChange, di
     setError("");
     const next = draft.images[draft.images.indexOf(image) + 1];
     focusAfter(() => next ? removeButtons.current.get(next.id) : addButton.current);
-    const images = draft.images.filter((item) => item.id !== image.id);
-    onChange({ images, removedIds: image.file ? draft.removedIds : [...draft.removedIds, image.id], mainImageId: draft.mainImageId === image.id ? (images[0]?.id ?? null) : draft.mainImageId });
+    onChange(removePhoto(draft, image.id));
   }
 
   /** Undo photo changes goes away with the changes, so it focuses Add photos, or the last photo's Remove when the saved photos fill the gallery. */
   function undo() {
-    const saved = createCandidateGalleryDraft(candidate);
+    const saved = createGalleryDraft(candidate);
     const last = saved.images.at(-1);
     focusAfter(() => last && saved.images.length >= MAX_CANDIDATE_IMAGES ? removeButtons.current.get(last.id) : addButton.current);
     setError("");
@@ -129,11 +115,11 @@ export function CandidateGalleryEditor({ candidate, subject, draft, onChange, di
 
   return <fieldset className={styles.editor} disabled={disabled} aria-describedby={`${id}-hint`}>
     <legend>{subjectLabels[subject]} photos <span className={styles.optional}>(optional)</span></legend>
-    <p id={`${id}-hint`} className={styles.hint}>Add up to {MAX_CANDIDATE_IMAGES} photos. Choose one main photo to show first.<br />JPEG, PNG, or WebP, up to {formatMegabytes(MAX_IMAGE_UPLOAD_BYTES)} each and {formatMegabytes(MAX_GALLERY_UPLOAD_BYTES)} of new photos per save.</p>
+    <p id={`${id}-hint`} className={styles.hint}>Add up to {MAX_CANDIDATE_IMAGES} photos. Choose one main photo to show first{drag.available && " and drag photos to arrange them"}.<br />JPEG, PNG, or WebP, up to {formatMegabytes(MAX_IMAGE_UPLOAD_BYTES)} each and {formatMegabytes(MAX_GALLERY_UPLOAD_BYTES)} of new photos per save.</p>
     <input ref={input} id={id} type="file" multiple accept={IMAGE_UPLOAD_TYPES.join(",")} onChange={choose} disabled={disabled} hidden aria-label={`Choose ${subject} photos`} aria-describedby={`${id}-hint${error ? ` ${id}-error` : ""}`} />
     {draft.images.length > 0 && <div className={styles.editGrid}>
-      {draft.images.map((image, photoIndex) => <div key={image.id} className={styles.editPhoto}>
-        <div className={styles.preview}>
+      {draft.images.map((image, photoIndex) => <div key={image.id} className={styles.editPhoto} {...drag.target(image.id)}>
+        <div className={styles.preview} {...drag.source(image.id)}>
           {image.file ? <UploadPreview file={image.file} alt={`New ${subject} photo ${photoIndex + 1}`} /> : candidate && <SavedPhoto imageKind={imageKind} candidateId={candidate.id} image={image} alt={`${subjectLabels[subject]} photo ${photoIndex + 1}`} />}
           {image.id === draft.mainImageId && <span className={styles.mainBadge}>Main photo</span>}
         </div>

@@ -20,9 +20,9 @@ import type { AiPlatform } from "./ai-auth.ts";
 import type { Effect, PreviewChange, Row, Tables } from "./ai-preview.ts";
 import type { EntryRequirements } from "./entry-requirements.ts";
 import type { HealthSafety } from "./health-safety.ts";
-import type { AiConnection, AiPhotoToAdd, AiProposal, DestinationFields, DestinationGalleryUpdate } from "./types";
+import type { AiConnection, AiPhotoToAdd, AiProposal, DestinationFields, GalleryUpdate } from "./types";
 import type { AuthorizedAccount, DestinationAccess, GoogleIdentity, TripAccess, TripMember, TripStop } from "./types";
-import type { FoodBudgetMode, ActivitiesBudgetMode, Candidate, CandidateImage, CandidateGalleryUpdate, Category, Church, MassTime, Destination, HomeItem, StoredImage, ItineraryStop, Mutation, ResearchLink, RestaurantType, Snapshot, TravelLeg, Trip } from "./types";
+import type { FoodBudgetMode, ActivitiesBudgetMode, Candidate, CandidateImage, Category, Church, MassTime, Destination, HomeItem, StoredImage, ItineraryStop, Mutation, ResearchLink, RestaurantType, Snapshot, TravelLeg, Trip } from "./types";
 
 type StoredDestination = Omit<Destination, "churchEnabled" | "cityFromSuggestion" | "images" | "entryRequirements" | "healthSafety" | "mainImageId" | "imageVersion"> & { churchEnabled: number; cityFromSuggestion: number; ownerId: string; cityKey: string };
 type StoredChurch = Omit<Church, "massTimes" | "images"> & { massTimesJson: string };
@@ -279,14 +279,15 @@ function imageField(input: Input, label = "Destination"): Uint8Array | null | un
   }
   return new Uint8Array(value);
 }
-function galleryField(input: Input, label = "Idea"): CandidateGalleryUpdate | undefined {
+function galleryField(input: Input, label = "Idea"): GalleryUpdate | undefined {
   if (input.gallery === undefined) return undefined;
   if (input.image !== undefined) throw new ValidationError("Use either a photo gallery or a single image change.");
   const value = input.gallery;
   if (!value || typeof value !== "object" || Array.isArray(value)) throw new ValidationError("These photo changes are invalid.");
   const gallery = value as Input;
   const maxImages = label === "Destination" ? MAX_DESTINATION_IMAGES : MAX_CANDIDATE_IMAGES;
-  if (!Array.isArray(gallery.add) || !Array.isArray(gallery.remove) || gallery.add.length > maxImages || gallery.remove.length > maxImages) throw new ValidationError(`${label === "Church" ? "A church" : label === "Destination" ? "A destination" : "An idea"} can have up to ${maxImages} photos.`);
+  const tooMany = `${label === "Church" ? "A church" : label === "Destination" ? "A destination" : "An idea"} can have up to ${maxImages} photos.`;
+  if (!Array.isArray(gallery.add) || !Array.isArray(gallery.remove) || gallery.add.length > maxImages || gallery.remove.length > maxImages) throw new ValidationError(tooMany);
   const seen = new Set<string>();
   const add = gallery.add.map((photo) => {
     if (!photo || typeof photo !== "object" || Array.isArray(photo)) throw new ValidationError("Choose a valid photo.");
@@ -304,17 +305,12 @@ function galleryField(input: Input, label = "Idea"): CandidateGalleryUpdate | un
     return id;
   });
   const mainImageId = gallery.mainImageId === undefined || gallery.mainImageId === null ? gallery.mainImageId : idField({ id: gallery.mainImageId });
-  return { add, remove, mainImageId };
-}
-function destinationGalleryField(input: Input): DestinationGalleryUpdate | undefined {
-  const gallery = galleryField(input, "Destination");
-  if (!gallery) return undefined;
-  const orderValue = (input.gallery as Input).order;
-  if (orderValue === undefined) return gallery;
-  if (!Array.isArray(orderValue) || orderValue.length > MAX_DESTINATION_IMAGES) throw new ValidationError(`A destination can have up to ${MAX_DESTINATION_IMAGES} photos.`);
-  const order = orderValue.map((id) => idField({ id }));
+  if (gallery.order === undefined) return { add, remove, mainImageId };
+  // A rearranged gallery's order, which any gallery's editor sends (TRA-126).
+  if (!Array.isArray(gallery.order) || gallery.order.length > maxImages) throw new ValidationError(tooMany);
+  const order = gallery.order.map((id) => idField({ id }));
   if (new Set(order.map((id) => id.toLowerCase())).size !== order.length) throw new ValidationError("Each photo must appear once in the photo order.");
-  return { ...gallery, order };
+  return { add, remove, mainImageId, order };
 }
 function massTimesField(input: Input): MassTime[] {
   if (!Array.isArray(input.massTimes) || input.massTimes.length > 30) throw new ValidationError("A church can have up to 30 Mass times. Leave the list empty when times are unknown.");
@@ -362,7 +358,7 @@ function validate(input: unknown): Mutation {
       if (value.create !== undefined || value.tripId !== undefined) throw new ValidationError(PLANNER_UPDATED);
       if (value.arrivalDate !== undefined || value.departureDate !== undefined) throw new ValidationError("Destination dates are calculated. Edit the trip start date or destination nights instead.");
       const id = saveIdField(value);
-      const fields = { city: value.city === undefined ? undefined : textField(value, "city", 120, true), cityFromSuggestion: cityFromSuggestionField(value), stay: value.stay === undefined ? undefined : textField(value, "stay", 120), nights: nightsField(value), miscDailyAmount: value.miscDailyAmount === undefined ? undefined : textField(value, "miscDailyAmount", 32), hotelNightlyAmount: value.hotelNightlyAmount === undefined ? undefined : textField(value, "hotelNightlyAmount", 32), activitiesBudgetMode: activitiesModeField(value), activitiesGeneralAmount: value.activitiesGeneralAmount === undefined ? undefined : textField(value, "activitiesGeneralAmount", 32), foodBudgetMode: foodModeField(value), foodDailyAmount: value.foodDailyAmount === undefined ? undefined : textField(value, "foodDailyAmount", 32), shoppingAmount: value.shoppingAmount === undefined ? undefined : textField(value, "shoppingAmount", 32), weatherHighF: temperatureField(value, "weatherHighF"), weatherLowF: temperatureField(value, "weatherLowF"), weatherRainfall: value.weatherRainfall === undefined ? undefined : textField(value, "weatherRainfall", 4000), weatherPeriod: value.weatherPeriod === undefined ? undefined : textField(value, "weatherPeriod", 120), weatherSource: value.weatherSource === undefined ? undefined : textField(value, "weatherSource", 2048), notes: value.notes === undefined ? undefined : textField(value, "notes", 8000), image: imageField(value), gallery: destinationGalleryField(value) };
+      const fields = { city: value.city === undefined ? undefined : textField(value, "city", 120, true), cityFromSuggestion: cityFromSuggestionField(value), stay: value.stay === undefined ? undefined : textField(value, "stay", 120), nights: nightsField(value), miscDailyAmount: value.miscDailyAmount === undefined ? undefined : textField(value, "miscDailyAmount", 32), hotelNightlyAmount: value.hotelNightlyAmount === undefined ? undefined : textField(value, "hotelNightlyAmount", 32), activitiesBudgetMode: activitiesModeField(value), activitiesGeneralAmount: value.activitiesGeneralAmount === undefined ? undefined : textField(value, "activitiesGeneralAmount", 32), foodBudgetMode: foodModeField(value), foodDailyAmount: value.foodDailyAmount === undefined ? undefined : textField(value, "foodDailyAmount", 32), shoppingAmount: value.shoppingAmount === undefined ? undefined : textField(value, "shoppingAmount", 32), weatherHighF: temperatureField(value, "weatherHighF"), weatherLowF: temperatureField(value, "weatherLowF"), weatherRainfall: value.weatherRainfall === undefined ? undefined : textField(value, "weatherRainfall", 4000), weatherPeriod: value.weatherPeriod === undefined ? undefined : textField(value, "weatherPeriod", 120), weatherSource: value.weatherSource === undefined ? undefined : textField(value, "weatherSource", 2048), notes: value.notes === undefined ? undefined : textField(value, "notes", 8000), image: imageField(value), gallery: galleryField(value, "Destination") };
       // A destination is changed by its own ID, and only a trip's stop has stay notes and nights, so a save that
       // changes them names that stop.
       const stopId = value.stopId === undefined ? undefined : idField(value, "stopId");
@@ -443,7 +439,7 @@ function proposedPhotoChange(value: Input & { type: PhotoChange["type"] }): { id
   const { add, order } = gallery as Input & { add: unknown[] };
   if (add.some((photo) => !photo || typeof photo !== "object" || Array.isArray(photo))) throw new ValidationError("Give each photo to add as its new id and its url.");
   if (value.type !== "destination.photos" && order !== undefined) {
-    throw new ValidationError("Only a destination's photos can be put in order. An idea's or church's photos stay in the order they were added.");
+    throw new ValidationError("Only a destination's photos can be put in order. An idea's or church's photos keep their saved order, with new photos last.");
   }
   return { id, gallery: gallery as Input & { add: Input[] } };
 }
@@ -460,7 +456,7 @@ function photoChange(value: Input & { type: PhotoChange["type"] }, photos: Reado
     }),
   };
   switch (value.type) {
-    case "destination.photos": return { type: value.type, id, gallery: destinationGalleryField({ gallery })! };
+    case "destination.photos": return { type: value.type, id, gallery: galleryField({ gallery }, "Destination")! };
     case "candidate.photos": return { type: value.type, id, gallery: galleryField({ gallery }, "Idea")! };
     case "church.photos": return { type: value.type, id, gallery: galleryField({ gallery }, "Church")! };
   }
@@ -1376,7 +1372,7 @@ export function createStore(databasePath: string, ownerEmail: string) {
     return row ? { version: row.version as string, data: new Uint8Array(row.data as Uint8Array) } : undefined;
   }
   /** Photos a save adds get their versions from `make`, so an AI proposal's photos replay exactly (TRA-122). */
-  function saveDestinationGallery(destinationId: string, gallery: DestinationGalleryUpdate | undefined, image: Uint8Array | null | undefined, make: Make) {
+  function saveDestinationGallery(destinationId: string, gallery: GalleryUpdate | undefined, image: Uint8Array | null | undefined, make: Make) {
     if (gallery === undefined && image === undefined) return;
     const current = db.prepare("SELECT id, position, isMain FROM destination_images WHERE destinationId = ? ORDER BY position, id").all(destinationId) as unknown as { id: string; position: number; isMain: number }[];
     const currentMain = current.find((photo) => photo.isMain === 1)?.id;
@@ -1411,7 +1407,8 @@ export function createStore(databasePath: string, ownerEmail: string) {
     db.prepare("UPDATE destination_images SET isMain = 0 WHERE destinationId = ? AND isMain = 1").run(destinationId);
     if (main) db.prepare("UPDATE destination_images SET isMain = 1 WHERE destinationId = ? AND id = ?").run(destinationId, main);
   }
-  function saveGallery(kind: "candidate" | "church", ownerId: string, gallery: CandidateGalleryUpdate | undefined, make: Make) {
+  /** New photos go last, unless the save rearranges the gallery, giving the order of every photo it keeps and adds (TRA-126). */
+  function saveGallery(kind: "candidate" | "church", ownerId: string, gallery: GalleryUpdate | undefined, make: Make) {
     const { table, ownerColumn, label } = kind === "candidate"
       ? { table: "candidate_images", ownerColumn: "candidateId", label: "An idea" }
       : { table: "church_images", ownerColumn: "churchId", label: "A church" };
@@ -1427,13 +1424,16 @@ export function createStore(databasePath: string, ownerEmail: string) {
     }
     const removed = new Set(gallery.remove);
     const retained = current.filter((photo) => !removed.has(photo.id));
-    const finalIds = [...retained.map((photo) => photo.id), ...added.map((photo) => photo.id)];
-    if (finalIds.length > MAX_CANDIDATE_IMAGES) throw new ValidationError(`${label} can have up to ${MAX_CANDIDATE_IMAGES} photos. Remove a photo before adding more.`);
+    const remaining = [...retained.map((photo) => photo.id), ...added.map((photo) => photo.id)];
+    if (remaining.length > MAX_CANDIDATE_IMAGES) throw new ValidationError(`${label} can have up to ${MAX_CANDIDATE_IMAGES} photos. Remove a photo before adding more.`);
+    if (gallery.order && (gallery.order.length !== remaining.length || gallery.order.some((id) => !remaining.includes(id)))) throw new ValidationError("The photos have changed. Refresh before rearranging them.");
+    const finalIds = gallery.order ?? remaining;
     const main = gallery.mainImageId === undefined ? (currentMain && !removed.has(currentMain) ? currentMain : finalIds[0] ?? null) : gallery.mainImageId;
     if ((main === null && finalIds.length > 0) || (main !== null && !finalIds.includes(main))) throw new ValidationError("Choose a main photo from the remaining photos. Refresh if the gallery has changed.");
     for (const id of gallery.remove) db.prepare(`DELETE FROM ${table} WHERE ${ownerColumn} = ? AND id = ?`).run(ownerId, id);
     const nextPosition = current.reduce((next, photo) => Math.max(next, photo.position + 1), 0);
     added.forEach((photo, index) => db.prepare(`INSERT INTO ${table}(id,${ownerColumn},version,data,position,isMain) VALUES(?,?,?,?,?,0)`).run(photo.id, ownerId, make.id(), photo.data, nextPosition + index));
+    gallery.order?.forEach((id, position) => db.prepare(`UPDATE ${table} SET position = ? WHERE ${ownerColumn} = ? AND id = ?`).run(position, ownerId, id));
     db.prepare(`UPDATE ${table} SET isMain = 0 WHERE ${ownerColumn} = ? AND isMain = 1`).run(ownerId);
     if (main) db.prepare(`UPDATE ${table} SET isMain = 1 WHERE ${ownerColumn} = ? AND id = ?`).run(ownerId, main);
   }

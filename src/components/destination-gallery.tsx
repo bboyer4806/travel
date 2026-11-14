@@ -4,12 +4,14 @@ import { useEffect, useId, useRef, useState, type ChangeEvent } from "react";
 import { ArrowLeft, ArrowRight, Check, ChevronLeft, ChevronRight, ImagePlus, RotateCcw, Trash2 } from "lucide-react";
 import { formatMegabytes, IMAGE_UPLOAD_TYPES, MAX_DESTINATION_IMAGES, MAX_GALLERY_UPLOAD_BYTES, MAX_IMAGE_UPLOAD_BYTES } from "@/lib/image-limits";
 import { formatSavedDestinationLabel } from "@/lib/destination-label";
-import { createDestinationGalleryDraft, destinationGalleryChanged, moveDestinationPhoto, removeDestinationPhoto, type DestinationGalleryDraft, type DestinationGalleryOwner } from "@/lib/destination-gallery";
+import { createGalleryDraft, galleryChanged, movePhoto, placePhoto, removePhoto, type GalleryDraft } from "@/lib/gallery-draft";
+import type { Destination } from "@/lib/types";
 import { randomUuid } from "@/lib/uuid";
 import { controlOrNeighbor, useFocusAfter } from "./focus-after";
+import { usePhotoDrag } from "./photo-drag";
 import styles from "./destination-gallery.module.css";
 
-export { createDestinationGalleryDraft, destinationGalleryForm, type DestinationGalleryDraft } from "@/lib/destination-gallery";
+type DestinationGalleryOwner = Pick<Destination, "id" | "city" | "cityFromSuggestion" | "images" | "mainImageId">;
 
 function photoUrl(destinationId: string, image: { id: string; version?: string }) {
   return `/api/destination-images/${destinationId}/${image.id}?v=${image.version}`;
@@ -65,8 +67,8 @@ function UploadPreview({ file, alt }: { file: File; alt: string }) {
 
 export function DestinationGalleryEditor({ destination, draft, onChange, disabled = false }: {
   destination?: DestinationGalleryOwner;
-  draft: DestinationGalleryDraft;
-  onChange: (draft: DestinationGalleryDraft) => void;
+  draft: GalleryDraft;
+  onChange: (draft: GalleryDraft) => void;
   disabled?: boolean;
 }) {
   const id = useId();
@@ -75,7 +77,8 @@ export function DestinationGalleryEditor({ destination, draft, onChange, disable
   const removeButtons = useRef(new Map<string, HTMLButtonElement>());
   const addButton = useRef<HTMLButtonElement>(null);
   const [error, setError] = useState("");
-  const changed = destinationGalleryChanged(draft, destination);
+  const changed = galleryChanged(draft, destination);
+  const drag = usePhotoDrag(draft.images.map((image) => image.id), (photoId, index) => { setError(""); onChange(placePhoto(draft, photoId, index)); }, disabled);
 
   function choose(event: ChangeEvent<HTMLInputElement>) {
     const files = Array.from(event.currentTarget.files ?? []);
@@ -99,19 +102,19 @@ export function DestinationGalleryEditor({ destination, draft, onChange, disable
     const next = draft.images[photoIndex + 1];
     focusAfter(() => next ? removeButtons.current.get(next.id) : addButton.current);
     setError("");
-    onChange(removeDestinationPhoto(draft, draft.images[photoIndex].id));
+    onChange(removePhoto(draft, draft.images[photoIndex].id));
   }
 
   /** Moves a photo and keeps focus on `control`, or on the photo's other move at the first or last place. */
   function move(photoIndex: number, direction: "left" | "right", control: HTMLButtonElement) {
     focusAfter(() => controlOrNeighbor(control));
     setError("");
-    onChange(moveDestinationPhoto(draft, draft.images[photoIndex].id, direction));
+    onChange(movePhoto(draft, draft.images[photoIndex].id, direction));
   }
 
   /** Undo photo changes goes away with the changes, so it focuses Add photos, or the last photo's Remove when the saved photos fill the gallery. */
   function undo() {
-    const saved = createDestinationGalleryDraft(destination);
+    const saved = createGalleryDraft(destination);
     const last = saved.images.at(-1);
     focusAfter(() => last && saved.images.length >= MAX_DESTINATION_IMAGES ? removeButtons.current.get(last.id) : addButton.current);
     setError("");
@@ -120,11 +123,11 @@ export function DestinationGalleryEditor({ destination, draft, onChange, disable
 
   return <fieldset className={styles.editor} disabled={disabled} aria-describedby={`${id}-hint`}>
     <legend>Destination photos <span className={styles.optional}>(optional)</span></legend>
-    <p id={`${id}-hint`} className={styles.hint}>Add up to {MAX_DESTINATION_IMAGES} photos. Choose a primary photo to show first and use Move left or Move right to arrange the gallery.<br />JPEG, PNG, or WebP, up to {formatMegabytes(MAX_IMAGE_UPLOAD_BYTES)} each and {formatMegabytes(MAX_GALLERY_UPLOAD_BYTES)} of new photos per save.</p>
+    <p id={`${id}-hint`} className={styles.hint}>Add up to {MAX_DESTINATION_IMAGES} photos. Choose a primary photo to show first and {drag.available && "drag photos or "}use Move left or Move right to arrange the gallery.<br />JPEG, PNG, or WebP, up to {formatMegabytes(MAX_IMAGE_UPLOAD_BYTES)} each and {formatMegabytes(MAX_GALLERY_UPLOAD_BYTES)} of new photos per save.</p>
     <input ref={input} id={id} type="file" multiple accept={IMAGE_UPLOAD_TYPES.join(",")} onChange={choose} disabled={disabled} hidden aria-label="Choose destination photos" aria-describedby={`${id}-hint${error ? ` ${id}-error` : ""}`} />
     {draft.images.length > 0 && <div className={styles.editGrid}>
-      {draft.images.map((image, photoIndex) => <div key={image.id} className={styles.editPhoto}>
-        <div className={styles.preview}>
+      {draft.images.map((image, photoIndex) => <div key={image.id} className={styles.editPhoto} {...drag.target(image.id)}>
+        <div className={styles.preview} {...drag.source(image.id)}>
           {image.file ? <UploadPreview file={image.file} alt={`New destination photo ${photoIndex + 1}`} /> : destination && <SavedPhoto destinationId={destination.id} image={image} alt={`Destination photo ${photoIndex + 1}`} />}
           {image.id === draft.mainImageId && <span className={styles.mainBadge}>Primary photo</span>}
         </div>

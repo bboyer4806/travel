@@ -35,7 +35,8 @@ function load(file, modules = {}) {
   return exports;
 }
 const { DestinationIdeas, IdeaDetails } = load("../src/components/destination-ideas.tsx", {
-  "./candidate-gallery": load("../src/components/candidate-gallery.tsx"), "./research-links": load("../src/components/research-links.tsx"),
+  "./candidate-gallery": load("../src/components/candidate-gallery.tsx", { "./focus-after": load("../src/components/focus-after.ts") }),
+  "./research-links": load("../src/components/research-links.tsx"),
 });
 const { DestinationBudget } = load("../src/components/destination-budget.tsx");
 

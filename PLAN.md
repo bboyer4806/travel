@@ -312,3 +312,8 @@ This replaces TRA-62's destination Save in a sticky header.
 - Assistants propose changes, as the planner's own changes checked by its own rules, to any trip or destination, including deleting trips and changing sharing. Nothing changes until the designated owner approves the proposal on Travel's proposal page, which lists every record each change adds, changes or deletes, before and after. Approving makes every change and records the approval in one transaction, exactly as previewed or not at all; proposals can't be altered, expire after 24 hours, and are decided once. Ordinary accounts' permissions are unchanged.
 - Owner-only pages: AI assistants (connections, with revoke, and proposals), the connection consent page and each proposal's page. Schema 24 adds the integration's own tables.
 - Not included: other assistants, development or staging integrations, photo changes through an assistant, arbitrary SQL or schema changes, returning to the consent page after signing in, and connections for anyone but the designated owner.
+
+## Added scope: November 14, 2026, save messages clear of Send feedback (TRA-84)
+- A save's message appears above **Send feedback** at every screen size, where the errors of changes made without an editor appear, so neither covers the other and its X closes it. Before, on phones and narrow windows, Send feedback covered the message's X and selecting it opened the feedback form.
+- The message closes itself after five seconds. Errors still stay until they are dismissed or another change starts (TRA-82).
+- Not included: changes to the messages or errors themselves, the errors' timing, or Send feedback.

@@ -44,13 +44,21 @@ export default async function ProposalPage({ params }: { params: Promise<{ propo
           {record.photo && proposal.status === "pending" && <img className={styles.photo} src={`/api/ai-proposal-images/${proposal.id}/${record.photo}`} alt={PHOTO_ALT[record.action]} loading="lazy" decoding="async" width={240} height={160} />}
           {record.fields.length > 0 && <table className={styles.fields}>
             <thead><tr><th scope="col">Field</th><th scope="col">Before</th><th scope="col">After</th></tr></thead>
-            <tbody>{record.fields.map((field) => <tr key={field.name}><th scope="row">{field.name}</th><td>{field.before ?? <span className={styles.none}>None</span>}</td><td>{field.after ?? <span className={styles.none}>None</span>}</td></tr>)}</tbody>
+            <tbody>{record.fields.map((field) => <tr key={field.name}><th scope="row">{field.name}</th><FieldValue label="Before" value={field.before} /><FieldValue label="After" value={field.after} /></tr>)}</tbody>
           </table>}
         </div>)}
       </li>)}
     </ol>
     {proposal.status === "pending" && <AiProposalDecision proposalId={proposal.id} digest={proposal.digest} />}
   </main>;
+}
+
+/**
+ * A field's value before or after the change. On phones the table stacks each field and hides its column headings
+ * (TRA-121), so the value carries its own Before or After label, shown and read only there.
+ */
+function FieldValue({ label, value }: { label: "Before" | "After"; value: string | null }) {
+  return <td><span className={styles.cellLabel}>{label}</span>{value ?? <span className={styles.none}>None</span>}</td>;
 }
 
 /** What has become of the proposal, or, while it waits, what deciding does. */

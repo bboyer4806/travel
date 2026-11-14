@@ -366,3 +366,10 @@ This replaces TRA-62's destination Save in a sticky header.
 - With a mouse, the arrows appear while the pointer is over the main photo or either arrow has keyboard focus; on touchscreens they always show. They are buttons named Previous photo and Next photo of the destination, at least 44 × 44 CSS pixels, with a visible focus ring, clear of the counter and Primary photo badge.
 - The counter, selected thumbnail and Primary photo badge follow the photo shown, and thumbnails still choose any photo. Browsing saves nothing: photo order, the primary photo and the destination are unchanged.
 - Not included: uploading, deleting or reordering photos or choosing the primary photo; slideshows or timed transitions; zoom, fullscreen viewing or image editing; arrows for hotel, activity, restaurant or church galleries; and redesigning the thumbnails or destination page.
+
+## Added scope: November 14, 2026, proposal review on phones (TRA-121)
+- In windows up to 640 pixels wide, such as phones, a proposal's page shows each changed field stacked: its name, then its Before and After values, each labeled beside it, in place of the Field, Before and After columns. Wider windows, including a phone held sideways past 640 pixels, keep the columns as before.
+- Every change, record, field value, photo and notice shows in full from 320 pixels wide without scrolling sideways, in every state: waiting, approved, rejected, failed and expired. Long text, links and values of several lines wrap, and photos shrink to fit, keeping their shape.
+- **Approve every change** and **Reject** are at least 44 pixels tall at every width, and on phones the page ends with room for Send feedback, so at the end of the page they sit above it instead of under it.
+- Screen readers read each stacked value with its Before or After label; wider windows' tables keep their column headings and read as before.
+- Not included: changes to what proposals hold, how they are proposed, approved, rejected or expire, who can see or decide them, the AI assistants and connection pages, the site header, or the wider layout beyond the buttons' height.

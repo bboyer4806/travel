@@ -72,31 +72,36 @@ function IdeaSection({ category, ideas, city, href, busy, onView, onAdd, onBudge
   </section>;
 }
 
-/** One card per idea, scrolled sideways by its arrows, or by swiping or scrolling. */
+/**
+ * One card per idea, scrolled sideways by its arrows, or by swiping or scrolling. The arrows loop (TRA-127): Next at the
+ * end returns to the start, and Previous at the start goes to the end. Swiping and scrolling stop at either end.
+ */
 function Carousel({ category, ideas, onView }: { category: Category; ideas: Candidate[]; onView: (item: Candidate) => void }) {
   const track = useRef<HTMLUListElement>(null);
-  // Each arrow works while there is more to see its way. Until the list is measured, neither does.
-  const [edges, setEdges] = useState({ start: true, end: true });
+  // Both arrows work while the cards overflow the list, at either end too. Until the list is measured, neither does.
+  const [overflows, setOverflows] = useState(false);
   useEffect(() => {
     const list = track.current;
     if (!list) return;
-    const measure = () => {
-      const start = list.scrollLeft <= 1;
-      const end = list.scrollLeft + list.clientWidth >= list.scrollWidth - 1;
-      setEdges((current) => current.start === start && current.end === end ? current : { start, end });
-    };
-    // A new observer measures once when it starts, then whenever the list resizes, as when its section opens.
-    const resizing = new ResizeObserver(measure);
+    // A new observer measures once when it starts, then whenever the list resizes, as when its section opens. Widths
+    // round, so a pixel of overflow fits.
+    const resizing = new ResizeObserver(() => setOverflows(list.scrollWidth - list.clientWidth > 1));
     resizing.observe(list);
-    list.addEventListener("scroll", measure, { passive: true });
-    return () => { resizing.disconnect(); list.removeEventListener("scroll", measure); };
+    return () => resizing.disconnect();
   }, [ideas.length]);
-  const scroll = (direction: -1 | 1) => { const list = track.current; list?.scrollBy({ left: direction * list.clientWidth }); };
+  /** Scrolls the cards a list's width in `direction`, or from the end it points to, within a pixel, to the other end. */
+  const scroll = (direction: -1 | 1) => {
+    const list = track.current!;
+    const last = list.scrollWidth - list.clientWidth;
+    if (direction === 1 && list.scrollLeft >= last - 1) list.scrollTo({ left: 0 });
+    else if (direction === -1 && list.scrollLeft <= 1) list.scrollTo({ left: last });
+    else list.scrollBy({ left: direction * list.clientWidth });
+  };
   const Icon = icons[category];
   const name = labels[category].toLowerCase();
   // Activity photos fill frames of one shape (TRA-124).
   return <div className={category === "activities" ? styles.carousel + " " + styles.activities : styles.carousel}>
-    <button type="button" className={styles.arrow + " " + styles.previous} aria-label={"Previous " + name} disabled={edges.start} onClick={() => scroll(-1)}><ChevronLeft size={20} aria-hidden="true" /></button>
+    <button type="button" className={styles.arrow + " " + styles.previous} aria-label={"Previous " + name} disabled={!overflows} onClick={() => scroll(-1)}><ChevronLeft size={20} aria-hidden="true" /></button>
     <ul ref={track} className={styles.track}>
       {ideas.map((item) => {
         const photo = item.images.find((image) => image.id === item.mainImageId) ?? item.images[0];
@@ -113,7 +118,7 @@ function Carousel({ category, ideas, onView }: { category: Category; ideas: Cand
         </button></li>;
       })}
     </ul>
-    <button type="button" className={styles.arrow + " " + styles.next} aria-label={"Next " + name} disabled={edges.end} onClick={() => scroll(1)}><ChevronRight size={20} aria-hidden="true" /></button>
+    <button type="button" className={styles.arrow + " " + styles.next} aria-label={"Next " + name} disabled={!overflows} onClick={() => scroll(1)}><ChevronRight size={20} aria-hidden="true" /></button>
   </div>;
 }
 

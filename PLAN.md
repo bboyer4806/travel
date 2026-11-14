@@ -418,3 +418,9 @@ This replaces TRA-62's destination Save in a sticky header.
 - Confirming deletes the idea as the category's page does, without saving pending edits, closes the editor without returning to its details, and refreshes the lists, selections and budgets. A failed delete shows its error in the confirmation and removes nothing.
 - The category pages' Delete buttons work as before.
 - Not included: Delete in other editors, such as a destination's, trip's or church's; deleting several ideas at once; undo or recovery; changes to what deleting removes or to budget rules; and other editor changes.
+
+## Added scope: November 14, 2026, looping idea carousels (TRA-127)
+- The left and right arrows of a destination's Hotels, Activities and Restaurants carousels loop: Next at the end returns to the start, and Previous at the start goes to the end, scrolling smoothly as the carousels already do, or at once for people who reduce motion. Between the ends, each still scrolls the carousel's width.
+- Both arrows work whenever the cards don't all fit, at either end too, and neither works when they do. Swiping and scrolling with a mouse, trackpad or touchscreen are unchanged and stop at either end.
+- The arrows keep their labels, keyboard use and focus ring at every screen size, and browsing saves nothing: ideas, their order, selections, photos and budgets are unchanged. Destination photo arrows already loop (TRA-123) and are unchanged.
+- Not included: autoplay or timed scrolling, changes to swiping or scrolling, carousel or arrow redesign, changes to ideas or photos, new pagination or browsing controls, and arrows for galleries without them.

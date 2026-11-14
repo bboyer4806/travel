@@ -150,6 +150,12 @@ export default function PlannerApp({ initialData, initialBudgets, access = {}, d
     const card = shownStop.current === null ? null : document.getElementById("destination-" + shownStop.current);
     if (card) { shownStop.current = null; card.scrollIntoView(); }
   });
+  // A save's message closes itself after five seconds. An error stays until it is dismissed or another change starts (TRA-82).
+  useEffect(() => {
+    if (!message) return;
+    const timer = setTimeout(() => setMessage(""), 5_000);
+    return () => clearTimeout(timer);
+  }, [message]);
   if (lastInitial !== initialData) { setLastInitial(initialData); setData(initialData); }
   const trip = data.trips.find((item) => item.id === tripId);
   // Only owners see Share and Delete; the server refuses those changes from anyone else.

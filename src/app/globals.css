@@ -994,9 +994,10 @@ button svg,a svg {
 .ideas-empty {
   padding:56px 24px
 }
+/* A save's message or the error of a change made without an editor. It sits above the bottom-right Send feedback button (43px tall, 24px from the bottom or 12px on phones), so neither covers the other. */
 .toast {
   position:fixed;
-  bottom:26px;
+  bottom:79px;
   left:50%;
   transform:translateX(-50%);
   background:#244c3f;
@@ -1020,9 +1021,7 @@ button svg,a svg {
 .toast .icon-button:hover {
   background:#456759
 }
-/* The error of a change made without an editor. It sits above the bottom-right Send feedback button (43px tall, 24px from the bottom or 12px on phones), so neither covers the other. */
 .error-toast {
-  bottom:79px;
   background:#9b3b32
 }
 .error-toast .icon-button:hover {
@@ -1620,7 +1619,7 @@ button svg,a svg {
 }
 .toast {
   font-size:11px;
-  bottom:14px;
+  bottom:67px;
   max-width:calc(100vw - 24px);
   padding:10px;
   align-items:flex-start
@@ -1628,9 +1627,6 @@ button svg,a svg {
 .toast .icon-button {
   margin-left:auto;
   flex-shrink:0
-}
-.error-toast {
-  bottom:67px
 }
 
 }

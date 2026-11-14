@@ -1123,6 +1123,15 @@ button svg,a svg {
   color:#99a196;
   font-size:12px
 }
+/* A number field without its increment and decrement arrows (TRA-46), hidden by appearance in
+   Firefox and on the spin button in Chrome, Edge and Safari. Typing, the Up and Down keys and
+   validation are unchanged. */
+.no-spin-buttons {
+  appearance:textfield
+}
+.no-spin-buttons::-webkit-inner-spin-button {
+  appearance:none
+}
 .field small {
   font-size:10px;
   font-weight:400;

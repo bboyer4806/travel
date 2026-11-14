@@ -1157,6 +1157,15 @@ button svg,a svg {
   padding-top:0;
   margin-top:0
 }
+/* An idea's editor has Delete beside Cancel, and Save stays on the right. When the three don't fit on one line, as on
+   narrow phones, Save wraps below them, still on the right (TRA-128). */
+.dialog-footer .dialog-actions:has(.editor-delete) {
+  justify-content:flex-start;
+  flex-wrap:wrap
+}
+.dialog-footer .editor-delete+.button {
+  margin-left:auto
+}
 .form-route {
   overflow-wrap:anywhere;
   min-width:0;

@@ -411,3 +411,10 @@ This replaces TRA-62's destination Save in a sticky header.
 - On the Activities page, each activity's main photo already filled the same 16:7 frame. An activity without photos now shows the activity icon in an empty frame of that size, so its card lines up with the others.
 - Photos fill their frames without stretching, cropped to fit, and the frames keep their size while photos load and as people choose other photos. Saved photos, their order, the main photo and other details are unchanged.
 - Not included: hotel, restaurant, church and destination photos, which keep their presentation; cropping or editing photos; changes to uploads, storage or compression; and other changes to cards, galleries or carousels.
+
+## Added scope: November 14, 2026, deleting an idea from its editor (TRA-128)
+- Editing a saved hotel, activity or restaurant shows **Delete** in the editor's footer, beside **Cancel** on the left, with **Save changes** still on the right. On the narrowest phones Save changes wraps below them. Editors adding an idea show no Delete.
+- Delete opens the confirmation the category's page shows, which names the idea, says it will be removed from the destination in every trip that visits it, and warns that this can't be undone. It opens above the editor, which stays open beneath it: Cancel, the X and Escape return to the editor with its unsaved changes, photos and links, and focus on Delete.
+- Confirming deletes the idea as the category's page does, without saving pending edits, closes the editor without returning to its details, and refreshes the lists, selections and budgets. A failed delete shows its error in the confirmation and removes nothing.
+- The category pages' Delete buttons work as before.
+- Not included: Delete in other editors, such as a destination's, trip's or church's; deleting several ideas at once; undo or recovery; changes to what deleting removes or to budget rules; and other editor changes.

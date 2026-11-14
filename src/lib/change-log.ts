@@ -25,12 +25,18 @@ export const releases: readonly Release[] = [{
   ],
 }, {
   version: "1.8",
-  date: "2026-11-11",
+  date: "2026-11-12",
   changes: [
     "See specific validation messages when a change cannot be saved, regardless of which page or image loaded first.",
     "City suggestions now limit excessive requests and pause briefly when the provider is busy; you can still enter cities manually.",
     "Retry feedback after a temporary failure without closing the form or losing your draft, with clearer error messages.",
     "Use Try again to recover from a temporary page failure. Missing pages and server errors now return the correct response status.",
+    "Start researching a city before it's in any trip with New destination in Destinations; a city you already have opens instead. Delete a destination you own from its page once no trip visits it, along with everything saved for it.",
+    "Keep health and safety research with each destination, including travel advisories, health precautions, local safety, emergency contacts, official sources, and the date you checked them.",
+    "Between the places now shows an icon for each kind of transportation a connection lists, such as a train, bus, or boat, instead of always an airplane.",
+    "See only the fields you meant to edit: Edit estimate & nights on Hotels, Edit miscellaneous budget, and Edit destination nights on Restaurants each open just their own fields, while Edit destination still opens everything.",
+    "Find Cancel and Save at the bottom of every editor, Cancel on the left and Save on the right, in view while the fields scroll, with any save error just above them.",
+    "Type right away when an editor opens: its first field now has focus. City suggestions appear when you type or press the Up or Down arrow, not as soon as a city field is focused.",
   ],
 }, {
   version: "1.7",

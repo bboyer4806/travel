@@ -344,11 +344,13 @@ const destinationPages = ["/destinations/22222222-2222-4222-8222-222222222222", 
 // The owner's AI assistant pages (TRA-115), whose proposal and connection IDs reveal nothing.
 const aiPages = ["/ai", "/ai/authorize?response_type=code&client_id=c1000000-0000-4000-8000-000000000001&redirect_uri=https%3A%2F%2Fclaude.ai%2Fapi%2Fmcp%2Fauth_callback", "/ai/proposals/c2000000-0000-4000-8000-000000000001"];
 const pages = ["/", "/destinations", ...tripPages, ...destinationPages, "/whats-new", ...aiPages];
+// A photo of a proposal awaiting the owner (TRA-122), which only the designated owner sees.
+const aiPhotoRoute = "/api/ai-proposal-images/c2000000-0000-4000-8000-000000000001/c3000000-0000-4000-8000-000000000001";
 const dataRoutes = ["/api/destination-images/22222222-2222-4222-8222-222222222222?v=33333333-3333-4333-8333-333333333333",
   "/api/destination-images/22222222-2222-4222-8222-222222222222/a2000000-0000-4000-8000-000000000001?v=33333333-3333-4333-8333-333333333333",
   "/api/candidate-images/66666666-6666-4666-8666-666666666666/90000000-0000-4000-8000-000000000002?v=bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
   "/api/church-images/b1000000-0000-4000-8000-000000000001/b3000000-0000-4000-8000-000000000002?v=b4000000-0000-4000-8000-000000000001",
-  "/api/locations?q=Vienna"];
+  "/api/locations?q=Vienna", aiPhotoRoute];
 async function assertRefused(label, headers) {
   for (const path of pages) {
     const response = await get(path, headers);
@@ -393,8 +395,9 @@ async function assertHidden(label, headers) {
     assert.equal(response.status, 404, `${label} ${path} must not be served`);
     assert.ok(!response.headers.get("content-type")?.startsWith("image/"), `${label} ${path} must not return image bytes`);
   }
-  // Only the designated owner manages AI assistants.
+  // Only the designated owner manages AI assistants, and sees their proposals' photos.
   assert.ok((await (await get("/ai", headers)).text()).includes("This page has moved on."), `${label} must not find AI assistants`);
+  assert.equal((await get(aiPhotoRoute, headers)).status, 404, `${label} must not see proposals' photos`);
   assert.match(await (await get(aiPages[1], headers)).text(), /Only Travel(&#x27;|')s owner can connect AI assistants/, `${label} can't connect an assistant`);
   await assertMcpRefused(label, headers);
 }
@@ -438,6 +441,7 @@ try {
   await assertHidden("outsider", outsider);
   // The editor a trip is shared with is no more able to manage AI assistants than an outsider.
   assert.ok((await (await get("/ai", editor)).text()).includes("This page has moved on."), "editor must not find AI assistants");
+  assert.equal((await get(aiPhotoRoute, editor)).status, 404, "editor must not see proposals' photos");
   // OAuth metadata is public, so Claude and ChatGPT can find how to connect; the owner's page offers to connect them.
   for (const path of ["/.well-known/oauth-authorization-server", "/.well-known/oauth-protected-resource", "/.well-known/oauth-protected-resource/api/mcp"]) {
     const response = await get(path);

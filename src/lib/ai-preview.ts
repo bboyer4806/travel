@@ -13,6 +13,8 @@ import type { Category, Mutation } from "./types";
  */
 export const DATA_TABLES = ["trips", "trip_shares", "trip_tags", "trip_stops", "legs", "home_items", "destinations", "destination_entry_requirements", "destination_health_safety", "destination_images", "candidates", "candidate_images", "churches", "church_images", "accounts"] as const;
 export type DataTable = typeof DATA_TABLES[number];
+/** The photos of destinations, ideas and churches. The owner sees each photo a change adds, changes or deletes beside its record (TRA-122). */
+export const PHOTO_TABLES: readonly DataTable[] = ["destination_images", "candidate_images", "church_images"];
 /** Never read for a proposal: photo bytes, and the Google account each authorization is bound to. */
 export const UNREAD_COLUMNS: Record<DataTable, string[]> = {
   trips: [], trip_shares: [], trip_tags: [], trip_stops: [], legs: [], home_items: [], destinations: [], destination_entry_requirements: [], destination_health_safety: [],
@@ -27,7 +29,8 @@ export type Tables = Record<DataTable, Map<string, Row>>;
 export interface Effect { table: DataTable; key: string; before: Row | null; after: Row | null }
 
 export interface PreviewField { name: string; before: string | null; after: string | null }
-export interface PreviewRecord { action: "Adds" | "Changes" | "Deletes"; record: string; fields: PreviewField[] }
+/** One record a change adds, changes or deletes. `photo` is a destination's, idea's or church's photo's ID, for the owner to see it (TRA-122). */
+export interface PreviewRecord { action: "Adds" | "Changes" | "Deletes"; record: string; fields: PreviewField[]; photo?: string }
 /** One proposed change as the owner reviews it: what it does, and every record it adds, changes or deletes. */
 export interface PreviewChange { operation: string; records: PreviewRecord[] }
 
@@ -54,7 +57,7 @@ export const PREVIEW_COLUMNS: Record<DataTable, Record<string, [string, Format] 
   },
   destination_entry_requirements: { destinationId: null, requirementsJson: ["Entry requirements", "json"] },
   destination_health_safety: { destinationId: null, healthSafetyJson: ["Health and safety", "json"] },
-  destination_images: { id: null, destinationId: null, version: null, position: ["Order", "order"], isMain: ["Main photo", "flag"] },
+  destination_images: { id: null, destinationId: null, version: null, position: ["Order", "order"], isMain: ["Primary photo", "flag"] },
   candidates: { id: null, destinationId: null, category: null, name: ["Name", "text"], priceCents: ["Price", "money"], address: ["Address", "text"], url: null, notes: ["Notes", "text"], included: ["Included", "flag"], linksJson: ["Research links", "json"], position: ["Order", "order"], mustDo: ["Must do", "flag"] },
   candidate_images: { id: null, candidateId: null, version: null, position: ["Order", "order"], isMain: ["Main photo", "flag"] },
   churches: { id: null, destinationId: null, name: ["Name", "text"], address: ["Address", "text"], denomination: ["Denomination", "text"], url: ["Website", "text"], massTimesJson: ["Mass times", "json"] },
@@ -134,12 +137,14 @@ export function previewChange(change: Mutation, effects: Effect[], before: Table
       const [, format] = PREVIEW_COLUMNS[effect.table][column]!;
       return row === null ? null : display(format, row[column], email);
     };
-    const record = label(effect.table, find(effect.table, effect.key));
+    const row = find(effect.table, effect.key);
+    const record = label(effect.table, row);
+    const photo = PHOTO_TABLES.includes(effect.table) ? { photo: String(row.id) } : {};
     const columns = shown((effect.after ?? effect.before)!);
     const fields = columns.map((column) => ({ name: PREVIEW_COLUMNS[effect.table][column]![0], before: read(effect.before, column), after: read(effect.after, column) }))
       .filter((field) => field.before !== field.after);
-    if (effect.before && effect.after) return fields.length ? [{ action: "Changes", record, fields }] : [];
-    return [{ action: effect.after ? "Adds" : "Deletes", record, fields }];
+    if (effect.before && effect.after) return fields.length ? [{ action: "Changes", record, fields, ...photo }] : [];
+    return [{ action: effect.after ? "Adds" : "Deletes", record, fields, ...photo }];
   });
   return { operation: operationTitle(change), records };
 }
@@ -195,5 +200,8 @@ export function operationTitle(change: Mutation): string {
     case "candidate.mustDo": return change.mustDo ? "Mark an idea Must do" : "Unmark an idea Must do";
     case "candidate.include": return change.included ? "Include an idea" : "Leave out an idea";
     case "candidate.delete": return "Delete an idea";
+    case "destination.photos": return "Change a destination's photos";
+    case "candidate.photos": return "Change an idea's photos";
+    case "church.photos": return "Change a church's photos";
   }
 }

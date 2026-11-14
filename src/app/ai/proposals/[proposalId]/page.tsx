@@ -11,6 +11,8 @@ import { formatMoment } from "../../time";
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 
+const PHOTO_ALT = { Adds: "The photo it adds", Changes: "The photo it changes", Deletes: "The photo it deletes" } as const;
+
 export async function generateMetadata({ params }: { params: Promise<{ proposalId: string }> }): Promise<Metadata> {
   const { proposalId } = await params;
   const account = await requireAccount();
@@ -37,6 +39,9 @@ export default async function ProposalPage({ params }: { params: Promise<{ propo
         <h2>{change.operation}</h2>
         {change.records.length === 0 ? <p className={styles.muted}>Changes nothing as Travel is now.</p> : change.records.map((record, recordIndex) => <div key={recordIndex} className={styles.record}>
           <p><span className={`${styles.action} ${styles[record.action]}`}>{record.action}</span> {record.record}</p>
+          {/* Each photo it adds, changes or deletes, while there is still a decision to make. Stored photos are already resized. */}
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          {record.photo && proposal.status === "pending" && <img className={styles.photo} src={`/api/ai-proposal-images/${proposal.id}/${record.photo}`} alt={PHOTO_ALT[record.action]} loading="lazy" decoding="async" width={240} height={160} />}
           {record.fields.length > 0 && <table className={styles.fields}>
             <thead><tr><th scope="col">Field</th><th scope="col">Before</th><th scope="col">After</th></tr></thead>
             <tbody>{record.fields.map((field) => <tr key={field.name}><th scope="row">{field.name}</th><td>{field.before ?? <span className={styles.none}>None</span>}</td><td>{field.after ?? <span className={styles.none}>None</span>}</td></tr>)}</tbody>

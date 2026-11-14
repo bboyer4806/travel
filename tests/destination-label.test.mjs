@@ -145,35 +145,44 @@ test("a suggestion is recorded only as true, with the city it describes", (t) =>
   assert.deepEqual(store.getSnapshot(), before);
 });
 
-test("schema 25 shows every saved city exactly as saved, and a replay keeps later records", (t) => {
-  const path = fileDatabase(t);
-  let store = createOwnedStore(path);
-  try {
-    const tripId = store.applyMutation(tripInput()).id;
-    const chosen = store.applyMutation({ type: "stop.add", tripId, city: "Wooster, Ohio, United States", cityFromSuggestion: true }).id;
-    store.applyMutation({ type: "stop.add", tripId, city: "Tokyo, Kyoto, Japan" });
-    bookConnections(store, tripId);
-    const saved = store.getSnapshot();
-    store.close(); store = null;
-    // A schema 24 database records no suggestions.
-    const db = new DatabaseSync(path);
-    db.exec("ALTER TABLE destinations DROP COLUMN cityFromSuggestion; PRAGMA user_version = 24;");
-    db.close();
-    store = createOwnedStore(path);
-    assert.deepEqual(store.getSnapshot(), { ...saved, destinations: saved.destinations.map((item) => ({ ...item, cityFromSuggestion: false })) }, "only the record changes");
-    assert.deepEqual(store.getSnapshot().destinations.map((item) => formatSavedDestinationLabel(item)), ["Tokyo, Kyoto, Japan", "Wooster, Ohio, United States"]);
-    store.applyMutation(destinationEdit(chosen, { city: "Wooster, Ohio, United States", cityFromSuggestion: true }));
-    const recorded = store.getSnapshot();
-    store.close(); store = null;
-    const replay = new DatabaseSync(path);
-    replay.exec("PRAGMA user_version = 24;");
-    replay.close();
-    store = createOwnedStore(path);
-    assert.deepEqual(store.getSnapshot(), recorded, "a replay keeps saved records");
-    const observer = new DatabaseSync(path);
+/** Turns a new database back into one at `version`, before cities chosen from suggestions were recorded. */
+const UNDO_SCHEMA_26 = {
+  25: "ALTER TABLE destinations DROP COLUMN cityFromSuggestion; PRAGMA user_version = 25;",
+  24: "ALTER TABLE destinations DROP COLUMN cityFromSuggestion; DROP TRIGGER ai_proposal_photos_unchanged; DROP TABLE ai_proposal_photos; PRAGMA user_version = 24;",
+};
+for (const version of [25, 24]) {
+  test(`schema 26 shows every city saved at schema ${version} exactly as saved, and a replay keeps later records`, (t) => {
+    const path = fileDatabase(t);
+    let store = createOwnedStore(path);
     try {
-      assert.equal(observer.prepare("PRAGMA user_version").get().user_version, SCHEMA_VERSION);
-      assert.deepEqual(observer.prepare("PRAGMA foreign_key_check").all(), []);
-    } finally { observer.close(); }
-  } finally { store?.close(); }
-});
+      const tripId = store.applyMutation(tripInput()).id;
+      const chosen = store.applyMutation({ type: "stop.add", tripId, city: "Wooster, Ohio, United States", cityFromSuggestion: true }).id;
+      store.applyMutation({ type: "stop.add", tripId, city: "Tokyo, Kyoto, Japan" });
+      bookConnections(store, tripId);
+      const saved = store.getSnapshot();
+      store.close(); store = null;
+      // An older database records no suggestions.
+      const db = new DatabaseSync(path);
+      db.exec(UNDO_SCHEMA_26[version]);
+      db.close();
+      store = createOwnedStore(path);
+      assert.deepEqual(store.getSnapshot(), { ...saved, destinations: saved.destinations.map((item) => ({ ...item, cityFromSuggestion: false })) }, "only the record changes");
+      assert.deepEqual(store.getSnapshot().destinations.map((item) => formatSavedDestinationLabel(item)), ["Tokyo, Kyoto, Japan", "Wooster, Ohio, United States"]);
+      store.applyMutation(destinationEdit(chosen, { city: "Wooster, Ohio, United States", cityFromSuggestion: true }));
+      const recorded = store.getSnapshot();
+      store.close(); store = null;
+      const replay = new DatabaseSync(path);
+      replay.exec(`PRAGMA user_version = ${version};`);
+      replay.close();
+      store = createOwnedStore(path);
+      assert.deepEqual(store.getSnapshot(), recorded, "a replay keeps saved records");
+      const observer = new DatabaseSync(path);
+      try {
+        assert.equal(observer.prepare("PRAGMA user_version").get().user_version, SCHEMA_VERSION);
+        assert.ok(observer.prepare("SELECT 1 FROM sqlite_master WHERE name = 'ai_proposal_photos'").get(), "schema 25's table is there too");
+        assert.equal(observer.prepare("PRAGMA integrity_check").get().integrity_check, "ok");
+        assert.deepEqual(observer.prepare("PRAGMA foreign_key_check").all(), []);
+      } finally { observer.close(); }
+    } finally { store?.close(); }
+  });
+}

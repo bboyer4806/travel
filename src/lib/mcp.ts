@@ -1,6 +1,8 @@
 import { bearerChallenge } from "./ai-auth.ts";
+import { prepareAiPhotos } from "./ai-photos.ts";
+import { ImageValidationError } from "./image-upload.ts";
 import { TOOLS } from "./mcp-tools.ts";
-import { aiAccounts, aiDestination, aiDestinations, aiPhoto, aiTrip, aiTrips, getAiProposal, isValidationError, proposeAiChanges, readAiConnection } from "./store.ts";
+import { aiAccounts, aiDestination, aiDestinations, aiPhoto, aiTrip, aiTrips, checkAiProposal, getAiProposal, isValidationError, proposeAiChanges, readAiConnection } from "./store.ts";
 import type { AiProposal } from "./types";
 
 /**
@@ -12,7 +14,7 @@ import type { AiProposal } from "./types";
 
 /** The MCP versions Travel speaks, newest first. A client asking for another is offered the newest. */
 const PROTOCOL_VERSIONS = ["2025-11-25", "2025-06-18", "2025-03-26"];
-const INSTRUCTIONS = "Travel is a shared trip planner: trips with ordered stays at destinations, travel between them, hotel, activity and restaurant ideas, churches, research, At home items and estimated budgets. Every trip and destination can be read, whoever owns it. To change anything, call propose_changes: nothing changes until Travel's owner approves the proposal on Travel's own page, so give them its approve_at link, then check what they decided with get_change_proposal. Amounts are read as whole USD cents for the whole party and written as dollar text, such as \"125.50\".";
+const INSTRUCTIONS = "Travel is a shared trip planner: trips with ordered stays at destinations, travel between them, hotel, activity and restaurant ideas, churches, research, At home items and estimated budgets. Every trip and destination can be read, whoever owns it. To change anything, call propose_changes: nothing changes until Travel's owner approves the proposal on Travel's own page, so give them its approve_at link, then check what they decided with get_change_proposal. Amounts are read as whole USD cents for the whole party and written as dollar text, such as \"125.50\". Photos are added from the https:// addresses of image files, which Travel downloads when they are proposed.";
 const NO_STORE = { "Cache-Control": "no-store" };
 
 type Connection = NonNullable<ReturnType<typeof readAiConnection>>;
@@ -52,7 +54,7 @@ export async function handleMcp(request: Request, origin: string): Promise<Respo
       case "ping": return rpcResult(id, {});
       case "tools/list": return rpcResult(id, { tools: TOOLS });
       case "tools/call": {
-        const result = callTool(connection, args, origin);
+        const result = await callTool(connection, args, origin);
         return result ? rpcResult(id, result) : rpcError(id, -32602, `Travel has no tool ${String(args.name)}.`);
       }
       default: return rpcError(id, -32601, `Travel has no method ${method}.`);
@@ -65,7 +67,7 @@ export async function handleMcp(request: Request, origin: string): Promise<Respo
 }
 
 /** A tool's result, refusals included, or undefined for a tool Travel doesn't have. */
-function callTool(connection: Connection, params: Record<string, unknown>, origin: string): ToolResult | undefined {
+async function callTool(connection: Connection, params: Record<string, unknown>, origin: string): Promise<ToolResult | undefined> {
   const args = params.arguments && typeof params.arguments === "object" && !Array.isArray(params.arguments) ? params.arguments as Record<string, unknown> : {};
   const text = (name: string) => typeof args[name] === "string" ? args[name] : "";
   try {
@@ -82,8 +84,10 @@ function callTool(connection: Connection, params: Record<string, unknown>, origi
         return photo ? { content: [{ type: "image", data: Buffer.from(photo.data).toString("base64"), mimeType: "image/webp" }] } : refusal(`Travel has no such photo of this ${of}.`);
       }
       case "propose_changes": {
+        // The photos the changes add are downloaded and prepared first (TRA-122), once the rest of the proposal checks out.
+        const photos = await prepareAiPhotos(checkAiProposal(args));
         // The reply shows what each change adds, changes or deletes, as the owner will see it.
-        const proposal = proposeAiChanges(connection.id, args);
+        const proposal = proposeAiChanges(connection.id, args, photos);
         return json({ ...decision(proposal, origin), changes: proposal.preview });
       }
       case "get_change_proposal": {
@@ -93,7 +97,7 @@ function callTool(connection: Connection, params: Record<string, unknown>, origi
       default: return undefined;
     }
   } catch (error) {
-    if (isValidationError(error)) return refusal(error.message);
+    if (isValidationError(error) || error instanceof ImageValidationError) return refusal(error.message);
     throw error;
   }
 }

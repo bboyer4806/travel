@@ -38,8 +38,9 @@ CI also runs `bash scripts/smoke-container.sh`, which needs Docker and Bash and 
 container, persistent storage, sign-in enforcement, trip and destination isolation, and AI access
 limits. A Next.js build alone does not verify those.
 After building, CI runs `node scripts/review-errors-smoke.mjs` against disposable databases and
-fixture sessions to check production HTTP errors, recovery, cross-bundle save validation, and
-connecting Claude through OAuth, MCP and the owner's Server Actions.
+fixture sessions to check production HTTP errors, recovery, cross-bundle save validation,
+connecting Claude through OAuth, MCP and the owner's Server Actions, and proposing, showing,
+approving and rejecting photo changes.
 Fix regressions caused by your change; report unrelated baseline failures and blocked checks.
 Repeat passing checks when subsequent changes affect their coverage or required gates demand it.
 
@@ -80,10 +81,19 @@ Repeat passing checks when subsequent changes affect their coverage or required 
   `authorize`, in one transaction, only when they make exactly the rows previewed. Rows a change adds
   take their IDs and time from the `Make` it is given, so a proposal replays exactly. A new table or
   column needs a label in `PREVIEW_COLUMNS`, or a place among the integration's own tables; tests check.
+- Photo changes (`destination.photos`, `candidate.photos`, `church.photos`, TRA-122) are only
+  proposals': `validate` refuses them, so people change photos only through each item's save with
+  uploaded files. Before a proposal is checked against Travel's data, `checkAiProposal` lists the photos
+  it adds and `prepareAiPhotos` in `src/lib/ai-photos.ts` downloads them through
+  `src/lib/image-download.ts`, HTTPS to public addresses only, and prepares them with `prepareImage`;
+  `aiChange` then takes each change's photos from those, never from what the assistant sent. A
+  proposal's photos wait in `ai_proposal_photos`, never in `changesJson`, until it is decided or expires,
+  and the owner sees them through `/api/ai-proposal-images`.
 - Application writes go through `mutatePlanner` in `src/app/actions.ts`, into `applyMutation`
   in `src/lib/store.ts`, or come from an approved AI proposal. A new operation adds a `Mutation`
-  variant in `src/lib/types.ts`, a case in `validate`, `mutationScope` and `mutate` in the store, a
-  schema in `src/lib/mcp-tools.ts` and a title in `operationTitle`. `mutationScope` finds the trip or
+  variant in `src/lib/types.ts`, a case in `validate` (or, for a change only proposals make, in
+  `aiChange`), `mutationScope` and `mutate` in the store, a schema in `src/lib/mcp-tools.ts` and a
+  title in `operationTitle`. `mutationScope` finds the trip or
   destination a change applies to from saved rows; a change it doesn't place is refused.
 - A save that adds a trip, an idea, a church or an At home item sends the
   ID its editor gave it when it opened, with `create: true` (TRA-75). The store adds the item when no
@@ -107,8 +117,9 @@ Repeat passing checks when subsequent changes affect their coverage or required 
   `0` is known; `null` is not estimated, except optional at-home and shopping amounts.
   Budget math lives in `src/lib/budget.ts`. Parsing, validation messages, formatting, input values
   and the $100,000,000 limit for every amount, prices included, live in `src/lib/money.ts`.
-- Image upload types and size and gallery limits live in `src/lib/image-limits.ts`. The photo
-  editors, upload decoding and the store use them, and messages state them from there.
+- Image upload types and size and gallery limits live in `src/lib/image-limits.ts`, as do the limits
+  on the photos one AI proposal downloads. The photo editors, upload decoding, the store and the MCP
+  tools use them, and messages state them from there.
 - Trip startDate and each stop's nights are schedule inputs. Use `src/lib/trip-dates.ts`
   for ordered read-only destination dates and trip end; retain legacy date columns for migration review.
   Hotels use nights; daily food/miscellaneous use `nightsToBudgetDays` (zero nights = one day).
@@ -141,7 +152,9 @@ schema and add a note for the new version, with only what its rollback adds to t
   designated owner; access tests call `createStore(path, ownerEmail)` with several accounts, as
   `tests/sharing.test.mjs` does. Tests of older databases turn a new one back with
   `UNDO_SCHEMA_21` (then `UNDO_SCHEMA_20`) from `tests/owned-store.mjs`. AI integration tests use
-  `aiSetup` from `tests/ai-fixtures.mjs`: an owner, a guest with an unshared trip, and a Claude connection.
+  `aiSetup` from `tests/ai-fixtures.mjs`: an owner, a guest with an unshared trip, and a Claude connection,
+  whose `propose` takes the photos a proposal adds as Travel prepared them. Downloads are tested with a
+  stand-in `PhotoFetch`, never a real website.
 - Node runs that TypeScript by stripping types, without path aliases. Code in `src/lib` uses
   relative imports for values (type-only `@/` imports are fine) and only erasable TypeScript: no
   enums or parameter properties. Passing type checks alone does not verify these runtime rules.

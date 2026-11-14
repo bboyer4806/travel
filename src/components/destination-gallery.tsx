@@ -6,6 +6,7 @@ import { formatMegabytes, IMAGE_UPLOAD_TYPES, MAX_DESTINATION_IMAGES, MAX_GALLER
 import { formatSavedDestinationLabel } from "@/lib/destination-label";
 import { createDestinationGalleryDraft, destinationGalleryChanged, moveDestinationPhoto, removeDestinationPhoto, type DestinationGalleryDraft, type DestinationGalleryOwner } from "@/lib/destination-gallery";
 import { randomUuid } from "@/lib/uuid";
+import { controlOrNeighbor, useFocusAfter } from "./focus-after";
 import styles from "./destination-gallery.module.css";
 
 export { createDestinationGalleryDraft, destinationGalleryForm, type DestinationGalleryDraft } from "@/lib/destination-gallery";
@@ -64,6 +65,9 @@ export function DestinationGalleryEditor({ destination, draft, onChange, disable
 }) {
   const id = useId();
   const input = useRef<HTMLInputElement>(null);
+  const focusAfter = useFocusAfter();
+  const removeButtons = useRef(new Map<string, HTMLButtonElement>());
+  const addButton = useRef<HTMLButtonElement>(null);
   const [error, setError] = useState("");
   const changed = destinationGalleryChanged(draft, destination);
 
@@ -84,6 +88,30 @@ export function DestinationGalleryEditor({ destination, draft, onChange, disable
     onChange({ ...draft, images, mainImageId: draft.mainImageId ?? images[0].id });
   }
 
+  /** Removes a photo and focuses the next photo's Remove, or Add photos after the last. */
+  function remove(photoIndex: number) {
+    const next = draft.images[photoIndex + 1];
+    focusAfter(() => next ? removeButtons.current.get(next.id) : addButton.current);
+    setError("");
+    onChange(removeDestinationPhoto(draft, draft.images[photoIndex].id));
+  }
+
+  /** Moves a photo and keeps focus on `control`, or on the photo's other move at the first or last place. */
+  function move(photoIndex: number, direction: "left" | "right", control: HTMLButtonElement) {
+    focusAfter(() => controlOrNeighbor(control));
+    setError("");
+    onChange(moveDestinationPhoto(draft, draft.images[photoIndex].id, direction));
+  }
+
+  /** Undo photo changes goes away with the changes, so it focuses Add photos, or the last photo's Remove when the saved photos fill the gallery. */
+  function undo() {
+    const saved = createDestinationGalleryDraft(destination);
+    const last = saved.images.at(-1);
+    focusAfter(() => last && saved.images.length >= MAX_DESTINATION_IMAGES ? removeButtons.current.get(last.id) : addButton.current);
+    setError("");
+    onChange(saved);
+  }
+
   return <fieldset className={styles.editor} disabled={disabled} aria-describedby={`${id}-hint`}>
     <legend>Destination photos <span className={styles.optional}>(optional)</span></legend>
     <p id={`${id}-hint`} className={styles.hint}>Add up to {MAX_DESTINATION_IMAGES} photos. Choose a primary photo to show first and use Move left or Move right to arrange the gallery.<br />JPEG, PNG, or WebP, up to {formatMegabytes(MAX_IMAGE_UPLOAD_BYTES)} each and {formatMegabytes(MAX_GALLERY_UPLOAD_BYTES)} of new photos per save.</p>
@@ -97,18 +125,19 @@ export function DestinationGalleryEditor({ destination, draft, onChange, disable
         <p className={styles.filename} title={image.file?.name}>{image.file?.name ?? `Photo ${photoIndex + 1}`}</p>
         <div className={styles.photoActions}>
           <label className={styles.mainChoice}><input type="radio" name={`${id}-main-photo`} checked={image.id === draft.mainImageId} onChange={() => { setError(""); onChange({ ...draft, mainImageId: image.id }); }} disabled={disabled} aria-label={`Use photo ${photoIndex + 1} as the primary photo`} /><span>Primary photo</span></label>
-          <button type="button" className={styles.remove} aria-label={`Remove photo ${photoIndex + 1}${image.file ? ` (${image.file.name})` : ""}`} disabled={disabled} onClick={() => { setError(""); onChange(removeDestinationPhoto(draft, image.id)); }}><Trash2 size={14} aria-hidden="true" /><span>Remove</span></button>
+          <button type="button" className={styles.remove} aria-label={`Remove photo ${photoIndex + 1}${image.file ? ` (${image.file.name})` : ""}`} disabled={disabled} onClick={() => remove(photoIndex)}
+            ref={(button) => { if (button) removeButtons.current.set(image.id, button); else removeButtons.current.delete(image.id); }}><Trash2 size={14} aria-hidden="true" /><span>Remove</span></button>
         </div>
         <div className={styles.moveActions}>
-          <button type="button" className={styles.move} disabled={disabled || photoIndex === 0} aria-label={`Move photo ${photoIndex + 1} left`} onClick={() => { setError(""); onChange(moveDestinationPhoto(draft, image.id, "left")); }}><ArrowLeft size={14} aria-hidden="true" />Move left</button>
-          <button type="button" className={styles.move} disabled={disabled || photoIndex === draft.images.length - 1} aria-label={`Move photo ${photoIndex + 1} right`} onClick={() => { setError(""); onChange(moveDestinationPhoto(draft, image.id, "right")); }}><ArrowRight size={14} aria-hidden="true" />Move right</button>
+          <button type="button" className={styles.move} disabled={disabled || photoIndex === 0} aria-label={`Move photo ${photoIndex + 1} left`} onClick={(event) => move(photoIndex, "left", event.currentTarget)}><ArrowLeft size={14} aria-hidden="true" />Move left</button>
+          <button type="button" className={styles.move} disabled={disabled || photoIndex === draft.images.length - 1} aria-label={`Move photo ${photoIndex + 1} right`} onClick={(event) => move(photoIndex, "right", event.currentTarget)}><ArrowRight size={14} aria-hidden="true" />Move right</button>
         </div>
       </div>)}
     </div>}
     <div className={styles.actions}>
-      <button type="button" className="button secondary small" disabled={disabled || draft.images.length >= MAX_DESTINATION_IMAGES} onClick={() => input.current?.click()}><ImagePlus size={15} aria-hidden="true" />Add photos</button>
+      <button type="button" ref={addButton} className="button secondary small" disabled={disabled || draft.images.length >= MAX_DESTINATION_IMAGES} onClick={() => input.current?.click()}><ImagePlus size={15} aria-hidden="true" />Add photos</button>
       <span className={styles.photoCount}>{draft.images.length} / {MAX_DESTINATION_IMAGES} photos</span>
-      {changed && <button type="button" className={styles.restore} disabled={disabled} onClick={() => { setError(""); onChange(createDestinationGalleryDraft(destination)); }}><RotateCcw size={14} aria-hidden="true" />Undo photo changes</button>}
+      {changed && <button type="button" className={styles.restore} disabled={disabled} onClick={undo}><RotateCcw size={14} aria-hidden="true" />Undo photo changes</button>}
     </div>
     {error && <p id={`${id}-error`} className={styles.error} role="alert">{error}</p>}
     {changed && <p className={styles.status} role="status">Photo changes will be applied when you save this destination.</p>}

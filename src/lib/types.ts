@@ -25,7 +25,11 @@ export type DestinationVisit = Destination & { nights: number | null };
 export interface StoredImage { version: string; data: Uint8Array; }
 export interface ResearchLink { id: string; url: string; description: string; }
 export interface ItineraryStop { id: string; kind: "layover" | "stop"; place: string; arrival: string; departure: string; notes: string; }
-export interface TravelLeg { id: string; tripId: string; fromId: string | null; toId: string | null; method: string; priceCents: number | null; departure: string; arrival: string; url: string; notes: string; itinerary: ItineraryStop[]; links: ResearchLink[]; }
+/**
+ * A travel connection. `miscCents` is the whole party's miscellaneous spending on the way, such as airport meals and
+ * layover purchases, apart from its price, or null when not estimated (TRA-26).
+ */
+export interface TravelLeg { id: string; tripId: string; fromId: string | null; toId: string | null; method: string; priceCents: number | null; miscCents: number | null; departure: string; arrival: string; url: string; notes: string; itinerary: ItineraryStop[]; links: ResearchLink[]; }
 export interface CandidateImage { id: string; version: string; }
 export interface DestinationPhotos { images: CandidateImage[]; mainImageId: string | null; }
 /** A photo editor's changes to a destination's, idea's or church's photos. `order` lists every photo it keeps and adds, and is sent only when they are rearranged (TRA-126). */
@@ -77,7 +81,8 @@ export type Mutation =
  | { type: "stop.move"; id: string; direction: "up" | "down" }
  // Removes a destination from one trip. The destination and everything saved with it stay.
  | { type: "stop.remove"; id: string }
- | { type: "leg.save"; id: string; method: string; price: string; departure: string; arrival: string; url: string; notes: string; itinerary?: ItineraryStop[]; links?: ResearchLink[] }
+ // `miscAmount` is the connection's miscellaneous spending on the way (TRA-26). Left out, like `itinerary` and `links`, it keeps the saved one.
+ | { type: "leg.save"; id: string; method: string; price: string; miscAmount?: string; departure: string; arrival: string; url: string; notes: string; itinerary?: ItineraryStop[]; links?: ResearchLink[] }
  | { type: "leg.clear"; id: string }
  // A restaurant's `restaurantTypes` replace its saved ones, and left out keep them. Hotels and activities have none.
  | { type: "candidate.save"; id: string; create?: true; destinationId: string; category: Category; name: string; price: string; address: string; url: string; notes: string; included: boolean; mustDo?: boolean; restaurantTypes?: RestaurantType[]; links?: ResearchLink[]; gallery?: GalleryUpdate }
@@ -110,4 +115,5 @@ export interface AiConnection { id: string; platform: AiPlatform; connectedAt: n
 export interface AiProposal { id: string; platform: AiPlatform; summary: string; preview: PreviewChange[]; status: "pending" | "applied" | "rejected" | "failed" | "expired"; createdAt: number; expiresAt: number; decidedAt: number | null; error: string | null; digest: string; }
 /** A photo a ChatGPT or Claude proposal adds, before Travel downloads it (TRA-122): its change's place in the proposal, from 1, its new ID, and its address. */
 export interface AiPhotoToAdd { change: number; id: string; url: string; }
-export interface Budget { shoppingByCurrency: Record<string, number>; travelMissingCount: number; foodByCurrency: Record<string, number>; foodMissingCount: number; activitiesByCurrency: Record<string, number>; activitiesMissingCount: number; hotelsByCurrency: Record<string, number>; hotelMissingCount: number; totalsByCurrency: Record<string, number>; miscellaneousByCurrency: Record<string, number>; miscMissingCount: number; homeCents: number; travelCents: number; knownCount: number; missingCount: number; complete: boolean; }
+/** `transitMiscCents` totals the connections' miscellaneous spending, and is null when none has an amount (TRA-26). */
+export interface Budget { shoppingByCurrency: Record<string, number>; travelMissingCount: number; foodByCurrency: Record<string, number>; foodMissingCount: number; activitiesByCurrency: Record<string, number>; activitiesMissingCount: number; hotelsByCurrency: Record<string, number>; hotelMissingCount: number; totalsByCurrency: Record<string, number>; miscellaneousByCurrency: Record<string, number>; miscMissingCount: number; homeCents: number; travelCents: number; transitMiscCents: number | null; knownCount: number; missingCount: number; complete: boolean; }

@@ -173,6 +173,17 @@ function priceField(input: Input): string {
   priceCents(value);
   return value;
 }
+/** A connection's miscellaneous spending on the way in cents, or null when blank (TRA-26). */
+function miscCents(value: string): number | null {
+  return amountCents(value, "Miscellaneous spending");
+}
+/** A connection's miscellaneous spending as a save sends it, checked, or undefined to keep the saved amount (TRA-26). */
+function miscAmountField(input: Input): string | undefined {
+  if (input.miscAmount === undefined) return undefined;
+  const value = textField(input, "miscAmount", 32);
+  miscCents(value);
+  return value;
+}
 function temperatureField(input: Input, key: "weatherHighF" | "weatherLowF"): number | null | undefined {
   const value = input[key];
   if (value === undefined || value === null) return value;
@@ -391,7 +402,7 @@ function validate(input: unknown): Mutation {
       if (value.direction !== "up" && value.direction !== "down") throw new ValidationError("Choose a valid direction for this destination.");
       return { type: value.type, id: idField(value), direction: value.direction };
     case "leg.save":
-      return { type: value.type, id: idField(value), method: textField(value, "method", 120), price: priceField(value), departure: textField(value, "departure", 120), arrival: textField(value, "arrival", 120), url: urlField(value), notes: textField(value, "notes", 8000), itinerary: itineraryField(value), links: linksField(value) };
+      return { type: value.type, id: idField(value), method: textField(value, "method", 120), price: priceField(value), miscAmount: miscAmountField(value), departure: textField(value, "departure", 120), arrival: textField(value, "arrival", 120), url: urlField(value), notes: textField(value, "notes", 8000), itinerary: itineraryField(value), links: linksField(value) };
     case "candidate.save":
       return { type: value.type, id: saveIdField(value), create: createField(value), destinationId: idField(value, "destinationId"), category: categoryField(value), name: textField(value, "name", 160, true), price: priceField(value), address: textField(value, "address", 500), url: urlField(value), notes: textField(value, "notes", 8000), included: booleanField(value, "included"), mustDo: value.mustDo === undefined ? undefined : booleanField(value, "mustDo"), restaurantTypes: restaurantTypesField(value), links: linksField(value), gallery: galleryField(value) };
     case "candidate.move":
@@ -521,7 +532,7 @@ const LIVE: Make = { id: () => randomUUID(), now: () => new Date().toISOString()
  * The schema this build upgrades every database to, as SQLite's user_version. A schema change adds the next
  * upgrade in createStore and raises this to match; earlier upgrades keep their own numbers.
  */
-export const SCHEMA_VERSION = 28;
+export const SCHEMA_VERSION = 29;
 
 /** A destination as schema 20 saved it, inside one trip, with that trip's owner and name. */
 type TripDestinationRow = Omit<StoredDestination, "cityKey"> & Omit<TripStop, "destinationId"> & { tripName: string };
@@ -1097,6 +1108,12 @@ export function createStore(databasePath: string, ownerEmail: string) {
       if (!hasColumn("candidates", "restaurantTypesJson")) db.exec("ALTER TABLE candidates ADD COLUMN restaurantTypesJson TEXT NOT NULL DEFAULT '[]' CHECK(category = 'restaurants' OR restaurantTypesJson = '[]');");
       db.exec("PRAGMA user_version = 28;");
     }
+    if (version < 29) {
+      // Each travel connection's miscellaneous spending on the way, such as airport meals and layover purchases, for the
+      // whole party (TRA-26). Every saved connection starts without an estimate. A replay keeps saved amounts.
+      if (!hasColumn("legs", "miscCents")) db.exec(`ALTER TABLE legs ADD COLUMN miscCents INTEGER CHECK(miscCents BETWEEN 0 AND ${MAX_AMOUNT_CENTS});`);
+      db.exec("PRAGMA user_version = 29;");
+    }
     if (version < SCHEMA_VERSION && db.prepare("PRAGMA foreign_key_check").get()) {
       throw new Error("This upgrade would leave saved items without the trip or destination they belong to. Nothing was changed; review the database against a backup before upgrading.");
     }
@@ -1225,7 +1242,7 @@ export function createStore(databasePath: string, ownerEmail: string) {
     const trips = rawTrips.map((trip) => ({ ...trip, tags: tags.get(trip.id) ?? [], endDate: sequenceDates(trip.startDate, stops.filter((stop) => stop.tripId === trip.id)).endDate }));
     const input: Snapshot = {
       trips, stops, destinations,
-      legs: db.prepare(`SELECT tripId,fromId,toId,priceCents FROM legs WHERE tripId IN (${VISIBLE_TRIPS})`).all(...visible) as unknown as TravelLeg[],
+      legs: db.prepare(`SELECT tripId,fromId,toId,priceCents,miscCents FROM legs WHERE tripId IN (${VISIBLE_TRIPS})`).all(...visible) as unknown as TravelLeg[],
       candidates: db.prepare(`SELECT destinationId,category,priceCents,included FROM candidates WHERE destinationId IN (${visited})`).all(...visible).map((row) => ({ ...row, included: row.included === 1 })) as unknown as Candidate[],
       homeItems: db.prepare(`SELECT tripId,priceCents FROM home_items WHERE tripId IN (${VISIBLE_TRIPS})`).all(...visible) as unknown as HomeItem[],
       churches: [], tags: [],
@@ -1504,7 +1521,7 @@ export function createStore(databasePath: string, ownerEmail: string) {
     }
   }
   function clearLeg(id: string) {
-    db.prepare("UPDATE legs SET method = '', priceCents = NULL, departure = '', arrival = '', url = '', notes = '', itineraryJson = '[]', linksJson = '[]' WHERE id = ?").run(id);
+    db.prepare("UPDATE legs SET method = '', priceCents = NULL, miscCents = NULL, departure = '', arrival = '', url = '', notes = '', itineraryJson = '[]', linksJson = '[]' WHERE id = ?").run(id);
   }
   function clearHotelSelection(destinationId: string) {
     db.prepare("UPDATE candidates SET included = 0 WHERE destinationId = ? AND category = 'hotels'").run(destinationId);
@@ -1746,7 +1763,8 @@ export function createStore(databasePath: string, ownerEmail: string) {
         const before = existing<StoredLeg>("legs", input.id);
         const itineraryJson = input.itinerary === undefined ? before.itineraryJson : JSON.stringify(input.itinerary);
         const links = savedLinks(input, before, make.id);
-        db.prepare("UPDATE legs SET method = ?, priceCents = ?, departure = ?, arrival = ?, url = ?, notes = ?, itineraryJson = ?, linksJson = ? WHERE id = ?").run(input.method, priceCents(input.price), input.departure, input.arrival, links[0]?.url ?? "", input.notes, itineraryJson, JSON.stringify(links), input.id);
+        const misc = input.miscAmount === undefined ? before.miscCents : miscCents(input.miscAmount);
+        db.prepare("UPDATE legs SET method = ?, priceCents = ?, miscCents = ?, departure = ?, arrival = ?, url = ?, notes = ?, itineraryJson = ?, linksJson = ? WHERE id = ?").run(input.method, priceCents(input.price), misc, input.departure, input.arrival, links[0]?.url ?? "", input.notes, itineraryJson, JSON.stringify(links), input.id);
         return input.id;
       }
       case "leg.clear":

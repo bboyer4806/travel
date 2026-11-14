@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useId, useRef, useState, type ChangeEvent } from "react";
-import { Check, ImagePlus, RotateCcw, Trash2 } from "lucide-react";
+import { Check, ImagePlus, RotateCcw, Trash2, type LucideIcon } from "lucide-react";
 import { createGalleryDraft, galleryChanged, placePhoto, removePhoto, type DraftImage, type GalleryDraft } from "@/lib/gallery-draft";
 import { formatMegabytes, IMAGE_UPLOAD_TYPES, MAX_CANDIDATE_IMAGES, MAX_GALLERY_UPLOAD_BYTES, MAX_IMAGE_UPLOAD_BYTES } from "@/lib/image-limits";
 import type { Candidate } from "@/lib/types";
@@ -22,6 +22,11 @@ export function photoUrl(candidateId: string, image: { id: string; version?: str
 export function CandidateGallery({ candidate, imageKind = "candidate" }: { candidate: GalleryOwner; imageKind?: ImageKind }) {
   if (!candidate.images.length) return null;
   return <GalleryView key={`${candidate.mainImageId}:${candidate.images.map((image) => `${image.id}:${image.version}`).join(",")}`} candidate={candidate} imageKind={imageKind} />;
+}
+
+/** An empty frame the size of a gallery's main photo, showing `icon`, where an idea without photos would show one (TRA-124). */
+export function GalleryPlaceholder({ icon: Icon }: { icon: LucideIcon }) {
+  return <div className={styles.gallery}><div className={styles.hero + " " + styles.placeholder}><Icon size={36} strokeWidth={1.3} aria-hidden="true" /></div></div>;
 }
 
 function GalleryView({ candidate, imageKind }: { candidate: GalleryOwner; imageKind: ImageKind }) {

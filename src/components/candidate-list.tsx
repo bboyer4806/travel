@@ -1,5 +1,5 @@
-import { ArrowDown, ArrowUp, Check, MapPin, Pencil, Plus, Star, Trash2 } from "lucide-react";
-import { CandidateGallery } from "./candidate-gallery";
+import { ArrowDown, ArrowUp, Binoculars, Check, MapPin, Pencil, Plus, Star, Trash2 } from "lucide-react";
+import { CandidateGallery, GalleryPlaceholder } from "./candidate-gallery";
 import { ResearchLinks } from "./research-links";
 import { RestaurantTypeTags } from "./restaurant-types";
 import { formatCurrency } from "@/lib/money";
@@ -23,7 +23,8 @@ export default function CandidateList({ items, category, destination, busy, onEd
   return <>
     {items.length > 0 && <div className="ideas-grid">
       {items.map((item, index) => <article className={item.included ? "idea-card included" : "idea-card"} key={item.id} aria-label={item.name}>
-        <CandidateGallery candidate={item} />
+        {/* An activity without photos keeps the place its photos would take, so every activity's photo is the same size (TRA-124). */}
+        {category === "activities" && !item.images.length ? <GalleryPlaceholder icon={Binoculars} /> : <CandidateGallery candidate={item} />}
         <div className="idea-top">
           <span className={item.included ? "selection-tag chosen" : "selection-tag"}>
             {item.included ? <><Check size={13} />{category === "hotels" ? "Chosen stay" : "In the plan"}</> : "A possibility"}

@@ -94,7 +94,8 @@ function Carousel({ category, ideas, onView }: { category: Category; ideas: Cand
   const scroll = (direction: -1 | 1) => { const list = track.current; list?.scrollBy({ left: direction * list.clientWidth }); };
   const Icon = icons[category];
   const name = labels[category].toLowerCase();
-  return <div className={styles.carousel}>
+  // Activity photos fill frames of one shape (TRA-124).
+  return <div className={category === "activities" ? styles.carousel + " " + styles.activities : styles.carousel}>
     <button type="button" className={styles.arrow + " " + styles.previous} aria-label={"Previous " + name} disabled={edges.start} onClick={() => scroll(-1)}><ChevronLeft size={20} aria-hidden="true" /></button>
     <ul ref={track} className={styles.track}>
       {ideas.map((item) => {

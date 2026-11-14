@@ -206,3 +206,38 @@ test("the destination budget no longer links to the idea pages, and keeps its ot
     ["Shopping", "Edit shopping budget for Vienna"], ["Miscellaneous", "Edit miscellaneous budget for Vienna"],
   ]);
 });
+
+test("activity photos fill frames of one shape, and an activity without photos keeps its photo's place on the Activities page (TRA-124)", (t) => {
+  const { store, id } = seed(t);
+  const [other, main] = [randomUUID(), randomUUID()];
+  store.applyMutation(candidateInput(id, "activities", { name: "Tower", included: false, gallery: { add: [{ id: other, data: webp }, { id: main, data: webp }], remove: [], mainImageId: main } }));
+  store.applyMutation(candidateInput(id, "restaurants", { name: "Cafe", included: false }));
+  const snapshot = store.getSnapshot();
+  const ideas = snapshot.candidates.filter((item) => item.destinationId === id);
+  const tower = ideas.find((item) => item.name === "Tower");
+  const photo = (image) => `/api/candidate-images/${tower.id}/${image}?v=${tower.images.find((saved) => saved.id === image).version}`;
+  // The destination's carousels: only the activities' frame their photos as one shape, so hotels and restaurants are unchanged.
+  const overview = hosts({ type: DestinationIdeas, props: { ideas, city: "Vienna", pages: "/destinations/vienna", busy: false, onView() {}, onAdd() {}, onBudgetEdit() {} } });
+  assert.deepEqual(byClass(overview, "carousel").map((carousel) => carousel.props.className), ["carousel", "carousel activities", "carousel"]);
+  // Every activity card has its photo frame, showing its main photo or, without one, the activity icon.
+  assert.deepEqual(byClass(hosts(byClass(overview, "activities")[0]), "card").map((card) => {
+    const [frame, content] = hosts(byClass(hosts(card), "photo")[0]);
+    return [text(byClass(hosts(card), "name")[0]), frame.type, content.type === "img" ? content.props.src : content.type];
+  }), [["Palace", "span", "icon:Binoculars"], ["Museum", "span", "icon:Binoculars"], ["Opera", "span", "icon:Binoculars"], ["Tower", "span", photo(main)]]);
+  // The full pages: each activity's card starts with a main photo frame, its gallery's or an empty one of the same size.
+  // Hotels and restaurants without photos still show none.
+  const frames = (category) => hosts({ type: CandidateList, props: { items: ideas.filter((item) => item.category === category), category, destination: snapshot.destinations.find((item) => item.id === id), busy: false, onEdit() {}, onDelete() {}, onMutate() {} } })
+    .filter((node) => node.type === "article").map((card) => {
+      const [gallery, frame, content] = hosts(card.props.children[0]);
+      return [card.props["aria-label"], gallery && [gallery.props.className, frame.props.className, content.type === "img" ? content.props.src : content.type]];
+    });
+  assert.deepEqual(frames("activities"), [
+    ["Opera", ["gallery", "hero placeholder", "icon:Binoculars"]], ["Palace", ["gallery", "hero placeholder", "icon:Binoculars"]],
+    ["Museum", ["gallery", "hero placeholder", "icon:Binoculars"]], ["Tower", ["gallery", "hero", photo(main)]],
+  ]);
+  assert.deepEqual(frames("hotels").map(([name, frame]) => [name, frame?.[1]]), [["First hotel", "hero"], ["Chosen hotel", undefined], ["Third hotel", "hero"]]);
+  assert.deepEqual(frames("restaurants"), [["Cafe", undefined]]);
+  // The gallery still opens on the main photo, with every photo's thumbnail in its saved order.
+  const card = byClass(hosts({ type: CandidateList, props: { items: [tower], category: "activities", destination: snapshot.destinations.find((item) => item.id === id), busy: false, onEdit() {}, onDelete() {}, onMutate() {} } }), "thumbnails");
+  assert.deepEqual(hosts(card).filter((node) => node.type === "img").map((node) => node.props.src), [photo(other), photo(main)]);
+});

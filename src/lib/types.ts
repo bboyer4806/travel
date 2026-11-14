@@ -9,8 +9,11 @@ export interface TypicalWeather { weatherHighF: number | null; weatherLowF: numb
 /** A trip, with its tags in alphabetical order. */
 export interface Trip { startDate: string | null; endDate: string | null; id: string; name: string; dateLabel: string; homeCity: string; returnCity: string | null; travelers: number; notes: string; createdAt: string; tags: string[]; }
 export interface HomeItem { id: string; tripId: string; name: string; notes: string; priceCents: number | null; completed: boolean; createdAt: string; }
-/** A city's research, ideas, selections and budget amounts, shared by every trip that visits it. Each owner has one per city. */
-export interface Destination extends TypicalWeather, DestinationPhotos { entryRequirements: EntryRequirements | null; healthSafety: HealthSafety | null; churchEnabled: boolean; id: string; city: string; miscDailyMinor: number | null; miscCurrency: string | null; hotelNightlyMinor: number | null; hotelCurrency: string | null; activitiesBudgetMode: ActivitiesBudgetMode; activitiesGeneralMinor: number | null; activitiesCurrency: string | null; foodBudgetMode: FoodBudgetMode; foodDailyMinor: number | null; foodCurrency: string | null; shoppingMinor: number | null; shoppingCurrency: string | null; notes: string; imageVersion: string | null; }
+/**
+ * A city's research, ideas, selections and budget amounts, shared by every trip that visits it. Each owner has one per city.
+ * `cityFromSuggestion` records that `city` is the label of a city suggestion chosen for it, the only city shown shorter (TRA-76).
+ */
+export interface Destination extends TypicalWeather, DestinationPhotos { entryRequirements: EntryRequirements | null; healthSafety: HealthSafety | null; churchEnabled: boolean; id: string; city: string; cityFromSuggestion: boolean; miscDailyMinor: number | null; miscCurrency: string | null; hotelNightlyMinor: number | null; hotelCurrency: string | null; activitiesBudgetMode: ActivitiesBudgetMode; activitiesGeneralMinor: number | null; activitiesCurrency: string | null; foodBudgetMode: FoodBudgetMode; foodDailyMinor: number | null; foodCurrency: string | null; shoppingMinor: number | null; shoppingCurrency: string | null; notes: string; imageVersion: string | null; }
 /** One trip's stay at a destination: its place in the route, stay notes, nights and calculated dates. */
 export interface TripStop { id: string; tripId: string; destinationId: string; position: number; stay: string; nights: number | null; arrivalDate: string | null; departureDate: string | null; legacyArrivalDate: string | null; legacyDepartureDate: string | null; }
 /** A destination with the nights of one stay there, which its duration-based amounts use. Outside a trip they are unknown. */
@@ -28,8 +31,11 @@ export interface MassTime { id: string; day: string; time: string; }
 export interface Church { id: string; destinationId: string; name: string; address: string; denomination: string; url: string; massTimes: MassTime[]; images: CandidateImage[]; mainImageId: string | null; }
 /** `tags` is one spelling of each tag on the trips the account can open, in alphabetical order, for a trip's page to reuse and the trip list to filter by. Destinations pages leave it empty. */
 export interface Snapshot { churches: Church[]; trips: Trip[]; homeItems: HomeItem[]; stops: TripStop[]; destinations: Destination[]; legs: TravelLeg[]; candidates: Candidate[]; tags: string[]; }
-/** A destination's shared research and budget amounts as a save sends them. A field left out keeps its saved value. */
-export interface DestinationFields { city?: string; notes?: string; miscDailyAmount?: string; hotelNightlyAmount?: string; activitiesBudgetMode?: ActivitiesBudgetMode; activitiesGeneralAmount?: string; foodBudgetMode?: FoodBudgetMode; foodDailyAmount?: string; shoppingAmount?: string; weatherHighF?: number | null; weatherLowF?: number | null; weatherRainfall?: string; weatherPeriod?: string; weatherSource?: string; image?: Uint8Array | null; gallery?: DestinationGalleryUpdate }
+/**
+ * A destination's shared research and budget amounts as a save sends them. A field left out keeps its saved value, except
+ * that a new city sent without `cityFromSuggestion` was entered some other way.
+ */
+export interface DestinationFields { city?: string; cityFromSuggestion?: true; notes?: string; miscDailyAmount?: string; hotelNightlyAmount?: string; activitiesBudgetMode?: ActivitiesBudgetMode; activitiesGeneralAmount?: string; foodBudgetMode?: FoodBudgetMode; foodDailyAmount?: string; shoppingAmount?: string; weatherHighF?: number | null; weatherLowF?: number | null; weatherRainfall?: string; weatherPeriod?: string; weatherSource?: string; image?: Uint8Array | null; gallery?: DestinationGalleryUpdate }
 /** One trip's stay notes and nights at a destination. */
 export interface StopFields { stay?: string; nights?: number | null }
 /**
@@ -52,7 +58,7 @@ export type Mutation =
  // Changes a saved destination everywhere it is used, and with `stopId` that trip's stay notes and nights too.
  | ({ type: "destination.save"; id: string; stopId?: string } & DestinationFields & StopFields)
  // Saves a destination outside any trip. A city the account already has a destination for opens that one instead.
- | { type: "destination.create"; city: string }
+ | { type: "destination.create"; city: string; cityFromSuggestion?: true }
  // Deletes a destination no trip visits, with everything saved for it. Only its owner can.
  | { type: "destination.delete"; id: string }
  | { type: "destination.entryRequirements"; id: string; requirements: EntryRequirements | null }
@@ -62,7 +68,7 @@ export type Mutation =
  | { type: "church.delete"; id: string; destinationId: string }
  // Adds a city to a trip as its last stop, without stay notes or nights: the trip owner's saved destination for the
  // city, or a new one. A city the trip already visits opens that stop instead of adding another.
- | { type: "stop.add"; tripId: string; city: string }
+ | { type: "stop.add"; tripId: string; city: string; cityFromSuggestion?: true }
  | { type: "stop.move"; id: string; direction: "up" | "down" }
  // Removes a destination from one trip. The destination and everything saved with it stay.
  | { type: "stop.remove"; id: string }
@@ -72,7 +78,12 @@ export type Mutation =
  | { type: "candidate.move"; id: string; direction: "up" | "down" }
  | { type: "candidate.mustDo"; id: string; mustDo: boolean }
  | { type: "candidate.delete"; id: string }
- | { type: "candidate.include"; id: string; included: boolean };
+ | { type: "candidate.include"; id: string; included: boolean }
+ // Change a destination's, idea's or church's photos, and nothing else, with the photos Travel downloaded and prepared
+ // for a ChatGPT or Claude proposal (TRA-122). Only those proposals make them; people change photos with each item's save.
+ | { type: "destination.photos"; id: string; gallery: DestinationGalleryUpdate }
+ | { type: "candidate.photos"; id: string; gallery: CandidateGalleryUpdate }
+ | { type: "church.photos"; id: string; gallery: CandidateGalleryUpdate };
 export type ActionResult = { ok: true; id?: string } | { ok: false; error: string };
 /** An email authorized to use Travel. Its Google subject is bound privately at the first sign-in. */
 export interface AuthorizedAccount { id: string; email: string; name: string | null; }
@@ -91,4 +102,6 @@ export interface AiConnection { id: string; platform: AiPlatform; connectedAt: n
  * proposal's exact contents, which a decision must name. Times are milliseconds since the epoch.
  */
 export interface AiProposal { id: string; platform: AiPlatform; summary: string; preview: PreviewChange[]; status: "pending" | "applied" | "rejected" | "failed" | "expired"; createdAt: number; expiresAt: number; decidedAt: number | null; error: string | null; digest: string; }
+/** A photo a ChatGPT or Claude proposal adds, before Travel downloads it (TRA-122): its change's place in the proposal, from 1, its new ID, and its address. */
+export interface AiPhotoToAdd { change: number; id: string; url: string; }
 export interface Budget { shoppingByCurrency: Record<string, number>; travelMissingCount: number; foodByCurrency: Record<string, number>; foodMissingCount: number; activitiesByCurrency: Record<string, number>; activitiesMissingCount: number; hotelsByCurrency: Record<string, number>; hotelMissingCount: number; totalsByCurrency: Record<string, number>; miscellaneousByCurrency: Record<string, number>; miscMissingCount: number; homeCents: number; travelCents: number; knownCount: number; missingCount: number; complete: boolean; }

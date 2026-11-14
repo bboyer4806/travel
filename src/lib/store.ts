@@ -4,7 +4,7 @@ import { mkdirSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { containsSunday, isValidDate, nightsToBudgetDays } from "./destination-duration.ts";
-import { destinationKey } from "./destination-label.ts";
+import { destinationKey, formatSavedDestinationLabel, hasSuggestionLabelShape } from "./destination-label.ts";
 import { backfillDates, MAX_NIGHTS, sequenceDates } from "./trip-dates.ts";
 import { MAX_AMOUNT_CENTS, parseMinorAmount } from "./money.ts";
 import { formatMegabytes, MAX_CANDIDATE_IMAGES, MAX_DESTINATION_IMAGES, MAX_STORED_IMAGE_BYTES } from "./image-limits.ts";
@@ -14,16 +14,16 @@ import { SESSION_DAYS } from "./session-cookie.ts";
 import { alreadyTagged, cleanTagName, MAX_TAG_LENGTH, tagKey } from "./trip-tags.ts";
 import { PLANNER_UPDATED } from "./planner-updated.ts";
 import { ACCESS_TOKEN_MS, AUTHORIZATION_CODE_MS, CONNECTION_MS, PROPOSAL_MS, aiPlatform, isPkceChallenge, pkceMatches } from "./ai-auth.ts";
-import { DATA_TABLES, UNREAD_COLUMNS, effectsBetween, previewChange } from "./ai-preview.ts";
+import { DATA_TABLES, PHOTO_TABLES, UNREAD_COLUMNS, effectsBetween, previewChange } from "./ai-preview.ts";
 import type { AiPlatform } from "./ai-auth.ts";
 import type { Effect, PreviewChange, Row, Tables } from "./ai-preview.ts";
 import type { EntryRequirements } from "./entry-requirements.ts";
 import type { HealthSafety } from "./health-safety.ts";
-import type { AiConnection, AiProposal, DestinationFields, DestinationGalleryUpdate } from "./types";
+import type { AiConnection, AiPhotoToAdd, AiProposal, DestinationFields, DestinationGalleryUpdate } from "./types";
 import type { AuthorizedAccount, DestinationAccess, GoogleIdentity, TripAccess, TripMember, TripStop } from "./types";
 import type { FoodBudgetMode, ActivitiesBudgetMode, Candidate, CandidateImage, CandidateGalleryUpdate, Category, Church, MassTime, Destination, HomeItem, StoredImage, ItineraryStop, Mutation, ResearchLink, Snapshot, TravelLeg, Trip } from "./types";
 
-type StoredDestination = Omit<Destination, "churchEnabled" | "images" | "entryRequirements" | "healthSafety" | "mainImageId" | "imageVersion"> & { churchEnabled: number; ownerId: string; cityKey: string };
+type StoredDestination = Omit<Destination, "churchEnabled" | "cityFromSuggestion" | "images" | "entryRequirements" | "healthSafety" | "mainImageId" | "imageVersion"> & { churchEnabled: number; cityFromSuggestion: number; ownerId: string; cityKey: string };
 type StoredChurch = Omit<Church, "massTimes" | "images"> & { massTimesJson: string };
 type StoredHomeItem = Omit<HomeItem, "completed"> & { completed: number };
 type StoredLeg = Omit<TravelLeg, "itinerary" | "links"> & { itineraryJson: string; linksJson: string };
@@ -39,7 +39,7 @@ const VISIBLE_DESTINATIONS = `SELECT id FROM destinations WHERE ownerId = ? UNIO
 /** Every trip column but the owner's account ID, which stays on the server. */
 const TRIP_COLUMNS = "id, name, dateLabel, homeCity, returnCity, travelers, notes, createdAt, startDate";
 /** Every destination column but its owner's account ID and its city key, which stay on the server. */
-const DESTINATION_COLUMNS = ["id", "city", "notes", "miscDailyMinor", "miscCurrency", "hotelNightlyMinor", "hotelCurrency", "activitiesBudgetMode", "activitiesGeneralMinor", "activitiesCurrency", "foodBudgetMode", "foodDailyMinor", "foodCurrency", "shoppingMinor", "shoppingCurrency", "weatherHighF", "weatherLowF", "weatherRainfall", "weatherPeriod", "weatherSource", "churchEnabled"]
+const DESTINATION_COLUMNS = ["id", "city", "cityFromSuggestion", "notes", "miscDailyMinor", "miscCurrency", "hotelNightlyMinor", "hotelCurrency", "activitiesBudgetMode", "activitiesGeneralMinor", "activitiesCurrency", "foodBudgetMode", "foodDailyMinor", "foodCurrency", "shoppingMinor", "shoppingCurrency", "weatherHighF", "weatherLowF", "weatherRainfall", "weatherPeriod", "weatherSource", "churchEnabled"]
   .map((column) => "destinations." + column).join(", ");
 /** How each saved trip item finds its trip. */
 const TRIP_OF = {
@@ -119,6 +119,12 @@ function saveIdField(input: Input): string {
 function createField(input: Input): true | undefined {
   if (input.create === undefined) return undefined;
   if (input.create !== true) throw new ValidationError("create must be true or left out.");
+  return true;
+}
+/** `true` when the city a save sends is the label of a city suggestion chosen for it, and left out when it isn't (TRA-76). */
+function cityFromSuggestionField(input: Input): true | undefined {
+  if (input.cityFromSuggestion === undefined) return undefined;
+  if (input.cityFromSuggestion !== true || input.city === undefined) throw new ValidationError("cityFromSuggestion must be true or left out, and only with a city.");
   return true;
 }
 function booleanField(input: Input, key: string): boolean {
@@ -347,7 +353,7 @@ function validate(input: unknown): Mutation {
       if (value.create !== undefined || value.tripId !== undefined) throw new ValidationError(PLANNER_UPDATED);
       if (value.arrivalDate !== undefined || value.departureDate !== undefined) throw new ValidationError("Destination dates are calculated. Edit the trip start date or destination nights instead.");
       const id = saveIdField(value);
-      const fields = { city: value.city === undefined ? undefined : textField(value, "city", 120, true), stay: value.stay === undefined ? undefined : textField(value, "stay", 120), nights: nightsField(value), miscDailyAmount: value.miscDailyAmount === undefined ? undefined : textField(value, "miscDailyAmount", 32), hotelNightlyAmount: value.hotelNightlyAmount === undefined ? undefined : textField(value, "hotelNightlyAmount", 32), activitiesBudgetMode: activitiesModeField(value), activitiesGeneralAmount: value.activitiesGeneralAmount === undefined ? undefined : textField(value, "activitiesGeneralAmount", 32), foodBudgetMode: foodModeField(value), foodDailyAmount: value.foodDailyAmount === undefined ? undefined : textField(value, "foodDailyAmount", 32), shoppingAmount: value.shoppingAmount === undefined ? undefined : textField(value, "shoppingAmount", 32), weatherHighF: temperatureField(value, "weatherHighF"), weatherLowF: temperatureField(value, "weatherLowF"), weatherRainfall: value.weatherRainfall === undefined ? undefined : textField(value, "weatherRainfall", 4000), weatherPeriod: value.weatherPeriod === undefined ? undefined : textField(value, "weatherPeriod", 120), weatherSource: value.weatherSource === undefined ? undefined : textField(value, "weatherSource", 2048), notes: value.notes === undefined ? undefined : textField(value, "notes", 8000), image: imageField(value), gallery: destinationGalleryField(value) };
+      const fields = { city: value.city === undefined ? undefined : textField(value, "city", 120, true), cityFromSuggestion: cityFromSuggestionField(value), stay: value.stay === undefined ? undefined : textField(value, "stay", 120), nights: nightsField(value), miscDailyAmount: value.miscDailyAmount === undefined ? undefined : textField(value, "miscDailyAmount", 32), hotelNightlyAmount: value.hotelNightlyAmount === undefined ? undefined : textField(value, "hotelNightlyAmount", 32), activitiesBudgetMode: activitiesModeField(value), activitiesGeneralAmount: value.activitiesGeneralAmount === undefined ? undefined : textField(value, "activitiesGeneralAmount", 32), foodBudgetMode: foodModeField(value), foodDailyAmount: value.foodDailyAmount === undefined ? undefined : textField(value, "foodDailyAmount", 32), shoppingAmount: value.shoppingAmount === undefined ? undefined : textField(value, "shoppingAmount", 32), weatherHighF: temperatureField(value, "weatherHighF"), weatherLowF: temperatureField(value, "weatherLowF"), weatherRainfall: value.weatherRainfall === undefined ? undefined : textField(value, "weatherRainfall", 4000), weatherPeriod: value.weatherPeriod === undefined ? undefined : textField(value, "weatherPeriod", 120), weatherSource: value.weatherSource === undefined ? undefined : textField(value, "weatherSource", 2048), notes: value.notes === undefined ? undefined : textField(value, "notes", 8000), image: imageField(value), gallery: destinationGalleryField(value) };
       // A destination is changed by its own ID, and only a trip's stop has stay notes and nights, so a save that
       // changes them names that stop.
       const stopId = value.stopId === undefined ? undefined : idField(value, "stopId");
@@ -355,7 +361,7 @@ function validate(input: unknown): Mutation {
       return { type: value.type, id, stopId, ...fields };
     }
     case "destination.create":
-      return { type: value.type, city: textField(value, "city", 120, true) };
+      return { type: value.type, city: textField(value, "city", 120, true), cityFromSuggestion: cityFromSuggestionField(value) };
     case "destination.entryRequirements": {
       let requirements: EntryRequirements | null;
       try { requirements = normalizeEntryRequirements(value.requirements); }
@@ -375,7 +381,7 @@ function validate(input: unknown): Mutation {
     case "church.delete":
       return { type: value.type, id: idField(value), destinationId: idField(value, "destinationId") };
     case "stop.add":
-      return { type: value.type, tripId: idField(value, "tripId"), city: textField(value, "city", 120, true) };
+      return { type: value.type, tripId: idField(value, "tripId"), city: textField(value, "city", 120, true), cityFromSuggestion: cityFromSuggestionField(value) };
     case "stop.move":
       if (value.direction !== "up" && value.direction !== "down") throw new ValidationError("Choose a valid direction for this destination.");
       return { type: value.type, id: idField(value), direction: value.direction };
@@ -395,6 +401,112 @@ function validate(input: unknown): Mutation {
   }
 }
 
+/*
+ * The changes ChatGPT and Claude propose (TRA-115), checked by the planner's rules as an editor's saves are. The store
+ * checks a proposal against Travel's data when it is proposed and again when it is approved.
+ */
+
+/** Runs `work` for the change at `index`, naming that change, from 1, in any refusal. */
+function numbered<T>(index: number, work: () => T): T {
+  try {
+    return work();
+  } catch (error) {
+    if (isValidationError(error)) throw new ValidationError(`Change ${index + 1}: ${error.message}`);
+    throw error;
+  }
+}
+/**
+ * The changes that change a destination's, idea's or church's photos and nothing else, and where each one's photos are
+ * (TRA-122). Only AI proposals make them, so `validate` refuses them, and AI changes change photos only with them.
+ */
+const PHOTO_CHANGES = { "destination.photos": "destination_images", "candidate.photos": "candidate_images", "church.photos": "church_images" } as const;
+type PhotoChange = Extract<Mutation, { type: keyof typeof PHOTO_CHANGES }>;
+function isPhotoChange(type: unknown): type is PhotoChange["type"] {
+  return typeof type === "string" && Object.hasOwn(PHOTO_CHANGES, type);
+}
+/** A photo change as proposed: its item's ID, and its gallery, whose photos to add each name a new photo by its ID. */
+function proposedPhotoChange(value: Input & { type: PhotoChange["type"] }): { id: string; gallery: Input & { add: Input[] } } {
+  const id = idField(value);
+  const gallery = value.gallery;
+  if (!gallery || typeof gallery !== "object" || Array.isArray(gallery) || !Array.isArray((gallery as Input).add) || !Array.isArray((gallery as Input).remove)) {
+    throw new ValidationError("Give the photo changes as gallery, with the photos to add and to remove.");
+  }
+  const { add, order } = gallery as Input & { add: unknown[] };
+  if (add.some((photo) => !photo || typeof photo !== "object" || Array.isArray(photo))) throw new ValidationError("Give each photo to add as its new id and its url.");
+  if (value.type !== "destination.photos" && order !== undefined) {
+    throw new ValidationError("Only a destination's photos can be put in order. An idea's or church's photos stay in the order they were added.");
+  }
+  return { id, gallery: gallery as Input & { add: Input[] } };
+}
+/** A photo change, with the photos it adds from `photos`, which Travel downloaded and prepared for its proposal. */
+function photoChange(value: Input & { type: PhotoChange["type"] }, photos: ReadonlyMap<string, Uint8Array>): PhotoChange {
+  const { id, gallery: proposed } = proposedPhotoChange(value);
+  const gallery = {
+    ...proposed,
+    add: proposed.add.map((photo) => {
+      const photoId = idField(photo);
+      const data = photos.get(photoId);
+      if (!data) throw new ValidationError("This proposal's new photos are no longer available. Ask the assistant to propose them again.");
+      return { id: photoId, data };
+    }),
+  };
+  switch (value.type) {
+    case "destination.photos": return { type: value.type, id, gallery: destinationGalleryField({ gallery })! };
+    case "candidate.photos": return { type: value.type, id, gallery: galleryField({ gallery }, "Idea")! };
+    case "church.photos": return { type: value.type, id, gallery: galleryField({ gallery }, "Church")! };
+  }
+}
+/**
+ * An AI change, checked by the planner's rules. A photo change takes the photos it adds from `photos` by their IDs;
+ * nothing an assistant sends is ever saved as a photo.
+ */
+function aiChange(input: unknown, photos: ReadonlyMap<string, Uint8Array>): Mutation {
+  if (!input || typeof input !== "object" || Array.isArray(input)) throw new ValidationError("Each change must be an object.");
+  const value = input as Input;
+  if (isPhotoChange(value.type)) return photoChange(value as Input & { type: PhotoChange["type"] }, photos);
+  if ("image" in value || "gallery" in value) throw new ValidationError("Change photos with destination.photos, candidate.photos or church.photos.");
+  if (value.type === "destination.save" && (value.create !== undefined || value.tripId !== undefined)) throw new ValidationError("Add a destination to a trip with stop.add, or outside any trip with destination.create.");
+  if (["trip.save", "homeItem.save", "destination.save", "church.save", "candidate.save"].includes(value.type as string) && value.id === undefined) {
+    throw new ValidationError("Give the id of the item to change, or a new UUID with create: true to add a trip, idea, church or At home item.");
+  }
+  return validate(input);
+}
+/** A change as its proposal records it: the photos it adds by their IDs alone, as their bytes are kept beside the proposal. */
+function recorded(change: Mutation): unknown {
+  switch (change.type) {
+    case "destination.photos": case "candidate.photos": case "church.photos":
+      return { ...change, gallery: { ...change.gallery, add: change.gallery.add.map(({ id }) => ({ id })) } };
+    default:
+      return change;
+  }
+}
+/** A proposal's summary, and its changes before each is checked. */
+function proposalChanges(input: Input): { summary: string; changes: unknown[] } {
+  const summary = textField(input, "summary", 200, true);
+  if (!Array.isArray(input.changes) || input.changes.length < 1 || input.changes.length > 50) throw new ValidationError("Propose from 1 to 50 changes.");
+  return { summary, changes: input.changes };
+}
+/**
+ * Checks everything about an AI proposal that Travel's data doesn't decide, and returns the photos its changes add, for
+ * Travel to download before proposing it (TRA-122): each with a new ID, given once, and the address to download it from.
+ * Each change is checked again, against Travel's data, when it is proposed.
+ */
+export function checkAiProposal(input: Input): AiPhotoToAdd[] {
+  const ids = new Set<string>();
+  return proposalChanges(input).changes.flatMap((change, index) => numbered(index, () => {
+    if (!change || typeof change !== "object" || Array.isArray(change) || !isPhotoChange((change as Input).type)) {
+      aiChange(change, new Map());
+      return [];
+    }
+    return proposedPhotoChange(change as Input & { type: PhotoChange["type"] }).gallery.add.map((photo) => {
+      const id = idField(photo);
+      if (ids.has(id.toLowerCase())) throw new ValidationError("Give each new photo its own id.");
+      ids.add(id.toLowerCase());
+      return { change: index + 1, id, url: textField(photo, "url", 2048, true) };
+    });
+  }));
+}
+
 /** The IDs and time a change gives the rows it adds. */
 interface Make { id: () => string; now: () => string }
 /** A save's: random IDs, and the time it is made. An AI proposal's make the same rows every time it runs (TRA-115). */
@@ -404,7 +516,7 @@ const LIVE: Make = { id: () => randomUUID(), now: () => new Date().toISOString()
  * The schema this build upgrades every database to, as SQLite's user_version. A schema change adds the next
  * upgrade in createStore and raises this to match; earlier upgrades keep their own numbers.
  */
-export const SCHEMA_VERSION = 24;
+export const SCHEMA_VERSION = 27;
 
 /** A destination as schema 20 saved it, inside one trip, with that trip's owner and name. */
 type TripDestinationRow = Omit<StoredDestination, "cityKey"> & Omit<TripStop, "destinationId"> & { tripName: string };
@@ -604,6 +716,8 @@ export function createStore(databasePath: string, ownerEmail: string) {
     // Before schema 21 each destination belonged to one trip. The upgrades from then add trip columns only to such a
     // table, so replaying them on a later database leaves its shared destinations as they are.
     const tripDestinations = hasColumn("destinations", "tripId");
+    // Schema 26 records which cities were chosen from suggestions. A replay keeps those records as they are.
+    const recordsSuggestions = hasColumn("destinations", "cityFromSuggestion");
     if (version < 2) {
       if (!hasColumn("trips", "returnCity")) db.exec("ALTER TABLE trips ADD COLUMN returnCity TEXT;");
       if (!hasColumn("legs", "itineraryJson")) db.exec("ALTER TABLE legs ADD COLUMN itineraryJson TEXT NOT NULL DEFAULT '[]';");
@@ -938,6 +1052,40 @@ export function createStore(databasePath: string, ownerEmail: string) {
         PRAGMA user_version = 24;
       `);
     }
+    if (version < 25) {
+      // The photos ChatGPT and Claude propose (TRA-122), downloaded and prepared as uploads are, kept beside their
+      // proposal, by the IDs its changes give them, until it is decided or expires. They can't be changed once
+      // proposed. A replay keeps every row.
+      db.exec(`
+        CREATE TABLE IF NOT EXISTS ai_proposal_photos (
+          proposalId TEXT NOT NULL REFERENCES ai_proposals(id) ON DELETE CASCADE,
+          id TEXT NOT NULL, data BLOB NOT NULL,
+          PRIMARY KEY (proposalId, id)
+        ) STRICT;
+        CREATE TRIGGER IF NOT EXISTS ai_proposal_photos_unchanged BEFORE UPDATE ON ai_proposal_photos
+          BEGIN SELECT RAISE(ABORT, 'A proposal''s photos can''t be changed once it is made.'); END;
+        PRAGMA user_version = 25;
+      `);
+    }
+    if (version < 26) {
+      // Whether each destination's city is the label of a city suggestion chosen for it, the only city shown shorter
+      // (TRA-76). No saved city is known to be one, so each shows exactly as saved. A replay keeps the saved records.
+      if (!hasColumn("destinations", "cityFromSuggestion")) db.exec("ALTER TABLE destinations ADD COLUMN cityFromSuggestion INTEGER NOT NULL DEFAULT 0 CHECK(cityFromSuggestion IN (0,1));");
+      db.exec("PRAGMA user_version = 26;");
+    }
+    if (version < 27) {
+      // Schema 26 started every saved city unrecorded, so one chosen from a suggestion before then showed in full. Record
+      // once each unrecorded city in a suggestion's shape, typed or not: in a database at schema 26, or one schema 26
+      // starts recording in this upgrade. A replay, from the version a build before schema 3 leaves, keeps every record
+      // (TRA-129).
+      if (version === 26 || !recordsSuggestions) {
+        const record = db.prepare("UPDATE destinations SET cityFromSuggestion = 1 WHERE id = ?");
+        for (const row of db.prepare("SELECT id, city FROM destinations WHERE cityFromSuggestion = 0").all()) {
+          if (hasSuggestionLabelShape(row.city as string)) record.run(row.id as string);
+        }
+      }
+      db.exec("PRAGMA user_version = 27;");
+    }
     if (version < SCHEMA_VERSION && db.prepare("PRAGMA foreign_key_check").get()) {
       throw new Error("This upgrade would leave saved items without the trip or destination they belong to. Nothing was changed; review the database against a backup before upgrading.");
     }
@@ -1027,8 +1175,8 @@ export function createStore(databasePath: string, ownerEmail: string) {
     const photos = photosOf("destination_images", "destinationId", ids);
     return db.prepare(`SELECT ${DESTINATION_COLUMNS}, destination_images.version AS imageVersion, destination_images.id AS mainImageId FROM destinations
       LEFT JOIN destination_images ON destination_images.destinationId = destinations.id AND destination_images.isMain = 1${where} ORDER BY destinations.city COLLATE NOCASE, destinations.id`).all(...args).map((row) => {
-      const destination = row as unknown as Omit<Destination, "churchEnabled" | "images" | "entryRequirements" | "healthSafety"> & { churchEnabled: number };
-      return { ...destination, entryRequirements: requirements.get(destination.id) ?? null, healthSafety: healthSafety.get(destination.id) ?? null, churchEnabled: destination.churchEnabled === 1, images: photos.get(destination.id) ?? [] };
+      const destination = row as unknown as Omit<Destination, "churchEnabled" | "cityFromSuggestion" | "images" | "entryRequirements" | "healthSafety"> & { churchEnabled: number; cityFromSuggestion: number };
+      return { ...destination, entryRequirements: requirements.get(destination.id) ?? null, healthSafety: healthSafety.get(destination.id) ?? null, churchEnabled: destination.churchEnabled === 1, cityFromSuggestion: destination.cityFromSuggestion === 1, images: photos.get(destination.id) ?? [] };
     });
   }
   function readCandidates(destinationIds: readonly string[] | null): Candidate[] {
@@ -1058,8 +1206,9 @@ export function createStore(databasePath: string, ownerEmail: string) {
     const rawTrips = db.prepare(`SELECT ${TRIP_COLUMNS} FROM trips WHERE id IN (${VISIBLE_TRIPS}) ORDER BY createdAt DESC, id`).all(...visible) as unknown as Trip[];
     const stops = db.prepare(`SELECT id, tripId, destinationId, position, nights FROM trip_stops WHERE tripId IN (${VISIBLE_TRIPS}) ORDER BY tripId, position, id`).all(...visible) as unknown as TripStop[];
     const visited = `SELECT destinationId FROM trip_stops WHERE tripId IN (${VISIBLE_TRIPS})`;
-    const destinations = db.prepare(`SELECT id,city,miscDailyMinor,miscCurrency,hotelNightlyMinor,hotelCurrency,activitiesBudgetMode,activitiesGeneralMinor,activitiesCurrency,
-      foodBudgetMode,foodDailyMinor,foodCurrency,shoppingMinor,shoppingCurrency FROM destinations WHERE id IN (${visited})`).all(...visible) as unknown as Destination[];
+    const destinations = db.prepare(`SELECT id,city,cityFromSuggestion,miscDailyMinor,miscCurrency,hotelNightlyMinor,hotelCurrency,activitiesBudgetMode,activitiesGeneralMinor,activitiesCurrency,
+      foodBudgetMode,foodDailyMinor,foodCurrency,shoppingMinor,shoppingCurrency FROM destinations WHERE id IN (${visited})`).all(...visible)
+      .map((row) => ({ ...row, cityFromSuggestion: row.cityFromSuggestion === 1 })) as unknown as Destination[];
     const tripIds = rawTrips.map((trip) => trip.id);
     const tags = tagsOf(tripIds);
     const trips = rawTrips.map((trip) => ({ ...trip, tags: tags.get(trip.id) ?? [], endDate: sequenceDates(trip.startDate, stops.filter((stop) => stop.tripId === trip.id)).endDate }));
@@ -1075,7 +1224,7 @@ export function createStore(databasePath: string, ownerEmail: string) {
       data: {
         trips,
         stops: stops.map(({ id, tripId, destinationId, position }) => ({ id, tripId, destinationId, position })) as TripStop[],
-        destinations: destinations.map(({ id, city }) => ({ id, city })) as Destination[],
+        destinations: destinations.map(({ id, city, cityFromSuggestion }) => ({ id, city, cityFromSuggestion })) as Destination[],
         legs: [], candidates: [], homeItems: [], churches: [],
         tags: tagNames(tripIds),
       } as Snapshot,
@@ -1126,14 +1275,19 @@ export function createStore(databasePath: string, ownerEmail: string) {
     if (!tripRole(accountId, id)) return undefined;
     return db.prepare("SELECT name FROM trips WHERE id = ?").get(id)?.name as string | undefined;
   }
-  /** The city of one of a trip's stops. */
+  /** A destination's city as its pages show it, from its saved row. */
+  function shownCity(row: Record<string, unknown> | undefined): string | undefined {
+    return row && formatSavedDestinationLabel({ city: row.city as string, cityFromSuggestion: row.cityFromSuggestion === 1 });
+  }
+  /** The city of one of a trip's stops, as its pages show it. */
   function getStopName(accountId: string, tripId: string, stopId: string): string | undefined {
     if (!tripRole(accountId, tripId)) return undefined;
-    return db.prepare("SELECT destinations.city FROM trip_stops JOIN destinations ON destinations.id = trip_stops.destinationId WHERE trip_stops.tripId = ? AND trip_stops.id = ?").get(tripId, stopId)?.city as string | undefined;
+    return shownCity(db.prepare("SELECT destinations.city, destinations.cityFromSuggestion FROM trip_stops JOIN destinations ON destinations.id = trip_stops.destinationId WHERE trip_stops.tripId = ? AND trip_stops.id = ?").get(tripId, stopId));
   }
+  /** A destination's city, as its pages show it. */
   function getDestinationName(accountId: string, destinationId: string): string | undefined {
     if (!destinationRole(accountId, destinationId)) return undefined;
-    return db.prepare("SELECT city FROM destinations WHERE id = ?").get(destinationId)?.city as string | undefined;
+    return shownCity(db.prepare("SELECT city, cityFromSuggestion FROM destinations WHERE id = ?").get(destinationId));
   }
   /** The trip a saved trip item belongs to. Undefined when the item doesn't exist. */
   function tripOf(table: keyof typeof TRIP_OF, id: string): string | undefined {
@@ -1206,7 +1360,8 @@ export function createStore(databasePath: string, ownerEmail: string) {
     const row = db.prepare("SELECT version, data FROM church_images WHERE churchId = ? AND id = ?").get(churchId, imageId);
     return row ? { version: row.version as string, data: new Uint8Array(row.data as Uint8Array) } : undefined;
   }
-  function saveDestinationGallery(destinationId: string, gallery?: DestinationGalleryUpdate, image?: Uint8Array | null) {
+  /** Photos a save adds get their versions from `make`, so an AI proposal's photos replay exactly (TRA-122). */
+  function saveDestinationGallery(destinationId: string, gallery: DestinationGalleryUpdate | undefined, image: Uint8Array | null | undefined, make: Make) {
     if (gallery === undefined && image === undefined) return;
     const current = db.prepare("SELECT id, position, isMain FROM destination_images WHERE destinationId = ? ORDER BY position, id").all(destinationId) as unknown as { id: string; position: number; isMain: number }[];
     const currentMain = current.find((photo) => photo.isMain === 1)?.id;
@@ -1215,10 +1370,10 @@ export function createStore(databasePath: string, ownerEmail: string) {
         gallery = { add: [], remove: currentMain ? [currentMain] : [] };
       } else if (image !== undefined && currentMain) {
         // Old clients and URLs continue to replace or remove only the primary photo.
-        db.prepare("INSERT INTO destination_images(id,destinationId,version,data,position,isMain) VALUES(?,?,?,?,?,1) ON CONFLICT(id) DO UPDATE SET version = excluded.version, data = excluded.data").run(currentMain, destinationId, randomUUID(), image, current.find((photo) => photo.id === currentMain)!.position);
+        db.prepare("INSERT INTO destination_images(id,destinationId,version,data,position,isMain) VALUES(?,?,?,?,?,1) ON CONFLICT(id) DO UPDATE SET version = excluded.version, data = excluded.data").run(currentMain, destinationId, make.id(), image, current.find((photo) => photo.id === currentMain)!.position);
         return;
       } else {
-        gallery = { add: image ? [{ id: randomUUID(), data: image }] : [], remove: [] };
+        gallery = { add: image ? [{ id: make.id(), data: image }] : [], remove: [] };
       }
     }
     const existingIds = new Set(current.map((photo) => photo.id));
@@ -1236,12 +1391,12 @@ export function createStore(databasePath: string, ownerEmail: string) {
     const main = gallery.mainImageId === undefined ? (currentMain && !removed.has(currentMain) ? currentMain : order[0] ?? null) : gallery.mainImageId;
     if ((main === null && order.length > 0) || (main !== null && !order.includes(main))) throw new ValidationError("Choose a primary photo from the remaining destination photos. Refresh if the gallery has changed.");
     for (const id of gallery.remove) db.prepare("DELETE FROM destination_images WHERE destinationId = ? AND id = ?").run(destinationId, id);
-    added.forEach((photo) => db.prepare("INSERT INTO destination_images(id,destinationId,version,data,position,isMain) VALUES(?,?,?,?,?,0)").run(photo.id, destinationId, randomUUID(), photo.data, order.indexOf(photo.id)));
+    added.forEach((photo) => db.prepare("INSERT INTO destination_images(id,destinationId,version,data,position,isMain) VALUES(?,?,?,?,?,0)").run(photo.id, destinationId, make.id(), photo.data, order.indexOf(photo.id)));
     order.forEach((id, position) => db.prepare("UPDATE destination_images SET position = ? WHERE destinationId = ? AND id = ?").run(position, destinationId, id));
     db.prepare("UPDATE destination_images SET isMain = 0 WHERE destinationId = ? AND isMain = 1").run(destinationId);
     if (main) db.prepare("UPDATE destination_images SET isMain = 1 WHERE destinationId = ? AND id = ?").run(destinationId, main);
   }
-  function saveGallery(kind: "candidate" | "church", ownerId: string, gallery?: CandidateGalleryUpdate) {
+  function saveGallery(kind: "candidate" | "church", ownerId: string, gallery: CandidateGalleryUpdate | undefined, make: Make) {
     const { table, ownerColumn, label } = kind === "candidate"
       ? { table: "candidate_images", ownerColumn: "candidateId", label: "An idea" }
       : { table: "church_images", ownerColumn: "churchId", label: "A church" };
@@ -1263,7 +1418,7 @@ export function createStore(databasePath: string, ownerEmail: string) {
     if ((main === null && finalIds.length > 0) || (main !== null && !finalIds.includes(main))) throw new ValidationError("Choose a main photo from the remaining photos. Refresh if the gallery has changed.");
     for (const id of gallery.remove) db.prepare(`DELETE FROM ${table} WHERE ${ownerColumn} = ? AND id = ?`).run(ownerId, id);
     const nextPosition = current.reduce((next, photo) => Math.max(next, photo.position + 1), 0);
-    added.forEach((photo, index) => db.prepare(`INSERT INTO ${table}(id,${ownerColumn},version,data,position,isMain) VALUES(?,?,?,?,?,0)`).run(photo.id, ownerId, randomUUID(), photo.data, nextPosition + index));
+    added.forEach((photo, index) => db.prepare(`INSERT INTO ${table}(id,${ownerColumn},version,data,position,isMain) VALUES(?,?,?,?,?,0)`).run(photo.id, ownerId, make.id(), photo.data, nextPosition + index));
     db.prepare(`UPDATE ${table} SET isMain = 0 WHERE ${ownerColumn} = ? AND isMain = 1`).run(ownerId);
     if (main) db.prepare(`UPDATE ${table} SET isMain = 1 WHERE ${ownerColumn} = ? AND id = ?`).run(ownerId, main);
   }
@@ -1354,7 +1509,11 @@ export function createStore(databasePath: string, ownerEmail: string) {
     }
     const city = input.city ?? before?.city ?? "";
     return {
-      city, cityKey: destinationKey(city), notes: input.notes ?? before?.notes ?? "",
+      city, cityKey: destinationKey(city),
+      // Only a chosen suggestion's label is shown shorter (TRA-76). An unchanged city keeps its record; a new one sent
+      // without it was entered some other way.
+      cityFromSuggestion: input.cityFromSuggestion ? 1 : before && city === before.city ? before.cityFromSuggestion : 0,
+      notes: input.notes ?? before?.notes ?? "",
       miscDailyMinor: misc.minor, miscCurrency: misc.currency, hotelNightlyMinor: hotel.minor, hotelCurrency: hotel.currency,
       activitiesBudgetMode: input.activitiesBudgetMode ?? before?.activitiesBudgetMode ?? "itemized", activitiesGeneralMinor: activities.minor, activitiesCurrency: activities.currency,
       foodBudgetMode: input.foodBudgetMode ?? before?.foodBudgetMode ?? "itemized", foodDailyMinor: food.minor, foodCurrency: food.currency,
@@ -1369,9 +1528,12 @@ export function createStore(databasePath: string, ownerEmail: string) {
     const saved = db.prepare("SELECT city FROM destinations WHERE ownerId = ? AND cityKey = ? AND id != ?").get(ownerId, cityKey, id);
     if (saved) throw new ValidationError(`“${saved.city as string}” is already a saved destination. Choose a different city, or keep this one's name.`);
   }
-  /** An owner's destination for a city: the one saved for it, or a new one with this ID, saved with only its city. */
-  function destinationFor(ownerId: string, city: string, id: string): string {
-    const columns = destinationColumns({ city });
+  /**
+   * An owner's destination for a city: the one saved for it, unchanged, or a new one with this ID, saved with only its
+   * city and whether that is a chosen suggestion's label.
+   */
+  function destinationFor(ownerId: string, place: { city: string; cityFromSuggestion?: true }, id: string): string {
+    const columns = destinationColumns(place);
     const saved = db.prepare("SELECT id FROM destinations WHERE ownerId = ? AND cityKey = ?").get(ownerId, columns.cityKey);
     if (saved) return saved.id as string;
     const row = { id, ownerId, ...columns };
@@ -1384,10 +1546,10 @@ export function createStore(databasePath: string, ownerEmail: string) {
    * or a new one whose first stop shares its ID. A city the trip already visits returns that stop instead of adding
    * another, so adding it again after a lost response adds it once.
    */
-  function addStop(tripId: string, city: string, make: Make): string {
+  function addStop(tripId: string, place: { city: string; cityFromSuggestion?: true }, make: Make): string {
     const trip = existing<Trip & { ownerId: string }>("trips", tripId);
     const id = make.id();
-    const destinationId = destinationFor(trip.ownerId, city, id);
+    const destinationId = destinationFor(trip.ownerId, place, id);
     const visiting = db.prepare("SELECT id FROM trip_stops WHERE tripId = ? AND destinationId = ? ORDER BY position, id").get(trip.id, destinationId);
     if (visiting) return visiting.id as string;
     db.prepare("INSERT INTO trip_stops(id,tripId,destinationId,position,stay,nights) VALUES(?,?,?,?,'',NULL)").run(id, trip.id, destinationId, orderedStops(trip.id).length);
@@ -1395,7 +1557,7 @@ export function createStore(databasePath: string, ownerEmail: string) {
     return id;
   }
   /** Changes a destination everywhere it is used, and with a stop, that trip's stay notes and nights too. */
-  function saveDestination(input: DestinationSave): string {
+  function saveDestination(input: DestinationSave, make: Make): string {
     const before = existing<StoredDestination>("destinations", input.id);
     const stop = input.stopId === undefined ? undefined : existing<TripStop>("trip_stops", input.stopId);
     if (stop && stop.destinationId !== input.id) throw new ValidationError("This stop belongs to a different destination.");
@@ -1412,7 +1574,7 @@ export function createStore(databasePath: string, ownerEmail: string) {
       for (const leg of adjacentLegs) clearLeg(leg.id as string);
     }
     if (stop) db.prepare("UPDATE trip_stops SET stay = ?, nights = ? WHERE id = ?").run(input.stay ?? stop.stay, nights, stop.id);
-    saveDestinationGallery(input.id, input.gallery, input.image);
+    saveDestinationGallery(input.id, input.gallery, input.image, make);
     return input.id;
   }
   function mutate(accountId: string, input: Mutation, make: Make): string | undefined {
@@ -1487,10 +1649,10 @@ export function createStore(databasePath: string, ownerEmail: string) {
         db.prepare("UPDATE home_items SET completed = ? WHERE id = ? AND tripId = ?").run(Number(input.completed), input.id, input.tripId);
         return input.id;
       case "destination.save":
-        return saveDestination(input);
+        return saveDestination(input, make);
       case "destination.create":
         // A destination outside any trip belongs to the account that creates it. A city it already has opens that one.
-        return destinationFor(accountId, input.city, make.id());
+        return destinationFor(accountId, input, make.id());
       case "destination.delete": {
         const before = existing<StoredDestination>("destinations", input.id);
         // A destination a trip visits keeps everything saved for it.
@@ -1535,7 +1697,7 @@ export function createStore(databasePath: string, ownerEmail: string) {
         } else {
           db.prepare("INSERT INTO churches(id,destinationId,name,address,denomination,url,massTimesJson) VALUES(?,?,?,?,?,?,?)").run(id, input.destinationId, input.name, input.address, input.denomination, input.url, JSON.stringify(input.massTimes));
         }
-        saveGallery("church", id, input.gallery);
+        saveGallery("church", id, input.gallery, make);
         return id;
       }
       case "church.delete": {
@@ -1545,7 +1707,7 @@ export function createStore(databasePath: string, ownerEmail: string) {
         return;
       }
       case "stop.add":
-        return addStop(input.tripId, input.city, make);
+        return addStop(input.tripId, input, make);
       case "stop.remove": {
         // Only this trip's stay goes. The destination and everything saved with it stay, for other trips and Destinations.
         const stop = existing<TripStop>("trip_stops", input.id);
@@ -1594,7 +1756,7 @@ export function createStore(databasePath: string, ownerEmail: string) {
           const position = Number(db.prepare("SELECT coalesce(max(position), -1) + 1 AS position FROM candidates WHERE destinationId = ? AND category = ?").get(input.destinationId, input.category)!.position);
           db.prepare("INSERT INTO candidates(id,destinationId,category,name,priceCents,address,url,notes,included,mustDo,position,linksJson) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)").run(id, input.destinationId, input.category, input.name, priceCents(input.price), input.address, url, input.notes, Number(input.included), mustDo, position, JSON.stringify(links));
         }
-        saveGallery("candidate", id, input.gallery);
+        saveGallery("candidate", id, input.gallery, make);
         return id;
       }
       case "candidate.move": {
@@ -1625,6 +1787,19 @@ export function createStore(databasePath: string, ownerEmail: string) {
         db.prepare("UPDATE candidates SET included = ? WHERE id = ?").run(Number(input.included), input.id);
         return input.id;
       }
+      // Only the photos change, by the gallery editors' own rules (TRA-122).
+      case "destination.photos":
+        existing<StoredDestination>("destinations", input.id);
+        saveDestinationGallery(input.id, input.gallery, undefined, make);
+        return input.id;
+      case "candidate.photos":
+        existing<StoredCandidate>("candidates", input.id);
+        saveGallery("candidate", input.id, input.gallery, make);
+        return input.id;
+      case "church.photos":
+        existing<StoredChurch>("churches", input.id);
+        saveGallery("church", input.id, input.gallery, make);
+        return input.id;
     }
   }
   /**
@@ -1651,6 +1826,9 @@ export function createStore(databasePath: string, ownerEmail: string) {
       case "church.delete": return { destination: destinationOf("churches", input.id) };
       case "candidate.save": return { destination: destinationOf("candidates", input.id) ?? (input.create && destinationOf("destinations", input.destinationId)) };
       case "candidate.move": case "candidate.mustDo": case "candidate.delete": case "candidate.include": return { destination: destinationOf("candidates", input.id) };
+      case "destination.photos": return { destination: destinationOf("destinations", input.id) };
+      case "candidate.photos": return { destination: destinationOf("candidates", input.id) };
+      case "church.photos": return { destination: destinationOf("churches", input.id) };
     }
   }
   /**
@@ -1805,35 +1983,19 @@ export function createStore(databasePath: string, ownerEmail: string) {
       now: () => new Date(createdAt).toISOString(),
     };
   }
-  /** Runs `work` for the change at `index`, naming that change, from 1, in any refusal. */
-  function numbered<T>(index: number, work: () => T): T {
-    try {
-      return work();
-    } catch (error) {
-      if (isValidationError(error)) throw new ValidationError(`Change ${index + 1}: ${error.message}`);
-      throw error;
-    }
-  }
-  /** An AI change, checked by the planner's rules. Photos are added and changed only in Travel, which checks the image files. */
-  function aiChange(input: unknown): Mutation {
-    if (!input || typeof input !== "object" || Array.isArray(input)) throw new ValidationError("Each change must be an object.");
-    const value = input as Input;
-    if ("image" in value || "gallery" in value) throw new ValidationError("Photos can only be added, removed and arranged in Travel itself.");
-    if (value.type === "destination.save" && (value.create !== undefined || value.tripId !== undefined)) throw new ValidationError("Add a destination to a trip with stop.add, or outside any trip with destination.create.");
-    if (["trip.save", "homeItem.save", "destination.save", "church.save", "candidate.save"].includes(value.type as string) && value.id === undefined) {
-      throw new ValidationError("Give the id of the item to change, or a new UUID with create: true to add a trip, idea, church or At home item.");
-    }
-    return validate(input);
-  }
   /**
    * Places an AI change as `authorize` places a signed-in account's, refusing one that names no saved trip or
-   * destination, but whoever owns it. An item a change adds must be new: a proposal never changes a saved item it says
-   * it adds, as an editor's repeated save does.
+   * destination, but whoever owns it. An item or photo a change adds must be new: a proposal never changes a saved item
+   * it says it adds, as an editor's repeated save does.
    */
   function placeAiChange(change: Mutation): void {
     if ("create" in change && change.create) {
       const table = ({ "trip.save": "trips", "homeItem.save": "home_items", "church.save": "churches", "candidate.save": "candidates" } as const)[change.type];
       if (db.prepare(`SELECT 1 FROM ${table} WHERE id = ?`).get(change.id)) throw new ValidationError("This id is already a saved item's. Leave out create to change it, or give the new item a new UUID.");
+    }
+    if (change.type === "destination.photos" || change.type === "candidate.photos" || change.type === "church.photos") {
+      const saved = db.prepare(`SELECT 1 FROM ${PHOTO_CHANGES[change.type]} WHERE lower(id) = lower(?)`);
+      if (change.gallery.add.some((photo) => saved.get(photo.id))) throw new ValidationError("A new photo's id is already a saved photo's. Give each new photo a new UUID.");
     }
     if (addsOwnItem(change)) return;
     const scope = mutationScope(change);
@@ -1874,12 +2036,14 @@ export function createStore(databasePath: string, ownerEmail: string) {
   /**
    * Records the changes an AI connection proposes, for the designated owner to approve within a day. Each change is
    * checked by the planner's rules, in order, by making them all and undoing them, so the preview shows exactly what
-   * approving makes. A change may name an item an earlier one adds. Nothing in Travel changes until approval.
+   * approving makes. A change may name an item an earlier one adds. `photos` holds the photos its changes add, by their
+   * IDs, downloaded and prepared by Travel (TRA-122); they are kept beside the proposal, never in its changes. Nothing in
+   * Travel changes until approval.
    */
-  function proposeAiChanges(connectionId: string, input: Input, now: number): AiProposal {
-    const summary = textField(input, "summary", 200, true);
-    if (!Array.isArray(input.changes) || input.changes.length < 1 || input.changes.length > 50) throw new ValidationError("Propose from 1 to 50 changes.");
-    const changes = input.changes.map((change, index) => numbered(index, () => aiChange(change)));
+  function proposeAiChanges(connectionId: string, input: Input, photos: ReadonlyMap<string, Uint8Array>, now: number): AiProposal {
+    checkAiProposal(input);
+    const { summary, changes: proposed } = proposalChanges(input);
+    const changes = proposed.map((change, index) => numbered(index, () => aiChange(change, photos)));
     const id = randomUUID();
     db.exec("BEGIN IMMEDIATE");
     let rehearsal: { effects: Effect[][]; preview: PreviewChange[] };
@@ -1888,9 +2052,41 @@ export function createStore(databasePath: string, ownerEmail: string) {
     } finally {
       if (db.isTransaction) db.exec("ROLLBACK");
     }
-    db.prepare("INSERT INTO ai_proposals(id, connectionId, summary, changesJson, previewJson, effectsJson, createdAt, expiresAt) VALUES(?, ?, ?, ?, ?, ?, ?, ?)")
-      .run(id, connectionId, summary, JSON.stringify(changes), JSON.stringify(rehearsal.preview), JSON.stringify(rehearsal.effects), now, now + PROPOSAL_MS);
+    transaction(() => {
+      // New photos are kept only for proposals that can still be approved, so expired ones' photos go first.
+      sweepProposalPhotos(now);
+      db.prepare("INSERT INTO ai_proposals(id, connectionId, summary, changesJson, previewJson, effectsJson, createdAt, expiresAt) VALUES(?, ?, ?, ?, ?, ?, ?, ?)")
+        .run(id, connectionId, summary, JSON.stringify(changes.map(recorded)), JSON.stringify(rehearsal.preview), JSON.stringify(rehearsal.effects), now, now + PROPOSAL_MS);
+      const keep = db.prepare("INSERT INTO ai_proposal_photos(proposalId, id, data) VALUES(?, ?, ?)");
+      for (const change of changes) {
+        if (change.type === "destination.photos" || change.type === "candidate.photos" || change.type === "church.photos") {
+          for (const photo of change.gallery.add) keep.run(id, photo.id, photo.data);
+        }
+      }
+    });
     return proposalOf(db.prepare(`${PROPOSALS} WHERE ai_proposals.id = ?`).get(id) as unknown as StoredProposal, now);
+  }
+  /** Deletes the photos of proposals no one can approve now: decided ones, which made them or never will, and expired ones. */
+  function sweepProposalPhotos(now: number): void {
+    db.prepare("DELETE FROM ai_proposal_photos WHERE proposalId IN (SELECT id FROM ai_proposals WHERE status != 'pending' OR expiresAt <= ?)").run(now);
+  }
+  /** The photos a proposal adds, by their IDs. */
+  function proposalPhotos(proposalId: string): Map<string, Uint8Array> {
+    return new Map(db.prepare("SELECT id, data FROM ai_proposal_photos WHERE proposalId = ?").all(proposalId).map((row) => [row.id as string, new Uint8Array(row.data as Uint8Array)]));
+  }
+  /**
+   * A photo the designated owner sees while deciding a proposal (TRA-122): one it adds, or a saved photo it changes or
+   * deletes. Undefined for anyone else, once the proposal is decided or expired, and for any photo it doesn't change.
+   */
+  function getAiProposalPhoto(accountId: string, proposalId: string, photoId: string, now: number): StoredImage | undefined {
+    if (getAiProposal(accountId, proposalId, now)?.status !== "pending") return undefined;
+    const added = db.prepare("SELECT data FROM ai_proposal_photos WHERE proposalId = ? AND id = ?").get(proposalId, photoId);
+    if (added) return { version: photoId, data: new Uint8Array(added.data as Uint8Array) };
+    const effects = (JSON.parse(db.prepare("SELECT effectsJson FROM ai_proposals WHERE id = ?").get(proposalId)!.effectsJson as string) as Effect[][]).flat();
+    const table = effects.find((effect) => PHOTO_TABLES.includes(effect.table) && effect.key === JSON.stringify([photoId]))?.table;
+    if (!table) return undefined;
+    const row = db.prepare(`SELECT version, data FROM ${table} WHERE id = ?`).get(photoId);
+    return row ? { version: row.version as string, data: new Uint8Array(row.data as Uint8Array) } : undefined;
   }
   /** A proposal and what has become of it. Undefined when there is no such proposal, or the account isn't the designated owner. */
   function getAiProposal(accountId: string, proposalId: string, now: number): AiProposal | undefined {
@@ -1917,7 +2113,8 @@ export function createStore(databasePath: string, ownerEmail: string) {
         const decided = db.prepare("UPDATE ai_proposals SET status = ?, decidedAt = ? WHERE id = ? AND status = 'pending' AND expiresAt > ?").run(approve ? "applied" : "rejected", now, proposalId, now);
         if (decided.changes !== 1) throw new ValidationError("This proposal has already been decided, or has expired.");
         if (!approve) return;
-        const changes = (JSON.parse(stored.changesJson as string) as unknown[]).map((change, index) => numbered(index, () => aiChange(change)));
+        const photos = proposalPhotos(proposalId);
+        const changes = (JSON.parse(stored.changesJson as string) as unknown[]).map((change, index) => numbered(index, () => aiChange(change, photos)));
         const { effects } = runAiChanges(proposalId, stored.createdAt as number, changes);
         if (JSON.stringify(effects) !== stored.effectsJson) {
           throw new ValidationError("Travel has changed since this was proposed, so approving it would no longer make exactly the changes shown. Ask the assistant to propose them again.");
@@ -1925,10 +2122,12 @@ export function createStore(databasePath: string, ownerEmail: string) {
       });
     } catch (error) {
       // A refused approval fails for good, since trying again can't succeed; anything else, such as a full disk, leaves
-      // the proposal to approve again. Either way nothing in Travel changed.
+      // the proposal, with its photos, to approve again. Either way nothing in Travel changed.
       if (!approve || !isValidationError(error)) throw error;
       db.prepare("UPDATE ai_proposals SET status = 'failed', decidedAt = ?, error = ? WHERE id = ? AND status = 'pending'").run(now, error.message, proposalId);
     }
+    // A decided proposal's photos are in Travel now, or never will be.
+    sweepProposalPhotos(now);
     return getAiProposal(accountId, proposalId, now)!;
   }
   /** The designated owner's live AI connections and the latest proposals. Undefined for any other account. */
@@ -2079,7 +2278,7 @@ export function createStore(databasePath: string, ownerEmail: string) {
   // or an AI connection of the designated owner's.
   return {
     getSnapshot, getHomeOverview, getTripSnapshot, getDestinationsOverview, getDestinationSnapshot, getTripName, getStopName, getDestinationName, checkHealth, getDestinationImage, getDestinationPhoto, getCandidatePhoto, getChurchPhoto, applyMutation, authorizeAccount, getAccountByGoogleSubject, authorizeGoogleSignIn, createSession, readSession, deleteSession,
-    isAiOwner, aiAccounts, aiTrips, aiTrip, aiDestinations, aiDestination, aiPhoto, proposeAiChanges, getAiProposal, decideAiProposal, aiOverview,
+    isAiOwner, aiAccounts, aiTrips, aiTrip, aiDestinations, aiDestination, aiPhoto, proposeAiChanges, getAiProposal, getAiProposalPhoto, decideAiProposal, aiOverview,
     registerAiClient, aiClientPlatform, allowAiConnection, exchangeAiCode, refreshAiTokens, readAiConnection, revokeAiConnection,
     close: () => db.close(),
   };
@@ -2142,7 +2341,8 @@ export function aiTrip(tripId: string) { return defaultStore().aiTrip(tripId); }
 export function aiDestinations() { return defaultStore().aiDestinations(); }
 export function aiDestination(destinationId: string) { return defaultStore().aiDestination(destinationId); }
 export function aiPhoto(kind: "destination" | "idea" | "church", ownerId: string, photoId: string) { return defaultStore().aiPhoto(kind, ownerId, photoId); }
-export function proposeAiChanges(connectionId: string, input: Record<string, unknown>) { return defaultStore().proposeAiChanges(connectionId, input, Date.now()); }
+export function proposeAiChanges(connectionId: string, input: Record<string, unknown>, photos: ReadonlyMap<string, Uint8Array>) { return defaultStore().proposeAiChanges(connectionId, input, photos, Date.now()); }
+export function getAiProposalPhoto(accountId: string, proposalId: string, photoId: string) { return defaultStore().getAiProposalPhoto(accountId, proposalId, photoId, Date.now()); }
 export function getAiProposal(accountId: string, proposalId: string) { return defaultStore().getAiProposal(accountId, proposalId, Date.now()); }
 export function decideAiProposal(accountId: string, proposalId: string, digest: string, approve: boolean) { return defaultStore().decideAiProposal(accountId, proposalId, digest, approve, Date.now()); }
 export function aiOverview(accountId: string) { return defaultStore().aiOverview(accountId, Date.now()); }

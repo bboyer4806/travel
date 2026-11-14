@@ -4,6 +4,7 @@ import { useId, useRef, useState } from "react";
 import { ArrowDown, ArrowUp, MapPin, Plane, Plus, Trash2 } from "lucide-react";
 import type { ItineraryStop } from "@/lib/types";
 import { randomUuid } from "@/lib/uuid";
+import { controlOrNeighbor, useFocusAfter } from "./focus-after";
 
 const MAX_STOPS = 30;
 
@@ -17,6 +18,7 @@ export function ConnectionItineraryEditor({ stops, onChange, disabled = false }:
   const id = useId();
   const focusPlace = useRef<string | null>(null);
   const addLayoverButton = useRef<HTMLButtonElement>(null);
+  const focusAfter = useFocusAfter();
   const [announcement, setAnnouncement] = useState("");
 
   function addStop(kind: ItineraryStop["kind"]) {
@@ -31,9 +33,11 @@ export function ConnectionItineraryEditor({ stops, onChange, disabled = false }:
     if (!disabled) onChange(stops.map((stop) => stop.id === stopId ? { ...stop, ...patch } : stop));
   }
 
-  function moveStop(index: number, direction: -1 | 1) {
+  /** Moves a stop and keeps focus on `control`, or on the stop's other move at the first or last place. */
+  function moveStop(index: number, direction: -1 | 1, control: HTMLButtonElement) {
     const nextIndex = index + direction;
     if (disabled || nextIndex < 0 || nextIndex >= stops.length) return;
+    focusAfter(() => controlOrNeighbor(control));
     const reordered = [...stops];
     [reordered[index], reordered[nextIndex]] = [reordered[nextIndex], reordered[index]];
     onChange(reordered);
@@ -59,8 +63,8 @@ export function ConnectionItineraryEditor({ stops, onChange, disabled = false }:
       {stops.map((stop, index) => <fieldset className="connection-itinerary-draft" disabled={disabled} key={stop.id} aria-describedby={id + "-help"}>
         <legend>{index + 1}. {stop.kind === "layover" ? "Layover" : "Stop"}</legend>
         <div className="connection-itinerary-tools">
-          <button type="button" className="icon-button" disabled={disabled || index === 0} aria-label={`Move stop ${index + 1} up`} onClick={() => moveStop(index, -1)}><ArrowUp size={16} /></button>
-          <button type="button" className="icon-button" disabled={disabled || index === stops.length - 1} aria-label={`Move stop ${index + 1} down`} onClick={() => moveStop(index, 1)}><ArrowDown size={16} /></button>
+          <button type="button" className="icon-button" disabled={disabled || index === 0} aria-label={`Move stop ${index + 1} up`} onClick={(event) => moveStop(index, -1, event.currentTarget)}><ArrowUp size={16} /></button>
+          <button type="button" className="icon-button" disabled={disabled || index === stops.length - 1} aria-label={`Move stop ${index + 1} down`} onClick={(event) => moveStop(index, 1, event.currentTarget)}><ArrowDown size={16} /></button>
           <button type="button" className="icon-button" disabled={disabled} aria-label={`Remove stop ${index + 1}`} onClick={() => removeStop(index)}><Trash2 size={16} /></button>
         </div>
         <div className="connection-itinerary-fields">

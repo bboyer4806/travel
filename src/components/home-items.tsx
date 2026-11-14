@@ -11,7 +11,8 @@ export default function HomeItems({ items, busy, onAdd, onEdit, onDelete, onComp
   onAdd: () => void;
   onEdit: (item: HomeItem) => void;
   onDelete: (item: HomeItem) => void;
-  onComplete: (item: HomeItem) => void;
+  /** Marks an item complete or reopens it from `control`, its Mark complete or Reopen button. */
+  onComplete: (item: HomeItem, control: HTMLButtonElement) => void;
 }) {
   const completedCount = items.filter((item) => item.completed).length;
   return <section className={styles.section} aria-labelledby="at-home-heading">
@@ -26,7 +27,7 @@ export default function HomeItems({ items, busy, onAdd, onEdit, onDelete, onComp
             <div className={styles.tools}><button type="button" className="icon-button" aria-label={`Edit ${item.name}`} disabled={busy} onClick={() => onEdit(item)}><Pencil size={15} aria-hidden="true" /></button><button type="button" className="icon-button" aria-label={`Delete ${item.name}`} disabled={busy} onClick={() => onDelete(item)}><Trash2 size={15} aria-hidden="true" /></button></div>
           </div>
           {item.notes && <p className={styles.notes}>{item.notes}</p>}
-          <div className={styles.bottom}><div><span className={item.priceCents === null ? styles.noPrice : styles.price}>{item.priceCents === null ? "No price added" : formatCurrency(item.priceCents, "USD")}</span>{item.priceCents !== null && <small>Included in the trip estimate</small>}</div><button type="button" className={`button ${item.completed ? "secondary" : "selected-button"} small`} aria-label={`${item.completed ? "Reopen" : "Mark complete:"} ${item.name}`} disabled={busy} onClick={() => onComplete(item)}>{item.completed ? <><RotateCcw size={14} aria-hidden="true" />Reopen</> : <><Check size={14} aria-hidden="true" />Mark complete</>}</button></div>
+          <div className={styles.bottom}><div><span className={item.priceCents === null ? styles.noPrice : styles.price}>{item.priceCents === null ? "No price added" : formatCurrency(item.priceCents, "USD")}</span>{item.priceCents !== null && <small>Included in the trip estimate</small>}</div><button type="button" className={`button ${item.completed ? "secondary" : "selected-button"} small`} aria-label={`${item.completed ? "Reopen" : "Mark complete:"} ${item.name}`} disabled={busy} onClick={(event) => onComplete(item, event.currentTarget)}>{item.completed ? <><RotateCcw size={14} aria-hidden="true" />Reopen</> : <><Check size={14} aria-hidden="true" />Mark complete</>}</button></div>
         </article>)}</div>
         <p className="helper">Any prices you add stay in the trip estimate, including for completed items.</p>
       </>}

@@ -1,12 +1,14 @@
 import { ENTRY_REQUIREMENT_FIELDS } from "./entry-requirements.ts";
 import { EMERGENCY_CONTACT_MAX_LENGTH, HEALTH_SAFETY_FIELDS, MAX_EMERGENCY_CONTACTS } from "./health-safety.ts";
+import { AI_PHOTO_DOWNLOAD_SECONDS, formatMegabytes, MAX_AI_PROPOSAL_PHOTOS, MAX_CANDIDATE_IMAGES, MAX_DESTINATION_IMAGES, MAX_GALLERY_UPLOAD_BYTES, MAX_IMAGE_UPLOAD_BYTES } from "./image-limits.ts";
 import { MAX_NIGHTS } from "./trip-dates.ts";
 import { MAX_TAG_LENGTH } from "./trip-tags.ts";
 
 /**
  * The tools Travel's MCP endpoint offers ChatGPT and Claude (TRA-115). The read tools see every trip and destination,
  * whoever owns them. `propose_changes` takes the planner's own changes (`Mutation` in types.ts), checked by the store
- * as an editor's saves are; these schemas only describe them to the assistant.
+ * as an editor's saves are; these schemas only describe them to the assistant. A photo change names each new photo by
+ * the address Travel downloads it from, never by its bytes (TRA-122).
  */
 
 const UUID = "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$";
@@ -27,6 +29,32 @@ const lastChecked = { type: ["string", "null"], pattern: DATE, description: "Whe
 
 function change(type: string, description: string, properties: Record<string, unknown>, required: string[]) {
   return { type: "object", title: type, description, additionalProperties: false, properties: { type: { type: "string", enum: [type] }, ...properties }, required: ["type", ...required] };
+}
+
+/**
+ * A photo change's gallery (TRA-122): what the gallery editors change, with each new photo's https:// address for
+ * Travel to download in place of a file. `main` is what the editor calls the photo shown first.
+ */
+function gallery(owner: string, maxImages: number, main: string, ordered: boolean) {
+  return {
+    type: "object", additionalProperties: false, required: ["add", "remove"],
+    description: `The photo changes. A${owner === "idea" ? "n" : ""} ${owner} has up to ${maxImages} photos.`,
+    properties: {
+      add: {
+        type: "array", maxItems: maxImages, description: "Photos to add, after the saved ones. Empty for none.",
+        items: {
+          type: "object", additionalProperties: false, required: ["id", "url"],
+          properties: {
+            id: id(`A new UUID for the photo, which mainImageId${ordered ? " and order" : ""} can name.`),
+            url: text(`The https:// address of the image file itself, not of a page showing it: a JPEG, PNG or WebP image of up to ${formatMegabytes(MAX_IMAGE_UPLOAD_BYTES)} on a public website.`, 2048),
+          },
+        },
+      },
+      remove: { type: "array", maxItems: maxImages, items: id("A saved photo's id, from its images."), description: "Saved photos to remove. Empty for none." },
+      mainImageId: { type: ["string", "null"], pattern: UUID, description: `The ${main} photo, saved or new. null only when no photos remain. Left out keeps the saved one, or the first remaining photo when it is removed.` },
+      ...(ordered && { order: { type: "array", maxItems: maxImages, items: id("A photo's id."), description: "Every photo the destination keeps and adds, by id, in gallery order. Left out keeps the saved order, with new photos last." } }),
+    },
+  };
 }
 
 /** One of each of the planner's changes, as `propose_changes` takes them. */
@@ -114,6 +142,15 @@ const CHANGES = [
   change("candidate.mustDo", "Marks an activity or restaurant Must do, or not.", { id: id("The idea's id."), mustDo: flag("Whether it is Must do.") }, ["id", "mustDo"]),
   change("candidate.include", "Includes an idea in the budget, or leaves it out. Including a hotel chooses it, leaving out the others.", { id: id("The idea's id."), included: flag("Whether it is included.") }, ["id", "included"]),
   change("candidate.delete", "Deletes an idea with its photos.", { id: id("The idea's id.") }, ["id"]),
+  change("destination.photos", "Changes a destination's photos and nothing else: adds photos from their addresses, removes saved ones, chooses the primary photo and puts them in order.", {
+    id: id("The destination's id."), gallery: gallery("destination", MAX_DESTINATION_IMAGES, "primary", true),
+  }, ["id", "gallery"]),
+  change("candidate.photos", "Changes a hotel's, activity's or restaurant's photos and nothing else: adds photos from their addresses, removes saved ones and chooses the main photo. Its photos stay in the order they were added.", {
+    id: id("The idea's id."), gallery: gallery("idea", MAX_CANDIDATE_IMAGES, "main", false),
+  }, ["id", "gallery"]),
+  change("church.photos", "Changes a church's photos and nothing else: adds photos from their addresses, removes saved ones and chooses the main photo. Its photos stay in the order they were added.", {
+    id: id("The church's id."), gallery: gallery("church", MAX_CANDIDATE_IMAGES, "main", false),
+  }, ["id", "gallery"]),
 ];
 
 const readOnly = { readOnlyHint: true, openWorldHint: false };
@@ -148,7 +185,8 @@ export const TOOLS = [
   },
   {
     name: "propose_changes", title: "Propose changes",
-    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
+    // Open world: Travel downloads the photos a proposal adds from the addresses it gives (TRA-122).
+    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: true },
     inputSchema: {
       type: "object", additionalProperties: false, required: ["summary", "changes"],
       properties: {
@@ -156,7 +194,7 @@ export const TOOLS = [
         changes: { type: "array", minItems: 1, maxItems: 50, items: { anyOf: CHANGES }, description: "The changes, at most 50, made in this order. A refusal names the change by its place in this list, from 1." },
       },
     },
-    description: "Proposes changes to Travel for its owner to approve. Nothing changes until they do. Changes may apply to any trip or destination, whoever owns it, including deleting trips and changing who they are shared with. Each change is checked by Travel's own rules as it is proposed, in order, and the reply lists every record each one adds, changes or deletes, before and after. Give the owner the reply's approve_at link: there they approve or reject every change at once, within 24 hours. Approving makes all of them exactly as shown, or none if Travel has changed since. Check what they decided with get_change_proposal. Records are named by the ids the read tools list. A change that adds a trip, idea, church or At home item gives it a new UUID as its id, with create: true, and later changes in the same proposal can name it by that id. Photos can't be added or changed.",
+    description: `Proposes changes to Travel for its owner to approve. Nothing changes until they do. Changes may apply to any trip or destination, whoever owns it, including deleting trips and changing who they are shared with. Each change is checked by Travel's own rules as it is proposed, in order, and the reply lists every record each one adds, changes or deletes, before and after. Give the owner the reply's approve_at link: there they approve or reject every change at once, within 24 hours. Approving makes all of them exactly as shown, or none if Travel has changed since. Check what they decided with get_change_proposal. Records are named by the ids the read tools list. A change that adds a trip, idea, church or At home item gives it a new UUID as its id, with create: true, and later changes in the same proposal can name it by that id. Photos change only with destination.photos, candidate.photos and church.photos. Travel downloads each new photo from its address as it is proposed and checks it as it does an upload: at most ${MAX_AI_PROPOSAL_PHOTOS} new photos and ${formatMegabytes(MAX_GALLERY_UPLOAD_BYTES)} in one proposal, downloaded within ${AI_PHOTO_DOWNLOAD_SECONDS} seconds, from public https:// addresses only. If any can't be downloaded or used, nothing is proposed, and the reply names its change and address. The owner sees every photo added, removed or rearranged before approving.`,
   },
   {
     name: "get_change_proposal", title: "Get a change proposal", annotations: readOnly, inputSchema: input({ proposal_id: id("The proposal_id propose_changes replied with.") }),

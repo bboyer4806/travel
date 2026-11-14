@@ -1,7 +1,9 @@
 "use client";
 
+import { useRef } from "react";
 import { Church as ChurchIcon, ExternalLink, MapPin, Pencil, Plus, Trash2 } from "lucide-react";
 import { CandidateGallery, CandidateGalleryEditor, type CandidateGalleryDraft } from "./candidate-gallery";
+import { useFocusAfter } from "./focus-after";
 import type { Church, MassTime } from "@/lib/types";
 import { randomUuid } from "@/lib/uuid";
 import styles from "./churches.module.css";
@@ -35,7 +37,16 @@ export function ChurchEditor({ item, massTimes, onTimesChange, gallery, onGaller
   item?: Church; massTimes: MassTime[]; onTimesChange: (times: MassTime[]) => void;
   gallery: CandidateGalleryDraft; onGalleryChange: (draft: CandidateGalleryDraft) => void; busy: boolean;
 }) {
+  const focusAfter = useFocusAfter();
+  const removeButtons = useRef(new Map<string, HTMLButtonElement>());
+  const addButton = useRef<HTMLButtonElement>(null);
   const update = (id: string, field: "day" | "time", value: string) => onTimesChange(massTimes.map((entry) => entry.id === id ? { ...entry, [field]: value } : entry));
+  /** Removes a time and focuses the next time's Remove, or Add Mass time after the last. */
+  function remove(index: number) {
+    const next = massTimes[index + 1];
+    focusAfter(() => next ? removeButtons.current.get(next.id) : addButton.current);
+    onTimesChange(massTimes.filter((_, position) => position !== index));
+  }
   return <>
     <label className="field wide"><span>Name</span><input name="name" defaultValue={item?.name} required maxLength={160} disabled={busy} placeholder="Church name" /></label>
     <label className="field wide"><span>Location or address (optional)</span><input name="address" defaultValue={item?.address} maxLength={500} disabled={busy} placeholder="Street address or neighborhood" /></label>
@@ -47,9 +58,10 @@ export function ChurchEditor({ item, massTimes, onTimesChange, gallery, onGaller
       {massTimes.map((entry, index) => <div className={styles.timeRow} key={entry.id}>
         <label className="field"><span>Day or date ({index + 1})</span><input value={entry.day} onChange={(event) => update(entry.id, "day", event.target.value)} required maxLength={120} placeholder="Sunday or May 2, 2027" /></label>
         <label className="field"><span>Mass time ({index + 1})</span><input value={entry.time} onChange={(event) => update(entry.id, "time", event.target.value)} required maxLength={120} placeholder="9:00 AM" /></label>
-        <button type="button" className="icon-button" aria-label={`Remove Mass time ${index + 1}`} onClick={() => onTimesChange(massTimes.filter((time) => time.id !== entry.id))}><Trash2 size={16} /></button>
+        <button type="button" className="icon-button" aria-label={`Remove Mass time ${index + 1}`} onClick={() => remove(index)}
+          ref={(button) => { if (button) removeButtons.current.set(entry.id, button); else removeButtons.current.delete(entry.id); }}><Trash2 size={16} /></button>
       </div>)}
-      <button type="button" className="button secondary small" disabled={busy || massTimes.length >= 30} onClick={() => onTimesChange([...massTimes, { id: randomUuid(), day: "", time: "" }])}><Plus size={15} />Add Mass time</button>
+      <button type="button" ref={addButton} className="button secondary small" disabled={busy || massTimes.length >= 30} onClick={() => onTimesChange([...massTimes, { id: randomUuid(), day: "", time: "" }])}><Plus size={15} />Add Mass time</button>
     </fieldset>
     <CandidateGalleryEditor candidate={item} subject="church" imageKind="church" draft={gallery} onChange={onGalleryChange} disabled={busy} />
   </>;

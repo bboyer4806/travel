@@ -107,13 +107,13 @@ test("schema 24 adds the AI integration's tables without changing Travel's data,
   const before = store.getSnapshot();
   store.close();
   let db = new DatabaseSync(path);
-  db.exec("DROP TABLE ai_proposals; DROP TABLE ai_connections; DROP TABLE ai_authorization_codes; DROP TABLE ai_clients; PRAGMA user_version = 23;");
+  db.exec("DROP TABLE ai_proposal_photos; DROP TABLE ai_proposals; DROP TABLE ai_connections; DROP TABLE ai_authorization_codes; DROP TABLE ai_clients; PRAGMA user_version = 23;");
   db.close();
   store = createStore(path, OWNER);
   assert.deepEqual(store.getSnapshot(), before, "the upgrade changes no trip");
   const { tokens } = connectClaude(store);
   const connection = store.readAiConnection(tokens.accessToken, NOW);
-  const proposal = store.proposeAiChanges(connection.id, { summary: "Tag it", changes: [{ type: "trip.tag", tripId, name: "Kept" }] }, NOW);
+  const proposal = store.proposeAiChanges(connection.id, { summary: "Tag it", changes: [{ type: "trip.tag", tripId, name: "Kept" }] }, new Map(), NOW);
   store.close();
   db = new DatabaseSync(path);
   db.exec("PRAGMA user_version = 23;");
@@ -210,7 +210,7 @@ test("Claude connects through Travel's OAuth endpoints, reads every trip and pro
   assert.deepEqual((await mcp({ jsonrpc: "2.0", id: 3, method: "ping" })).body, { jsonrpc: "2.0", id: 3, result: {} });
   const tools = (await mcp({ jsonrpc: "2.0", id: 4, method: "tools/list" })).body.result.tools;
   assert.deepEqual(tools.map((tool) => tool.name), ["list_trips", "get_trip", "list_destinations", "get_destination", "list_accounts", "get_photo", "propose_changes", "get_change_proposal"]);
-  assert.equal(tools.find((tool) => tool.name === "propose_changes").inputSchema.properties.changes.items.anyOf.length, 27, "every planner change can be proposed");
+  assert.equal(tools.find((tool) => tool.name === "propose_changes").inputSchema.properties.changes.items.anyOf.length, 30, "every planner change can be proposed");
 
   const call = async (name, args = {}) => (await mcp({ jsonrpc: "2.0", id: 5, method: "tools/call", params: { name, arguments: args } })).body.result;
   const data = async (name, args) => { const result = await call(name, args); assert.equal(result.isError, undefined, result.content[0].text); return JSON.parse(result.content[0].text); };

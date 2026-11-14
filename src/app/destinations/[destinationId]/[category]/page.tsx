@@ -1,7 +1,6 @@
 import { notFound } from "next/navigation";
 import type { Metadata } from "next";
 import { requireAccount } from "@/auth";
-import { formatSavedDestinationLabel } from "@/lib/destination-label";
 import { getDestinationName, getDestinationSnapshot } from "@/lib/store";
 import PlannerApp from "@/components/planner-app";
 import type { Category } from "@/lib/types";
@@ -12,7 +11,7 @@ export async function generateMetadata({ params }: { params: Promise<{ destinati
   const account = await requireAccount();
   const labels: Record<string, string> = { hotels: "Hotels", activities: "Activities", restaurants: "Restaurants", church: "Church" };
   const city = getDestinationName(account.id, destinationId);
-  return { title: labels[category] && city ? `${labels[category]} · ${formatSavedDestinationLabel(city)}` : "Destination not found" };
+  return { title: labels[category] && city ? `${labels[category]} · ${city}` : "Destination not found" };
 }
 export default async function DestinationIdeasPage({ params }: { params: Promise<{ destinationId: string; category: string }> }) {
   const { destinationId, category } = await params;

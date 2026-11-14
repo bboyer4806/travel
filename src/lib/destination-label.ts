@@ -57,8 +57,27 @@ export function destinationKey(city: string): string {
   return city.normalize("NFC").split(",").map(clean).join(",").toLowerCase();
 }
 
-/** Shorten only structured legacy labels; preserve all other user-entered text verbatim. */
-export function formatSavedDestinationLabel(value: string): string {
+/**
+ * Whether a city saved before Travel recorded suggestions has the shape of a suggestion's label: city, region and a
+ * country's full name. Only the schema 27 upgrade uses it, to record such cities once (TRA-129); nothing else guesses
+ * (TRA-76).
+ */
+export function hasSuggestionLabelShape(city: string): boolean {
+  const parts = city.split(",").map(clean);
+  if (parts.length !== 3 || parts.some((part) => !part)) return false;
+  const country = parts[2];
+  const countryCode = recognizedCountry(country);
+  // A suggestion names its country in full, so a code, as in "Chicago, Cook County, IL", is typed text.
+  return countryCode !== undefined && country.toUpperCase() !== countryCode;
+}
+
+/**
+ * A saved destination's city as Travel shows it. Only the label of a city suggestion chosen for it is shortened, from
+ * city, region and country to city and country or US state; any other city shows exactly as entered (TRA-76).
+ */
+export function formatSavedDestinationLabel(destination: { city: string; cityFromSuggestion: boolean }): string {
+  const value = destination.city;
+  if (!destination.cityFromSuggestion) return value;
   const parts = value.split(",");
   if (parts.length !== 3 || parts.some((part) => !part.trim())) return value;
   const [name, region, country] = parts.map(clean);

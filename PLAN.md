@@ -367,6 +367,13 @@ This replaces TRA-62's destination Save in a sticky header.
 - The counter, selected thumbnail and Primary photo badge follow the photo shown, and thumbnails still choose any photo. Browsing saves nothing: photo order, the primary photo and the destination are unchanged.
 - Not included: uploading, deleting or reordering photos or choosing the primary photo; slideshows or timed transitions; zoom, fullscreen viewing or image editing; arrows for hotel, activity, restaurant or church galleries; and redesigning the thumbnails or destination page.
 
+## Added scope: November 14, 2026, proposal review on phones (TRA-121)
+- In windows up to 640 pixels wide, such as phones, a proposal's page shows each changed field stacked: its name, then its Before and After values, each labeled beside it, in place of the Field, Before and After columns. Wider windows, including a phone held sideways past 640 pixels, keep the columns as before.
+- Every change, record, field value, photo and notice shows in full from 320 pixels wide without scrolling sideways, in every state: waiting, approved, rejected, failed and expired. Long text, links and values of several lines wrap, and photos shrink to fit, keeping their shape.
+- **Approve every change** and **Reject** are at least 44 pixels tall at every width, and on phones the page ends with room for Send feedback, so at the end of the page they sit above it instead of under it.
+- Screen readers read each stacked value with its Before or After label; wider windows' tables keep their column headings and read as before.
+- Not included: changes to what proposals hold, how they are proposed, approved, rejected or expire, who can see or decide them, the AI assistants and connection pages, the site header, or the wider layout beyond the buttons' height.
+
 ## Added scope: November 14, 2026, confirmations on phones (TRA-32)
 - Confirmations, such as deleting a trip or an idea, removing a destination from a trip, and clearing entry requirements, health and safety, or a travel plan, open centered on the screen over a darker backdrop and clear of **Send feedback**, in portrait and landscape and at every screen size.
 - Their title and message wrap without scrolling sideways at widths down to 320 pixels. When they don't fit, as on a phone turned sideways, they scroll together while **Cancel** and the confirming button stay in view at the bottom.

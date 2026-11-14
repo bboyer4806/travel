@@ -4,7 +4,7 @@ import { mkdirSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { containsSunday, isValidDate, nightsToBudgetDays } from "./destination-duration.ts";
-import { destinationKey, formatSavedDestinationLabel } from "./destination-label.ts";
+import { destinationKey, formatSavedDestinationLabel, hasSuggestionLabelShape } from "./destination-label.ts";
 import { backfillDates, MAX_NIGHTS, sequenceDates } from "./trip-dates.ts";
 import { MAX_AMOUNT_CENTS, parseMinorAmount } from "./money.ts";
 import { formatMegabytes, MAX_CANDIDATE_IMAGES, MAX_DESTINATION_IMAGES, MAX_STORED_IMAGE_BYTES } from "./image-limits.ts";
@@ -516,7 +516,7 @@ const LIVE: Make = { id: () => randomUUID(), now: () => new Date().toISOString()
  * The schema this build upgrades every database to, as SQLite's user_version. A schema change adds the next
  * upgrade in createStore and raises this to match; earlier upgrades keep their own numbers.
  */
-export const SCHEMA_VERSION = 26;
+export const SCHEMA_VERSION = 27;
 
 /** A destination as schema 20 saved it, inside one trip, with that trip's owner and name. */
 type TripDestinationRow = Omit<StoredDestination, "cityKey"> & Omit<TripStop, "destinationId"> & { tripName: string };
@@ -716,6 +716,8 @@ export function createStore(databasePath: string, ownerEmail: string) {
     // Before schema 21 each destination belonged to one trip. The upgrades from then add trip columns only to such a
     // table, so replaying them on a later database leaves its shared destinations as they are.
     const tripDestinations = hasColumn("destinations", "tripId");
+    // Schema 26 records which cities were chosen from suggestions. A replay keeps those records as they are.
+    const recordsSuggestions = hasColumn("destinations", "cityFromSuggestion");
     if (version < 2) {
       if (!hasColumn("trips", "returnCity")) db.exec("ALTER TABLE trips ADD COLUMN returnCity TEXT;");
       if (!hasColumn("legs", "itineraryJson")) db.exec("ALTER TABLE legs ADD COLUMN itineraryJson TEXT NOT NULL DEFAULT '[]';");
@@ -1070,6 +1072,19 @@ export function createStore(databasePath: string, ownerEmail: string) {
       // (TRA-76). No saved city is known to be one, so each shows exactly as saved. A replay keeps the saved records.
       if (!hasColumn("destinations", "cityFromSuggestion")) db.exec("ALTER TABLE destinations ADD COLUMN cityFromSuggestion INTEGER NOT NULL DEFAULT 0 CHECK(cityFromSuggestion IN (0,1));");
       db.exec("PRAGMA user_version = 26;");
+    }
+    if (version < 27) {
+      // Schema 26 started every saved city unrecorded, so one chosen from a suggestion before then showed in full. Record
+      // once each unrecorded city in a suggestion's shape, typed or not: in a database at schema 26, or one schema 26
+      // starts recording in this upgrade. A replay, from the version a build before schema 3 leaves, keeps every record
+      // (TRA-129).
+      if (version === 26 || !recordsSuggestions) {
+        const record = db.prepare("UPDATE destinations SET cityFromSuggestion = 1 WHERE id = ?");
+        for (const row of db.prepare("SELECT id, city FROM destinations WHERE cityFromSuggestion = 0").all()) {
+          if (hasSuggestionLabelShape(row.city as string)) record.run(row.id as string);
+        }
+      }
+      db.exec("PRAGMA user_version = 27;");
     }
     if (version < SCHEMA_VERSION && db.prepare("PRAGMA foreign_key_check").get()) {
       throw new Error("This upgrade would leave saved items without the trip or destination they belong to. Nothing was changed; review the database against a backup before upgrading.");

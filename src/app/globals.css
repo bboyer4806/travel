@@ -1926,7 +1926,8 @@ button svg,a svg {
 .budget-toggle svg { transition: transform .16s; }
 .budget-toggle[aria-expanded="true"] svg { transform: rotate(180deg); }
 .budget-categories { display: grid; margin: 0 0 12px; font-size: 13px; }
-.budget-category { display: grid; grid-template-columns: 8.5em minmax(0, 1fr) auto; grid-template-areas: "name action amount"; align-items: baseline; column-gap: 16px; }
+/* TRA-120: every row keeps the height of the rows with an editor, whose buttons are 44px tall. */
+.budget-category { display: grid; grid-template-columns: 8.5em minmax(0, 1fr) auto; grid-template-areas: "name action amount"; align-items: baseline; align-content: center; min-height: 44px; column-gap: 16px; }
 .budget-category dt { grid-area: name; }
 .budget-category dd { margin: 0; }
 .budget-category-amount { grid-area: amount; text-align: right; font-weight: 600; }

@@ -5,6 +5,7 @@ import { useEffect, useId, useRef, useState } from "react";
 import { BedDouble, Binoculars, Check, ChevronDown, ChevronLeft, ChevronRight, Pencil, Plus, Utensils } from "lucide-react";
 import { CandidateGallery, photoUrl } from "./candidate-gallery";
 import { ResearchLinks } from "./research-links";
+import { RestaurantTypeTags } from "./restaurant-types";
 import { formatCurrency } from "@/lib/money";
 import type { Candidate, Category } from "@/lib/types";
 import styles from "./destination-ideas.module.css";
@@ -105,6 +106,7 @@ function Carousel({ category, ideas, onView }: { category: Category; ideas: Cand
             {photo ? <img src={photoUrl(item.id, photo, "candidate")} alt="" loading="lazy" decoding="async" width={400} height={300} /> : <Icon size={30} strokeWidth={1.3} aria-hidden="true" />}
           </span>
           <span className={styles.name}>{item.name}</span>
+          <RestaurantTypeTags types={item.restaurantTypes} className={styles.types} />
           <span className={item.priceCents === null ? styles.price + " " + styles.unknown : styles.price}>{price(item)}</span>
           {item.included && <span className={"selection-tag chosen " + styles.chosen}><Check size={12} aria-hidden="true" />{chosen[category]}</span>}
         </button></li>;
@@ -118,6 +120,7 @@ function Carousel({ category, ideas, onView }: { category: Category; ideas: Cand
 export function IdeaDetails({ item }: { item: Candidate }) {
   const category = item.category;
   return <dl className={styles.details}>
+    {item.restaurantTypes.length > 0 && <div><dt>Restaurant types</dt><dd><RestaurantTypeTags types={item.restaurantTypes} /></dd></div>}
     <div><dt>Estimated price (USD)</dt><dd>{price(item)}<small>{priceNotes[category]}</small></dd></div>
     <div><dt>Address or neighborhood</dt><dd>{item.address || "Not added"}</dd></div>
     <div><dt>{subjects[category]} photos</dt><dd>{item.images.length ? <CandidateGallery candidate={item} /> : "Not added"}</dd></div>

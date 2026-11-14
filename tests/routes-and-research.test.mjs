@@ -82,7 +82,7 @@ for (const version of [1, 2]) {
     const path = fileDatabase(t);
     const before = legacyDatabase(path, version);
     before.destinations = before.destinations.map(item => ({ ...item, entryRequirements: null, healthSafety: null, images: [], mainImageId: null }));
-    before.candidates = before.candidates.map(item => ({ ...item, position: 0, mustDo: false }));
+    before.candidates = before.candidates.map(item => ({ ...item, position: 0, mustDo: false, restaurantTypes: [] }));
     let store = createOwnedStore(path);
     try {
       const after = store.getSnapshot();

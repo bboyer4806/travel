@@ -1076,7 +1076,8 @@ export function createStore(databasePath: string, ownerEmail: string) {
     if (version < 27) {
       // Schema 26 started every saved city unrecorded, so one chosen from a suggestion before then showed in full. Record
       // once each unrecorded city in a suggestion's shape, typed or not: in a database at schema 26, or one schema 26
-      // starts recording in this upgrade. A replay, from the version a build before schema 3 leaves, keeps every record.
+      // starts recording in this upgrade. A replay, from the version a build before schema 3 leaves, keeps every record
+      // (TRA-129).
       if (version === 26 || !recordsSuggestions) {
         const record = db.prepare("UPDATE destinations SET cityFromSuggestion = 1 WHERE id = ?");
         for (const row of db.prepare("SELECT id, city FROM destinations WHERE cityFromSuggestion = 0").all()) {

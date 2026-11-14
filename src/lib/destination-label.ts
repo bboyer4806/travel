@@ -59,7 +59,8 @@ export function destinationKey(city: string): string {
 
 /**
  * Whether a city saved before Travel recorded suggestions has the shape of a suggestion's label: city, region and a
- * country's full name. Only the schema 27 upgrade uses it, to record such cities once; nothing else guesses (TRA-76).
+ * country's full name. Only the schema 27 upgrade uses it, to record such cities once (TRA-129); nothing else guesses
+ * (TRA-76).
  */
 export function hasSuggestionLabelShape(city: string): boolean {
   const parts = city.split(",").map(clean);

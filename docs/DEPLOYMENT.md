@@ -342,9 +342,9 @@ Keeping custom city text intact upgrades the database to schema 26 in the startu
 
 Restoring the pre-upgrade backup to run a schema 25 build again loses these records, and that build again shortens custom text that looks like a city, region and country, such as `Tokyo, Kyoto, Japan`.
 
-**Superseded:** [schema 27](#schema-27-older-cities-chosen-from-suggestions) records each existing city in a suggestion's shape.
+**Superseded:** [schema 27](#schema-27-older-cities-chosen-from-suggestions-tra-129) records each existing city in a suggestion's shape.
 
-### Schema 27: older cities chosen from suggestions
+### Schema 27: older cities chosen from suggestions (TRA-129)
 Showing older cities chosen from suggestions shorter again upgrades the database to schema 27 in the startup transaction, changing only `destinations.cityFromSuggestion`. Schema 26 started every existing destination at 0, so a city chosen from a suggestion before then showed in full. Schema 27 sets it to 1, once, for each destination at 0 whose city has a suggestion's shape: three parts ending in a country's full name, such as `Vienna, State of Vienna, Austria`. Text typed in that shape is recorded too, including any typed at schema 26, such as `Tokyo, Kyoto, Japan`; a country code is not a full name, so `Chicago, Cook County, IL` stays as typed. It runs when upgrading a schema 26 database, or one that schema 26 starts recording in the same upgrade. Nothing else changes, and a replay keeps saved records.
 
 Restoring the pre-upgrade backup to run a schema 26 build again shows those cities in full again.

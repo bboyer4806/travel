@@ -162,7 +162,7 @@ const SAVED_CITIES = [
   { city: "Chicago, Cook County, IL", recorded: false, shown: "Chicago, Cook County, IL" },
 ];
 for (const version of [26, 25, 24]) {
-  test(`upgrading from schema ${version} records each saved city in a suggestion's shape, and a replay keeps later records`, (t) => {
+  test(`upgrading from schema ${version} records each saved city in a suggestion's shape, and a replay keeps later records (TRA-129)`, (t) => {
     const path = fileDatabase(t);
     let store = createOwnedStore(path);
     try {

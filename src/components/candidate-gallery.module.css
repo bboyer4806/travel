@@ -70,7 +70,18 @@
 .optional { color: var(--muted); font-weight: 400; }
 .hint { margin: 0 0 12px; color: var(--muted); font-size: 11px; line-height: 1.55; }
 .editGrid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; margin-bottom: 14px; }
-.editPhoto { min-width: 0; padding: 8px; border: 1px solid var(--line); border-radius: 8px; }
+.editPhoto { position: relative; min-width: 0; padding: 8px; border: 1px solid var(--line); border-radius: 8px; }
+/* TRA-126: with a mouse or trackpad, a photo is dragged by its picture onto another photo, whose place it takes. */
+.preview[draggable="true"] { cursor: grab; }
+/* Drags start from the frame, so browsers never drag the image itself out as a file. */
+.preview[draggable="true"] .image { pointer-events: none; }
+/* The photo being dragged stays in place, outlined. It isn't faded: the drag image, taken as the drag starts, would fade too. */
+.editPhoto[data-drag="dragged"] { border-style: dashed; border-color: var(--green); background: var(--wash); }
+/* Where the dragged photo goes: a bar on the side of the photo under the pointer, before or after it. */
+.editPhoto[data-drag="before"]::before,
+.editPhoto[data-drag="after"]::before { content: ""; position: absolute; top: 6px; bottom: 6px; width: 4px; border-radius: 2px; background: var(--green); }
+.editPhoto[data-drag="before"]::before { left: -3px; }
+.editPhoto[data-drag="after"]::before { right: -3px; }
 .filename { margin: 8px 0 3px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--muted); font-size: 11px; }
 .photoActions { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 0 8px; }
 .mainChoice { display: inline-flex; align-items: center; gap: 6px; min-height: 36px; color: var(--green); font-size: 11px; cursor: pointer; }

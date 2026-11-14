@@ -2,7 +2,8 @@
 
 import { useRef } from "react";
 import { Church as ChurchIcon, ExternalLink, MapPin, Pencil, Plus, Trash2 } from "lucide-react";
-import { CandidateGallery, CandidateGalleryEditor, type CandidateGalleryDraft } from "./candidate-gallery";
+import type { GalleryDraft } from "@/lib/gallery-draft";
+import { CandidateGallery, CandidateGalleryEditor } from "./candidate-gallery";
 import { useFocusAfter } from "./focus-after";
 import type { Church, MassTime } from "@/lib/types";
 import { randomUuid } from "@/lib/uuid";
@@ -35,7 +36,7 @@ export function ChurchOptions({ items, busy, onAdd, onEdit, onDelete }: {
 
 export function ChurchEditor({ item, massTimes, onTimesChange, gallery, onGalleryChange, busy }: {
   item?: Church; massTimes: MassTime[]; onTimesChange: (times: MassTime[]) => void;
-  gallery: CandidateGalleryDraft; onGalleryChange: (draft: CandidateGalleryDraft) => void; busy: boolean;
+  gallery: GalleryDraft; onGalleryChange: (draft: GalleryDraft) => void; busy: boolean;
 }) {
   const focusAfter = useFocusAfter();
   const removeButtons = useRef(new Map<string, HTMLButtonElement>());

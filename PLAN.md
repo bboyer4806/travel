@@ -391,3 +391,10 @@ This replaces TRA-62's destination Save in a sticky header.
 - A trip card reached with the keyboard shows its focus ring just inside its edge at every screen width. Before, the card cut off all but the ring's bottom edge.
 - Destinations' search and cards share these styles and show focus the same way; before, its cards showed no ring at all.
 - Not included: other focus styles or colors, and the cards' Edit and Delete buttons, whose rings already showed.
+
+## Added scope: November 14, 2026, dragging photos into order (TRA-126)
+- From feedback: with a mouse or trackpad, people drag photos into a new order while editing the photos of a destination, hotel, activity, restaurant or church. A photo dropped on another takes its place. The photo being dragged is outlined, and a bar on one side of the photo under the pointer shows whether it goes before or after it.
+- The editor shows the new order at once, new photos not yet saved included, and saving the destination or item saves it. Cancel discards it, Undo photo changes restores the saved order, and the main or primary photo stays the same photo. Galleries show photos in their saved order everywhere.
+- Hotels, activities, restaurants and churches save photo order as destinations do: a save sends the order only when it isn't the saved order with new photos last, and an order that no longer lists every photo, because the gallery changed meanwhile, is refused. Dragging changes no photo or other detail. The destination editor keeps Move left and Move right.
+- Dragging needs a main pointer that hovers and points precisely, so phones and tablets keep their editors unchanged. ChatGPT and Claude still order only a destination's photos (TRA-122).
+- Not included: dragging on touchscreens; Move left and Move right, or other keyboard ordering, for hotel, activity, restaurant and church photos; photo editing, upload limits or storage; choosing the main photo automatically; gallery redesign; and dragging anything but photos.

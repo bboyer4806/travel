@@ -361,6 +361,19 @@ This replaces TRA-62's destination Save in a sticky header.
 - Every city saved since keeps TRA-76's rule: only one chosen from a suggestion is shown shorter.
 - Not included: checking older cities against the suggestion provider, and departing or return cities, which already show as saved.
 
+## Added scope: November 14, 2026, destination photo arrows (TRA-123)
+- From feedback: a destination gallery with two or more photos has Previous and Next arrows on the left and right edges of its main photo, so people browse its photos without choosing each thumbnail. They follow the saved order and loop, from the last photo to the first and the first to the last.
+- With a mouse, the arrows appear while the pointer is over the main photo or either arrow has keyboard focus; on touchscreens they always show. They are buttons named Previous photo and Next photo of the destination, at least 44 × 44 CSS pixels, with a visible focus ring, clear of the counter and Primary photo badge.
+- The counter, selected thumbnail and Primary photo badge follow the photo shown, and thumbnails still choose any photo. Browsing saves nothing: photo order, the primary photo and the destination are unchanged.
+- Not included: uploading, deleting or reordering photos or choosing the primary photo; slideshows or timed transitions; zoom, fullscreen viewing or image editing; arrows for hotel, activity, restaurant or church galleries; and redesigning the thumbnails or destination page.
+
+## Added scope: November 14, 2026, proposal review on phones (TRA-121)
+- In windows up to 640 pixels wide, such as phones, a proposal's page shows each changed field stacked: its name, then its Before and After values, each labeled beside it, in place of the Field, Before and After columns. Wider windows, including a phone held sideways past 640 pixels, keep the columns as before.
+- Every change, record, field value, photo and notice shows in full from 320 pixels wide without scrolling sideways, in every state: waiting, approved, rejected, failed and expired. Long text, links and values of several lines wrap, and photos shrink to fit, keeping their shape.
+- **Approve every change** and **Reject** are at least 44 pixels tall at every width, and on phones the page ends with room for Send feedback, so at the end of the page they sit above it instead of under it.
+- Screen readers read each stacked value with its Before or After label; wider windows' tables keep their column headings and read as before.
+- Not included: changes to what proposals hold, how they are proposed, approved, rejected or expire, who can see or decide them, the AI assistants and connection pages, the site header, or the wider layout beyond the buttons' height.
+
 ## Added scope: November 14, 2026, failing a deploy whose database can't open (TRA-78)
 - The container checks its storage and sign-in settings, then opens the database and runs any schema upgrade before its server starts. A database the release can't open or upgrade, such as one with a newer schema after rolling back to an older image, unexpected non-USD amounts, or an upgrade that fails, stops the container with the store's error, and a release without its settings never upgrades the database. The server still opens the database when a request first needs it.
 - `app.json` gives Dokku a startup health check on `/api/health`, read from the image's working directory, so Dokku switches traffic only to a release that answers it and otherwise keeps the running release.

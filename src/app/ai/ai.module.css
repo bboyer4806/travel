@@ -26,10 +26,21 @@
 .fields { width: 100%; margin-top: 8px; border-collapse: collapse; font-size: 12px; table-layout: fixed; }
 .fields th, .fields td { padding: 6px 8px; border-top: 1px solid var(--line); text-align: left; vertical-align: top; overflow-wrap: anywhere; white-space: pre-wrap; }
 .fields thead th { color: var(--muted); font-weight: 600; }
+.cellLabel { display: none; color: var(--muted); font-weight: 600; }
 .none { color: var(--muted); font-style: italic; }
 .decision { margin-top: 24px; }
+/* TRA-121: touch targets at least 44px tall at every width, since a phone held sideways gets the full layout. */
+.decision button { min-height: 44px; }
 .actions { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 12px; }
 @media (max-width: 640px) {
   .item { align-items: flex-start; flex-direction: column; }
-  .fields { table-layout: auto; }
+  /* TRA-121: each field stacks, its name above its Before and After values, each labeled beside it, in place of the columns. */
+  .fields, .fields tbody, .fields tr, .fields th { display: block; }
+  .fields thead { display: none; }
+  .fields tr { padding: 6px 0; border-top: 1px solid var(--line); }
+  .fields th, .fields td { padding: 2px 0; border-top: 0; }
+  .fields td { display: grid; grid-template-columns: 4em minmax(0, 1fr); gap: 8px; }
+  .cellLabel { display: block; }
+  /* Send feedback is 43px tall and 12px from the bottom on phones, so the buttons stop above it at the end of the page. */
+  .decision { margin-bottom: 24px; }
 }

@@ -360,3 +360,10 @@ This replaces TRA-62's destination Save in a sticky header.
 - Text typed in that shape before then is recorded too: `Tokyo, Kyoto, Japan` shows as `Tokyo, Japan`. A country code is not a full name, so `Chicago, Cook County, IL` still shows as typed. Saving a recorded city unchanged keeps its record; changing its text saves it as typed.
 - Every city saved since keeps TRA-76's rule: only one chosen from a suggestion is shown shorter.
 - Not included: checking older cities against the suggestion provider, and departing or return cities, which already show as saved.
+
+## Added scope: November 14, 2026, confirmations on phones (TRA-32)
+- Confirmations, such as deleting a trip or an idea, removing a destination from a trip, and clearing entry requirements, health and safety, or a travel plan, open centered on the screen over a darker backdrop and clear of **Send feedback**, in portrait and landscape and at every screen size.
+- Their title and message wrap without scrolling sideways at widths down to 320 pixels. When they don't fit, as on a phone turned sideways, they scroll together while **Cancel** and the confirming button stay in view at the bottom.
+- Cancel and the confirming button are at least 44 by 44 pixels, and on phones they share the width so a long label such as **Clear entry requirements** wraps instead of running past the edge. Confirming buttons keep their specific labels: **Delete**, **Remove from trip**, **Clear travel plan**, **Clear entry requirements**, and **Clear health and safety**.
+- Opening a confirmation moves focus into it, focus stays in it, and the page behind can't be used until it closes. Cancel, the X, and Escape close it without changing anything and return focus to the control that opened it, when that control still exists.
+- Not included: which actions ask for confirmation, their messages, what deleting, removing, or clearing does, editors, and the Send feedback dialog.

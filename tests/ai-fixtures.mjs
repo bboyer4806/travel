@@ -23,7 +23,8 @@ export function connectClaude(store, now = NOW) {
 
 /**
  * A store with the designated owner, a guest with a trip of its own that nobody shares, the owner's own trip, and a
- * Claude connection the owner allowed. `propose` proposes as that connection and `decide` decides as the owner.
+ * Claude connection the owner allowed. `propose` proposes as that connection, with the photos its changes add as Travel
+ * prepared them, by their IDs (TRA-122), and `decide` decides as the owner.
  */
 export function aiSetup(t, path = ":memory:") {
   const store = createStore(path, OWNER);
@@ -34,7 +35,7 @@ export function aiSetup(t, path = ":memory:") {
   const connection = store.readAiConnection(tokens.accessToken, NOW);
   const guestTrip = store.applyMutation(guest, tripInput({ name: "Guest trip", homeCity: "Denver" })).id;
   const ownerTrip = store.applyMutation(owner, tripInput({ name: "Owner trip" })).id;
-  const propose = (changes, summary = "Plan the trips", now = NOW) => store.proposeAiChanges(connection.id, { summary, changes }, now);
+  const propose = (changes, summary = "Plan the trips", now = NOW, photos = new Map()) => store.proposeAiChanges(connection.id, { summary, changes }, photos, now);
   const decide = (proposal, approve, now = NOW + 1000) => store.decideAiProposal(owner, proposal.id, proposal.digest, approve, now);
   return { store, owner, guest, connection, clientId, tokens, guestTrip, ownerTrip, propose, decide };
 }

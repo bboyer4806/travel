@@ -72,7 +72,12 @@ export type Mutation =
  | { type: "candidate.move"; id: string; direction: "up" | "down" }
  | { type: "candidate.mustDo"; id: string; mustDo: boolean }
  | { type: "candidate.delete"; id: string }
- | { type: "candidate.include"; id: string; included: boolean };
+ | { type: "candidate.include"; id: string; included: boolean }
+ // Change a destination's, idea's or church's photos, and nothing else, with the photos Travel downloaded and prepared
+ // for a ChatGPT or Claude proposal (TRA-122). Only those proposals make them; people change photos with each item's save.
+ | { type: "destination.photos"; id: string; gallery: DestinationGalleryUpdate }
+ | { type: "candidate.photos"; id: string; gallery: CandidateGalleryUpdate }
+ | { type: "church.photos"; id: string; gallery: CandidateGalleryUpdate };
 export type ActionResult = { ok: true; id?: string } | { ok: false; error: string };
 /** An email authorized to use Travel. Its Google subject is bound privately at the first sign-in. */
 export interface AuthorizedAccount { id: string; email: string; name: string | null; }
@@ -91,4 +96,6 @@ export interface AiConnection { id: string; platform: AiPlatform; connectedAt: n
  * proposal's exact contents, which a decision must name. Times are milliseconds since the epoch.
  */
 export interface AiProposal { id: string; platform: AiPlatform; summary: string; preview: PreviewChange[]; status: "pending" | "applied" | "rejected" | "failed" | "expired"; createdAt: number; expiresAt: number; decidedAt: number | null; error: string | null; digest: string; }
+/** A photo a ChatGPT or Claude proposal adds, before Travel downloads it (TRA-122): its change's place in the proposal, from 1, its new ID, and its address. */
+export interface AiPhotoToAdd { change: number; id: string; url: string; }
 export interface Budget { shoppingByCurrency: Record<string, number>; travelMissingCount: number; foodByCurrency: Record<string, number>; foodMissingCount: number; activitiesByCurrency: Record<string, number>; activitiesMissingCount: number; hotelsByCurrency: Record<string, number>; hotelMissingCount: number; totalsByCurrency: Record<string, number>; miscellaneousByCurrency: Record<string, number>; miscMissingCount: number; homeCents: number; travelCents: number; knownCount: number; missingCount: number; complete: boolean; }

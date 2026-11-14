@@ -164,7 +164,7 @@ test("a proposal can add items and change them in the same batch, and refuses wh
   const refusals = [
     [[{ type: "trip.save", id: ownerTrip, create: true, name: "Overwrite", dateLabel: "", homeCity: "", travelers: 1, notes: "" }], /^Change 1: This id is already a saved item's/],
     [[{ type: "trip.tag", tripId: randomUUID(), name: "Nowhere" }], /^Change 1: This item doesn't exist/],
-    [[{ type: "destination.save", id: randomUUID(), image: null }], /^Change 1: Photos can only be added, removed and arranged in Travel itself/],
+    [[{ type: "destination.save", id: randomUUID(), image: null }], /^Change 1: Change photos with destination.photos, candidate.photos or church.photos/],
     [[{ type: "trip.save", name: "No id", dateLabel: "", homeCity: "", travelers: 1, notes: "" }], /^Change 1: Give the id/],
     [[{ type: "stop.add", tripId: ownerTrip, city: "Rome" }, { type: "trip.save", ...newItem(), name: "", dateLabel: "", homeCity: "", travelers: 1, notes: "" }], /^Change 2: Please enter name/],
     [[{ type: "sql.run", sql: "DROP TABLE trips" }], /^Change 1: This action is not supported/],
@@ -232,7 +232,7 @@ test("every column of Travel's data has a preview label, and every other table i
   const db = new DatabaseSync(path, { readOnly: true });
   t.after(() => db.close());
   const tables = db.prepare("SELECT name FROM sqlite_master WHERE type = 'table' ORDER BY name").all().map((row) => row.name);
-  assert.deepEqual(tables.filter((table) => !DATA_TABLES.includes(table)), ["ai_authorization_codes", "ai_clients", "ai_connections", "ai_proposals", "sessions"], "every other table is Travel's data, listed for previews");
+  assert.deepEqual(tables.filter((table) => !DATA_TABLES.includes(table)), ["ai_authorization_codes", "ai_clients", "ai_connections", "ai_proposal_photos", "ai_proposals", "sessions"], "every other table is Travel's data, listed for previews");
   for (const table of DATA_TABLES) {
     const columns = db.prepare(`PRAGMA table_info(${table})`).all().map((row) => row.name).filter((column) => !UNREAD_COLUMNS[table].includes(column));
     assert.deepEqual(columns.toSorted(), Object.keys(PREVIEW_COLUMNS[table]).toSorted(), `${table} columns each have a preview label or are hidden`);

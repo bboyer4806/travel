@@ -1,4 +1,4 @@
-// Production HTTP regressions for TRA-73, TRA-75, TRA-94 and TRA-115. Run after pnpm build with Node 24.
+// Production HTTP regressions for TRA-73, TRA-75, TRA-94, TRA-115 and TRA-122. Run after pnpm build with Node 24.
 // All writes and failure injection use a new, isolated database under test-results.
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
@@ -9,6 +9,8 @@ import { createServer } from "node:net";
 import { resolve, join, relative } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { setTimeout as delay } from "node:timers/promises";
+import sharp from "sharp";
+import { prepareImage } from "../src/lib/image-upload.ts";
 import { createStore } from "../src/lib/store.ts";
 import { sessionCookieName } from "../src/lib/session-cookie.ts";
 
@@ -33,6 +35,12 @@ const cookie = `${sessionCookieName(false)}=${store.createSession(owner.id, Date
 const tripInput = { type: "trip.save", name: "Review smoke trip", dateLabel: "", homeCity: "Test", travelers: 2, notes: "" };
 // A new item carries the ID its editor gives it.
 const newItem = () => ({ id: randomUUID(), create: true });
+/** A photo as Travel prepares an upload, or a photo it downloads for a proposal (TRA-122). */
+async function preparedPhoto(color) {
+  const form = new FormData();
+  form.set("image", new File([await sharp({ create: { width: 48, height: 32, channels: 3, background: color } }).png().toBuffer()], "photo.png", { type: "image/png" }));
+  return prepareImage(form);
+}
 const tripId = store.applyMutation(owner.id, { ...tripInput, ...newItem() }).id;
 // A city added to a trip is a new destination whose first stop shares its ID.
 const destinationId = store.applyMutation(owner.id, { type: "stop.add", tripId, city: "Vienna" }).id;
@@ -174,6 +182,10 @@ for (const [label, firstPath] of [
   assert.equal(seed.authorizeGoogleSignIn({ subject: "review-smoke-guest", email: "guest@example.test", emailVerified: true, name: "Smoke Guest" })?.id, guest.id);
   const guestCookie = `${sessionCookieName(false)}=${seed.createSession(guest.id, Date.now())}`;
   const guestTripId = seed.applyMutation(guest.id, { ...tripInput, ...newItem(), name: "Guest smoke trip" }).id;
+  // TRA-122: the guest's destination with two photos, the first of them primary.
+  const bergenId = seed.applyMutation(guest.id, { type: "stop.add", tripId: guestTripId, city: "Bergen" }).id;
+  const [firstPhoto, secondPhoto] = [randomUUID(), randomUUID()];
+  seed.applyMutation(guest.id, { type: "destination.save", id: bergenId, gallery: { add: [{ id: firstPhoto, data: await preparedPhoto("#285f56") }, { id: secondPhoto, data: await preparedPhoto("#c46b2d") }], remove: [], mainImageId: firstPhoto } });
   seed.close();
   const aiActions = Object.fromEntries(Object.entries(manifest.node ?? {}).filter(([, action]) => action.filename === "src/app/ai/actions.ts").map(([id, action]) => [action.exportedName, id]));
   assert.deepEqual(Object.keys(aiActions).sort(), ["answerAiConnection", "decideProposal", "revokeConnection"]);
@@ -249,8 +261,57 @@ for (const [label, firstPath] of [
       assert.match(overview, /AI assistants/);
       assert.match(overview, /Rename the guest(&#x27;|')s trip/);
       assert.equal((await server.request("/ai", { headers: { Cookie: guestCookie } })).status, 404, "only the owner manages AI assistants");
-      // Revoking ends the connection at once.
       const connectionId = check.prepare("SELECT id FROM ai_connections").get().id;
+
+      // TRA-122: through the production MCP endpoint, Travel refuses to download a proposed photo from a private address,
+      // given by IP address or by name, and records nothing.
+      for (const url of ["https://127.0.0.1/smoke.jpg", "https://localhost/smoke.jpg"]) {
+        const refused = await mcp("tools/call", { name: "propose_changes", arguments: { summary: "Add a photo", changes: [{ type: "destination.photos", id: bergenId, gallery: { add: [{ id: randomUUID(), url }], remove: [] } }] } });
+        assert.deepEqual(refused, { content: [{ type: "text", text: `Change 1: ${url}: Travel doesn't download photos from private, loopback or link-local addresses.` }], isError: true });
+      }
+      // A proposal adding a photo Travel downloaded and prepared, removing a saved one and choosing the new one as
+      // primary. No public image server is reachable here, so it is proposed through the store with the prepared photo.
+      const addedPhoto = randomUUID();
+      const addedData = await preparedPhoto("#3b4f8a");
+      const writer = createStore(database, ownerEmail);
+      let photoProposal;
+      try {
+        photoProposal = writer.proposeAiChanges(connectionId, { summary: "Add a photo of Bergen", changes: [{ type: "destination.photos", id: bergenId, gallery: { add: [{ id: addedPhoto, url: "https://images.example.com/bergen.jpg" }], remove: [secondPhoto], mainImageId: addedPhoto } }] }, new Map([[addedPhoto, addedData]]), Date.now());
+      } finally {
+        writer.close();
+      }
+      // The owner sees each photo it adds, changes and deletes beside its record; nobody else sees any of them.
+      const photoPath = `/ai/proposals/${photoProposal.id}`;
+      const photoPage = await (await server.request(photoPath)).text();
+      const photoRoute = (photoId) => `/api/ai-proposal-images/${photoProposal.id}/${photoId}`;
+      for (const photoId of [addedPhoto, firstPhoto, secondPhoto]) assert.ok(photoPage.includes(`src="${photoRoute(photoId)}"`), `the proposal's page shows ${photoId}`);
+      const shown = await server.request(photoRoute(addedPhoto));
+      assert.deepEqual([shown.status, shown.headers.get("content-type")], [200, "image/webp"]);
+      assert.deepEqual(new Uint8Array(await shown.arrayBuffer()), addedData, "the photo shown is the one approving saves");
+      assert.equal((await server.request(photoRoute(secondPhoto))).status, 200, "the owner sees the saved photo it deletes");
+      assert.equal((await server.request(photoRoute(addedPhoto), { headers: { Cookie: guestCookie } })).status, 404, "nobody else sees a proposal's photos");
+      assert.equal((await server.request(photoRoute(addedPhoto), { headers: { Cookie: "" } })).status, 401);
+      assert.equal((await server.request(photoRoute(randomUUID()))).status, 404, "nor a photo it doesn't change");
+      assert.deepEqual(check.prepare("SELECT id FROM destination_images WHERE destinationId = ? ORDER BY position").all(bergenId).map((row) => row.id), [firstPhoto, secondPhoto], "nothing changes before approval");
+      // Approving saves exactly what was shown, and keeps no copy of the photo with the proposal.
+      const photoDecision = { proposalId: photoProposal.id, digest: photoPage.match(/name="digest" value="([^"]+)"/)[1], decision: "approve" };
+      assert.equal((await formAction(photoPath, "decideProposal", [null, "$K1"], photoDecision)).status, 200);
+      assert.deepEqual(check.prepare("SELECT id, isMain FROM destination_images WHERE destinationId = ? ORDER BY position").all(bergenId).map((row) => [row.id, row.isMain]), [[firstPhoto, 0], [addedPhoto, 1]]);
+      assert.deepEqual(new Uint8Array(check.prepare("SELECT data FROM destination_images WHERE id = ?").get(addedPhoto).data), addedData);
+      assert.equal(check.prepare("SELECT count(*) AS count FROM ai_proposal_photos").get().count, 0, "an approved proposal keeps no photos of its own");
+      assert.equal((await server.request(photoRoute(addedPhoto))).status, 404, "a decided proposal shows no photos");
+      assert.equal(JSON.parse((await mcp("tools/call", { name: "get_change_proposal", arguments: { proposal_id: photoProposal.id } })).content[0].text).status, "applied");
+      // Claude proposes choosing the primary photo through MCP, which downloads nothing, and the owner rejects it.
+      const primary = JSON.parse((await mcp("tools/call", { name: "propose_changes", arguments: { summary: "Show the first photo first", changes: [{ type: "destination.photos", id: bergenId, gallery: { add: [], remove: [], mainImageId: firstPhoto } }] } })).content[0].text);
+      assert.equal(primary.status, "pending");
+      const primaryPath = `/ai/proposals/${primary.proposal_id}`;
+      const primaryDigest = (await (await server.request(primaryPath)).text()).match(/name="digest" value="([^"]+)"/)[1];
+      assert.equal((await formAction(primaryPath, "decideProposal", [null, "$K1"], { proposalId: primary.proposal_id, digest: primaryDigest, decision: "reject" })).status, 200);
+      assert.equal(JSON.parse((await mcp("tools/call", { name: "get_change_proposal", arguments: { proposal_id: primary.proposal_id } })).content[0].text).status, "rejected");
+      assert.equal(check.prepare("SELECT id FROM destination_images WHERE destinationId = ? AND isMain = 1").get(bergenId).id, addedPhoto, "rejecting changes no photo");
+      console.log("Passed TRA-122: private photo addresses refused through MCP, owner-only proposal photos, photo approval and rejection.");
+
+      // Revoking ends the connection at once.
       await formAction("/ai", "revokeConnection", ["$K1"], { connectionId });
       assert.equal(check.prepare("SELECT count(*) AS count FROM ai_connections").get().count, 0);
     } finally {

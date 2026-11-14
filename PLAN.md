@@ -317,3 +317,8 @@ This replaces TRA-62's destination Save in a sticky header.
 - The Estimated price field in the At home editor has no increment and decrement arrows, when adding an item or editing one. People type the price, with cents if needed, such as 12.50, and change or clear it as before.
 - Only the arrows go: the field keeps its validation, from $0 to $100,000,000 in whole cents, the Up and Down keys still step it, and saving and saved prices are unchanged.
 - Not included: other price fields, including connections (TRA-49), changes to validation, precision, stored data or budget totals, and other changes to the At home editor.
+
+## Added scope: November 14, 2026, connection price without arrows (TRA-49)
+- The Estimated price field in Plan this connection has no increment and decrement arrows. That one editor fills in a new connection and changes a planned one, since the route adds connections itself. People type the price, with cents if needed, such as 12.50, and change or clear it as before.
+- Only the arrows go, with TRA-46's class: the field keeps its validation, from $0 to $100,000,000 in whole cents, the Up and Down keys still step it, and saving and saved prices are unchanged.
+- Not included: other price fields, changes to validation, precision, stored data or budget totals, and other changes to the connection editor.

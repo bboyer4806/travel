@@ -512,7 +512,7 @@ export default function PlannerApp({ initialData, initialBudgets, access = {}, d
       {editor.kind === "leg" && <>
         <p className="form-route wide">{legName(editor.item.fromId, "from")} <ArrowRight size={16} /> {legName(editor.item.toId, "to")}</p>
         <Field label="Transportation" wide><input name="method" defaultValue={editor.item.method} maxLength={120} placeholder="Flight, train, rental car…" /></Field>
-        <Field label="Estimated price (USD)" wide hint="Total for the whole party for the full connection, including itinerary stops. Leave blank if unknown."><input name="price" type="number" min="0" max={MAX_AMOUNT_DOLLARS} step="0.01" defaultValue={minorAmountValue(editor.item.priceCents, "USD")} placeholder="Not estimated" /></Field>
+        <Field label="Estimated price (USD)" wide hint="Total for the whole party for the full connection, including itinerary stops. Leave blank if unknown."><input name="price" type="number" className="no-spin-buttons" min="0" max={MAX_AMOUNT_DOLLARS} step="0.01" defaultValue={minorAmountValue(editor.item.priceCents, "USD")} placeholder="Not estimated" /></Field>
         <Field label="Departure"><input name="departure" defaultValue={editor.item.departure} maxLength={120} placeholder="Date, time, or general plan" /></Field>
         <Field label="Arrival"><input name="arrival" defaultValue={editor.item.arrival} maxLength={120} placeholder="Date, time, or general plan" /></Field>
         <ResearchLinksEditor links={researchLinks} onChange={setResearchLinks} disabled={busy} /><Notes value={editor.item.notes} />

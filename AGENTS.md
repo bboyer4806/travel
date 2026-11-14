@@ -35,8 +35,9 @@ is no stand-in for Google. Never commit or log their values.
 Use targeted checks while iterating. Before pushing, run the checks from
 `.github/workflows/check.yml`: `pnpm lint`, `pnpm typecheck`, `pnpm test` and `pnpm build`.
 CI also runs `bash scripts/smoke-container.sh`, which needs Docker and Bash and checks the
-container, persistent storage, sign-in enforcement, trip and destination isolation, and AI access
-limits. A Next.js build alone does not verify those.
+container, persistent storage, sign-in enforcement, refusing a database it can't open, the health
+check Dokku runs, trip and destination isolation, and AI access limits. A Next.js build alone does
+not verify those.
 After building, CI runs `node scripts/review-errors-smoke.mjs` against disposable databases and
 fixture sessions to check production HTTP errors, recovery, cross-bundle save validation,
 connecting Claude through OAuth, MCP and the owner's Server Actions, and proposing, showing,
@@ -48,9 +49,10 @@ Repeat passing checks when subsequent changes affect their coverage or required 
 
 - Signing in follows Budget and Meals. `src/lib/google.ts` is the hand-written Google code flow,
   `src/auth.ts` the session checks, and `src/instrumentation.ts` refuses to start without the
-  settings. Every page and its `generateMetadata` call `requireAccount()` first; every Server Action
-  and route handler checks `currentAccount()` before using input. `src/proxy.ts` only checks that a
-  session cookie exists, so it protects nothing on its own. Only `/login`, `/auth/google/*` and
+  settings, through `requireServerSettings` in `src/lib/server-settings.ts`. Every page and its
+  `generateMetadata` call `requireAccount()` first; every Server Action and route handler checks
+  `currentAccount()` before using input. `src/proxy.ts` only checks that a session cookie exists,
+  so it protects nothing on its own. Only `/login`, `/auth/google/*` and
   `/api/health` are public, with what ChatGPT and Claude need to connect: OAuth metadata under
   `/.well-known` and `/api/oauth/register` and `/api/oauth/token`. `/api/mcp` takes only an AI
   connection's access token. Only the Google callback route may start a session, never an action.
@@ -155,9 +157,11 @@ schema and add a note for the new version, with only what its rollback adds to t
   `aiSetup` from `tests/ai-fixtures.mjs`: an owner, a guest with an unshared trip, and a Claude connection,
   whose `propose` takes the photos a proposal adds as Travel prepared them. Downloads are tested with a
   stand-in `PhotoFetch`, never a real website.
-- Node runs that TypeScript by stripping types, without path aliases. Code in `src/lib` uses
-  relative imports for values (type-only `@/` imports are fine) and only erasable TypeScript: no
-  enums or parameter properties. Passing type checks alone does not verify these runtime rules.
+- Node runs that TypeScript by stripping types, without path aliases, as does the container's
+  `scripts/start.mjs`, which checks the settings and opens and upgrades the database from `src/lib`
+  before the server starts (TRA-78). Code in `src/lib` uses relative imports for values (type-only
+  `@/` imports are fine) and only erasable TypeScript: no enums or parameter properties. Passing
+  type checks alone does not verify these runtime rules.
 
 ## Workflow
 

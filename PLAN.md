@@ -381,6 +381,17 @@ This replaces TRA-62's destination Save in a sticky header.
 - Opening a confirmation moves focus into it, focus stays in it, and the page behind can't be used until it closes. Cancel, the X, and Escape close it without changing anything and return focus to the control that opened it, when that control still exists.
 - Not included: which actions ask for confirmation, their messages, what deleting, removing, or clearing does, editors, and the Send feedback dialog.
 
+## Added scope: November 14, 2026, failing a deploy whose database can't open (TRA-78)
+- The container checks its storage and sign-in settings, then opens the database and runs any schema upgrade before its server starts. A database the release can't open or upgrade, such as one with a newer schema after rolling back to an older image, unexpected non-USD amounts, or an upgrade that fails, stops the container with the store's error, and a release without its settings never upgrades the database. The server still opens the database when a request first needs it.
+- `app.json` gives Dokku a startup health check on `/api/health`, read from the image's working directory, so Dokku switches traffic only to a release that answers it and otherwise keeps the running release.
+- Not included: opening the database at startup in `pnpm dev` or the standalone preview, readiness or liveness checks, changes to the deploy workflow, such as failing a re-run of a failed deploy, and checks for images built before this change.
+
+## Added scope: November 14, 2026, visible focus on the trip search and cards (TRA-87)
+- Home's trip search shows the same focus outline as every other text field while it has focus. Before, only the caret showed it was focused.
+- A trip card reached with the keyboard shows its focus ring just inside its edge at every screen width. Before, the card cut off all but the ring's bottom edge.
+- Destinations' search and cards share these styles and show focus the same way; before, its cards showed no ring at all.
+- Not included: other focus styles or colors, and the cards' Edit and Delete buttons, whose rings already showed.
+
 ## Added scope: November 14, 2026, restaurant types (TRA-36)
 - Each restaurant can have any of five types, Breakfast, Lunch, Dinner, Snack and Drinks, to show which meals and visits it suits. Its editor has an independent checkbox for each, so any combination can be chosen, such as Lunch and Drinks, or none. Editing shows the saved types checked, to add, change or clear them all.
 - A restaurant's types show as labeled tags, always in that order, on its card in the destination's Restaurants carousel, on the Restaurants page, and in its details. A restaurant without types shows no tags or placeholder. Checkboxes and tags wrap to fit phones, where each checkbox is at least 44 pixels tall.

@@ -1,5 +1,4 @@
 import { ArrowDown, ArrowUp, Check, MapPin, Pencil, Plus, Star, Trash2 } from "lucide-react";
-import { useEffect, useRef } from "react";
 import { CandidateGallery } from "./candidate-gallery";
 import { ResearchLinks } from "./research-links";
 import { formatCurrency } from "@/lib/money";
@@ -14,24 +13,9 @@ export default function CandidateList({ items, category, destination, busy, onEd
   busy: boolean;
   onEdit: (item?: Candidate) => void;
   onDelete: (item: Candidate) => void;
-  onMutate: (mutation: Mutation, message: string) => void;
+  /** Saves a change made from `control`, which takes focus again once the page shows it, or at a list end the card's other direction. */
+  onMutate: (mutation: Mutation, message: string, control: HTMLButtonElement) => void;
 }) {
-  const focusAfterSave = useRef<HTMLButtonElement | null>(null);
-  useEffect(() => {
-    if (busy || !focusAfterSave.current) return;
-    const button = focusAfterSave.current;
-    focusAfterSave.current = null;
-    // Pending controls are disabled. Restore keyboard focus when saving ends;
-    // at a list boundary, use the remaining available direction in this card.
-    const target = button.disabled
-      ? button.parentElement?.querySelector<HTMLButtonElement>("button:not(:disabled)")
-      : button;
-    target?.focus({ preventScroll: true });
-  }, [busy]);
-  function change(mutation: Mutation, message: string, button: HTMLButtonElement) {
-    focusAfterSave.current = button;
-    onMutate(mutation, message);
-  }
   const inactiveItemized = (category === "activities" && destination.activitiesBudgetMode === "general")
     || (category === "restaurants" && destination.foodBudgetMode === "daily");
 
@@ -51,7 +35,7 @@ export default function CandidateList({ items, category, destination, busy, onEd
         <h2>{item.name}</h2>
         {category !== "hotels" && <button className={item.mustDo ? "button selected-button small must-do" : "button secondary small must-do"}
           disabled={busy} aria-pressed={item.mustDo} aria-label={"Must do: " + item.name}
-          onClick={(event) => change({ type: "candidate.mustDo", id: item.id, mustDo: !item.mustDo }, item.mustDo ? "Must do removed." : "Marked as must do.", event.currentTarget)}>
+          onClick={(event) => onMutate({ type: "candidate.mustDo", id: item.id, mustDo: !item.mustDo }, item.mustDo ? "Must do removed." : "Marked as must do.", event.currentTarget)}>
           <Star size={15} fill={item.mustDo ? "currentColor" : "none"} />{item.mustDo ? "Must do" : "Mark as must do"}
         </button>}
         {item.address && <p className="idea-address"><MapPin size={15} />{item.address}</p>}
@@ -61,16 +45,16 @@ export default function CandidateList({ items, category, destination, busy, onEd
           <div><span className={item.priceCents === null ? "idea-price unknown" : "idea-price"}>{item.priceCents === null ? "Not estimated" : formatCurrency(item.priceCents, "USD")}</span>
             <small>{category === "hotels" ? "entire stay · whole party" : category === "restaurants" ? "one meal · whole party" : "whole party"}</small></div>
           <button className={item.included ? "button selected-button small" : "button secondary small"} disabled={busy} aria-pressed={item.included}
-            onClick={(event) => change({ type: "candidate.include", id: item.id, included: !item.included }, "Budget selection saved.", event.currentTarget)}>
+            onClick={(event) => onMutate({ type: "candidate.include", id: item.id, included: !item.included }, "Budget selection saved.", event.currentTarget)}>
             {item.included ? <><Check size={15} />{inactiveItemized ? "Included for itemized" : "Included"}</> : category === "hotels" ? "Choose hotel" : inactiveItemized ? "Include for itemized" : "Include in budget"}
           </button>
         </div>
         <div className="idea-order" role="group" aria-label={"Order " + item.name}>
           <span>{index + 1} of {items.length}</span>
           <button className="button secondary small" disabled={busy || index === 0} aria-label={"Move " + item.name + " up"}
-            onClick={(event) => change({ type: "candidate.move", id: item.id, direction: "up" }, item.name + " moved up.", event.currentTarget)}><ArrowUp size={15} />Up</button>
+            onClick={(event) => onMutate({ type: "candidate.move", id: item.id, direction: "up" }, item.name + " moved up.", event.currentTarget)}><ArrowUp size={15} />Up</button>
           <button className="button secondary small" disabled={busy || index === items.length - 1} aria-label={"Move " + item.name + " down"}
-            onClick={(event) => change({ type: "candidate.move", id: item.id, direction: "down" }, item.name + " moved down.", event.currentTarget)}><ArrowDown size={15} />Down</button>
+            onClick={(event) => onMutate({ type: "candidate.move", id: item.id, direction: "down" }, item.name + " moved down.", event.currentTarget)}><ArrowDown size={15} />Down</button>
         </div>
       </article>)}
     </div>}

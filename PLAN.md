@@ -322,3 +322,9 @@ This replaces TRA-62's destination Save in a sticky header.
 - A save's message appears above **Send feedback** at every screen size, where the errors of changes made without an editor appear, so neither covers the other and its X closes it. Before, on phones and narrow windows, Send feedback covered the message's X and selecting it opened the feedback form.
 - The message closes itself after five seconds. Errors still stay until they are dismissed or another change starts (TRA-82).
 - Not included: changes to the messages or errors themselves, the errors' timing, or Send feedback.
+
+## Added scope: November 14, 2026, keyboard focus after changes (TRA-86)
+- Changes made without an editor return keyboard focus to the control used once the page shows the change, so Enter repeats it: destination arrows, an idea's Up, Down, Must do and budget selection, Mark complete and Reopen, and Show Church and Hide Church. A destination or idea moved to the first or last place focuses its other arrow, and Show Church and Hide Church focus the one that replaces them. A failed change leaves focus on its control, and focus the person moves elsewhere during a save stays there.
+- In editors, removing a Mass time or photo focuses the next one's Remove, or Add Mass time or Add photos after the last. Undo photo changes focuses Add photos, or the last photo's Remove when the saved photos fill the gallery. A destination photo or travel stop moved to the first or last place focuses its other move control.
+- Ideas returned focus as soon as their save ended, before the page showed the new order, so an idea moved to the first or last place could still lose focus. They now share the timing above.
+- Not included: removing a tag, added after this review, and controls that already kept focus, such as research links and adding or removing a travel stop.

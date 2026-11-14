@@ -360,3 +360,9 @@ This replaces TRA-62's destination Save in a sticky header.
 - Text typed in that shape before then is recorded too: `Tokyo, Kyoto, Japan` shows as `Tokyo, Japan`. A country code is not a full name, so `Chicago, Cook County, IL` still shows as typed. Saving a recorded city unchanged keeps its record; changing its text saves it as typed.
 - Every city saved since keeps TRA-76's rule: only one chosen from a suggestion is shown shorter.
 - Not included: checking older cities against the suggestion provider, and departing or return cities, which already show as saved.
+
+## Added scope: November 14, 2026, destination photo arrows (TRA-123)
+- From feedback: a destination gallery with two or more photos has Previous and Next arrows on the left and right edges of its main photo, so people browse its photos without choosing each thumbnail. They follow the saved order and loop, from the last photo to the first and the first to the last.
+- With a mouse, the arrows appear while the pointer is over the main photo or either arrow has keyboard focus; on touchscreens they always show. They are buttons named Previous photo and Next photo of the destination, at least 44 × 44 CSS pixels, with a visible focus ring, clear of the counter and Primary photo badge.
+- The counter, selected thumbnail and Primary photo badge follow the photo shown, and thumbnails still choose any photo. Browsing saves nothing: photo order, the primary photo and the destination are unchanged.
+- Not included: uploading, deleting or reordering photos or choosing the primary photo; slideshows or timed transitions; zoom, fullscreen viewing or image editing; arrows for hotel, activity, restaurant or church galleries; and redesigning the thumbnails or destination page.

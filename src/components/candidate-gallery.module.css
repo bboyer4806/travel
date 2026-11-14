@@ -16,6 +16,8 @@
 .hero { aspect-ratio: 16 / 7; }
 .preview { aspect-ratio: 3 / 2; }
 .image { display: block; width: 100%; height: 100%; object-fit: cover; }
+/* TRA-124: an empty main photo frame, for an activity without photos. */
+.placeholder { display: grid; place-items: center; color: #8c9b81; }
 
 .mainBadge,
 .count {

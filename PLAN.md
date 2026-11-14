@@ -405,3 +405,9 @@ This replaces TRA-62's destination Save in a sticky header.
 - Types belong to the destination's restaurant, so every trip that visits the destination shows the same ones. They are labels only: prices, budget inclusion, Must do, order and budgets are unchanged. Schema 28 starts every saved restaurant without types, and a save from a page opened before then keeps a restaurant's types.
 - ChatGPT and Claude can propose a restaurant's types, which the proposal's page shows by name. Types other than the five, a type given twice, and types for a hotel or activity are refused.
 - Not included: other or custom types, filtering or sorting by type, choosing types automatically, changes to prices or budget rules, and types for hotels, activities or churches.
+
+## Added scope: November 14, 2026, consistent activity photo sizes (TRA-124)
+- From feedback: activity photos show at one size within each list, whatever their shape. In a destination's Activities carousel, each card's photo fills the same 4:3 frame. Before, a portrait or square photo made its frame taller, and with it every card in the row.
+- On the Activities page, each activity's main photo already filled the same 16:7 frame. An activity without photos now shows the activity icon in an empty frame of that size, so its card lines up with the others.
+- Photos fill their frames without stretching, cropped to fit, and the frames keep their size while photos load and as people choose other photos. Saved photos, their order, the main photo and other details are unchanged.
+- Not included: hotel, restaurant, church and destination photos, which keep their presentation; cropping or editing photos; changes to uploads, storage or compression; and other changes to cards, galleries or carousels.

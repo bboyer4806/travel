@@ -6,7 +6,7 @@ export const releases: readonly Release[] = [{
   date: "2026-11-14",
   changes: [
     "See each destination's hotels, activities, and restaurants below its budget, on trip pages and in Destinations, as cards showing each idea's photo, name, and price, with ideas chosen for the budget first. Select a card to see its details and edit it. From each section you can also edit its budget, add an idea, or open its full page with Manage, which replaces the budget's links.",
-    "See a destination's city exactly as you typed it, such as Tokyo, Kyoto, Japan, on cards, travel connections, page titles, and in the editor. Only cities chosen from a suggestion show shorter. Those saved before this update show in full until you choose them from a suggestion again in the destination editor, which keeps their travel connections.",
+    "See a destination's city exactly as you typed it, such as Tokyo, Kyoto, Japan, on cards, travel connections, page titles, and in the editor. Only cities chosen from a suggestion show shorter. Cities saved before this update also show shorter when they read as a city, region, and country, so Vienna, State of Vienna, Austria shows as Vienna, Austria.",
     "The estimated price fields for At home items and travel connections no longer show increment and decrement arrows.",
     "See save confirmations above Send feedback, which covered them on phones, so tapping their X closes them instead of opening feedback. They also close by themselves after five seconds.",
     "Keep your place when using the keyboard. After you use Move down, Mark complete, Show Church, Remove photo, or a similar control, focus stays on it or moves to the nearest control instead of being lost, so pressing Enter twice on Move down moves a destination two places.",

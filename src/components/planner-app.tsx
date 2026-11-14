@@ -106,12 +106,14 @@ function Notes({ name = "notes", value = "" }: { name?: string; value?: string }
  * when an idea's details open its editor and saving returns to them. Editors don't use `autoFocus`: React runs it
  * before `showModal()`, while the fields can't take focus.
  * Send feedback is inside the dialog so it shows above the backdrop; opening it leaves this editor and its draft open.
+ * A confirmation (`confirm`) is centered over a darker backdrop, and its title and message scroll together above its
+ * buttons (TRA-32).
  */
-function Dialog({ title, view, children, busy, onClose }: { title: string; view: string; children: ReactNode; busy: boolean; onClose: () => void }) {
+function Dialog({ title, view, confirm, children, busy, onClose }: { title: string; view: string; confirm: boolean; children: ReactNode; busy: boolean; onClose: () => void }) {
   const ref = useRef<HTMLDialogElement>(null);
   useEffect(() => { const dialog = ref.current; const opener = document.activeElement instanceof HTMLElement ? document.activeElement : null; dialog?.showModal(); return () => { dialog?.close(); if (opener?.isConnected) opener.focus(); }; }, []);
   useEffect(() => { ref.current?.querySelector<HTMLElement>("input:not([type=hidden]), select, textarea, [data-autofocus]")?.focus(); }, [view]);
-  return <dialog ref={ref} className="editor-dialog" aria-labelledby="editor-title" onCancel={(event) => { event.preventDefault(); if (!busy) onClose(); }}>
+  return <dialog ref={ref} className={confirm ? "editor-dialog confirm-dialog" : "editor-dialog"} aria-labelledby="editor-title" onCancel={(event) => { event.preventDefault(); if (!busy) onClose(); }}>
     <div className="dialog-heading"><h2 id="editor-title">{title}</h2><button className="icon-button" aria-label="Close" onClick={onClose} disabled={busy}><X size={20} /></button></div>{children}<FeedbackButton />
   </dialog>;
 }
@@ -538,7 +540,7 @@ export default function PlannerApp({ initialData, initialBudgets, access = {}, d
       {error && !editor && <div className="toast error-toast" role="alert"><CircleAlert size={17} aria-hidden="true" />{error}<button aria-label="Dismiss error" className="icon-button" onClick={() => setError("")}><X size={14} /></button></div>}
     </main>
     <footer className="site-footer"><span><Compass size={15} />For the trips still taking shape.</span><span>Shared editing · whole-party estimates</span></footer>
-    {editor && <Dialog title={pageTitle} view={editor.kind} busy={busy} onClose={close}>{editor.kind === "ideaDetails" ? renderIdeaDetails(latest(editor.item)) : <form id="planner-editor" onSubmit={submit}><div className="form-grid dialog-body">
+    {editor && <Dialog title={pageTitle} view={editor.kind} confirm={editor.kind === "delete"} busy={busy} onClose={close}>{editor.kind === "ideaDetails" ? renderIdeaDetails(latest(editor.item)) : <form id="planner-editor" onSubmit={submit}><div className="form-grid dialog-body">
       {editor.kind === "delete" && <p className="delete-description wide">{editor.description} This cannot be undone.</p>}
       {editor.kind === "trip" && <>
         <Field label="Trip name" wide><input name="name" defaultValue={editor.item?.name} required maxLength={120} placeholder="A long weekend in the mountains" /></Field>

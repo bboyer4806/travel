@@ -317,3 +317,8 @@ This replaces TRA-62's destination Save in a sticky header.
 - The Estimated price field in the At home editor has no increment and decrement arrows, when adding an item or editing one. People type the price, with cents if needed, such as 12.50, and change or clear it as before.
 - Only the arrows go: the field keeps its validation, from $0 to $100,000,000 in whole cents, the Up and Down keys still step it, and saving and saved prices are unchanged.
 - Not included: other price fields, including connections (TRA-49), changes to validation, precision, stored data or budget totals, and other changes to the At home editor.
+
+## Added scope: November 14, 2026, save messages clear of Send feedback (TRA-84)
+- A save's message appears above **Send feedback** at every screen size, where the errors of changes made without an editor appear, so neither covers the other and its X closes it. Before, on phones and narrow windows, Send feedback covered the message's X and selecting it opened the feedback form.
+- The message closes itself after five seconds. Errors still stay until they are dismissed or another change starts (TRA-82).
+- Not included: changes to the messages or errors themselves, the errors' timing, or Send feedback.

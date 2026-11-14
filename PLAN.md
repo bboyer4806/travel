@@ -312,3 +312,8 @@ This replaces TRA-62's destination Save in a sticky header.
 - Assistants propose changes, as the planner's own changes checked by its own rules, to any trip or destination, including deleting trips and changing sharing. Nothing changes until the designated owner approves the proposal on Travel's proposal page, which lists every record each change adds, changes or deletes, before and after. Approving makes every change and records the approval in one transaction, exactly as previewed or not at all; proposals can't be altered, expire after 24 hours, and are decided once. Ordinary accounts' permissions are unchanged.
 - Owner-only pages: AI assistants (connections, with revoke, and proposals), the connection consent page and each proposal's page. Schema 24 adds the integration's own tables.
 - Not included: other assistants, development or staging integrations, photo changes through an assistant, arbitrary SQL or schema changes, returning to the consent page after signing in, and connections for anyone but the designated owner.
+
+## Added scope: November 14, 2026, At home price without arrows (TRA-46)
+- The Estimated price field in the At home editor has no increment and decrement arrows, when adding an item or editing one. People type the price, with cents if needed, such as 12.50, and change or clear it as before.
+- Only the arrows go: the field keeps its validation, from $0 to $100,000,000 in whole cents, the Up and Down keys still step it, and saving and saved prices are unchanged.
+- Not included: other price fields, including connections (TRA-49), changes to validation, precision, stored data or budget totals, and other changes to the At home editor.

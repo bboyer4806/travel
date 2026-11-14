@@ -332,7 +332,6 @@ button svg,a svg {
   background:transparent;
   font-size:12px;
   max-width:175px;
-  outline:none;
   padding:5px;
   color:var(--ink)
 }
@@ -354,7 +353,8 @@ button svg,a svg {
 }
 .trip-card-main {
   display:block;
-  padding:24px 24px 18px
+  padding:24px 24px 18px;
+  outline-offset:-4px /* The card hides what overflows it, so the focus ring is drawn inside (TRA-87). */
 }
 .trip-card-top {
   height:65px;

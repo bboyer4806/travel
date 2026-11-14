@@ -380,3 +380,9 @@ This replaces TRA-62's destination Save in a sticky header.
 - Cancel and the confirming button are at least 44 by 44 pixels, and on phones they share the width so a long label such as **Clear entry requirements** wraps instead of running past the edge. Confirming buttons keep their specific labels: **Delete**, **Remove from trip**, **Clear travel plan**, **Clear entry requirements**, and **Clear health and safety**.
 - Opening a confirmation moves focus into it, focus stays in it, and the page behind can't be used until it closes. Cancel, the X, and Escape close it without changing anything and return focus to the control that opened it, when that control still exists.
 - Not included: which actions ask for confirmation, their messages, what deleting, removing, or clearing does, editors, and the Send feedback dialog.
+
+## Added scope: November 14, 2026, visible focus on the trip search and cards (TRA-87)
+- Home's trip search shows the same focus outline as every other text field while it has focus. Before, only the caret showed it was focused.
+- A trip card reached with the keyboard shows its focus ring just inside its edge at every screen width. Before, the card cut off all but the ring's bottom edge.
+- Destinations' search and cards share these styles and show focus the same way; before, its cards showed no ring at all.
+- Not included: other focus styles or colors, and the cards' Edit and Delete buttons, whose rings already showed.

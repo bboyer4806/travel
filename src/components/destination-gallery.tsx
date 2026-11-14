@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useId, useRef, useState, type ChangeEvent } from "react";
-import { ArrowLeft, ArrowRight, Check, ImagePlus, RotateCcw, Trash2 } from "lucide-react";
+import { ArrowLeft, ArrowRight, Check, ChevronLeft, ChevronRight, ImagePlus, RotateCcw, Trash2 } from "lucide-react";
 import { formatMegabytes, IMAGE_UPLOAD_TYPES, MAX_DESTINATION_IMAGES, MAX_GALLERY_UPLOAD_BYTES, MAX_IMAGE_UPLOAD_BYTES } from "@/lib/image-limits";
 import { formatSavedDestinationLabel } from "@/lib/destination-label";
 import { createDestinationGalleryDraft, destinationGalleryChanged, moveDestinationPhoto, removeDestinationPhoto, type DestinationGalleryDraft, type DestinationGalleryOwner } from "@/lib/destination-gallery";
@@ -24,6 +24,8 @@ function GalleryView({ destination }: { destination: DestinationGalleryOwner }) 
   const [selectedId, setSelectedId] = useState(destination.mainImageId);
   const selected = destination.images.find((image) => image.id === selectedId) ?? destination.images[0];
   const index = destination.images.findIndex((image) => image.id === selected.id);
+  /** Shows the next (1) or previous (-1) photo in saved order, wrapping from the last photo to the first and the first to the last (TRA-123). */
+  const step = (offset: -1 | 1) => setSelectedId(destination.images[(index + offset + destination.images.length) % destination.images.length].id);
   return <div className={styles.gallery} role="group" aria-label={`Photos of ${formatSavedDestinationLabel(destination)}`}>
     <div className={styles.hero}>
       {/* Stored photos are resized and optimized on upload. */}
@@ -31,6 +33,10 @@ function GalleryView({ destination }: { destination: DestinationGalleryOwner }) 
       <img className={styles.image} src={photoUrl(destination.id, selected)} alt={`${formatSavedDestinationLabel(destination)}, photo ${index + 1}`} loading="lazy" decoding="async" width={1600} height={700} />
       {selected.id === destination.mainImageId && <span className={styles.mainBadge}>Primary photo</span>}
       {destination.images.length > 1 && <span className={styles.count}>{index + 1} / {destination.images.length}</span>}
+      {destination.images.length > 1 && <>
+        <button type="button" className={`${styles.arrow} ${styles.previous}`} aria-label={`Previous photo of ${formatSavedDestinationLabel(destination)}`} onClick={() => step(-1)}><ChevronLeft size={22} aria-hidden="true" /></button>
+        <button type="button" className={`${styles.arrow} ${styles.next}`} aria-label={`Next photo of ${formatSavedDestinationLabel(destination)}`} onClick={() => step(1)}><ChevronRight size={22} aria-hidden="true" /></button>
+      </>}
     </div>
     {destination.images.length > 1 && <div className={styles.thumbnails} role="group" aria-label="Choose a photo to view">
       {destination.images.map((image, photoIndex) => <button type="button" className={styles.thumbnail} key={image.id} aria-pressed={selected.id === image.id} aria-label={`View photo ${photoIndex + 1} of ${formatSavedDestinationLabel(destination)}${image.id === destination.mainImageId ? " (primary photo)" : ""}`} onClick={() => setSelectedId(image.id)}>

@@ -28,7 +28,7 @@ export function candidateGalleryForm(draft: CandidateGalleryDraft, candidate?: G
   return form;
 }
 
-function photoUrl(candidateId: string, image: { id: string; version?: string }, imageKind: ImageKind) {
+export function photoUrl(candidateId: string, image: { id: string; version?: string }, imageKind: ImageKind) {
   return `/api/${imageKind}-images/${candidateId}/${image.id}?v=${image.version}`;
 }
 

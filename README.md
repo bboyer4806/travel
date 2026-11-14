@@ -93,7 +93,7 @@ pnpm test
 pnpm build
 bash scripts/smoke-container.sh
 ```
-The container smoke script needs Docker and Bash. It builds the image and checks the container, persistent storage, sign-in enforcement, trip and destination isolation, and that only the designated owner reaches AI assistants and their proposals' photos and only an access token reaches the MCP endpoint, which a Next.js build alone does not verify.
+The container smoke script needs Docker and Bash. It builds the image and checks the container, persistent storage, sign-in enforcement, the refusal to start with a database it can't open or upgrade, the health check deploys wait for, trip and destination isolation, and that only the designated owner reaches AI assistants and their proposals' photos and only an access token reaches the MCP endpoint, which a Next.js build alone does not verify.
 
 After building, CI also runs `node scripts/review-errors-smoke.mjs` to check production page status codes, failure recovery, and save validation with health-, image-, and page-first store initialization, and connecting Claude, from registration and the owner's consent to MCP reads, a proposal, its approval and revoking the connection. It also checks photo proposals: refusing photo addresses on private networks, showing a proposal's photos to the owner alone, and approving and rejecting photo changes. No public image server is reachable there, so the proposal that adds a photo is made through the store with a photo prepared as a download would be. It creates disposable databases and logs under `test-results`, using fixture sessions without contacting Google. You can run the same command locally.
 
@@ -105,7 +105,7 @@ cp -r public .next/standalone/
 cp -r .next/static .next/standalone/.next/
 TRAVEL_DATABASE_PATH="$PWD/data/travel.sqlite" node --env-file=.env.local .next/standalone/server.js
 ```
-Repeat the copies after every build. The standalone server doesn't read `.env.local` itself, so `--env-file` passes your sign-in settings. It runs from `.next/standalone`, so `TRAVEL_DATABASE_PATH` must be absolute; a relative path would create a new, empty database inside the build output. The value on the command line takes precedence over the one in `.env.local`. The Docker image instead starts through `scripts/start.mjs`, which refuses to start without mounted persistent storage.
+Repeat the copies after every build. The standalone server doesn't read `.env.local` itself, so `--env-file` passes your sign-in settings. It runs from `.next/standalone`, so `TRAVEL_DATABASE_PATH` must be absolute; a relative path would create a new, empty database inside the build output. The value on the command line takes precedence over the one in `.env.local`. The Docker image instead starts through `scripts/start.mjs`, which refuses to start without mounted persistent storage and opens and upgrades the database before the server starts (see [Hosting](#hosting)).
 
 ## Travel 1.5 responsiveness and backups
 Trip and destination pages fetch only the relevant trip's or destination's data. Home-page budgets are computed on the server and reused while searching, and saves refresh the displayed page without returning the entire database to the browser. The unused Next.js image optimizer is disabled; existing photo routes and galleries are unchanged.
@@ -283,10 +283,11 @@ Every deploy builds with the same Server Actions key, so a page opened before a 
 ## Database failures
 A save the database can't complete, as when the disk is full, saves nothing and shows **We couldn't save your changes. Please try again.** The server log names SQLite's own error, such as `database or disk is full`, rather than an error from undoing the save (TRA-93). Saving works again once there is room, without a restart.
 
-If the database can't be opened, because its file isn't a database or another process holds its write lock, the request that tried fails and closes its connection, and the next request tries again. While another process holds the write lock, each try waits up to 5 seconds for it.
+If the database can't be opened, because its file isn't a database or another process holds its write lock, the request that tried fails and closes its connection, and the next request tries again. While another process holds the write lock, each try waits up to 5 seconds for it. The Docker image also opens the database before its server starts, so there a database that can't be opened or upgraded stops the container instead (see [Hosting](#hosting)).
 
 ## Hosting
 The existing GitHub Actions deployment builds a Node container and deploys it to Dokku at travel.dev.boyersoftware.com after checks pass. Only `main` deploys, only to the server with the verified SSH host key, and with the 20 MiB request limit photo uploads need; see [deployment safeguards](docs/DEPLOYMENT.md#deployment-safeguards-tra-98).
+The container opens and upgrades the database before its server starts, and Dokku switches traffic to a new release only once its `/api/health` returns HTTP 200. A release that can't open or upgrade the database, such as one older than the database's schema, stops instead, so its deploy fails and the running release keeps serving (TRA-78); see [startup and health checks](docs/DEPLOYMENT.md#startup-and-health-checks-tra-78).
 **Provision persistent storage before the first app deployment.** See [deployment and recovery instructions](docs/DEPLOYMENT.md).
 This version runs one application instance with SQLite. Google Sign In requires the production settings in [deployment](docs/DEPLOYMENT.md#google-sign-in-tra-103); trip ownership and sharing need no further settings, but the schema 20 upgrade assigns existing trips to `TRAVEL_OWNER_EMAIL` (see [deployment](docs/DEPLOYMENT.md#schema-20-trip-ownership-and-sharing-tra-104)), and the schema 21 upgrade combines each owner's same-city destinations (see [deployment](docs/DEPLOYMENT.md#schema-21-shared-destinations-tra-105)). Live collaboration and conflict resolution are future work.
 

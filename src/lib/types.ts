@@ -5,6 +5,10 @@ import type { HealthSafety } from "./health-safety";
 export type FoodBudgetMode = "itemized" | "daily";
 export type ActivitiesBudgetMode = "itemized" | "general";
 export type Category = "hotels" | "activities" | "restaurants";
+/** The meals and visits a restaurant can suit, in the order its editor and tags list them (TRA-36). Only restaurants have them. */
+export const RESTAURANT_TYPES = ["breakfast", "lunch", "dinner", "snack", "drinks"] as const;
+export type RestaurantType = typeof RESTAURANT_TYPES[number];
+export const RESTAURANT_TYPE_LABELS: Record<RestaurantType, string> = { breakfast: "Breakfast", lunch: "Lunch", dinner: "Dinner", snack: "Snack", drinks: "Drinks" };
 export interface TypicalWeather { weatherHighF: number | null; weatherLowF: number | null; weatherRainfall: string; weatherPeriod: string; weatherSource: string; }
 /** A trip, with its tags in alphabetical order. */
 export interface Trip { startDate: string | null; endDate: string | null; id: string; name: string; dateLabel: string; homeCity: string; returnCity: string | null; travelers: number; notes: string; createdAt: string; tags: string[]; }
@@ -26,7 +30,8 @@ export interface CandidateImage { id: string; version: string; }
 export interface DestinationPhotos { images: CandidateImage[]; mainImageId: string | null; }
 /** A photo editor's changes to a destination's, idea's or church's photos. `order` lists every photo it keeps and adds, and is sent only when they are rearranged (TRA-126). */
 export interface GalleryUpdate { add: { id: string; data: Uint8Array }[]; remove: string[]; mainImageId?: string | null; order?: string[]; }
-export interface Candidate { id: string; destinationId: string; category: Category; position: number; mustDo: boolean; name: string; priceCents: number | null; address: string; url: string; notes: string; included: boolean; links: ResearchLink[]; images: CandidateImage[]; mainImageId: string | null; }
+/** A hotel, activity or restaurant idea. `restaurantTypes` is empty for hotels and activities, and for a restaurant without any. */
+export interface Candidate { id: string; destinationId: string; category: Category; position: number; mustDo: boolean; name: string; priceCents: number | null; address: string; url: string; notes: string; included: boolean; links: ResearchLink[]; images: CandidateImage[]; mainImageId: string | null; restaurantTypes: RestaurantType[]; }
 export interface MassTime { id: string; day: string; time: string; }
 export interface Church { id: string; destinationId: string; name: string; address: string; denomination: string; url: string; massTimes: MassTime[]; images: CandidateImage[]; mainImageId: string | null; }
 /** `tags` is one spelling of each tag on the trips the account can open, in alphabetical order, for a trip's page to reuse and the trip list to filter by. Destinations pages leave it empty. */
@@ -74,7 +79,8 @@ export type Mutation =
  | { type: "stop.remove"; id: string }
  | { type: "leg.save"; id: string; method: string; price: string; departure: string; arrival: string; url: string; notes: string; itinerary?: ItineraryStop[]; links?: ResearchLink[] }
  | { type: "leg.clear"; id: string }
- | { type: "candidate.save"; id: string; create?: true; destinationId: string; category: Category; name: string; price: string; address: string; url: string; notes: string; included: boolean; mustDo?: boolean; links?: ResearchLink[]; gallery?: GalleryUpdate }
+ // A restaurant's `restaurantTypes` replace its saved ones, and left out keep them. Hotels and activities have none.
+ | { type: "candidate.save"; id: string; create?: true; destinationId: string; category: Category; name: string; price: string; address: string; url: string; notes: string; included: boolean; mustDo?: boolean; restaurantTypes?: RestaurantType[]; links?: ResearchLink[]; gallery?: GalleryUpdate }
  | { type: "candidate.move"; id: string; direction: "up" | "down" }
  | { type: "candidate.mustDo"; id: string; mustDo: boolean }
  | { type: "candidate.delete"; id: string }

@@ -946,6 +946,10 @@ button svg,a svg {
   font-size:28px;
   overflow-wrap:anywhere
 }
+/* A restaurant's types, below its name (TRA-36). */
+.idea-types {
+  margin-top:10px
+}
 .idea-address {
   display:flex;
   align-items:flex-start;

@@ -1,6 +1,7 @@
 import { ArrowDown, ArrowUp, Check, MapPin, Pencil, Plus, Star, Trash2 } from "lucide-react";
 import { CandidateGallery } from "./candidate-gallery";
 import { ResearchLinks } from "./research-links";
+import { RestaurantTypeTags } from "./restaurant-types";
 import { formatCurrency } from "@/lib/money";
 import type { Candidate, Category, Destination, Mutation } from "@/lib/types";
 
@@ -33,6 +34,7 @@ export default function CandidateList({ items, category, destination, busy, onEd
           </div>
         </div>
         <h2>{item.name}</h2>
+        <RestaurantTypeTags types={item.restaurantTypes} className="idea-types" />
         {category !== "hotels" && <button className={item.mustDo ? "button selected-button small must-do" : "button secondary small must-do"}
           disabled={busy} aria-pressed={item.mustDo} aria-label={"Must do: " + item.name}
           onClick={(event) => onMutate({ type: "candidate.mustDo", id: item.id, mustDo: !item.mustDo }, item.mustDo ? "Must do removed." : "Marked as must do.", event.currentTarget)}>

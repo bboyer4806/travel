@@ -17,6 +17,7 @@ import CandidateList from "@/components/candidate-list";
 import { DestinationIdeas, IdeaDetails, priceNotes, selectionLabels } from "@/components/destination-ideas";
 import { CandidateGalleryEditor } from "@/components/candidate-gallery";
 import { createGalleryDraft, galleryForm, type GalleryDraft } from "@/lib/gallery-draft";
+import { RestaurantTypesField } from "@/components/restaurant-types";
 import TripRouteFields from "@/components/trip-route-fields";
 import { ConnectionItinerary, ConnectionItineraryEditor } from "@/components/connection-itinerary";
 import { ResearchLinks, ResearchLinksEditor } from "@/components/research-links";
@@ -35,6 +36,7 @@ import { transportationIcons, type TransportationIcon } from "@/lib/transportati
 import { calculateBudget, calculateDestinationBudget, tripVisits } from "@/lib/budget";
 import { formatCurrency, MAX_AMOUNT_DOLLARS, minorAmountValue } from "@/lib/money";
 import { ShoppingBudgetEditor, FoodBudgetEditor, FoodSummary, ActivitiesBudgetEditor, ActivitiesSummary, AccommodationBudgetEditor, AccommodationSummary, CurrencyTotals, DestinationBudget, DestinationBudgetEditor, MiscellaneousBudgetEditor, StayNightsEditor } from "@/components/destination-budget";
+import { RESTAURANT_TYPES } from "@/lib/types";
 import type { FoodBudgetMode, ActivitiesBudgetMode, Budget, Candidate, Church, MassTime, Category, Destination, DestinationAccess, DestinationVisit, HomeItem, ItineraryStop, Mutation, ResearchLink, Snapshot, TravelLeg, Trip, TripAccess, TripStop } from "@/lib/types";
 
 type Editor =
@@ -327,7 +329,10 @@ export default function PlannerApp({ initialData, initialBudgets, access = {}, d
       }
       case "candidate": {
         const imageForm = galleryForm(candidateGallery, editor.item);
-        void perform({ type: "candidate.save", ...itemToSave(editor.item), destinationId: editor.destinationId, category: editor.category, name: text("name"), price: text("price"), address: text("address"), url: researchLinks[0]?.url ?? "", links: researchLinks, notes: text("notes"), included: fields.has("included"), mustDo: fields.has("mustDo") }, "Changes saved.", undefined, imageForm);
+        // A restaurant's editor sends every type checked, so unchecking them all clears them. Other ideas have none.
+        const checkedTypes = fields.getAll("restaurantTypes");
+        void perform({ type: "candidate.save", ...itemToSave(editor.item), destinationId: editor.destinationId, category: editor.category, name: text("name"), price: text("price"), address: text("address"), url: researchLinks[0]?.url ?? "", links: researchLinks, notes: text("notes"), included: fields.has("included"), mustDo: fields.has("mustDo"),
+          ...(editor.category === "restaurants" && { restaurantTypes: RESTAURANT_TYPES.filter((type) => checkedTypes.includes(type)) }) }, "Changes saved.", undefined, imageForm);
         break;
       }
     }
@@ -591,6 +596,7 @@ export default function PlannerApp({ initialData, initialBudgets, access = {}, d
         onRemove={(member) => void perform({ type: "trip.unshare", tripId: trip.id, email: member.email }, member.email + " can no longer open this trip.")} />}
       {editor.kind === "candidate" && <>
         <Field label="Name" wide><input name="name" defaultValue={editor.item?.name} required maxLength={160} placeholder={"Name of the " + singular[editor.category]} /></Field>
+        {editor.category === "restaurants" && <RestaurantTypesField types={editor.item?.restaurantTypes ?? []} disabled={busy} />}
         <Field label="Estimated price (USD)" wide hint={priceNotes[editor.category] + " Leave blank if unknown."}><input name="price" type="number" min="0" max={MAX_AMOUNT_DOLLARS} step="0.01" defaultValue={minorAmountValue(editor.item?.priceCents, "USD")} placeholder="Not estimated" /></Field>
         <Field label="Address or neighborhood" wide><input name="address" defaultValue={editor.item?.address} maxLength={500} placeholder="Optional" /></Field>
         <CandidateGalleryEditor candidate={editor.item} subject={singular[editor.category]} draft={candidateGallery} onChange={setCandidateGallery} disabled={busy} />

@@ -13,6 +13,7 @@ import { normalizeHealthSafety } from "./health-safety.ts";
 import { SESSION_DAYS } from "./session-cookie.ts";
 import { alreadyTagged, cleanTagName, MAX_TAG_LENGTH, tagKey } from "./trip-tags.ts";
 import { PLANNER_UPDATED } from "./planner-updated.ts";
+import { RESTAURANT_TYPES } from "./types.ts";
 import { ACCESS_TOKEN_MS, AUTHORIZATION_CODE_MS, CONNECTION_MS, PROPOSAL_MS, aiPlatform, isPkceChallenge, pkceMatches } from "./ai-auth.ts";
 import { DATA_TABLES, PHOTO_TABLES, UNREAD_COLUMNS, effectsBetween, previewChange } from "./ai-preview.ts";
 import type { AiPlatform } from "./ai-auth.ts";
@@ -21,13 +22,13 @@ import type { EntryRequirements } from "./entry-requirements.ts";
 import type { HealthSafety } from "./health-safety.ts";
 import type { AiConnection, AiPhotoToAdd, AiProposal, DestinationFields, GalleryUpdate } from "./types";
 import type { AuthorizedAccount, DestinationAccess, GoogleIdentity, TripAccess, TripMember, TripStop } from "./types";
-import type { FoodBudgetMode, ActivitiesBudgetMode, Candidate, CandidateImage, Category, Church, MassTime, Destination, HomeItem, StoredImage, ItineraryStop, Mutation, ResearchLink, Snapshot, TravelLeg, Trip } from "./types";
+import type { FoodBudgetMode, ActivitiesBudgetMode, Candidate, CandidateImage, Category, Church, MassTime, Destination, HomeItem, StoredImage, ItineraryStop, Mutation, ResearchLink, RestaurantType, Snapshot, TravelLeg, Trip } from "./types";
 
 type StoredDestination = Omit<Destination, "churchEnabled" | "cityFromSuggestion" | "images" | "entryRequirements" | "healthSafety" | "mainImageId" | "imageVersion"> & { churchEnabled: number; cityFromSuggestion: number; ownerId: string; cityKey: string };
 type StoredChurch = Omit<Church, "massTimes" | "images"> & { massTimesJson: string };
 type StoredHomeItem = Omit<HomeItem, "completed"> & { completed: number };
 type StoredLeg = Omit<TravelLeg, "itinerary" | "links"> & { itineraryJson: string; linksJson: string };
-type StoredCandidate = Omit<Candidate, "links" | "included" | "mustDo" | "images"> & { linksJson: string; included: number; mustDo: number };
+type StoredCandidate = Omit<Candidate, "links" | "included" | "mustDo" | "images" | "restaurantTypes"> & { linksJson: string; included: number; mustDo: number; restaurantTypesJson: string };
 
 const CATEGORIES = ["hotels", "activities", "restaurants"] as const;
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -244,6 +245,14 @@ function linksField(input: Input): ResearchLink[] | undefined {
     return { id, url: urlField(link, true), description: link.description === undefined ? "" : textField(link, "description", 160) };
   });
 }
+/** A restaurant's types as a save sends them, in the order Travel lists them, or undefined to keep the saved ones (TRA-36). */
+function restaurantTypesField(input: Input): RestaurantType[] | undefined {
+  const value = input.restaurantTypes;
+  if (value === undefined) return undefined;
+  if (!Array.isArray(value) || value.some((type) => !RESTAURANT_TYPES.includes(type))) throw new ValidationError("Choose restaurant types from breakfast, lunch, dinner, snack and drinks.");
+  if (new Set(value).size !== value.length) throw new ValidationError("Choose each restaurant type once.");
+  return RESTAURANT_TYPES.filter((type) => value.includes(type));
+}
 function storedLinks(row: { id: string; url: string; linksJson: string }): ResearchLink[] {
   const links = JSON.parse(row.linksJson) as ResearchLink[];
   // An older container may still write the legacy URL during a rolling deployment.
@@ -384,7 +393,7 @@ function validate(input: unknown): Mutation {
     case "leg.save":
       return { type: value.type, id: idField(value), method: textField(value, "method", 120), price: priceField(value), departure: textField(value, "departure", 120), arrival: textField(value, "arrival", 120), url: urlField(value), notes: textField(value, "notes", 8000), itinerary: itineraryField(value), links: linksField(value) };
     case "candidate.save":
-      return { type: value.type, id: saveIdField(value), create: createField(value), destinationId: idField(value, "destinationId"), category: categoryField(value), name: textField(value, "name", 160, true), price: priceField(value), address: textField(value, "address", 500), url: urlField(value), notes: textField(value, "notes", 8000), included: booleanField(value, "included"), mustDo: value.mustDo === undefined ? undefined : booleanField(value, "mustDo"), links: linksField(value), gallery: galleryField(value) };
+      return { type: value.type, id: saveIdField(value), create: createField(value), destinationId: idField(value, "destinationId"), category: categoryField(value), name: textField(value, "name", 160, true), price: priceField(value), address: textField(value, "address", 500), url: urlField(value), notes: textField(value, "notes", 8000), included: booleanField(value, "included"), mustDo: value.mustDo === undefined ? undefined : booleanField(value, "mustDo"), restaurantTypes: restaurantTypesField(value), links: linksField(value), gallery: galleryField(value) };
     case "candidate.move":
       if (value.direction !== "up" && value.direction !== "down") throw new ValidationError("Choose a valid direction for this idea.");
       return { type: value.type, id: idField(value), direction: value.direction };
@@ -512,7 +521,7 @@ const LIVE: Make = { id: () => randomUUID(), now: () => new Date().toISOString()
  * The schema this build upgrades every database to, as SQLite's user_version. A schema change adds the next
  * upgrade in createStore and raises this to match; earlier upgrades keep their own numbers.
  */
-export const SCHEMA_VERSION = 27;
+export const SCHEMA_VERSION = 28;
 
 /** A destination as schema 20 saved it, inside one trip, with that trip's owner and name. */
 type TripDestinationRow = Omit<StoredDestination, "cityKey"> & Omit<TripStop, "destinationId"> & { tripName: string };
@@ -1082,6 +1091,12 @@ export function createStore(databasePath: string, ownerEmail: string) {
       }
       db.exec("PRAGMA user_version = 27;");
     }
+    if (version < 28) {
+      // The meals and visits each restaurant suits (TRA-36), as a list that only restaurants fill. Every saved idea starts
+      // with none. A replay keeps saved types.
+      if (!hasColumn("candidates", "restaurantTypesJson")) db.exec("ALTER TABLE candidates ADD COLUMN restaurantTypesJson TEXT NOT NULL DEFAULT '[]' CHECK(category = 'restaurants' OR restaurantTypesJson = '[]');");
+      db.exec("PRAGMA user_version = 28;");
+    }
     if (version < SCHEMA_VERSION && db.prepare("PRAGMA foreign_key_check").get()) {
       throw new Error("This upgrade would leave saved items without the trip or destination they belong to. Nothing was changed; review the database against a backup before upgrading.");
     }
@@ -1180,9 +1195,9 @@ export function createStore(databasePath: string, ownerEmail: string) {
     const rows = db.prepare(`SELECT candidates.*, candidate_images.id AS mainImageId FROM candidates LEFT JOIN candidate_images ON candidate_images.candidateId = candidates.id AND candidate_images.isMain = 1${where}
       ORDER BY candidates.destinationId, candidates.category, candidates.position, candidates.id`).all(...args) as unknown as StoredCandidate[];
     const photos = photosOf("candidate_images", "candidateId", destinationIds === null ? null : rows.map((candidate) => candidate.id));
-    return rows.map(({ linksJson, ...candidate }) => {
+    return rows.map(({ linksJson, restaurantTypesJson, ...candidate }) => {
       const links = storedLinks({ ...candidate, linksJson });
-      return { ...candidate, url: links[0]?.url ?? "", included: candidate.included === 1, mustDo: candidate.mustDo === 1, links, images: photos.get(candidate.id) ?? [] };
+      return { ...candidate, url: links[0]?.url ?? "", included: candidate.included === 1, mustDo: candidate.mustDo === 1, restaurantTypes: JSON.parse(restaurantTypesJson) as RestaurantType[], links, images: photos.get(candidate.id) ?? [] };
     });
   }
   function readChurches(destinationIds: readonly string[] | null): Church[] {
@@ -1749,12 +1764,14 @@ export function createStore(databasePath: string, ownerEmail: string) {
         const url = links[0]?.url ?? "";
         const mustDo = input.mustDo === undefined ? (before?.mustDo ?? 0) : Number(input.mustDo);
         if (input.category === "hotels" && mustDo) throw new ValidationError("Must do is available for activities and restaurants only.");
+        if (input.category !== "restaurants" && input.restaurantTypes?.length) throw new ValidationError("Restaurant types are available for restaurants only.");
+        const restaurantTypesJson = input.restaurantTypes === undefined ? (before?.restaurantTypesJson ?? "[]") : JSON.stringify(input.restaurantTypes);
         if (input.included && input.category === "hotels") clearHotelSelection(input.destinationId);
         if (before) {
-          db.prepare("UPDATE candidates SET name = ?, priceCents = ?, address = ?, url = ?, notes = ?, included = ?, mustDo = ?, linksJson = ? WHERE id = ?").run(input.name, priceCents(input.price), input.address, url, input.notes, Number(input.included), mustDo, JSON.stringify(links), id);
+          db.prepare("UPDATE candidates SET name = ?, priceCents = ?, address = ?, url = ?, notes = ?, included = ?, mustDo = ?, restaurantTypesJson = ?, linksJson = ? WHERE id = ?").run(input.name, priceCents(input.price), input.address, url, input.notes, Number(input.included), mustDo, restaurantTypesJson, JSON.stringify(links), id);
         } else {
           const position = Number(db.prepare("SELECT coalesce(max(position), -1) + 1 AS position FROM candidates WHERE destinationId = ? AND category = ?").get(input.destinationId, input.category)!.position);
-          db.prepare("INSERT INTO candidates(id,destinationId,category,name,priceCents,address,url,notes,included,mustDo,position,linksJson) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)").run(id, input.destinationId, input.category, input.name, priceCents(input.price), input.address, url, input.notes, Number(input.included), mustDo, position, JSON.stringify(links));
+          db.prepare("INSERT INTO candidates(id,destinationId,category,name,priceCents,address,url,notes,included,mustDo,restaurantTypesJson,position,linksJson) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)").run(id, input.destinationId, input.category, input.name, priceCents(input.price), input.address, url, input.notes, Number(input.included), mustDo, restaurantTypesJson, position, JSON.stringify(links));
         }
         saveGallery("candidate", id, input.gallery, make);
         return id;

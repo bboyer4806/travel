@@ -3,6 +3,7 @@ import { EMERGENCY_CONTACT_MAX_LENGTH, HEALTH_SAFETY_FIELDS, MAX_EMERGENCY_CONTA
 import { AI_PHOTO_DOWNLOAD_SECONDS, formatMegabytes, MAX_AI_PROPOSAL_PHOTOS, MAX_CANDIDATE_IMAGES, MAX_DESTINATION_IMAGES, MAX_GALLERY_UPLOAD_BYTES, MAX_IMAGE_UPLOAD_BYTES } from "./image-limits.ts";
 import { MAX_NIGHTS } from "./trip-dates.ts";
 import { MAX_TAG_LENGTH } from "./trip-tags.ts";
+import { RESTAURANT_TYPES } from "./types.ts";
 
 /**
  * The tools Travel's MCP endpoint offers ChatGPT and Claude (TRA-115). The read tools see every trip and destination,
@@ -136,7 +137,12 @@ const CHANGES = [
     id: id("The idea's id, or a new UUID with create."), create, destinationId: id("Its destination's id."), category: { type: "string", enum: ["hotels", "activities", "restaurants"] },
     name: text("Its name.", 160), price: amount("Its cost for the whole party: a hotel's for the whole stay."), address: text("Its address. Empty for none.", 500),
     url: text("A website, https:// or http://. Empty for none.", 2048), notes: text("Notes. Empty for none.", 8000), included: flag("Whether it is in the budget: for a hotel, whether it is the chosen one."),
-    mustDo: flag("Must do, for activities and restaurants only. Left out keeps it."), links,
+    mustDo: flag("Must do, for activities and restaurants only. Left out keeps it."),
+    restaurantTypes: {
+      type: "array", maxItems: RESTAURANT_TYPES.length, uniqueItems: true, items: { type: "string", enum: RESTAURANT_TYPES },
+      description: "For restaurants only: the meals and visits it suits, any number of them, replacing the saved ones. Empty for none. Left out keeps them.",
+    },
+    links,
   }, ["id", "destinationId", "category", "name", "price", "address", "url", "notes", "included"]),
   change("candidate.move", "Moves an idea one place up or down its list.", { id: id("The idea's id."), direction }, ["id", "direction"]),
   change("candidate.mustDo", "Marks an activity or restaurant Must do, or not.", { id: id("The idea's id."), mustDo: flag("Whether it is Must do.") }, ["id", "mustDo"]),

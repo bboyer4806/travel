@@ -9,6 +9,7 @@ import * as galleryDraft from "../src/lib/gallery-draft.ts";
 import * as imageLimits from "../src/lib/image-limits.ts";
 import * as money from "../src/lib/money.ts";
 import * as tripDates from "../src/lib/trip-dates.ts";
+import * as types from "../src/lib/types.ts";
 import * as uuid from "../src/lib/uuid.ts";
 import { addDestination, candidateInput, setup, stop, visit } from "./budget-fixtures.mjs";
 
@@ -18,7 +19,7 @@ const shared = {
   "react": { useId: () => "id", useState: (initial) => [initial, () => {}], useRef: (current) => ({ current }), useEffect: () => {} },
   "react/jsx-runtime": { jsx: element, jsxs: element, Fragment: "fragment" },
   "next/link": { default: "a" }, "lucide-react": new Proxy({}, { get: (_, name) => "icon:" + String(name) }),
-  "@/lib/budget": budget, "@/lib/gallery-draft": galleryDraft, "@/lib/image-limits": imageLimits, "@/lib/money": money, "@/lib/trip-dates": tripDates, "@/lib/uuid": uuid,
+  "@/lib/budget": budget, "@/lib/gallery-draft": galleryDraft, "@/lib/image-limits": imageLimits, "@/lib/money": money, "@/lib/trip-dates": tripDates, "@/lib/types": types, "@/lib/uuid": uuid,
 };
 /** A component module, given the components it imports. A CSS module's class names are their own names. */
 function load(file, modules = {}) {
@@ -35,10 +36,14 @@ function load(file, modules = {}) {
   });
   return exports;
 }
-const { DestinationIdeas, IdeaDetails } = load("../src/components/destination-ideas.tsx", {
+const ideaModules = {
   "./candidate-gallery": load("../src/components/candidate-gallery.tsx", { "./focus-after": load("../src/components/focus-after.ts"), "./photo-drag": load("../src/components/photo-drag.ts") }),
   "./research-links": load("../src/components/research-links.tsx"),
-});
+  "./restaurant-types": load("../src/components/restaurant-types.tsx"),
+};
+const { DestinationIdeas, IdeaDetails } = load("../src/components/destination-ideas.tsx", ideaModules);
+const { default: CandidateList } = load("../src/components/candidate-list.tsx", ideaModules);
+const { RestaurantTypesField } = ideaModules["./restaurant-types"];
 const { DestinationBudget } = load("../src/components/destination-budget.tsx");
 
 /** The host elements an element renders to, with every component rendered. */
@@ -154,6 +159,42 @@ test("an idea's details show what its editor saves, read only", (t) => {
     ["Notes", "Not added"],
     ["Choose this hotel for the budget", "No"],
   ]);
+});
+
+test("a restaurant's types show as labeled tags on its cards and in its details, and a restaurant without them shows none (TRA-36)", (t) => {
+  const { store, id } = seed(t);
+  const both = store.applyMutation(candidateInput(id, "restaurants", { name: "Lunch and drinks", price: "30", included: false, restaurantTypes: ["drinks", "lunch"] })).id;
+  const plain = store.applyMutation(candidateInput(id, "restaurants", { name: "No types", price: "", included: false })).id;
+  const snapshot = store.getSnapshot();
+  const ideas = snapshot.candidates.filter((item) => item.destinationId === id);
+  const tags = (nodes) => byClass(nodes, "tag").map(text);
+  // The destination's Restaurants carousel, and the hotels' and activities' beside it.
+  const overview = hosts({ type: DestinationIdeas, props: { ideas, city: "Vienna", pages: "/destinations/vienna", busy: false, onView() {}, onAdd() {}, onBudgetEdit() {} } });
+  const carousel = byClass(overview, "card").map((card) => [text(byClass(hosts(card), "name")[0]), tags(hosts(card))]);
+  assert.deepEqual(carousel.filter(([, list]) => list.length), [["Lunch and drinks", ["Lunch", "Drinks"]]]);
+  assert.ok(carousel.some(([name]) => name === "No types"));
+  // The Restaurants page's cards.
+  const list = (category) => hosts({ type: CandidateList, props: { items: ideas.filter((item) => item.category === category), category, destination: snapshot.destinations.find((item) => item.id === id), busy: false, onEdit() {}, onDelete() {}, onMutate() {} } });
+  assert.deepEqual(list("restaurants").filter((node) => node.type === "article").map((card) => [card.props["aria-label"], tags(hosts(card))]), [["Lunch and drinks", ["Lunch", "Drinks"]], ["No types", []]]);
+  // Only a restaurant with types has a tag list, so no empty one shows anywhere.
+  assert.deepEqual([overview, list("restaurants"), list("hotels"), list("activities")].map((nodes) => byClass(nodes, "tags").length), [1, 1, 0, 0]);
+  const details = (itemId) => hosts({ type: IdeaDetails, props: { item: ideas.find((item) => item.id === itemId) } }).filter((node) => node.type === "div").map((row) => [text(row.props.children[0]), text(row.props.children[1])]);
+  assert.deepEqual(details(both).slice(0, 2), [["Restaurant types", "LunchDrinks"], ["Estimated price (USD)", "$30Total for one meal for the whole party."]]);
+  assert.deepEqual(details(plain).map(([name]) => name), ["Estimated price (USD)", "Address or neighborhood", "Restaurant photos", "Website and research links", "Notes", "Must do", "Include in itemized restaurant costs"], "no empty row or placeholder");
+});
+
+test("a restaurant's editor has an independent checkbox for each type, checked as saved (TRA-36)", () => {
+  const field = (types, disabled = false) => hosts({ type: RestaurantTypesField, props: { types, disabled } });
+  assert.equal(text(field([]).find((node) => node.type === "legend")), "Restaurant types");
+  assert.deepEqual(field(["lunch", "drinks"]).filter((node) => node.type === "label").map((label) => {
+    const input = hosts(label).find((node) => node.type === "input");
+    return [text(label), input.props.type, input.props.name, input.props.value, input.props.defaultChecked];
+  }), [
+    ["Breakfast", "checkbox", "restaurantTypes", "breakfast", false], ["Lunch", "checkbox", "restaurantTypes", "lunch", true],
+    ["Dinner", "checkbox", "restaurantTypes", "dinner", false], ["Snack", "checkbox", "restaurantTypes", "snack", false],
+    ["Drinks", "checkbox", "restaurantTypes", "drinks", true],
+  ]);
+  assert.ok(field([], true).filter((node) => node.type === "input").every((input) => input.props.disabled && !input.props.defaultChecked), "none checked, and disabled while saving");
 });
 
 test("the destination budget no longer links to the idea pages, and keeps its other editors (TRA-120)", (t) => {

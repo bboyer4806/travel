@@ -1,5 +1,6 @@
 import { formatCurrency } from "./money.ts";
-import type { Category, Mutation } from "./types";
+import { RESTAURANT_TYPE_LABELS } from "./types.ts";
+import type { Category, Mutation, RestaurantType } from "./types";
 
 /**
  * What an AI proposal changes (TRA-115), worked out from Travel's own data before and after each change: the rows it
@@ -34,7 +35,7 @@ export interface PreviewRecord { action: "Adds" | "Changes" | "Deletes"; record:
 /** One proposed change as the owner reviews it: what it does, and every record it adds, changes or deletes. */
 export interface PreviewChange { operation: string; records: PreviewRecord[] }
 
-type Format = "text" | "number" | "order" | "money" | "flag" | "json" | "account";
+type Format = "text" | "number" | "order" | "money" | "flag" | "json" | "account" | "restaurantTypes";
 /**
  * Each column's label in a preview and how its values read, or null for one people never see: IDs, keys, timestamps,
  * photo versions, and values worked out from another column. Hidden columns still count when approving: a proposal
@@ -58,7 +59,7 @@ export const PREVIEW_COLUMNS: Record<DataTable, Record<string, [string, Format] 
   destination_entry_requirements: { destinationId: null, requirementsJson: ["Entry requirements", "json"] },
   destination_health_safety: { destinationId: null, healthSafetyJson: ["Health and safety", "json"] },
   destination_images: { id: null, destinationId: null, version: null, position: ["Order", "order"], isMain: ["Primary photo", "flag"] },
-  candidates: { id: null, destinationId: null, category: null, name: ["Name", "text"], priceCents: ["Price", "money"], address: ["Address", "text"], url: null, notes: ["Notes", "text"], included: ["Included", "flag"], linksJson: ["Research links", "json"], position: ["Order", "order"], mustDo: ["Must do", "flag"] },
+  candidates: { id: null, destinationId: null, category: null, name: ["Name", "text"], priceCents: ["Price", "money"], address: ["Address", "text"], url: null, notes: ["Notes", "text"], included: ["Included", "flag"], linksJson: ["Research links", "json"], position: ["Order", "order"], mustDo: ["Must do", "flag"], restaurantTypesJson: ["Restaurant types", "restaurantTypes"] },
   candidate_images: { id: null, candidateId: null, version: null, position: ["Order", "order"], isMain: ["Main photo", "flag"] },
   churches: { id: null, destinationId: null, name: ["Name", "text"], address: ["Address", "text"], denomination: ["Denomination", "text"], url: ["Website", "text"], massTimesJson: ["Mass times", "json"] },
   church_images: { id: null, churchId: null, version: null, position: ["Order", "order"], isMain: ["Main photo", "flag"] },
@@ -159,6 +160,8 @@ function display(format: Format, value: Value, email: (accountId: Value) => stri
     case "flag": return value === 1 ? "Yes" : "No";
     case "json": return jsonText(JSON.parse(String(value))) || null;
     case "account": return email(value);
+    // As the restaurant's tags name them, or none.
+    case "restaurantTypes": return (JSON.parse(String(value)) as RestaurantType[]).map((type) => RESTAURANT_TYPE_LABELS[type]).join(", ") || null;
   }
 }
 /** Saved JSON, such as research links or Mass times, as text: every value but IDs and empty ones. */

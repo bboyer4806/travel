@@ -29,6 +29,10 @@ COPY --from=builder --chown=travel:travel /app/.next/standalone ./
 COPY --from=builder --chown=travel:travel /app/.next/static ./.next/static
 COPY --from=builder --chown=travel:travel /app/public ./public
 COPY --chown=travel:travel scripts/start.mjs scripts/backup.mjs ./scripts/
+# scripts/start.mjs opens the database from the store's source before the server starts (TRA-78).
+COPY --chown=travel:travel src/lib ./src/lib
+# Dokku reads the deploy's health check from app.json in the image's WORKDIR (docs/DEPLOYMENT.md).
+COPY --chown=travel:travel app.json ./
 USER travel
 # Preserve the existing Dokku port mapping. No anonymous VOLUME is declared:
 # /data must be explicitly mounted as described in docs/DEPLOYMENT.md.

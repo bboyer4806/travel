@@ -4,19 +4,7 @@
  */
 export async function register() {
   if (process.env.NEXT_RUNTIME === "nodejs") {
-    const { googleSettings } = await import("./lib/google");
-    const { ownerEmail } = await import("./lib/store");
-    // Each check runs, so one start names every setting that is missing.
-    let ready = true;
-    for (const check of [googleSettings, ownerEmail]) {
-      try {
-        check();
-      } catch (error) {
-        console.error(error instanceof Error ? error.message : error);
-        ready = false;
-      }
-    }
-    // Thrown, this would only be logged and every sign-in would fail. Exiting refuses to start.
-    if (!ready) process.exit(1);
+    const { requireServerSettings } = await import("./lib/server-settings");
+    requireServerSettings();
   }
 }

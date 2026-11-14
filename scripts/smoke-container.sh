@@ -5,7 +5,7 @@ set -euo pipefail
 image="travel-check"
 container="travel-check"
 volume="travel-check-storage"
-# The schema version this build upgrades every database to. The checks run in the container, which has no source.
+# The schema version this build upgrades every database to, passed to the checks that run in the container.
 schema_version="$(node --input-type=module --eval 'import { SCHEMA_VERSION } from "./src/lib/store.ts"; console.log(SCHEMA_VERSION);')"
 cleanup() {
   if [ "$?" -ne 0 ]; then docker logs "$container" || true; fi
@@ -567,7 +567,13 @@ if [ "$optimizer_status" != "404" ]; then
   exit 1
 fi
 
-# A container without the persistent mount, or without the sign-in settings, must refuse to start.
+# Dokku reads the deploy's health check from app.json in the image's WORKDIR and promotes a release only once the
+# path it names answers (TRA-78).
+health_path="$(docker run --rm --entrypoint node "$image" --print 'require("./app.json").healthchecks.web[0].path')"
+curl --fail --silent --show-error --max-time 5 "http://127.0.0.1:3007$health_path" >/dev/null
+
+# A container without the persistent mount, without the sign-in settings, or with a database it can't open or
+# upgrade must refuse to start.
 refuses() {
   local expected="$1"; shift
   set +e
@@ -583,3 +589,10 @@ refuses() {
 refuses "Persistent travel storage is not ready"
 refuses "Sign in with Google can't work without GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET" -v "$volume:/data"
 refuses "TRAVEL_OWNER_EMAIL must be" -v "$volume:/data" -e GOOGLE_CLIENT_ID=smoke-test-client -e GOOGLE_CLIENT_SECRET=smoke-test-secret -e TRAVEL_OWNER_EMAIL=not-an-email
+# As after rolling back to an older image: the store refuses a newer schema before the server starts (TRA-78).
+docker exec -e SCHEMA_VERSION="$schema_version" "$container" node --input-type=module --eval '
+import { DatabaseSync } from "node:sqlite";
+const db = new DatabaseSync("/data/travel.sqlite");
+db.exec(`PRAGMA user_version = ${Number(process.env.SCHEMA_VERSION) + 1}`);
+db.close();'
+refuses "This database was created by a newer version of the travel app." -v "$volume:/data" "${auth_env[@]}"

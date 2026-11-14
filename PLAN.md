@@ -381,6 +381,11 @@ This replaces TRA-62's destination Save in a sticky header.
 - Opening a confirmation moves focus into it, focus stays in it, and the page behind can't be used until it closes. Cancel, the X, and Escape close it without changing anything and return focus to the control that opened it, when that control still exists.
 - Not included: which actions ask for confirmation, their messages, what deleting, removing, or clearing does, editors, and the Send feedback dialog.
 
+## Added scope: November 14, 2026, failing a deploy whose database can't open (TRA-78)
+- The container checks its storage and sign-in settings, then opens the database and runs any schema upgrade before its server starts. A database the release can't open or upgrade, such as one with a newer schema after rolling back to an older image, unexpected non-USD amounts, or an upgrade that fails, stops the container with the store's error, and a release without its settings never upgrades the database. The server still opens the database when a request first needs it.
+- `app.json` gives Dokku a startup health check on `/api/health`, read from the image's working directory, so Dokku switches traffic only to a release that answers it and otherwise keeps the running release.
+- Not included: opening the database at startup in `pnpm dev` or the standalone preview, readiness or liveness checks, changes to the deploy workflow, such as failing a re-run of a failed deploy, and checks for images built before this change.
+
 ## Added scope: November 14, 2026, visible focus on the trip search and cards (TRA-87)
 - Home's trip search shows the same focus outline as every other text field while it has focus. Before, only the caret showed it was focused.
 - A trip card reached with the keyboard shows its focus ring just inside its edge at every screen width. Before, the card cut off all but the ring's bottom edge.

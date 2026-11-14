@@ -154,6 +154,12 @@ export default function PlannerApp({ initialData, initialBudgets, access = {}, d
     const card = shownStop.current === null ? null : document.getElementById("destination-" + shownStop.current);
     if (card) { shownStop.current = null; card.scrollIntoView(); }
   });
+  // A save's message closes itself after five seconds. An error stays until it is dismissed or another change starts (TRA-82).
+  useEffect(() => {
+    if (!message) return;
+    const timer = setTimeout(() => setMessage(""), 5_000);
+    return () => clearTimeout(timer);
+  }, [message]);
   if (lastInitial !== initialData) { setLastInitial(initialData); setData(initialData); }
   const trip = data.trips.find((item) => item.id === tripId);
   // Only owners see Share and Delete; the server refuses those changes from anyone else.
@@ -537,7 +543,7 @@ export default function PlannerApp({ initialData, initialBudgets, access = {}, d
       </>}
       {editor.kind === "homeItem" && <>
         <Field label="Name" wide><input name="name" defaultValue={editor.item?.name} required maxLength={160} placeholder="House sitting, babysitting, or another task" disabled={busy} /></Field>
-        <Field label="Estimated price (USD, optional)" wide hint="Add the total cost for this trip, or leave blank if there is no cost to add. You can add a price later."><input name="price" type="number" min="0" max={MAX_AMOUNT_DOLLARS} step="0.01" defaultValue={minorAmountValue(editor.item?.priceCents, "USD")} placeholder="No price added" disabled={busy} /></Field>
+        <Field label="Estimated price (USD, optional)" wide hint="Add the total cost for this trip, or leave blank if there is no cost to add. You can add a price later."><input name="price" type="number" className="no-spin-buttons" min="0" max={MAX_AMOUNT_DOLLARS} step="0.01" defaultValue={minorAmountValue(editor.item?.priceCents, "USD")} placeholder="No price added" disabled={busy} /></Field>
         <Field label="Notes" wide><textarea name="notes" defaultValue={editor.item?.notes} maxLength={8000} rows={3} placeholder="Contacts, arrangements, or anything to remember" disabled={busy} /></Field>
         <label className="checkbox-field wide"><input name="completed" type="checkbox" defaultChecked={editor.item?.completed ?? false} disabled={busy} /><span>Completed<small>Any price stays in the trip estimate when this item is complete.</small></span></label>
       </>}

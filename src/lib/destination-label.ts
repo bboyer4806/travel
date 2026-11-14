@@ -57,8 +57,13 @@ export function destinationKey(city: string): string {
   return city.normalize("NFC").split(",").map(clean).join(",").toLowerCase();
 }
 
-/** Shorten only structured legacy labels; preserve all other user-entered text verbatim. */
-export function formatSavedDestinationLabel(value: string): string {
+/**
+ * A saved destination's city as Travel shows it. Only the label of a city suggestion chosen for it is shortened, from
+ * city, region and country to city and country or US state; any other city shows exactly as entered (TRA-76).
+ */
+export function formatSavedDestinationLabel(destination: { city: string; cityFromSuggestion: boolean }): string {
+  const value = destination.city;
+  if (!destination.cityFromSuggestion) return value;
   const parts = value.split(",");
   if (parts.length !== 3 || parts.some((part) => !part.trim())) return value;
   const [name, region, country] = parts.map(clean);

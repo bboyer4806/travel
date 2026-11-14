@@ -24,16 +24,16 @@ function GalleryView({ destination }: { destination: DestinationGalleryOwner }) 
   const [selectedId, setSelectedId] = useState(destination.mainImageId);
   const selected = destination.images.find((image) => image.id === selectedId) ?? destination.images[0];
   const index = destination.images.findIndex((image) => image.id === selected.id);
-  return <div className={styles.gallery} role="group" aria-label={`Photos of ${formatSavedDestinationLabel(destination.city)}`}>
+  return <div className={styles.gallery} role="group" aria-label={`Photos of ${formatSavedDestinationLabel(destination)}`}>
     <div className={styles.hero}>
       {/* Stored photos are resized and optimized on upload. */}
       {/* eslint-disable-next-line @next/next/no-img-element */}
-      <img className={styles.image} src={photoUrl(destination.id, selected)} alt={`${formatSavedDestinationLabel(destination.city)}, photo ${index + 1}`} loading="lazy" decoding="async" width={1600} height={700} />
+      <img className={styles.image} src={photoUrl(destination.id, selected)} alt={`${formatSavedDestinationLabel(destination)}, photo ${index + 1}`} loading="lazy" decoding="async" width={1600} height={700} />
       {selected.id === destination.mainImageId && <span className={styles.mainBadge}>Primary photo</span>}
       {destination.images.length > 1 && <span className={styles.count}>{index + 1} / {destination.images.length}</span>}
     </div>
     {destination.images.length > 1 && <div className={styles.thumbnails} role="group" aria-label="Choose a photo to view">
-      {destination.images.map((image, photoIndex) => <button type="button" className={styles.thumbnail} key={image.id} aria-pressed={selected.id === image.id} aria-label={`View photo ${photoIndex + 1} of ${formatSavedDestinationLabel(destination.city)}${image.id === destination.mainImageId ? " (primary photo)" : ""}`} onClick={() => setSelectedId(image.id)}>
+      {destination.images.map((image, photoIndex) => <button type="button" className={styles.thumbnail} key={image.id} aria-pressed={selected.id === image.id} aria-label={`View photo ${photoIndex + 1} of ${formatSavedDestinationLabel(destination)}${image.id === destination.mainImageId ? " (primary photo)" : ""}`} onClick={() => setSelectedId(image.id)}>
         <SavedPhoto destinationId={destination.id} image={image} alt="" />
         {image.id === destination.mainImageId && <span className={styles.thumbnailMain} aria-hidden="true"><Check size={11} /></span>}
       </button>)}

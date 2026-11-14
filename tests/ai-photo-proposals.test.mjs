@@ -330,7 +330,6 @@ test("schema 25 adds the table for proposals' photos, keeping every proposal, an
   db = new DatabaseSync(path);
   t.after(() => db.close());
   assert.equal(db.prepare("PRAGMA user_version").get().user_version, SCHEMA_VERSION);
-  assert.equal(SCHEMA_VERSION, 25);
   assert.throws(() => db.prepare("UPDATE ai_proposal_photos SET data = x'00'").run(), /A proposal's photos can't be changed once it is made/);
   assert.equal(db.prepare("PRAGMA integrity_check").get().integrity_check, "ok");
   assert.deepEqual(db.prepare("PRAGMA foreign_key_check").all(), []);

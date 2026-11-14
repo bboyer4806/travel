@@ -69,6 +69,9 @@ Repeat passing checks when subsequent changes affect their coverage or required 
   returns the trip's existing stop there instead of adding another. Removing a stop or deleting a trip
   never deletes a destination or what is saved with it. Only its owner deletes a destination, and only
   while no trip visits it.
+- A destination's city shows exactly as saved unless `destinations.cityFromSuggestion` records it as
+  the label of a city suggestion chosen for it (TRA-76). Show it with `formatSavedDestinationLabel` given
+  the destination, never by guessing from the text.
 - ChatGPT and Claude (TRA-115) use the MCP endpoint in `src/lib/mcp.ts`, with tools in
   `src/lib/mcp-tools.ts` and OAuth in `src/lib/ai-auth.ts` and `src/lib/oauth-handlers.ts`. Only the
   designated owner (`isAiOwner`) connects them, on `/ai/authorize`, and decides their proposals. They

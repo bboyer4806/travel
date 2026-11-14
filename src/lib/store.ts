@@ -4,7 +4,7 @@ import { mkdirSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { containsSunday, isValidDate, nightsToBudgetDays } from "./destination-duration.ts";
-import { destinationKey } from "./destination-label.ts";
+import { destinationKey, formatSavedDestinationLabel } from "./destination-label.ts";
 import { backfillDates, MAX_NIGHTS, sequenceDates } from "./trip-dates.ts";
 import { MAX_AMOUNT_CENTS, parseMinorAmount } from "./money.ts";
 import { formatMegabytes, MAX_CANDIDATE_IMAGES, MAX_DESTINATION_IMAGES, MAX_STORED_IMAGE_BYTES } from "./image-limits.ts";
@@ -23,7 +23,7 @@ import type { AiConnection, AiPhotoToAdd, AiProposal, DestinationFields, Destina
 import type { AuthorizedAccount, DestinationAccess, GoogleIdentity, TripAccess, TripMember, TripStop } from "./types";
 import type { FoodBudgetMode, ActivitiesBudgetMode, Candidate, CandidateImage, CandidateGalleryUpdate, Category, Church, MassTime, Destination, HomeItem, StoredImage, ItineraryStop, Mutation, ResearchLink, Snapshot, TravelLeg, Trip } from "./types";
 
-type StoredDestination = Omit<Destination, "churchEnabled" | "images" | "entryRequirements" | "healthSafety" | "mainImageId" | "imageVersion"> & { churchEnabled: number; ownerId: string; cityKey: string };
+type StoredDestination = Omit<Destination, "churchEnabled" | "cityFromSuggestion" | "images" | "entryRequirements" | "healthSafety" | "mainImageId" | "imageVersion"> & { churchEnabled: number; cityFromSuggestion: number; ownerId: string; cityKey: string };
 type StoredChurch = Omit<Church, "massTimes" | "images"> & { massTimesJson: string };
 type StoredHomeItem = Omit<HomeItem, "completed"> & { completed: number };
 type StoredLeg = Omit<TravelLeg, "itinerary" | "links"> & { itineraryJson: string; linksJson: string };
@@ -39,7 +39,7 @@ const VISIBLE_DESTINATIONS = `SELECT id FROM destinations WHERE ownerId = ? UNIO
 /** Every trip column but the owner's account ID, which stays on the server. */
 const TRIP_COLUMNS = "id, name, dateLabel, homeCity, returnCity, travelers, notes, createdAt, startDate";
 /** Every destination column but its owner's account ID and its city key, which stay on the server. */
-const DESTINATION_COLUMNS = ["id", "city", "notes", "miscDailyMinor", "miscCurrency", "hotelNightlyMinor", "hotelCurrency", "activitiesBudgetMode", "activitiesGeneralMinor", "activitiesCurrency", "foodBudgetMode", "foodDailyMinor", "foodCurrency", "shoppingMinor", "shoppingCurrency", "weatherHighF", "weatherLowF", "weatherRainfall", "weatherPeriod", "weatherSource", "churchEnabled"]
+const DESTINATION_COLUMNS = ["id", "city", "cityFromSuggestion", "notes", "miscDailyMinor", "miscCurrency", "hotelNightlyMinor", "hotelCurrency", "activitiesBudgetMode", "activitiesGeneralMinor", "activitiesCurrency", "foodBudgetMode", "foodDailyMinor", "foodCurrency", "shoppingMinor", "shoppingCurrency", "weatherHighF", "weatherLowF", "weatherRainfall", "weatherPeriod", "weatherSource", "churchEnabled"]
   .map((column) => "destinations." + column).join(", ");
 /** How each saved trip item finds its trip. */
 const TRIP_OF = {
@@ -119,6 +119,12 @@ function saveIdField(input: Input): string {
 function createField(input: Input): true | undefined {
   if (input.create === undefined) return undefined;
   if (input.create !== true) throw new ValidationError("create must be true or left out.");
+  return true;
+}
+/** `true` when the city a save sends is the label of a city suggestion chosen for it, and left out when it isn't (TRA-76). */
+function cityFromSuggestionField(input: Input): true | undefined {
+  if (input.cityFromSuggestion === undefined) return undefined;
+  if (input.cityFromSuggestion !== true || input.city === undefined) throw new ValidationError("cityFromSuggestion must be true or left out, and only with a city.");
   return true;
 }
 function booleanField(input: Input, key: string): boolean {
@@ -347,7 +353,7 @@ function validate(input: unknown): Mutation {
       if (value.create !== undefined || value.tripId !== undefined) throw new ValidationError(PLANNER_UPDATED);
       if (value.arrivalDate !== undefined || value.departureDate !== undefined) throw new ValidationError("Destination dates are calculated. Edit the trip start date or destination nights instead.");
       const id = saveIdField(value);
-      const fields = { city: value.city === undefined ? undefined : textField(value, "city", 120, true), stay: value.stay === undefined ? undefined : textField(value, "stay", 120), nights: nightsField(value), miscDailyAmount: value.miscDailyAmount === undefined ? undefined : textField(value, "miscDailyAmount", 32), hotelNightlyAmount: value.hotelNightlyAmount === undefined ? undefined : textField(value, "hotelNightlyAmount", 32), activitiesBudgetMode: activitiesModeField(value), activitiesGeneralAmount: value.activitiesGeneralAmount === undefined ? undefined : textField(value, "activitiesGeneralAmount", 32), foodBudgetMode: foodModeField(value), foodDailyAmount: value.foodDailyAmount === undefined ? undefined : textField(value, "foodDailyAmount", 32), shoppingAmount: value.shoppingAmount === undefined ? undefined : textField(value, "shoppingAmount", 32), weatherHighF: temperatureField(value, "weatherHighF"), weatherLowF: temperatureField(value, "weatherLowF"), weatherRainfall: value.weatherRainfall === undefined ? undefined : textField(value, "weatherRainfall", 4000), weatherPeriod: value.weatherPeriod === undefined ? undefined : textField(value, "weatherPeriod", 120), weatherSource: value.weatherSource === undefined ? undefined : textField(value, "weatherSource", 2048), notes: value.notes === undefined ? undefined : textField(value, "notes", 8000), image: imageField(value), gallery: destinationGalleryField(value) };
+      const fields = { city: value.city === undefined ? undefined : textField(value, "city", 120, true), cityFromSuggestion: cityFromSuggestionField(value), stay: value.stay === undefined ? undefined : textField(value, "stay", 120), nights: nightsField(value), miscDailyAmount: value.miscDailyAmount === undefined ? undefined : textField(value, "miscDailyAmount", 32), hotelNightlyAmount: value.hotelNightlyAmount === undefined ? undefined : textField(value, "hotelNightlyAmount", 32), activitiesBudgetMode: activitiesModeField(value), activitiesGeneralAmount: value.activitiesGeneralAmount === undefined ? undefined : textField(value, "activitiesGeneralAmount", 32), foodBudgetMode: foodModeField(value), foodDailyAmount: value.foodDailyAmount === undefined ? undefined : textField(value, "foodDailyAmount", 32), shoppingAmount: value.shoppingAmount === undefined ? undefined : textField(value, "shoppingAmount", 32), weatherHighF: temperatureField(value, "weatherHighF"), weatherLowF: temperatureField(value, "weatherLowF"), weatherRainfall: value.weatherRainfall === undefined ? undefined : textField(value, "weatherRainfall", 4000), weatherPeriod: value.weatherPeriod === undefined ? undefined : textField(value, "weatherPeriod", 120), weatherSource: value.weatherSource === undefined ? undefined : textField(value, "weatherSource", 2048), notes: value.notes === undefined ? undefined : textField(value, "notes", 8000), image: imageField(value), gallery: destinationGalleryField(value) };
       // A destination is changed by its own ID, and only a trip's stop has stay notes and nights, so a save that
       // changes them names that stop.
       const stopId = value.stopId === undefined ? undefined : idField(value, "stopId");
@@ -355,7 +361,7 @@ function validate(input: unknown): Mutation {
       return { type: value.type, id, stopId, ...fields };
     }
     case "destination.create":
-      return { type: value.type, city: textField(value, "city", 120, true) };
+      return { type: value.type, city: textField(value, "city", 120, true), cityFromSuggestion: cityFromSuggestionField(value) };
     case "destination.entryRequirements": {
       let requirements: EntryRequirements | null;
       try { requirements = normalizeEntryRequirements(value.requirements); }
@@ -375,7 +381,7 @@ function validate(input: unknown): Mutation {
     case "church.delete":
       return { type: value.type, id: idField(value), destinationId: idField(value, "destinationId") };
     case "stop.add":
-      return { type: value.type, tripId: idField(value, "tripId"), city: textField(value, "city", 120, true) };
+      return { type: value.type, tripId: idField(value, "tripId"), city: textField(value, "city", 120, true), cityFromSuggestion: cityFromSuggestionField(value) };
     case "stop.move":
       if (value.direction !== "up" && value.direction !== "down") throw new ValidationError("Choose a valid direction for this destination.");
       return { type: value.type, id: idField(value), direction: value.direction };
@@ -510,7 +516,7 @@ const LIVE: Make = { id: () => randomUUID(), now: () => new Date().toISOString()
  * The schema this build upgrades every database to, as SQLite's user_version. A schema change adds the next
  * upgrade in createStore and raises this to match; earlier upgrades keep their own numbers.
  */
-export const SCHEMA_VERSION = 25;
+export const SCHEMA_VERSION = 26;
 
 /** A destination as schema 20 saved it, inside one trip, with that trip's owner and name. */
 type TripDestinationRow = Omit<StoredDestination, "cityKey"> & Omit<TripStop, "destinationId"> & { tripName: string };
@@ -1059,6 +1065,12 @@ export function createStore(databasePath: string, ownerEmail: string) {
         PRAGMA user_version = 25;
       `);
     }
+    if (version < 26) {
+      // Whether each destination's city is the label of a city suggestion chosen for it, the only city shown shorter
+      // (TRA-76). No saved city is known to be one, so each shows exactly as saved. A replay keeps the saved records.
+      if (!hasColumn("destinations", "cityFromSuggestion")) db.exec("ALTER TABLE destinations ADD COLUMN cityFromSuggestion INTEGER NOT NULL DEFAULT 0 CHECK(cityFromSuggestion IN (0,1));");
+      db.exec("PRAGMA user_version = 26;");
+    }
     if (version < SCHEMA_VERSION && db.prepare("PRAGMA foreign_key_check").get()) {
       throw new Error("This upgrade would leave saved items without the trip or destination they belong to. Nothing was changed; review the database against a backup before upgrading.");
     }
@@ -1148,8 +1160,8 @@ export function createStore(databasePath: string, ownerEmail: string) {
     const photos = photosOf("destination_images", "destinationId", ids);
     return db.prepare(`SELECT ${DESTINATION_COLUMNS}, destination_images.version AS imageVersion, destination_images.id AS mainImageId FROM destinations
       LEFT JOIN destination_images ON destination_images.destinationId = destinations.id AND destination_images.isMain = 1${where} ORDER BY destinations.city COLLATE NOCASE, destinations.id`).all(...args).map((row) => {
-      const destination = row as unknown as Omit<Destination, "churchEnabled" | "images" | "entryRequirements" | "healthSafety"> & { churchEnabled: number };
-      return { ...destination, entryRequirements: requirements.get(destination.id) ?? null, healthSafety: healthSafety.get(destination.id) ?? null, churchEnabled: destination.churchEnabled === 1, images: photos.get(destination.id) ?? [] };
+      const destination = row as unknown as Omit<Destination, "churchEnabled" | "cityFromSuggestion" | "images" | "entryRequirements" | "healthSafety"> & { churchEnabled: number; cityFromSuggestion: number };
+      return { ...destination, entryRequirements: requirements.get(destination.id) ?? null, healthSafety: healthSafety.get(destination.id) ?? null, churchEnabled: destination.churchEnabled === 1, cityFromSuggestion: destination.cityFromSuggestion === 1, images: photos.get(destination.id) ?? [] };
     });
   }
   function readCandidates(destinationIds: readonly string[] | null): Candidate[] {
@@ -1179,8 +1191,9 @@ export function createStore(databasePath: string, ownerEmail: string) {
     const rawTrips = db.prepare(`SELECT ${TRIP_COLUMNS} FROM trips WHERE id IN (${VISIBLE_TRIPS}) ORDER BY createdAt DESC, id`).all(...visible) as unknown as Trip[];
     const stops = db.prepare(`SELECT id, tripId, destinationId, position, nights FROM trip_stops WHERE tripId IN (${VISIBLE_TRIPS}) ORDER BY tripId, position, id`).all(...visible) as unknown as TripStop[];
     const visited = `SELECT destinationId FROM trip_stops WHERE tripId IN (${VISIBLE_TRIPS})`;
-    const destinations = db.prepare(`SELECT id,city,miscDailyMinor,miscCurrency,hotelNightlyMinor,hotelCurrency,activitiesBudgetMode,activitiesGeneralMinor,activitiesCurrency,
-      foodBudgetMode,foodDailyMinor,foodCurrency,shoppingMinor,shoppingCurrency FROM destinations WHERE id IN (${visited})`).all(...visible) as unknown as Destination[];
+    const destinations = db.prepare(`SELECT id,city,cityFromSuggestion,miscDailyMinor,miscCurrency,hotelNightlyMinor,hotelCurrency,activitiesBudgetMode,activitiesGeneralMinor,activitiesCurrency,
+      foodBudgetMode,foodDailyMinor,foodCurrency,shoppingMinor,shoppingCurrency FROM destinations WHERE id IN (${visited})`).all(...visible)
+      .map((row) => ({ ...row, cityFromSuggestion: row.cityFromSuggestion === 1 })) as unknown as Destination[];
     const tripIds = rawTrips.map((trip) => trip.id);
     const tags = tagsOf(tripIds);
     const trips = rawTrips.map((trip) => ({ ...trip, tags: tags.get(trip.id) ?? [], endDate: sequenceDates(trip.startDate, stops.filter((stop) => stop.tripId === trip.id)).endDate }));
@@ -1196,7 +1209,7 @@ export function createStore(databasePath: string, ownerEmail: string) {
       data: {
         trips,
         stops: stops.map(({ id, tripId, destinationId, position }) => ({ id, tripId, destinationId, position })) as TripStop[],
-        destinations: destinations.map(({ id, city }) => ({ id, city })) as Destination[],
+        destinations: destinations.map(({ id, city, cityFromSuggestion }) => ({ id, city, cityFromSuggestion })) as Destination[],
         legs: [], candidates: [], homeItems: [], churches: [],
         tags: tagNames(tripIds),
       } as Snapshot,
@@ -1247,14 +1260,19 @@ export function createStore(databasePath: string, ownerEmail: string) {
     if (!tripRole(accountId, id)) return undefined;
     return db.prepare("SELECT name FROM trips WHERE id = ?").get(id)?.name as string | undefined;
   }
-  /** The city of one of a trip's stops. */
+  /** A destination's city as its pages show it, from its saved row. */
+  function shownCity(row: Record<string, unknown> | undefined): string | undefined {
+    return row && formatSavedDestinationLabel({ city: row.city as string, cityFromSuggestion: row.cityFromSuggestion === 1 });
+  }
+  /** The city of one of a trip's stops, as its pages show it. */
   function getStopName(accountId: string, tripId: string, stopId: string): string | undefined {
     if (!tripRole(accountId, tripId)) return undefined;
-    return db.prepare("SELECT destinations.city FROM trip_stops JOIN destinations ON destinations.id = trip_stops.destinationId WHERE trip_stops.tripId = ? AND trip_stops.id = ?").get(tripId, stopId)?.city as string | undefined;
+    return shownCity(db.prepare("SELECT destinations.city, destinations.cityFromSuggestion FROM trip_stops JOIN destinations ON destinations.id = trip_stops.destinationId WHERE trip_stops.tripId = ? AND trip_stops.id = ?").get(tripId, stopId));
   }
+  /** A destination's city, as its pages show it. */
   function getDestinationName(accountId: string, destinationId: string): string | undefined {
     if (!destinationRole(accountId, destinationId)) return undefined;
-    return db.prepare("SELECT city FROM destinations WHERE id = ?").get(destinationId)?.city as string | undefined;
+    return shownCity(db.prepare("SELECT city, cityFromSuggestion FROM destinations WHERE id = ?").get(destinationId));
   }
   /** The trip a saved trip item belongs to. Undefined when the item doesn't exist. */
   function tripOf(table: keyof typeof TRIP_OF, id: string): string | undefined {
@@ -1476,7 +1494,11 @@ export function createStore(databasePath: string, ownerEmail: string) {
     }
     const city = input.city ?? before?.city ?? "";
     return {
-      city, cityKey: destinationKey(city), notes: input.notes ?? before?.notes ?? "",
+      city, cityKey: destinationKey(city),
+      // Only a chosen suggestion's label is shown shorter (TRA-76). An unchanged city keeps its record; a new one sent
+      // without it was entered some other way.
+      cityFromSuggestion: input.cityFromSuggestion ? 1 : before && city === before.city ? before.cityFromSuggestion : 0,
+      notes: input.notes ?? before?.notes ?? "",
       miscDailyMinor: misc.minor, miscCurrency: misc.currency, hotelNightlyMinor: hotel.minor, hotelCurrency: hotel.currency,
       activitiesBudgetMode: input.activitiesBudgetMode ?? before?.activitiesBudgetMode ?? "itemized", activitiesGeneralMinor: activities.minor, activitiesCurrency: activities.currency,
       foodBudgetMode: input.foodBudgetMode ?? before?.foodBudgetMode ?? "itemized", foodDailyMinor: food.minor, foodCurrency: food.currency,
@@ -1491,9 +1513,12 @@ export function createStore(databasePath: string, ownerEmail: string) {
     const saved = db.prepare("SELECT city FROM destinations WHERE ownerId = ? AND cityKey = ? AND id != ?").get(ownerId, cityKey, id);
     if (saved) throw new ValidationError(`“${saved.city as string}” is already a saved destination. Choose a different city, or keep this one's name.`);
   }
-  /** An owner's destination for a city: the one saved for it, or a new one with this ID, saved with only its city. */
-  function destinationFor(ownerId: string, city: string, id: string): string {
-    const columns = destinationColumns({ city });
+  /**
+   * An owner's destination for a city: the one saved for it, unchanged, or a new one with this ID, saved with only its
+   * city and whether that is a chosen suggestion's label.
+   */
+  function destinationFor(ownerId: string, place: { city: string; cityFromSuggestion?: true }, id: string): string {
+    const columns = destinationColumns(place);
     const saved = db.prepare("SELECT id FROM destinations WHERE ownerId = ? AND cityKey = ?").get(ownerId, columns.cityKey);
     if (saved) return saved.id as string;
     const row = { id, ownerId, ...columns };
@@ -1506,10 +1531,10 @@ export function createStore(databasePath: string, ownerEmail: string) {
    * or a new one whose first stop shares its ID. A city the trip already visits returns that stop instead of adding
    * another, so adding it again after a lost response adds it once.
    */
-  function addStop(tripId: string, city: string, make: Make): string {
+  function addStop(tripId: string, place: { city: string; cityFromSuggestion?: true }, make: Make): string {
     const trip = existing<Trip & { ownerId: string }>("trips", tripId);
     const id = make.id();
-    const destinationId = destinationFor(trip.ownerId, city, id);
+    const destinationId = destinationFor(trip.ownerId, place, id);
     const visiting = db.prepare("SELECT id FROM trip_stops WHERE tripId = ? AND destinationId = ? ORDER BY position, id").get(trip.id, destinationId);
     if (visiting) return visiting.id as string;
     db.prepare("INSERT INTO trip_stops(id,tripId,destinationId,position,stay,nights) VALUES(?,?,?,?,'',NULL)").run(id, trip.id, destinationId, orderedStops(trip.id).length);
@@ -1612,7 +1637,7 @@ export function createStore(databasePath: string, ownerEmail: string) {
         return saveDestination(input, make);
       case "destination.create":
         // A destination outside any trip belongs to the account that creates it. A city it already has opens that one.
-        return destinationFor(accountId, input.city, make.id());
+        return destinationFor(accountId, input, make.id());
       case "destination.delete": {
         const before = existing<StoredDestination>("destinations", input.id);
         // A destination a trip visits keeps everything saved for it.
@@ -1667,7 +1692,7 @@ export function createStore(databasePath: string, ownerEmail: string) {
         return;
       }
       case "stop.add":
-        return addStop(input.tripId, input.city, make);
+        return addStop(input.tripId, input, make);
       case "stop.remove": {
         // Only this trip's stay goes. The destination and everything saved with it stay, for other trips and Destinations.
         const stop = existing<TripStop>("trip_stops", input.id);

@@ -48,7 +48,7 @@ export const PREVIEW_COLUMNS: Record<DataTable, Record<string, [string, Format] 
   legs: { id: null, tripId: null, fromId: null, toId: null, method: ["Method", "text"], priceCents: ["Price", "money"], departure: ["Departure", "text"], arrival: ["Arrival", "text"], url: null, notes: ["Notes", "text"], itineraryJson: ["Itinerary", "json"], linksJson: ["Research links", "json"] },
   home_items: { id: null, tripId: null, name: ["Name", "text"], notes: ["Notes", "text"], priceCents: ["Price", "money"], completed: ["Done", "flag"], createdAt: null },
   destinations: {
-    id: null, ownerId: ["Owner", "account"], city: ["City", "text"], cityKey: null, notes: ["Notes", "text"],
+    id: null, ownerId: ["Owner", "account"], city: ["City", "text"], cityKey: null, cityFromSuggestion: ["City chosen from a suggestion", "flag"], notes: ["Notes", "text"],
     miscDailyMinor: ["Daily miscellaneous", "money"], miscCurrency: null, hotelNightlyMinor: ["Nightly hotel estimate", "money"], hotelCurrency: null,
     activitiesGeneralMinor: ["General activities budget", "money"], activitiesCurrency: null, foodDailyMinor: ["Daily food budget", "money"], foodCurrency: null,
     shoppingMinor: ["Shopping budget", "money"], shoppingCurrency: null, activitiesBudgetMode: ["Activities budget method", "text"], foodBudgetMode: ["Food budget method", "text"],

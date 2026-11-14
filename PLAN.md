@@ -360,3 +360,10 @@ This replaces TRA-62's destination Save in a sticky header.
 - Text typed in that shape before then is recorded too: `Tokyo, Kyoto, Japan` shows as `Tokyo, Japan`. A country code is not a full name, so `Chicago, Cook County, IL` still shows as typed. Saving a recorded city unchanged keeps its record; changing its text saves it as typed.
 - Every city saved since keeps TRA-76's rule: only one chosen from a suggestion is shown shorter.
 - Not included: checking older cities against the suggestion provider, and departing or return cities, which already show as saved.
+
+## Added scope: November 14, 2026, proposal review on phones (TRA-121)
+- In windows up to 640 pixels wide, such as phones, a proposal's page shows each changed field stacked: its name, then its Before and After values, each labeled beside it, in place of the Field, Before and After columns. Wider windows, including a phone held sideways past 640 pixels, keep the columns as before.
+- Every change, record, field value, photo and notice shows in full from 320 pixels wide without scrolling sideways, in every state: waiting, approved, rejected, failed and expired. Long text, links and values of several lines wrap, and photos shrink to fit, keeping their shape.
+- **Approve every change** and **Reject** are at least 44 pixels tall at every width, and on phones the page ends with room for Send feedback, so at the end of the page they sit above it instead of under it.
+- Screen readers read each stacked value with its Before or After label; wider windows' tables keep their column headings and read as before.
+- Not included: changes to what proposals hold, how they are proposed, approved, rejected or expire, who can see or decide them, the AI assistants and connection pages, the site header, or the wider layout beyond the buttons' height.

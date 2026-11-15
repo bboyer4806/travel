@@ -437,3 +437,10 @@ This replaces TRA-62's destination Save in a sticky header.
 - The Delete confirmation above an idea's editor (TRA-128) closed this way returns to the editor, which shows a failed delete's error, and its Delete opens the confirmation again.
 - Cancel, the X and Escape still do nothing while saving, and an idea's editor opened from its details still returns to them when its save succeeds.
 - Not included: reopening an editor the browser closed, keeping its draft after its save fails, and changes to saving or its messages.
+
+## Added scope: November 15, 2026, feedback limits per account (TRA-92)
+- Feedback limits count per signed-in account, which a client can't change the way it could drop the anonymous feedback cookie to get fresh limits. The cookie is removed. Each account gets 10 tokens an hour, one for each opening of the sheet or retry, and keeps its 3 sends an hour. Everyone together keeps 20 tokens a minute and 120 an hour, and 5 sends a minute and 30 an hour, so one account can't use up everyone's.
+- A send doesn't count against the limits when Jira certainly created nothing: the settings are missing or invalid, the connection was refused or Jira's host wasn't found, or Jira answered with a 4xx status or 503. Timeouts, dropped connections and other statuses still count, since Jira may have created the task.
+- After a 429 from a token request or a send, the sheet's **Send** shows that message again without asking the server until the sheet is closed and reopened. Other failures still retry with Send (TRA-91), and the draft is kept.
+- `JIRA_URL`, `JIRA_EMAIL` and `JIRA_API_TOKEN` are trimmed, so a value saved with a line break still signs in. Each failed send logs a fixed reason naming what to check, with Jira's HTTP status when it answered, never a setting's value, the feedback or what Jira sent.
+- Not included: changes to the sheet's layout or messages, Jira's issue fields, the one-use token rules, limits kept across restarts or processes, and automatic retries.

@@ -5,6 +5,8 @@ import { MessageSquare, X } from "lucide-react";
 import { FEEDBACK_FAILURE, FEEDBACK_LIMIT } from "@/lib/feedback";
 
 const FeedbackContext = createContext<() => void>(() => {});
+/** The server's 429: asking again before the sheet reopens would only use up more of the limits (TRA-92). */
+class RateLimited extends Error {}
 /** The bottom-right Send feedback button. An editor renders its own, since a modal hides the page's. */
 export function FeedbackButton() {
   const open = useContext(FeedbackContext);
@@ -19,6 +21,8 @@ export default function FeedbackProvider({ children }: { children: ReactNode }) 
   const token = useRef("");
   const readyAt = useRef(0);
   const preparing = useRef<Promise<boolean> | null>(null);
+  /** A 429's message, which Send shows without asking the server until the sheet opens again. */
+  const limited = useRef("");
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
   const [sent, setSent] = useState(false);
@@ -28,9 +32,17 @@ export default function FeedbackProvider({ children }: { children: ReactNode }) 
     const data: unknown = await response.json().catch(() => { throw new Error(FEEDBACK_FAILURE); });
     if (!data || typeof data !== "object" || Array.isArray(data)) throw new Error(FEEDBACK_FAILURE);
     const result = data as Record<string, unknown>;
-    if (!response.ok) throw new Error(typeof result.error === "string" && result.error.trim() ? result.error : FEEDBACK_FAILURE);
+    if (!response.ok) {
+      const reason = typeof result.error === "string" && result.error.trim() ? result.error : FEEDBACK_FAILURE;
+      throw response.status === 429 ? new RateLimited(reason) : new Error(reason);
+    }
     return result;
   };
+  function fail(cause: unknown) {
+    const reason = cause instanceof Error ? cause.message : FEEDBACK_FAILURE;
+    if (cause instanceof RateLimited) limited.current = reason;
+    setError(reason);
+  }
   function prepare(): Promise<boolean> {
     // A fast Send shares the opening request rather than issuing a second challenge.
     if (preparing.current) return preparing.current;
@@ -44,7 +56,7 @@ export default function FeedbackProvider({ children }: { children: ReactNode }) 
         readyAt.current = Date.now() + 1100;
         return true;
       } catch (cause) {
-        if (generation === opening.current) setError(cause instanceof Error ? cause.message : FEEDBACK_FAILURE);
+        if (generation === opening.current) fail(cause);
         return false;
       } finally {
         if (generation === opening.current) preparing.current = null;
@@ -57,6 +69,7 @@ export default function FeedbackProvider({ children }: { children: ReactNode }) 
     opener.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
     if (sent) { setMessage(""); setSent(false); }
     setError("");
+    limited.current = "";
     opening.current++;
     dialog.current?.showModal();
     void prepare();
@@ -80,6 +93,7 @@ export default function FeedbackProvider({ children }: { children: ReactNode }) 
       {sent ? <div className="feedback-body"><p role="status">Thanks, your feedback was sent.</p><button className="button secondary" onClick={close}>Close</button></div> : <form className="feedback-body" onSubmit={async (event) => {
         event.preventDefault();
         if (pending.current) return;
+        if (limited.current) { setError(limited.current); return; }
         if (!message.trim()) { setError("Enter your feedback"); return; }
         const website = new FormData(event.currentTarget).get("website") ?? "";
         pending.current = true; setBusy(true); setError("");
@@ -92,7 +106,7 @@ export default function FeedbackProvider({ children }: { children: ReactNode }) 
           const result = await request({ message, page: location.pathname + location.search, viewport: `${window.innerWidth} × ${window.innerHeight}`, token: submissionToken, website });
           if (result.ok !== true) throw new Error(FEEDBACK_FAILURE);
           setSent(true);
-        } catch (cause) { setError(cause instanceof Error ? cause.message : FEEDBACK_FAILURE); }
+        } catch (cause) { fail(cause); }
         finally { pending.current = false; setBusy(false); }
       }}>
         <label className="field"><span>Feedback</span><textarea name="message" rows={6} value={message} onChange={(event) => setMessage(event.target.value.slice(0, FEEDBACK_LIMIT))} maxLength={FEEDBACK_LIMIT} disabled={busy} aria-describedby={error ? "feedback-count feedback-error" : "feedback-count"} autoFocus /></label>

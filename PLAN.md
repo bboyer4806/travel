@@ -444,3 +444,8 @@ This replaces TRA-62's destination Save in a sticky header.
 - After a 429 from a token request or a send, the sheet's **Send** shows that message again without asking the server until the sheet is closed and reopened. Other failures still retry with Send (TRA-91), and the draft is kept.
 - `JIRA_URL`, `JIRA_EMAIL` and `JIRA_API_TOKEN` are trimmed, so a value saved with a line break still signs in. Each failed send logs a fixed reason naming what to check, with Jira's HTTP status when it answered, never a setting's value, the feedback or what Jira sent.
 - Not included: changes to the sheet's layout or messages, Jira's issue fields, the one-use token rules, limits kept across restarts or processes, and automatic retries.
+
+## Added scope: November 15, 2026, estimates without a departing city (TRA-85)
+- A blank departing city no longer makes the trip estimate partial. It is optional and not an amount, and the travel from and to it is still counted with every other connection. A trip with every required amount filled shows a complete estimate on its page and on Home, with or without a departing city. Before, it showed **Partial estimate** with nothing listed to fix.
+- Showing **Add a departing city** beside the status instead was not chosen: adding one clears the travel from and to it, so a trip whose connections were priced would lose them and become partial again.
+- Not included: requiring a departing city; keeping the travel from and to it when one is first added, which still clears those connections as any new endpoint does; and other partial-estimate explanations, such as for a trip without destinations.

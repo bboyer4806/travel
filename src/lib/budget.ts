@@ -169,7 +169,8 @@ export function calculateBudget(snapshot: Snapshot, tripId: string): Budget {
   const trip = snapshot.trips.find((item) => item.id === tripId);
   if (!trip) return { ...budget, missingCount: 1 };
   const visits = tripVisits(snapshot, tripId);
-  if (!trip.homeCity.trim()) budget.missingCount += 1;
+  // A trip still needs a destination. The departing city is not an amount: the travel from and to it is counted with
+  // every other connection, so a blank one never makes an estimate partial (TRA-85).
   if (!visits.length) budget.missingCount += 1;
 
   function add(cost: Cost) {

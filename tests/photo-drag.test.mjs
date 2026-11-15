@@ -7,6 +7,7 @@ import ts from "typescript";
 import * as destinationLabel from "../src/lib/destination-label.ts";
 import * as galleryDraft from "../src/lib/gallery-draft.ts";
 import * as imageLimits from "../src/lib/image-limits.ts";
+import * as photoFocus from "../src/lib/photo-focus.ts";
 import * as uuid from "../src/lib/uuid.ts";
 
 // TRA-126: the actual photo editors, run with a small hook harness that keeps their state between renders, as React
@@ -102,7 +103,7 @@ function harness(kind, item, { mouse = true, disabled = false } = {}) {
     },
     "react/jsx-runtime": { jsx: element, jsxs: element, Fragment: "fragment" },
     "lucide-react": new Proxy({}, { get: (_, name) => "icon:" + String(name) }),
-    "@/lib/destination-label": destinationLabel, "@/lib/gallery-draft": galleryDraft, "@/lib/image-limits": imageLimits, "@/lib/uuid": uuid,
+    "@/lib/destination-label": destinationLabel, "@/lib/gallery-draft": galleryDraft, "@/lib/image-limits": imageLimits, "@/lib/photo-focus": photoFocus, "@/lib/uuid": uuid,
   };
   const require = (name) => {
     // A CSS module's class names are their own names.

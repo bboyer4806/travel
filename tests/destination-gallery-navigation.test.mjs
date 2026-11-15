@@ -7,6 +7,7 @@ import ts from "typescript";
 import * as galleryDraft from "../src/lib/gallery-draft.ts";
 import * as destinationLabel from "../src/lib/destination-label.ts";
 import * as imageLimits from "../src/lib/image-limits.ts";
+import * as photoFocus from "../src/lib/photo-focus.ts";
 import * as uuid from "../src/lib/uuid.ts";
 
 // TRA-123: the actual destination gallery, run with a small hook harness that keeps its state between renders, as
@@ -38,7 +39,7 @@ function harness(destination) {
     },
     "react/jsx-runtime": { jsx: element, jsxs: element, Fragment: "fragment" },
     "lucide-react": new Proxy({}, { get: (_, name) => "icon:" + String(name) }),
-    "@/lib/gallery-draft": galleryDraft, "@/lib/destination-label": destinationLabel, "@/lib/image-limits": imageLimits, "@/lib/uuid": uuid,
+    "@/lib/gallery-draft": galleryDraft, "@/lib/destination-label": destinationLabel, "@/lib/image-limits": imageLimits, "@/lib/photo-focus": photoFocus, "@/lib/uuid": uuid,
   };
   const require = (name) => {
     // A CSS module's class names are their own names.
@@ -64,6 +65,11 @@ function harness(destination) {
   return {
     arrow,
     hosts: () => nodes,
+    /** Where the main photo's crop is centered, and each thumbnail's (TRA-53). */
+    positions() {
+      const [hero, ...thumbnails] = nodes.filter((node) => node.type === "img");
+      return { hero: hero.props.style.objectPosition, thumbnails: thumbnails.map((node) => node.props.style.objectPosition) };
+    },
     /** The photo shown: its number in its alt text, its ID from its source, the counter, the pressed thumbnail, and whether it is marked primary. */
     shown() {
       const [hero] = nodes.filter((node) => node.type === "img");
@@ -80,9 +86,9 @@ function harness(destination) {
   };
 }
 
-/** A saved destination whose city was chosen from a suggestion, with `count` photos, the one at `primary` (from 1) primary. */
+/** A saved destination whose city was chosen from a suggestion, with `count` centered photos, the one at `primary` (from 1) primary. */
 function savedDestination(count, primary = 1) {
-  const images = Array.from({ length: count }, () => ({ id: randomUUID(), version: randomUUID() }));
+  const images = Array.from({ length: count }, () => ({ id: randomUUID(), version: randomUUID(), focusX: 50, focusY: 50 }));
   return { id: randomUUID(), city: "Vienna, State of Vienna, Austria", cityFromSuggestion: true, images, mainImageId: images[primary - 1]?.id ?? null };
 }
 
@@ -141,4 +147,19 @@ test("in a two-photo gallery, Previous and Next each show the other photo (TRA-1
     gallery.press(direction);
     assert.deepEqual(gallery.shown(), photo(destination, number), `${direction} shows photo ${number}`);
   }
+});
+
+test("the main photo and thumbnails keep each photo's focal point in view, whichever photo is shown (TRA-53)", () => {
+  const destination = savedDestination(3, 2);
+  Object.assign(destination.images[0], { focusX: 10, focusY: 90 });
+  Object.assign(destination.images[1], { focusX: 50, focusY: 25.5 });
+  const gallery = harness(destination);
+  const thumbnails = ["10% 90%", "50% 25.5%", "50% 50%"];
+  assert.deepEqual(gallery.positions(), { hero: "50% 25.5%", thumbnails }, "the primary photo opens on its focal point");
+  for (const [direction, hero] of [["next", "50% 50%"], ["next", "10% 90%"], ["previous", "50% 50%"]]) {
+    gallery.press(direction);
+    assert.deepEqual(gallery.positions(), { hero, thumbnails }, `${direction} shows the next photo on its own focal point`);
+  }
+  gallery.view(1);
+  assert.deepEqual(gallery.positions(), { hero: "10% 90%", thumbnails });
 });

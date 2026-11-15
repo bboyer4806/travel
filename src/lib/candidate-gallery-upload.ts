@@ -22,6 +22,16 @@ function photoOrder(value: unknown, maxImages: number): string[] {
   return value;
 }
 
+/** Destination photos' new focal points (TRA-53): each photo once, by ID, as percentages from 0 to 100. The store refuses them for ideas and churches. */
+function focalPoints(value: unknown, maxImages: number): NonNullable<GalleryUpdate["focus"]> {
+  const invalid = new ImageValidationError("These crop adjustments are invalid. Refresh and try again.");
+  if (!Array.isArray(value) || value.length > maxImages) throw invalid;
+  const percent = (number: unknown) => typeof number === "number" && Number.isFinite(number) && number >= 0 && number <= 100;
+  if (value.some((entry) => !entry || typeof entry !== "object" || typeof entry.id !== "string" || !UUID.test(entry.id) || !percent(entry.focusX) || !percent(entry.focusY))) throw invalid;
+  if (new Set(value.map((entry) => entry.id.toLowerCase())).size !== value.length) throw invalid;
+  return value.map(({ id, focusX, focusY }) => ({ id, focusX, focusY }));
+}
+
 /**
  * A gallery save's photo changes, for a destination, idea or church, with at most `maxImages` photos. Validate the
  * complete batch before decoding; persistence happens only after every file succeeds.
@@ -51,6 +61,7 @@ export async function prepareCandidateGallery(form?: FormData, maxImages = MAX_C
     throw new ImageValidationError("Choose a valid main photo.");
   }
   const order = manifest.order === undefined ? undefined : photoOrder(manifest.order, maxImages);
+  const focus = manifest.focus === undefined ? undefined : focalPoints(manifest.focus, maxImages);
   const expectedFields = new Set(addIds.map((id) => "image:" + id));
   for (const key of form.keys()) {
     if (key.startsWith("image:") && !expectedFields.has(key)) throw new ImageValidationError("An uploaded photo was not included in your changes. Try again.");
@@ -71,5 +82,5 @@ export async function prepareCandidateGallery(form?: FormData, maxImages = MAX_C
     if (!data) throw new ImageValidationError("One of your photos could not be read. Select it again.");
     add.push({ id, data });
   }
-  return { add, remove, ...(main !== undefined ? { mainImageId: main } : {}), ...(order === undefined ? {} : { order }) };
+  return { add, remove, ...(main !== undefined ? { mainImageId: main } : {}), ...(order === undefined ? {} : { order }), ...(focus === undefined ? {} : { focus }) };
 }

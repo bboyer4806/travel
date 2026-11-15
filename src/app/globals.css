@@ -605,6 +605,10 @@ button svg,a svg {
   background:var(--white);
   padding:22px
 }
+/* What the trip map leads to (TRA-44) keeps a little room above it. */
+.destination-card,.travel-card,.connection-itinerary>li {
+  scroll-margin-top:16px
+}
 .destination-top {
   display:flex;
   gap:16px;

@@ -33,7 +33,7 @@ function request(query, cookie, origin = "http://localhost:3000") {
 
 test("location API issues a scoped client cookie and enforces its upstream budget", async () => {
   let calls = 0;
-  const GET = route(createLocationSearch({ fetcher: async () => { calls++; return Response.json({}); } }));
+  const GET = route(createLocationSearch({ fetcher: async () => { calls++; return Response.json({}); } }).searchLocations);
   const first = await GET(request("First city"));
   assert.equal(first.status, 200);
   assert.equal(first.headers.get("cache-control"), "private, max-age=300");
@@ -70,7 +70,7 @@ test("location cookies are secure on HTTPS and replaced when malformed", async (
 
 test("location API preserves authentication and invalid-query responses", async () => {
   let calls = 0;
-  const search = createLocationSearch({ fetcher: async () => { calls++; return Response.json({}); } });
+  const { searchLocations: search } = createLocationSearch({ fetcher: async () => { calls++; return Response.json({}); } });
   const unauthorized = await route(search, false)(request("Vienna"));
   assert.equal(unauthorized.status, 401);
   assert.equal(unauthorized.headers.get("set-cookie"), null);

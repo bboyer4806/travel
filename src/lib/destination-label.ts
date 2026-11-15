@@ -27,8 +27,15 @@ const US_STATES: Record<string, string> = {
 function clean(value: string): string {
   return value.trim().replace(/\s+/g, " ");
 }
-function recognizedCountry(value: string): string | undefined {
+/** The ISO code of a country named in English, by its code, or by a common alias such as "USA" or "UK". */
+export function recognizedCountry(value: string): string | undefined {
   return countryCodesByName.get(clean(value).toLowerCase());
+}
+
+/** The US state, district or territory a postal abbreviation such as "OH" or "D.C." names. */
+export function usStateName(value: string): string | undefined {
+  const code = value.replace(/[^a-z]/gi, "").toUpperCase();
+  return code.length === 2 ? US_STATES[code] : undefined;
 }
 
 /** Display only: keep the provider's complete location label as the saved identity. */

@@ -2,6 +2,7 @@
 
 import { useId, useRef, useState } from "react";
 import { ArrowDown, ArrowUp, MapPin, Plane, Plus, Trash2 } from "lucide-react";
+import { itineraryTarget } from "@/lib/trip-map";
 import type { ItineraryStop } from "@/lib/types";
 import { randomUuid } from "@/lib/uuid";
 import { controlOrNeighbor, useFocusAfter } from "./focus-after";
@@ -98,10 +99,11 @@ export function ConnectionItineraryEditor({ stops, onChange, disabled = false }:
   </section>;
 }
 
-export function ConnectionItinerary({ stops }: { stops: ItineraryStop[] }) {
+/** A connection's itinerary. Each entry is where the trip map's marker for it leads (TRA-44). */
+export function ConnectionItinerary({ legId, stops }: { legId: string; stops: ItineraryStop[] }) {
   if (stops.length === 0) return null;
   return <ol className="connection-itinerary" aria-label="Stops along this connection">
-    {stops.map((stop, index) => <li key={stop.id}>
+    {stops.map((stop, index) => <li key={stop.id} id={itineraryTarget(legId, stop.id)} tabIndex={-1}>
       <span className="connection-itinerary-number" aria-hidden="true">{index + 1}</span>
       <div className="connection-itinerary-detail">
         <span className="connection-itinerary-kind">{stop.kind === "layover" ? <Plane size={12} aria-hidden="true" /> : <MapPin size={12} aria-hidden="true" />}{stop.kind === "layover" ? "Layover" : "Stop"}</span>

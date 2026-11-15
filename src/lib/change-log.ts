@@ -2,6 +2,18 @@ export interface Release { version: string; date: string; changes: readonly stri
 
 // Add only verified, deployed changes and their actual release dates at release close.
 export const releases: readonly Release[] = [{
+  version: "1.12",
+  date: "2026-11-15",
+  changes: [
+    "See each trip's whole journey on a map below its header: the departing city, every destination in route order, each connection's layovers and stops, and the return city, joined by straight lines with each connection's transportation icons. Select a marker to go to its destination, stop, or connection. Places the map can't find are listed below it instead of being guessed.",
+    "Estimate spending on the way, such as airport meals, drinks, and layover purchases, with Miscellaneous spending in each travel connection's editor. One amount covers the whole connection for the whole party. It shows on the connection's card and adds up in the trip estimate's new Transit miscellaneous row. Leaving it blank never makes an estimate partial, and ChatGPT and Claude can propose it too.",
+    "Choose what each destination photo shows where it's cropped: in the destination's photo editor, Adjust crop under a photo lets you drag it with a mouse or a finger inside a frame shaped like the main photo. Apply the crop and save the destination to use it for the main photo and thumbnails on every screen, or use Reset to center to start over. The photo itself, the photos' order, and your primary photo stay the same.",
+    "Give each destination its own tagline, shown in capitals above its name on its page in place of A PLACE WORTH KNOWING. Type up to 120 characters in Tagline, below City or destination in the destination's editor, or leave it blank for the default. ChatGPT and Claude can propose one too.",
+    "A trip without a departing city now shows an Estimated total once every amount it needs is filled in, on its page and its card in All trips, instead of a Partial estimate with nothing left to fix.",
+    "If your browser closes an editor while it's saving, as Chrome can after repeated Escapes and Android's back button can, a failed save's error now appears at the bottom of the screen, and every editor opens again without reloading the page.",
+    "Send feedback keeps working for everyone when one account sends a lot or Jira is briefly unavailable: each account now has its own limits, so one can't use up everyone's, and a send that failed without creating anything in Jira no longer counts.",
+  ],
+}, {
   version: "1.11",
   date: "2026-11-14",
   changes: [

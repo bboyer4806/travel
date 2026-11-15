@@ -127,6 +127,7 @@ const CHANGES = [
   change("stop.remove", "Removes a trip's stay at a destination. The destination stays, with everything saved for it.", { id: id("The stay's id.") }, ["id"]),
   change("leg.save", "Changes the travel between two stays, or from the departing city or to the return city. Each field is saved as given.", {
     id: id("The travel's id."), method: text("How, such as Flight or Train. Empty for none.", 120), price: amount("What it costs for the whole party."),
+    miscAmount: amount("Miscellaneous spending on the way, such as airport meals, drinks and layover purchases, for the whole party and the whole connection, apart from its price. Left out keeps the saved amount."),
     departure: text("When it leaves. Empty for none.", 120), arrival: text("When it arrives. Empty for none.", 120), url: text("A booking or research link, https:// or http://. Empty for none.", 2048),
     notes: text("Notes. Empty for none.", 8000),
     itinerary: { type: "array", maxItems: 30, description: "Layovers and stops on the way, replacing the saved ones. Left out keeps them.", items: { type: "object", additionalProperties: false, required: ["id", "kind", "place"], properties: { id: id("The entry's id: a new UUID for a new one."), kind: { type: "string", enum: ["layover", "stop"] }, place: text("Where.", 160), arrival: text("When it arrives. Empty for none.", 120), departure: text("When it leaves. Empty for none.", 120), notes: text("Notes. Empty for none.", 2000) } } },

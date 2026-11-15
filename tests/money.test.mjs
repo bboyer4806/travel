@@ -21,6 +21,7 @@ test("destination amounts and estimated prices reject equivalent amounts with on
   const fields = [
     ["Estimated price", (price) => candidateInput(destinationId, "activities", { price })],
     ["Estimated price", (price) => ({ type: "leg.save", id: legId, method: "Train", price, departure: "", arrival: "", url: "", notes: "" })],
+    ["Miscellaneous spending", (miscAmount) => ({ type: "leg.save", id: legId, method: "Train", price: "", miscAmount, departure: "", arrival: "", url: "", notes: "" })],
     ["Estimated price", (price) => ({ type: "homeItem.save", ...newItem(), tripId, name: "Pet sitter", price, notes: "", completed: false })],
     ["Daily miscellaneous amount", (miscDailyAmount) => destinationEdit(destinationId, { miscDailyAmount })],
     ["Nightly hotel amount", (hotelNightlyAmount) => destinationEdit(destinationId, { hotelNightlyAmount })],

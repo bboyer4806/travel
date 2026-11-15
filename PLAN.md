@@ -425,6 +425,13 @@ This replaces TRA-62's destination Save in a sticky header.
 - The arrows keep their labels, keyboard use and focus ring at every screen size, and browsing saves nothing: ideas, their order, selections, photos and budgets are unchanged. Destination photo arrows already loop (TRA-123) and are unchanged.
 - Not included: autoplay or timed scrolling, changes to swiping or scrolling, carousel or arrow redesign, changes to ideas or photos, new pagination or browsing controls, and arrows for galleries without them.
 
+## Added scope: November 14, 2026, miscellaneous spending in transit (TRA-26)
+- Each travel connection's editor has an optional **Miscellaneous spending (USD)** field for spending on the way, such as airport meals, drinks, snacks and layover purchases. One amount covers the whole connection, layovers included, for the whole party. The connection's existing Notes describe it; there is no separate notes field.
+- Blank is no estimate and never makes the trip estimate partial; zero is a known amount. The amount follows every other amount's rules: zero or more, at most two decimal places, and no more than $100,000,000.
+- A connection's card shows an entered amount apart from its transportation price. The trip estimate has a **Transit miscellaneous** row, separate from Travel and destination Miscellaneous, and counts its USD total once in the trip total.
+- The amount is saved with its connection and kept when the trip is reopened or the connection edited. Clearing the connection clears it, and a route change that removes or clears a connection removes it from the trip total. ChatGPT and Claude can propose it, and the proposal's page shows it. Schema 29 adds it to each connection, blank.
+- Not included: other currencies, conversion or exchange rates; itemized purchases, receipts or actual spending; a separate spending notes field; suggested amounts from the transportation, duration or layovers; and changes to destination miscellaneous spending.
+
 ## Added scope: November 15, 2026, closing an editor during a save (TRA-81)
 - When the browser closes an editor while it saves, as Chrome does after repeated Escapes and Android's back button can, the page forgets the editor. The save still finishes: a failed save's error shows in the alert at the bottom of the screen, as for changes made without an editor (TRA-82), and every editor opens again without reloading. Before, the error showed inside the closed editor, out of sight, and Edit and Add buttons opened nothing.
 - The Delete confirmation above an idea's editor (TRA-128) closed this way returns to the editor, which shows a failed delete's error, and its Delete opens the confirmation again.

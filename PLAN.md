@@ -431,3 +431,9 @@ This replaces TRA-62's destination Save in a sticky header.
 - A connection's card shows an entered amount apart from its transportation price. The trip estimate has a **Transit miscellaneous** row, separate from Travel and destination Miscellaneous, and counts its USD total once in the trip total.
 - The amount is saved with its connection and kept when the trip is reopened or the connection edited. Clearing the connection clears it, and a route change that removes or clears a connection removes it from the trip total. ChatGPT and Claude can propose it, and the proposal's page shows it. Schema 29 adds it to each connection, blank.
 - Not included: other currencies, conversion or exchange rates; itemized purchases, receipts or actual spending; a separate spending notes field; suggested amounts from the transportation, duration or layovers; and changes to destination miscellaneous spending.
+
+## Added scope: November 15, 2026, closing an editor during a save (TRA-81)
+- When the browser closes an editor while it saves, as Chrome does after repeated Escapes and Android's back button can, the page forgets the editor. The save still finishes: a failed save's error shows in the alert at the bottom of the screen, as for changes made without an editor (TRA-82), and every editor opens again without reloading. Before, the error showed inside the closed editor, out of sight, and Edit and Add buttons opened nothing.
+- The Delete confirmation above an idea's editor (TRA-128) closed this way returns to the editor, which shows a failed delete's error, and its Delete opens the confirmation again.
+- Cancel, the X and Escape still do nothing while saving, and an idea's editor opened from its details still returns to them when its save succeeds.
+- Not included: reopening an editor the browser closed, keeping its draft after its save fails, and changes to saving or its messages.

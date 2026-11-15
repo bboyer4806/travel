@@ -432,6 +432,24 @@ This replaces TRA-62's destination Save in a sticky header.
 - The amount is saved with its connection and kept when the trip is reopened or the connection edited. Clearing the connection clears it, and a route change that removes or clears a connection removes it from the trip total. ChatGPT and Claude can propose it, and the proposal's page shows it. Schema 29 adds it to each connection, blank.
 - Not included: other currencies, conversion or exchange rates; itemized purchases, receipts or actual spending; a separate spending notes field; suggested amounts from the transportation, duration or layovers; and changes to destination miscellaneous spending.
 
+## Added scope: November 15, 2026, closing an editor during a save (TRA-81)
+- When the browser closes an editor while it saves, as Chrome does after repeated Escapes and Android's back button can, the page forgets the editor. The save still finishes: a failed save's error shows in the alert at the bottom of the screen, as for changes made without an editor (TRA-82), and every editor opens again without reloading. Before, the error showed inside the closed editor, out of sight, and Edit and Add buttons opened nothing.
+- The Delete confirmation above an idea's editor (TRA-128) closed this way returns to the editor, which shows a failed delete's error, and its Delete opens the confirmation again.
+- Cancel, the X and Escape still do nothing while saving, and an idea's editor opened from its details still returns to them when its save succeeds.
+- Not included: reopening an editor the browser closed, keeping its draft after its save fails, and changes to saving or its messages.
+
+## Added scope: November 15, 2026, feedback limits per account (TRA-92)
+- Feedback limits count per signed-in account, which a client can't change the way it could drop the anonymous feedback cookie to get fresh limits. The cookie is removed. Each account gets 10 tokens an hour, one for each opening of the sheet or retry, and keeps its 3 sends an hour. Everyone together keeps 20 tokens a minute and 120 an hour, and 5 sends a minute and 30 an hour, so one account can't use up everyone's.
+- A send doesn't count against the limits when Jira certainly created nothing: the settings are missing or invalid, the connection was refused or Jira's host wasn't found, or Jira answered with a 4xx status or 503. Timeouts, dropped connections and other statuses still count, since Jira may have created the task.
+- After a 429 from a token request or a send, the sheet's **Send** shows that message again without asking the server until the sheet is closed and reopened. Other failures still retry with Send (TRA-91), and the draft is kept.
+- `JIRA_URL`, `JIRA_EMAIL` and `JIRA_API_TOKEN` are trimmed, so a value saved with a line break still signs in. Each failed send logs a fixed reason naming what to check, with Jira's HTTP status when it answered, never a setting's value, the feedback or what Jira sent.
+- Not included: changes to the sheet's layout or messages, Jira's issue fields, the one-use token rules, limits kept across restarts or processes, and automatic retries.
+
+## Added scope: November 15, 2026, estimates without a departing city (TRA-85)
+- A blank departing city no longer makes the trip estimate partial. It is optional and not an amount, and the travel from and to it is still counted with every other connection. A trip with every required amount filled shows a complete estimate on its page and on Home, with or without a departing city. Before, it showed **Partial estimate** with nothing listed to fix.
+- Showing **Add a departing city** beside the status instead was not chosen: adding one clears the travel from and to it, so a trip whose connections were priced would lose them and become partial again.
+- Not included: requiring a departing city; keeping the travel from and to it when one is first added, which still clears those connections as any new endpoint does; and other partial-estimate explanations, such as for a trip without destinations.
+
 ## Added scope: November 15, 2026, adjustable destination photo crops (TRA-53)
 - Each destination photo, new uploads included, has its own focal point, which decides what shows where the 16:7 main photo crops it to fit. A photo without an adjusted crop stays centered, as before.
 - The destination's photo editor has **Adjust crop** under each photo. It opens a crop editor in place of the photos, with the photo in a 16:7 frame, the main photo's shape on every screen. Dragging the photo with a mouse or a finger moves it within the frame, and the frame shows the crop as it changes. Without zoom, a photo moves only the way it is wider or taller than the frame, as far as its edges.

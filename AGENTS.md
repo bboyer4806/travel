@@ -128,6 +128,7 @@ Repeat passing checks when subsequent changes affect their coverage or required 
   Never parse free-text stay notes. Church eligibility is separate from persistent manual visibility.
 - Feedback uses `/api/feedback` and server-only Jira configuration. Local testing must use
   `scripts/jira-feedback-stub.mjs`, never real Jira. Do not expose credentials or log messages.
+  Its limits count per signed-in account, which the route passes to the handler (TRA-92).
 - Client components create new IDs with `randomUuid()` from `src/lib/uuid.ts`, never
   `crypto.randomUUID()`, which browsers leave out of plain-HTTP pages opened from another device.
 - Publish `src/lib/change-log.ts` entries only for verified shipped changes at release close.

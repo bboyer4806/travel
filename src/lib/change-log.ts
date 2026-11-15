@@ -2,6 +2,21 @@ export interface Release { version: string; date: string; changes: readonly stri
 
 // Add only verified, deployed changes and their actual release dates at release close.
 export const releases: readonly Release[] = [{
+  version: "1.11",
+  date: "2026-11-14",
+  changes: [
+    "Mark each restaurant as Breakfast, Lunch, Dinner, Snack, or Drinks, in any combination or none, under Restaurant types in its editor. They show as tags on its cards and at the top of its details in every trip that visits the destination, and ChatGPT and Claude can propose them too.",
+    "Delete a hotel, activity, or restaurant while editing it: Delete sits beside Cancel and asks you to confirm. Canceling returns you to the editor with your unsaved changes, and deleting doesn't save them.",
+    "Drag photos into a new order with a mouse or trackpad while editing a destination, hotel, activity, restaurant, or church. Saving keeps the order, Cancel or Undo photo changes puts it back, and your primary photo stays the same. Photo editing on phones and tablets is unchanged.",
+    "Step through a destination's photos with the arrows on its main photo. They appear when you point at the photo and stay visible on phones and tablets. Next on the last photo returns to the first.",
+    "The arrows that scroll a destination's hotel, activity, and restaurant cards now loop: Next at the end returns to the first cards, and Previous at the start goes to the last.",
+    "See every activity photo at the same size, whatever its shape, on a destination's activity cards and the Activities page, where an activity without photos keeps an empty frame of the same size. Cards no longer stretch to fit a tall photo or grow as photos load.",
+    "Confirmations such as Delete and Remove from trip now open in the middle of the screen over a darker background. On phones, a long message scrolls while Cancel and the confirming button stay in view, and both buttons are easier to tap.",
+    "Review proposals from ChatGPT and Claude on your phone: each changed field shows its Before and After values one above the other, long text wraps to fit, and Approve every change and Reject are easier to tap.",
+    "See where you are when using the keyboard on All trips and Destinations: the search field and each card now show a focus outline.",
+    "If an update can't open or upgrade your saved plans, Travel keeps running the version you were using instead of switching to one that can't load them.",
+  ],
+}, {
   version: "1.10",
   date: "2026-11-14",
   changes: [

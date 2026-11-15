@@ -212,7 +212,7 @@ Prefer fixing forward. Rolling back an image does not reverse a database schema 
 
 ## Schema history
 
-The schema version is SQLite's `user_version`; the current schema is 28, `SCHEMA_VERSION` in `src/lib/store.ts`. At every start, `createStore` in `src/lib/store.ts` upgrades an older database in one transaction, through each version in turn. Each upgrade checks what already exists, so running it again on a database that already has its changes (a replay) keeps saved data. The notes below are in schema order. **Superseded** marks behavior that a later schema replaced; the current behavior is in [README.md](../README.md).
+The schema version is SQLite's `user_version`; the current schema is 29, `SCHEMA_VERSION` in `src/lib/store.ts`. At every start, `createStore` in `src/lib/store.ts` upgrades an older database in one transaction, through each version in turn. Each upgrade checks what already exists, so running it again on a database that already has its changes (a replay) keeps saved data. The notes below are in schema order. **Superseded** marks behavior that a later schema replaced; the current behavior is in [README.md](../README.md).
 
 ### Schema 1: first shared planner
 The first release creates the `trips`, `destinations`, `legs` and `candidates` tables, with prices in integer USD cents for the whole party. Anyone with the URL can view and edit every trip. The schema 1 build sets `user_version` to 1 at every start and does not refuse a newer database, so later upgrades check what already exists as well as the version: redeploying a newer build after a rollback to schema 1 cannot repeat an `ALTER TABLE` or replace saved links.
@@ -363,6 +363,11 @@ Restoring the pre-upgrade backup to run a schema 26 build again shows those citi
 Restaurant types upgrade the database to schema 28 in the startup transaction, adding `restaurantTypesJson` to `candidates`: a restaurant's types as a JSON list, in the order Travel lists them, from `breakfast`, `lunch`, `dinner`, `snack` and `drinks`. Every existing idea starts with `[]`, no types, and a check constraint keeps hotels and activities at `[]`. Nothing else changes. The column is in the same online backups, and a replay keeps saved types.
 
 Restoring the pre-upgrade backup to run a schema 27 build again loses every restaurant's types.
+
+### Schema 29: miscellaneous spending in transit (TRA-26)
+Miscellaneous spending in transit upgrades the database to schema 29 in the startup transaction, adding `miscCents` to `legs`: a travel connection's miscellaneous spending on the way, such as airport meals and layover purchases, in USD cents for the whole party, or NULL when not estimated. A check constraint keeps it between 0 and $100,000,000, as it does each connection's `priceCents`. Every existing connection starts at NULL, so no trip's estimate changes. Nothing else changes. The column is in the same online backups, and a replay keeps saved amounts.
+
+Restoring the pre-upgrade backup to run a schema 28 build again loses every connection's miscellaneous spending.
 
 ## Feedback and release notes
 Configure server-only JIRA_URL (HTTPS Jira base URL), JIRA_EMAIL, and JIRA_API_TOKEN with permission to create Tasks in TRA. Use the host's secret configuration; never put credentials in source, image layers, client variables, or logs. Preserve the browser Host and Origin headers through the proxy; the feedback endpoint compares them and ignores forwarded-host claims. Its limits count per signed-in account. A failed send logs one line saying why, such as a missing setting's name, an invalid JIRA_URL, or Jira's HTTP status (401 for wrong credentials, 403 for missing permission), never the settings' values.

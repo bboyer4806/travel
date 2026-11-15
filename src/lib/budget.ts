@@ -30,7 +30,7 @@ export interface DestinationBudget {
   complete: boolean;
 }
 
-type CostCategory = "travel" | "hotels" | "activities" | "food" | "home" | "miscellaneous" | "shopping";
+type CostCategory = "travel" | "transitMiscellaneous" | "hotels" | "activities" | "food" | "home" | "miscellaneous" | "shopping";
 interface Cost { amount: number | null; currency: string | null; category: CostCategory; }
 
 /**
@@ -145,11 +145,12 @@ export function tripVisits(snapshot: Snapshot, tripId: string): { stop: TripStop
   });
 }
 
-/** Currencies stay separate. Travel and at-home costs are always USD, so they are totaled in cents. */
+/** Currencies stay separate. Travel, miscellaneous spending in transit and at-home costs are always USD, so they are totaled in cents. */
 export function calculateBudget(snapshot: Snapshot, tripId: string): Budget {
   const budget: Budget = {
     homeCents: 0,
     travelCents: 0,
+    transitMiscCents: null,
     totalsByCurrency: {},
     miscellaneousByCurrency: {},
     shoppingByCurrency: {},
@@ -183,6 +184,8 @@ export function calculateBudget(snapshot: Snapshot, tripId: string): Budget {
     } else if (cost.category === "travel") {
       if (cost.amount === null || cost.currency === null) budget.travelMissingCount += 1;
       else budget.travelCents += cost.amount;
+    } else if (cost.category === "transitMiscellaneous") {
+      if (cost.amount !== null) budget.transitMiscCents = (budget.transitMiscCents ?? 0) + cost.amount;
     } else if (cost.category === "food") {
       if (cost.amount === null || cost.currency === null) budget.foodMissingCount += 1;
       else budget.foodByCurrency[cost.currency] = (budget.foodByCurrency[cost.currency] ?? 0) + cost.amount;
@@ -200,6 +203,8 @@ export function calculateBudget(snapshot: Snapshot, tripId: string): Budget {
     for (let index = 1; index < route.length; index += 1) {
       const leg = snapshot.legs.find((item) => item.tripId === tripId && item.fromId === route[index - 1] && item.toId === route[index]);
       add({ amount: leg?.priceCents ?? null, currency: "USD", category: "travel" });
+      // Miscellaneous spending on the way is optional: blank adds no cost and is not a missing estimate (TRA-26).
+      if (leg?.miscCents != null) add({ amount: leg.miscCents, currency: "USD", category: "transitMiscellaneous" });
     }
   }
   for (const { visit } of visits) {

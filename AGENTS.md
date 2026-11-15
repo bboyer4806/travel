@@ -116,7 +116,7 @@ Repeat passing checks when subsequent changes affect their coverage or required 
   not `instanceof`: a production build can bundle the store more than once.
 - Every amount is integer USD cents for the whole party. Destination money retains explicit
   USD currency fields for storage compatibility; never convert or relabel unexpected non-USD data.
-  `0` is known; `null` is not estimated, except optional at-home and shopping amounts.
+  `0` is known; `null` is not estimated, except optional at-home, shopping and transit miscellaneous amounts.
   Budget math lives in `src/lib/budget.ts`. Parsing, validation messages, formatting, input values
   and the $100,000,000 limit for every amount, prices included, live in `src/lib/money.ts`.
 - Image upload types and size and gallery limits live in `src/lib/image-limits.ts`, as do the limits

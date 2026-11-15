@@ -425,6 +425,19 @@ This replaces TRA-62's destination Save in a sticky header.
 - The arrows keep their labels, keyboard use and focus ring at every screen size, and browsing saves nothing: ideas, their order, selections, photos and budgets are unchanged. Destination photo arrows already loop (TRA-123) and are unchanged.
 - Not included: autoplay or timed scrolling, changes to swiping or scrolling, carousel or arrow redesign, changes to ideas or photos, new pagination or browsing controls, and arrows for galleries without them.
 
+## Added scope: November 14, 2026, miscellaneous spending in transit (TRA-26)
+- Each travel connection's editor has an optional **Miscellaneous spending (USD)** field for spending on the way, such as airport meals, drinks, snacks and layover purchases. One amount covers the whole connection, layovers included, for the whole party. The connection's existing Notes describe it; there is no separate notes field.
+- Blank is no estimate and never makes the trip estimate partial; zero is a known amount. The amount follows every other amount's rules: zero or more, at most two decimal places, and no more than $100,000,000.
+- A connection's card shows an entered amount apart from its transportation price. The trip estimate has a **Transit miscellaneous** row, separate from Travel and destination Miscellaneous, and counts its USD total once in the trip total.
+- The amount is saved with its connection and kept when the trip is reopened or the connection edited. Clearing the connection clears it, and a route change that removes or clears a connection removes it from the trip total. ChatGPT and Claude can propose it, and the proposal's page shows it. Schema 29 adds it to each connection, blank.
+- Not included: other currencies, conversion or exchange rates; itemized purchases, receipts or actual spending; a separate spending notes field; suggested amounts from the transportation, duration or layovers; and changes to destination miscellaneous spending.
+
+## Added scope: November 15, 2026, closing an editor during a save (TRA-81)
+- When the browser closes an editor while it saves, as Chrome does after repeated Escapes and Android's back button can, the page forgets the editor. The save still finishes: a failed save's error shows in the alert at the bottom of the screen, as for changes made without an editor (TRA-82), and every editor opens again without reloading. Before, the error showed inside the closed editor, out of sight, and Edit and Add buttons opened nothing.
+- The Delete confirmation above an idea's editor (TRA-128) closed this way returns to the editor, which shows a failed delete's error, and its Delete opens the confirmation again.
+- Cancel, the X and Escape still do nothing while saving, and an idea's editor opened from its details still returns to them when its save succeeds.
+- Not included: reopening an editor the browser closed, keeping its draft after its save fails, and changes to saving or its messages.
+
 ## Added scope: November 15, 2026, feedback limits per account (TRA-92)
 - Feedback limits count per signed-in account, which a client can't change the way it could drop the anonymous feedback cookie to get fresh limits. The cookie is removed. Each account gets 10 tokens an hour, one for each opening of the sheet or retry, and keeps its 3 sends an hour. Everyone together keeps 20 tokens a minute and 120 an hour, and 5 sends a minute and 30 an hour, so one account can't use up everyone's.
 - A send doesn't count against the limits when Jira certainly created nothing: the settings are missing or invalid, the connection was refused or Jira's host wasn't found, or Jira answered with a 4xx status or 503. Timeouts, dropped connections and other statuses still count, since Jira may have created the task.

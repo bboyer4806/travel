@@ -1,0 +1,45 @@
+.section { margin-bottom: 43px; }
+.section :global(.section-heading) { margin-bottom: 12px; }
+.toggle { display: inline-flex; align-items: center; gap: 10px; padding: 0; border: 0; background: none; color: inherit; font: inherit; letter-spacing: inherit; text-align: left; }
+.toggle:hover { color: var(--orange); }
+.toggle svg { flex-shrink: 0; transition: transform .16s; }
+.toggle[aria-expanded="true"] svg { transform: rotate(180deg); }
+.help { font-size: 12px; color: var(--muted); margin: 0 0 14px; max-width: 640px; }
+/* Leaflet's panes and controls stack within the frame, below the page's messages and dialogs. */
+.frame { position: relative; height: 380px; border: 1px solid var(--line); border-radius: 10px; overflow: hidden; background: var(--wash); isolation: isolate; }
+.map { position: absolute; inset: 0; }
+.frame :global(.leaflet-container) { background: var(--wash); font: 11px/1.5 Arial, Helvetica, sans-serif; }
+.message { position: absolute; inset: 0; display: grid; place-items: center; margin: 0; padding: 24px; color: var(--muted); font-size: 13px; text-align: center; }
+
+/* Leaflet centers a marker's element, sized for what it draws, on its point. */
+.anchor { outline: none; }
+.content { display: flex; width: 100%; height: 100%; align-items: center; justify-content: center; }
+.destination, .endpoint, .layover, .stop { display: grid; place-items: center; box-shadow: 0 2px 6px #15281d40; }
+.destination { width: 30px; height: 30px; border: 2px solid var(--white); border-radius: 50%; background: var(--green); color: var(--white); font: 700 11px/1 Arial, Helvetica, sans-serif; }
+.endpoint { width: 30px; height: 30px; border: 2px solid var(--white); border-radius: 9px; background: var(--orange); color: var(--white); }
+.layover, .stop { width: 22px; height: 22px; border: 2px solid var(--green); border-radius: 50%; background: var(--white); color: var(--green); }
+.stop { border-color: var(--orange); color: var(--orange); }
+.badge { display: inline-flex; align-items: center; height: 22px; padding: 0 7px; border: 1px solid #c3cfbb; border-radius: 11px; background: var(--white); color: #4f6f55; box-shadow: 0 1px 4px #15281d30; }
+.badgeIcons { display: flex; align-items: center; gap: 4px; }
+.anchor:focus-visible .content > * { outline: 3px solid var(--ink); outline-offset: 2px; }
+
+.legend { list-style: none; display: flex; flex-wrap: wrap; gap: 8px 18px; margin: 12px 0 0; padding: 0; color: var(--muted); font-size: 11px; }
+.legend li { display: inline-flex; align-items: center; gap: 8px; }
+.legendSymbol { display: inline-grid; place-items: center; min-width: 30px; }
+.status { margin: 8px 0 0; color: var(--muted); font-size: 11px; }
+.status:empty { display: none; }
+
+.unmapped { margin-top: 18px; padding-top: 16px; border-top: 1px solid var(--line); }
+.unmapped h3 { font-size: 19px; }
+.unmapped > p { margin: 6px 0 12px; max-width: 640px; color: var(--muted); font-size: 12px; }
+.unmapped ul { display: grid; gap: 10px; margin: 0 0 6px; padding: 0; list-style: none; }
+.unmapped li { display: grid; gap: 1px; font-size: 12px; overflow-wrap: anywhere; }
+.role { color: var(--muted); font-size: 10px; }
+.unmapped strong { font-weight: 600; }
+.reason { color: var(--orange); font-size: 11px; }
+.credit { margin-top: 12px; color: var(--muted); font-size: 10px; }
+.credit a { text-decoration: underline; }
+
+@media (max-width: 540px) {
+  .frame { height: 300px; }
+}

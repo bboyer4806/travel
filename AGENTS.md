@@ -91,6 +91,10 @@ Repeat passing checks when subsequent changes affect their coverage or required 
   `aiChange` then takes each change's photos from those, never from what the assistant sent. A
   proposal's photos wait in `ai_proposal_photos`, never in `changesJson`, until it is decided or expires,
   and the owner sees them through `/api/ai-proposal-images`.
+- The trip map (TRA-44) is `src/components/trip-map.tsx`, with Leaflet in `trip-map-canvas.tsx`, loaded only in the
+  browser. `tripJourney` and `mapLayout` in `src/lib/trip-map.ts` decide what it shows, and `/api/trip-map/[tripId]` looks
+  the trip's saved names up with `locatePlaces` in `src/lib/location-search.ts`, within the city suggestions' Open-Meteo
+  limits. Travel stores no coordinates and never guesses one: a place the map can't find is listed below it.
 - Application writes go through `mutatePlanner` in `src/app/actions.ts`, into `applyMutation`
   in `src/lib/store.ts`, or come from an approved AI proposal. A new operation adds a `Mutation`
   variant in `src/lib/types.ts`, a case in `validate` (or, for a change only proposals make, in

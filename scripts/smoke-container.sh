@@ -346,11 +346,13 @@ const aiPages = ["/ai", "/ai/authorize?response_type=code&client_id=c1000000-000
 const pages = ["/", "/destinations", ...tripPages, ...destinationPages, "/whats-new", ...aiPages];
 // A photo of a proposal awaiting the owner (TRA-122), which only the designated owner sees.
 const aiPhotoRoute = "/api/ai-proposal-images/c2000000-0000-4000-8000-000000000001/c3000000-0000-4000-8000-000000000001";
+// Where the seeded trip's places are on its map (TRA-44), which only accounts that can open the trip are told.
+const tripMapRoute = "/api/trip-map/container-smoke";
 const dataRoutes = ["/api/destination-images/22222222-2222-4222-8222-222222222222?v=33333333-3333-4333-8333-333333333333",
   "/api/destination-images/22222222-2222-4222-8222-222222222222/a2000000-0000-4000-8000-000000000001?v=33333333-3333-4333-8333-333333333333",
   "/api/candidate-images/66666666-6666-4666-8666-666666666666/90000000-0000-4000-8000-000000000002?v=bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
   "/api/church-images/b1000000-0000-4000-8000-000000000001/b3000000-0000-4000-8000-000000000002?v=b4000000-0000-4000-8000-000000000001",
-  "/api/locations?q=Vienna", aiPhotoRoute];
+  "/api/locations?q=Vienna", aiPhotoRoute, tripMapRoute];
 async function assertRefused(label, headers) {
   for (const path of pages) {
     const response = await get(path, headers);
@@ -395,6 +397,10 @@ async function assertHidden(label, headers) {
     assert.equal(response.status, 404, `${label} ${path} must not be served`);
     assert.ok(!response.headers.get("content-type")?.startsWith("image/"), `${label} ${path} must not return image bytes`);
   }
+  // Their trip's map is not found either, before any place is looked up.
+  const map = await get(tripMapRoute, headers);
+  assert.equal(map.status, 404, `${label} must not find the trip's map`);
+  assert.ok(!(await map.text()).includes("Vienna"), `${label} the trip's map must not include trip data`);
   // Only the designated owner manages AI assistants, and sees their proposals' photos.
   assert.ok((await (await get("/ai", headers)).text()).includes("This page has moved on."), `${label} must not find AI assistants`);
   assert.equal((await get(aiPhotoRoute, headers)).status, 404, `${label} must not see proposals' photos`);

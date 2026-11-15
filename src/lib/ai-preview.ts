@@ -46,7 +46,7 @@ export const PREVIEW_COLUMNS: Record<DataTable, Record<string, [string, Format] 
   trip_shares: { tripId: null, accountId: null, sharedAt: null },
   trip_tags: { tripId: null, tagKey: null, name: null },
   trip_stops: { id: null, tripId: null, destinationId: null, position: ["Order", "order"], stay: ["Stay notes", "text"], nights: ["Nights", "number"], arrivalDate: ["Arrival", "text"], departureDate: ["Departure", "text"], legacyArrivalDate: null, legacyDepartureDate: null },
-  legs: { id: null, tripId: null, fromId: null, toId: null, method: ["Method", "text"], priceCents: ["Price", "money"], departure: ["Departure", "text"], arrival: ["Arrival", "text"], url: null, notes: ["Notes", "text"], itineraryJson: ["Itinerary", "json"], linksJson: ["Research links", "json"] },
+  legs: { id: null, tripId: null, fromId: null, toId: null, method: ["Method", "text"], priceCents: ["Price", "money"], miscCents: ["Miscellaneous spending", "money"], departure: ["Departure", "text"], arrival: ["Arrival", "text"], url: null, notes: ["Notes", "text"], itineraryJson: ["Itinerary", "json"], linksJson: ["Research links", "json"] },
   home_items: { id: null, tripId: null, name: ["Name", "text"], notes: ["Notes", "text"], priceCents: ["Price", "money"], completed: ["Done", "flag"], createdAt: null },
   destinations: {
     id: null, ownerId: ["Owner", "account"], city: ["City", "text"], cityKey: null, cityFromSuggestion: ["City chosen from a suggestion", "flag"], notes: ["Notes", "text"],

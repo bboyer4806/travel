@@ -112,13 +112,15 @@ function Notes({ name = "notes", value = "" }: { name?: string; value?: string }
  * Send feedback is inside the dialog so it shows above the backdrop; opening it leaves this editor and its draft open.
  * A confirmation (`confirm`) is centered over a darker backdrop, and its title and message scroll together above its
  * buttons (TRA-32). One can open above an editor, which stays open beneath it with its draft (TRA-128).
+ * The X and Escape call `onClose`, except while saving. Chrome closes a dialog anyway after repeated Escapes or Android's
+ * back button, so `onClosed` follows the browser even while saving (TRA-81).
  */
-function Dialog({ title, view, confirm, children, busy, onClose }: { title: string; view: string; confirm: boolean; children: ReactNode; busy: boolean; onClose: () => void }) {
+function Dialog({ title, view, confirm, children, busy, onClose, onClosed }: { title: string; view: string; confirm: boolean; children: ReactNode; busy: boolean; onClose: () => void; onClosed: () => void }) {
   const ref = useRef<HTMLDialogElement>(null);
   const titleId = useId();
   useEffect(() => { const dialog = ref.current; const opener = document.activeElement instanceof HTMLElement ? document.activeElement : null; dialog?.showModal(); return () => { dialog?.close(); if (opener?.isConnected) opener.focus(); }; }, []);
   useEffect(() => { ref.current?.querySelector<HTMLElement>("input:not([type=hidden]), select, textarea, [data-autofocus]")?.focus(); }, [view]);
-  return <dialog ref={ref} className={confirm ? "editor-dialog confirm-dialog" : "editor-dialog"} aria-labelledby={titleId} onCancel={(event) => { event.preventDefault(); if (!busy) onClose(); }}>
+  return <dialog ref={ref} className={confirm ? "editor-dialog confirm-dialog" : "editor-dialog"} aria-labelledby={titleId} onCancel={(event) => { event.preventDefault(); if (!busy) onClose(); }} onClose={onClosed}>
     <div className="dialog-heading"><h2 id={titleId}>{title}</h2><button className="icon-button" aria-label="Close" onClick={onClose} disabled={busy}><X size={20} /></button></div>{children}<FeedbackButton />
   </dialog>;
 }
@@ -210,7 +212,12 @@ export default function PlannerApp({ initialData, initialBudgets, access = {}, d
   };
   /** The item a save is for: the saved one an editor changes, or the new one it adds. */
   const itemToSave = (item?: { id: string }) => item ? { id: item.id } : { id: newId, create: true as const };
-  const close = () => { if (!busy) { setEditor(null); setDestinationGallery(createGalleryDraft()); setCandidateGallery(createGalleryDraft()); setError(""); } };
+  /**
+   * Forgets the open editor and its photo drafts, keeping any error. When the browser closes an editor while it saves,
+   * this lets the save's error show on the page and the next editor open as a new dialog (TRA-81).
+   */
+  const forget = () => { setEditor(null); setDestinationGallery(createGalleryDraft()); setCandidateGallery(createGalleryDraft()); };
+  const close = () => { if (!busy) { forget(); setError(""); } };
   /** Where saving or Cancel leaves an editor: an idea's editor opened from its details returns to them, and others close. */
   const detailsOf = (value: Editor | null): Editor | null => value?.kind === "candidate" && value.details && value.item ? { kind: "ideaDetails", item: value.item } : null;
   /** Cancel discards the draft: an idea's editor opened from its details returns there, and any other editor closes. */
@@ -221,6 +228,12 @@ export default function PlannerApp({ initialData, initialBudgets, access = {}, d
   const deleting = editor?.kind === "candidate" && editor.deleting ? editor.item : undefined;
   /** Shows or hides the Delete confirmation above an idea's editor, which keeps its draft either way. */
   const setDeleting = (value: boolean) => { if (!busy && editor?.kind === "candidate") { setEditor({ ...editor, deleting: value }); setError(""); } };
+  /**
+   * Returns to an idea's editor once the browser closes its Delete confirmation, even while deleting, so the editor shows
+   * the delete's error and its Delete opens a new confirmation (TRA-81). It reads the current editor, which a finished
+   * delete may already have closed.
+   */
+  const leaveDeleting = () => setEditor((current) => current?.kind === "candidate" ? { ...current, deleting: false } : current);
   /** Saves a change and refreshes the page, resolving to whether it was saved. A refused change shows its error. */
   async function perform(mutation: Mutation, success = "Changes saved.", redirect?: string, imageForm?: FormData): Promise<boolean> {
     if (busy) return false;
@@ -555,7 +568,7 @@ export default function PlannerApp({ initialData, initialBudgets, access = {}, d
       {error && !editor && <div className="toast error-toast" role="alert"><CircleAlert size={17} aria-hidden="true" />{error}<button aria-label="Dismiss error" className="icon-button" onClick={() => setError("")}><X size={14} /></button></div>}
     </main>
     <footer className="site-footer"><span><Compass size={15} />For the trips still taking shape.</span><span>Shared editing · whole-party estimates</span></footer>
-    {editor && <Dialog title={pageTitle} view={editor.kind} confirm={editor.kind === "delete"} busy={busy} onClose={close}>{editor.kind === "ideaDetails" ? renderIdeaDetails(latest(editor.item)) : <form id="planner-editor" onSubmit={submit}><div className="form-grid dialog-body">
+    {editor && <Dialog title={pageTitle} view={editor.kind} confirm={editor.kind === "delete"} busy={busy} onClose={close} onClosed={forget}>{editor.kind === "ideaDetails" ? renderIdeaDetails(latest(editor.item)) : <form id="planner-editor" onSubmit={submit}><div className="form-grid dialog-body">
       {editor.kind === "delete" && <p className="delete-description wide">{editor.description} This cannot be undone.</p>}
       {editor.kind === "trip" && <>
         <Field label="Trip name" wide><input name="name" defaultValue={editor.item?.name} required maxLength={120} placeholder="A long weekend in the mountains" /></Field>
@@ -615,7 +628,7 @@ export default function PlannerApp({ initialData, initialBudgets, access = {}, d
       </>}
     </div><div className="dialog-footer">{error && !deleting && <p className="form-error" role="alert">{error}</p>}<div className="dialog-actions"><button type="button" className="button secondary" onClick={cancel} disabled={busy}>Cancel</button>{editor.kind === "candidate" && editor.item && <button type="button" className="button danger editor-delete" onClick={() => setDeleting(true)} disabled={busy}>Delete</button>}<button className={editor.kind === "delete" ? "button danger" : "button primary"} type="submit" disabled={busy}>{busy ? "Saving…" : editor.kind === "delete" ? (editor.mutation.type === "leg.clear" ? "Clear travel plan" : editor.mutation.type === "destination.entryRequirements" ? "Clear entry requirements" : editor.mutation.type === "destination.healthSafety" ? "Clear health and safety" : editor.mutation.type === "stop.remove" ? "Remove from trip" : "Delete") : editor.kind === "trip" && !editor.item ? "Create trip" : editor.kind === "addStop" ? "Add destination" : editor.kind === "newDestination" ? "Create destination" : editor.kind === "share" ? "Share" : "Save changes"}</button></div></div></form>}</Dialog>}
     {/* An idea's Delete confirmation, above its editor (TRA-128). It deletes the saved idea without saving the draft, which Cancel keeps. */}
-    {deleting && <Dialog title={ideaDeletion(deleting).title} view="delete" confirm busy={busy} onClose={() => setDeleting(false)}><div className="form-grid dialog-body"><p className="delete-description wide">{ideaDeletion(deleting).description} This cannot be undone.</p></div>
+    {deleting && <Dialog title={ideaDeletion(deleting).title} view="delete" confirm busy={busy} onClose={() => setDeleting(false)} onClosed={leaveDeleting}><div className="form-grid dialog-body"><p className="delete-description wide">{ideaDeletion(deleting).description} This cannot be undone.</p></div>
       <div className="dialog-footer">{error && <p className="form-error" role="alert">{error}</p>}<div className="dialog-actions"><button type="button" className="button secondary" onClick={() => setDeleting(false)} disabled={busy}>Cancel</button><button type="button" className="button danger" onClick={() => void perform({ type: "candidate.delete", id: deleting.id }, "Removed from your notebook.")} disabled={busy}>{busy ? "Saving…" : "Delete"}</button></div></div></Dialog>}
   </div>;
 }

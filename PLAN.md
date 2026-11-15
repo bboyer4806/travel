@@ -424,3 +424,9 @@ This replaces TRA-62's destination Save in a sticky header.
 - Both arrows work whenever the cards don't all fit, at either end too, and neither works when they do. Swiping and scrolling with a mouse, trackpad or touchscreen are unchanged and stop at either end.
 - The arrows keep their labels, keyboard use and focus ring at every screen size, and browsing saves nothing: ideas, their order, selections, photos and budgets are unchanged. Destination photo arrows already loop (TRA-123) and are unchanged.
 - Not included: autoplay or timed scrolling, changes to swiping or scrolling, carousel or arrow redesign, changes to ideas or photos, new pagination or browsing controls, and arrows for galleries without them.
+
+## Added scope: November 15, 2026, closing an editor during a save (TRA-81)
+- When the browser closes an editor while it saves, as Chrome does after repeated Escapes and Android's back button can, the page forgets the editor. The save still finishes: a failed save's error shows in the alert at the bottom of the screen, as for changes made without an editor (TRA-82), and every editor opens again without reloading. Before, the error showed inside the closed editor, out of sight, and Edit and Add buttons opened nothing.
+- The Delete confirmation above an idea's editor (TRA-128) closed this way returns to the editor, which shows a failed delete's error, and its Delete opens the confirmation again.
+- Cancel, the X and Escape still do nothing while saving, and an idea's editor opened from its details still returns to them when its save succeeds.
+- Not included: reopening an editor the browser closed, keeping its draft after its save fails, and changes to saving or its messages.

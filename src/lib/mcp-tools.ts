@@ -79,7 +79,8 @@ const CHANGES = [
   change("homeItem.delete", "Deletes an At home item.", { id: id("The item's id."), tripId: id("Its trip's id.") }, ["id", "tripId"]),
   change("homeItem.complete", "Marks an At home item done, or not done.", { id: id("The item's id."), tripId: id("Its trip's id."), completed: flag("Whether it is done.") }, ["id", "tripId", "completed"]),
   change("destination.save", "Changes the fields given of a destination, in every trip that visits it. With stopId, also changes that trip's stay there: its stay notes and nights. Anything left out stays as it is. A new city clears the travel to and from it in every trip.", {
-    id: id("The destination's id."), stopId: id("A trip's stay at this destination, for stay and nights."), city: text("The city.", 120), notes: text("Notes. Empty for none.", 8000),
+    id: id("The destination's id."), stopId: id("A trip's stay at this destination, for stay and nights."), city: text("The city.", 120),
+    tagline: text("A short line shown in capitals above the destination's name on its page, saved as written. Empty for Travel's default heading.", 120), notes: text("Notes. Empty for none.", 8000),
     miscDailyAmount: amount("Daily miscellaneous spending for the whole party."), hotelNightlyAmount: amount("The nightly hotel estimate, used until a hotel is chosen."),
     activitiesBudgetMode: { type: "string", enum: ["itemized", "general"], description: "itemized adds up included activities; general uses activitiesGeneralAmount." },
     activitiesGeneralAmount: amount("The activities budget for a stay."),
@@ -179,7 +180,7 @@ export const TOOLS = [
   },
   {
     name: "get_destination", title: "Get a destination", annotations: readOnly, inputSchema: input({ destination_id: id("The destination's id.") }),
-    description: "One destination with everything on its page: notes, budget amounts and methods, typical weather, entry requirements, health and safety, photos, hotels, activities, restaurants, churches, and each trip's stay there. Amounts are whole USD cents for the whole party.",
+    description: "One destination with everything on its page: its tagline, notes, budget amounts and methods, typical weather, entry requirements, health and safety, photos, hotels, activities, restaurants, churches, and each trip's stay there. Amounts are whole USD cents for the whole party.",
   },
   {
     name: "list_accounts", title: "List accounts", annotations: readOnly, inputSchema: noInput,

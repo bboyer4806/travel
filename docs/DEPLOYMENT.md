@@ -212,7 +212,7 @@ Prefer fixing forward. Rolling back an image does not reverse a database schema 
 
 ## Schema history
 
-The schema version is SQLite's `user_version`; the current schema is 30, `SCHEMA_VERSION` in `src/lib/store.ts`. At every start, `createStore` in `src/lib/store.ts` upgrades an older database in one transaction, through each version in turn. Each upgrade checks what already exists, so running it again on a database that already has its changes (a replay) keeps saved data. The notes below are in schema order. **Superseded** marks behavior that a later schema replaced; the current behavior is in [README.md](../README.md).
+The schema version is SQLite's `user_version`; the current schema is 31, `SCHEMA_VERSION` in `src/lib/store.ts`. At every start, `createStore` in `src/lib/store.ts` upgrades an older database in one transaction, through each version in turn. Each upgrade checks what already exists, so running it again on a database that already has its changes (a replay) keeps saved data. The notes below are in schema order. **Superseded** marks behavior that a later schema replaced; the current behavior is in [README.md](../README.md).
 
 ### Schema 1: first shared planner
 The first release creates the `trips`, `destinations`, `legs` and `candidates` tables, with prices in integer USD cents for the whole party. Anyone with the URL can view and edit every trip. The schema 1 build sets `user_version` to 1 at every start and does not refuse a newer database, so later upgrades check what already exists as well as the version: redeploying a newer build after a rollback to schema 1 cannot repeat an `ALTER TABLE` or replace saved links.
@@ -373,6 +373,11 @@ Restoring the pre-upgrade backup to run a schema 28 build again loses every conn
 Adjustable destination photo crops upgrade the database to schema 30 in the startup transaction, adding `focusX` and `focusY` to `destination_images`: the point of each photo, as percentages of its width and height from its top left corner, that stays in view where it is cropped to fit, at the same place in the frame. Check constraints keep each between 0 and 100. Every existing photo starts at 50 and 50, centered, as galleries have always shown it, so no photo looks different until its crop is adjusted. Photo files, versions, order and primary photos are unchanged, and idea and church photos have no focal point. The columns are in the same online backups, and a replay keeps saved focal points.
 
 Restoring the pre-upgrade backup to run a schema 29 build again shows every destination photo centered and loses every adjusted crop.
+
+### Schema 31: destination taglines (TRA-125)
+Destination taglines upgrade the database to schema 31 in the startup transaction, adding `tagline` to `destinations`: the line a destination's page shows in capitals above its name, saved as typed, up to 120 characters, which the store checks. Every existing destination starts with an empty tagline, which shows the default A PLACE WORTH KNOWING, so no page looks different until a tagline is entered. Nothing else changes. The column is in the same online backups, and a replay keeps saved taglines.
+
+Restoring the pre-upgrade backup to run a schema 30 build again shows A PLACE WORTH KNOWING on every destination's page and loses every tagline.
 
 ## Feedback and release notes
 Configure server-only JIRA_URL (HTTPS Jira base URL), JIRA_EMAIL, and JIRA_API_TOKEN with permission to create Tasks in TRA. Use the host's secret configuration; never put credentials in source, image layers, client variables, or logs. Preserve the browser Host and Origin headers through the proxy; the feedback endpoint compares them and ignores forwarded-host claims. Its limits count per signed-in account. A failed send logs one line saying why, such as a missing setting's name, an invalid JIRA_URL, or Jira's HTTP status (401 for wrong credentials, 403 for missing permission), never the settings' values.

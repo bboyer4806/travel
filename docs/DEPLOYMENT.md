@@ -365,7 +365,7 @@ Restaurant types upgrade the database to schema 28 in the startup transaction, a
 Restoring the pre-upgrade backup to run a schema 27 build again loses every restaurant's types.
 
 ## Feedback and release notes
-Configure server-only JIRA_URL (HTTPS Jira base URL), JIRA_EMAIL, and JIRA_API_TOKEN with permission to create Tasks in TRA. Use the host's secret configuration; never put credentials in source, image layers, client variables, or logs. Preserve the browser Host and Origin headers through the proxy; the feedback endpoint compares them and ignores forwarded-host claims. The HttpOnly feedback cookie is Secure for HTTPS origins.
+Configure server-only JIRA_URL (HTTPS Jira base URL), JIRA_EMAIL, and JIRA_API_TOKEN with permission to create Tasks in TRA. Use the host's secret configuration; never put credentials in source, image layers, client variables, or logs. Preserve the browser Host and Origin headers through the proxy; the feedback endpoint compares them and ignores forwarded-host claims. Its limits count per signed-in account. A failed send logs one line saying why, such as a missing setting's name, an invalid JIRA_URL, or Jira's HTTP status (401 for wrong credentials, 403 for missing permission), never the settings' values.
 
 Feedback creates backlog Tasks with label user-feedback, message and page/browser context. Verify one explicitly authorized production submission after deployment and remove any temporary test task as appropriate. Local development and automated tests use the loopback stand-in only. Upstream timeout is 10 seconds, with no automatic retry; an uncertain response can mean the issue was created even though the user sees an error. One-use tokens prevent token replay, while a deliberate retry starts a new attempt.
 

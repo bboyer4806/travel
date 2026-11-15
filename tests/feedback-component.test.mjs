@@ -3,7 +3,7 @@ import { readFileSync } from "node:fs";
 import test from "node:test";
 import { runInNewContext } from "node:vm";
 import ts from "typescript";
-import { FEEDBACK_FAILURE, FEEDBACK_LIMIT } from "../src/lib/feedback.ts";
+import { FEEDBACK_FAILURE, FEEDBACK_LIMIT, FEEDBACK_RETRY } from "../src/lib/feedback.ts";
 
 // Execute the actual component's handlers with a small hook/host harness. No
 // browser or Jira is contacted; network responses and challenge time are explicit.
@@ -139,10 +139,10 @@ test("HTML, invalid JSON, and malformed feedback responses show only the friendl
 });
 
 test("failed initialization can be retried repeatedly with Send while preserving text and API errors", async () => {
-  const friendly = "Feedback is temporarily unavailable. Please try again later.";
+  const friendly = "Your session has ended. Sign in again to continue.";
   const ui = harness([
     () => { throw new Error("Network failed"); },
-    () => Response.json({ error: friendly }, { status: 429 }),
+    () => Response.json({ error: friendly }, { status: 401 }),
     token("retry-token"), success,
   ]);
   ui.open();
@@ -162,6 +162,43 @@ test("failed initialization can be retried repeatedly with Send while preserving
   await retry;
   assert.equal(ui.requests[3].message, "Keep my draft");
   assert.equal(ui.requests[3].token, "retry-token");
+  assert.equal(ui.status(), "Thanks, your feedback was sent.");
+});
+
+test("after a 429, Send asks for no token until the sheet is reopened, and keeps the draft", async () => {
+  const limited = () => Response.json({ error: FEEDBACK_RETRY }, { status: 429 });
+  const ui = harness([token("first-token"), limited, limited, token("reopened-token"), success]);
+  ui.open();
+  await ui.settle();
+  ui.enter("Wait for the limit");
+  const refusedSend = ui.submit();
+  await ui.advance(1100);
+  await refusedSend;
+  assert.equal(ui.error(), FEEDBACK_RETRY, "a send refused with 429");
+  await ui.submit();
+  await ui.settle();
+  assert.equal(ui.requests.length, 2, "Send must not request another token after a 429");
+  assert.equal(ui.error(), FEEDBACK_RETRY);
+  assert.equal(ui.message(), "Wait for the limit");
+  assert.equal(ui.send().props.disabled, false);
+  ui.close();
+  ui.open();
+  await ui.settle();
+  assert.equal(ui.requests.length, 3, "reopening asks once more");
+  assert.equal(ui.error(), FEEDBACK_RETRY, "a token request refused with 429");
+  await ui.submit();
+  await ui.settle();
+  assert.equal(ui.requests.length, 3, "Send must not request another token after a 429");
+  assert.equal(ui.error(), FEEDBACK_RETRY);
+  ui.close();
+  ui.open();
+  await ui.settle();
+  assert.equal(ui.error(), undefined);
+  const retry = ui.submit();
+  await ui.advance(1100);
+  await retry;
+  assert.equal(ui.requests[4].token, "reopened-token");
+  assert.equal(ui.requests[4].message, "Wait for the limit");
   assert.equal(ui.status(), "Thanks, your feedback was sent.");
 });
 

@@ -143,8 +143,21 @@ test("incomplete budgets distinguish unknown values from a known zero", (t) => {
   assert.equal(calculateBudget(store.getSnapshot(), tripId).missingCount, 4);
   assert.equal(calculateBudget(store.getSnapshot(), tripId).knownCount, 1);
   store.applyMutation(tripInput({ id: tripId, homeCity: "" }));
-  assert.equal(calculateBudget(store.getSnapshot(), tripId).missingCount, 5);
+  assert.equal(calculateBudget(store.getSnapshot(), tripId).missingCount, 4, "a blank departing city is not a missing estimate (TRA-85)");
   assert.equal(calculateBudget(store.getSnapshot(), tripId).complete, false);
+});
+
+test("a trip without a departing city counts the travel from and to it like any other, and is complete once every amount is filled (TRA-85)", (t) => {
+  const { store, tripId } = setup(t, tripInput({ homeCity: "" }));
+  addDestination(store, tripId, { nights: 2, hotelNightlyAmount: "100", miscDailyAmount: "10" });
+  const budget = () => calculateBudget(store.getSnapshot(), tripId);
+  assert.equal(budget().travelMissingCount, 2, "the travel from and to the departing city still needs prices");
+  assert.equal(budget().missingCount, 2);
+  for (const leg of legsFor(store, tripId)) store.applyMutation(legInput(leg.id));
+  assert.equal(budget().missingCount, 0);
+  assert.equal(budget().complete, true);
+  assert.deepEqual(budget().totalsByCurrency, { USD: 42002 });
+  assert.deepEqual(store.getHomeOverview().budgets[tripId], budget(), "the trip list shows the same complete estimate");
 });
 
 test("the budget counts each travel connection without a price, as the trip page lists them", (t) => {

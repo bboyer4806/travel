@@ -334,3 +334,19 @@ test("schema 25 adds the table for proposals' photos, keeping every proposal, an
   assert.equal(db.prepare("PRAGMA integrity_check").get().integrity_check, "ok");
   assert.deepEqual(db.prepare("PRAGMA foreign_key_check").all(), []);
 });
+
+test("assistants can't propose a destination photo's focal point, and photos they add start centered while saved ones keep theirs (TRA-53)", async (t) => {
+  const { store, guest, guestTrip, propose, decide } = aiSetup(t);
+  const { P1, P2, destinationId } = await guestPlans(store, guest, guestTrip);
+  store.applyMutation(guest, { type: "destination.save", id: destinationId, gallery: { add: [], remove: [], focus: [{ id: P1, focusX: 20, focusY: 80 }] } });
+  const recenter = { type: "destination.photos", id: destinationId, gallery: { add: [], remove: [], focus: [{ id: P1, focusX: 50, focusY: 50 }] } };
+  assert.throws(() => checkAiProposal({ summary: "Recenter", changes: [recenter] }), /^ValidationError: Change 1: A photo's focal point can only be chosen in Travel/);
+  assert.throws(() => propose([recenter]), /A photo's focal point can only be chosen in Travel/);
+  const added = await photos(1);
+  const [N1] = ids(added);
+  const proposal = propose([{ type: "destination.photos", id: destinationId, gallery: { add: add(added, N1), remove: [], order: [N1, P1, P2] } }], "Add a photo", NOW, added);
+  assert.deepEqual(proposal.preview[0].records.flatMap((record) => record.fields.map((field) => field.name)).toSorted(), ["Order", "Order", "Order", "Primary photo"], "focal points never show in a proposal's preview");
+  assert.equal(decide(proposal, true).status, "applied");
+  const images = store.aiDestination(destinationId).destination.images;
+  assert.deepEqual(images.map((image) => [image.id, image.focusX, image.focusY]), [[N1, 50, 50], [P1, 20, 80], [P2, 50, 50]], "assistants read each photo's focal point");
+});

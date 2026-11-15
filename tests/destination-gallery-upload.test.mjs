@@ -97,3 +97,15 @@ test("destination gallery enforces file type, nonempty files, per-file and total
   const tooMany = manifestForm({ addIds: Array.from({ length: 11 }, randomUUID), removeIds: [] });
   await assert.rejects(prepareDestinationGallery(tooMany), ImageValidationError);
 });
+
+test("destination uploads carry each photo's new focal point, and malformed ones are rejected before any file decoding (TRA-53)", async () => {
+  const first = randomUUID(), second = randomUUID();
+  const focus = [{ id: first, focusX: 0, focusY: 100 }, { id: second, focusX: 37.5, focusY: 50 }];
+  assert.deepEqual(await prepareDestinationGallery(manifestForm({ addIds: [], removeIds: [], focus })), { add: [], remove: [], focus });
+  assert.deepEqual((await prepareDestinationGallery(manifestForm({ addIds: [], removeIds: [], focus: [{ ...focus[0], note: "extra" }] }))).focus, [focus[0]], "only the photo and its focal point are kept");
+  const point = (overrides) => ({ id: first, focusX: 50, focusY: 50, ...overrides });
+  for (const invalid of [null, "center", {}, [null], [[]], [point({ id: "invalid" })], [point({ id: 4 })], [point({ focusX: -1 })], [point({ focusY: 100.1 })], [point({ focusX: "50" })], [point({ focusY: null })], [{ id: first, focusX: 50 }], [point(), point({ id: first.toUpperCase() })], Array.from({ length: 11 }, () => point({ id: randomUUID() }))]) {
+    // Missing upload bytes would produce a different error if focal points were checked too late.
+    await assert.rejects(prepareDestinationGallery(manifestForm({ addIds: [randomUUID()], removeIds: [], focus: invalid })), /crop adjustments are invalid/);
+  }
+});

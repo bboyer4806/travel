@@ -5,7 +5,8 @@
 }
 
 .hero,
-.preview {
+.preview,
+.cropFrame {
   position: relative;
   overflow: hidden;
   border: 1px solid var(--line);
@@ -13,7 +14,9 @@
   background: var(--wash);
 }
 
-.hero { aspect-ratio: 16 / 7; }
+/* TRA-53: the crop editor's frame has the main photo's shape, which is the same on every screen. */
+.hero,
+.cropFrame { aspect-ratio: 16 / 7; }
 .preview { aspect-ratio: 3 / 2; }
 .image { display: block; width: 100%; height: 100%; object-fit: cover; }
 
@@ -127,6 +130,14 @@
 .restore { color: var(--green); }
 .remove:hover:not(:disabled),
 .restore:hover:not(:disabled) { text-decoration: underline; }
+/* TRA-53: a photo is dragged within the crop frame by mouse or touch. Touch drags move the photo, never the page, and the image itself never drags out as a file. */
+.crop { margin-bottom: 4px; }
+.cropTitle { margin: 0 0 8px; font-size: 12px; font-weight: 600; }
+.cropFrame { margin-bottom: 8px; cursor: grab; touch-action: none; user-select: none; }
+.cropFrame:active { cursor: grabbing; }
+.cropFrame .image { pointer-events: none; }
+.cropActions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 10px; }
+.cropActions .restore { margin-right: auto; }
 .error,
 .status { margin: 10px 0 0; font-size: 11px; line-height: 1.55; }
 .error { color: #a33d2d; }

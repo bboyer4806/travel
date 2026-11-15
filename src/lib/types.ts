@@ -31,9 +31,19 @@ export interface ItineraryStop { id: string; kind: "layover" | "stop"; place: st
  */
 export interface TravelLeg { id: string; tripId: string; fromId: string | null; toId: string | null; method: string; priceCents: number | null; miscCents: number | null; departure: string; arrival: string; url: string; notes: string; itinerary: ItineraryStop[]; links: ResearchLink[]; }
 export interface CandidateImage { id: string; version: string; }
-export interface DestinationPhotos { images: CandidateImage[]; mainImageId: string | null; }
-/** A photo editor's changes to a destination's, idea's or church's photos. `order` lists every photo it keeps and adds, and is sent only when they are rearranged (TRA-126). */
-export interface GalleryUpdate { add: { id: string; data: Uint8Array }[]; remove: string[]; mainImageId?: string | null; order?: string[]; }
+/**
+ * A destination photo's focal point (TRA-53): the point of the photo, as percentages of its width and height from its top
+ * left corner, that stays in view where it is cropped to fit a frame, at the same place in the frame. 50, 50 is its center.
+ */
+export interface PhotoFocus { focusX: number; focusY: number; }
+export interface DestinationImage extends CandidateImage, PhotoFocus {}
+export interface DestinationPhotos { images: DestinationImage[]; mainImageId: string | null; }
+/**
+ * A photo editor's changes to a destination's, idea's or church's photos. `order` lists every photo it keeps and adds, and
+ * is sent only when they are rearranged (TRA-126). `focus` gives destination photos it keeps or adds new focal points, and
+ * is sent only for those that change (TRA-53); idea and church photos have none.
+ */
+export interface GalleryUpdate { add: { id: string; data: Uint8Array }[]; remove: string[]; mainImageId?: string | null; order?: string[]; focus?: ({ id: string } & PhotoFocus)[]; }
 /** A hotel, activity or restaurant idea. `restaurantTypes` is empty for hotels and activities, and for a restaurant without any. */
 export interface Candidate { id: string; destinationId: string; category: Category; position: number; mustDo: boolean; name: string; priceCents: number | null; address: string; url: string; notes: string; included: boolean; links: ResearchLink[]; images: CandidateImage[]; mainImageId: string | null; restaurantTypes: RestaurantType[]; }
 export interface MassTime { id: string; day: string; time: string; }

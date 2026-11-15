@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 import { DatabaseSync } from "node:sqlite";
 import test from "node:test";
-import { ValidationError } from "../src/lib/store.ts";
+import { SCHEMA_VERSION, ValidationError } from "../src/lib/store.ts";
 import { createOwnedStore } from "./owned-store.mjs";
 import { addCity, fileDatabase, newItem, stop } from "./budget-fixtures.mjs";
 import { calculateBudget } from "../src/lib/budget.ts";
@@ -139,7 +139,7 @@ test("schema 16 single images migrate unchanged and replay preserves galleries a
     store = createOwnedStore(path);
     assert.deepEqual(store.getDestinationImage(id), original);
     assert.deepEqual(store.getDestinationPhoto(id, id), original);
-    assert.deepEqual(destination(store, id).images, [{ id, version: original.version }]);
+    assert.deepEqual(destination(store, id).images, [{ id, version: original.version, focusX: 50, focusY: 50 }], "the photo starts centered (TRA-53)");
     assert.equal(destination(store, id).mainImageId, id);
     assert.deepEqual(store.getSnapshot().legs, planning.legs);
     const extra = photo();
@@ -201,4 +201,119 @@ test("individual destination photo reads enforce owner, version and cache semant
   assert.equal(storedImageResponse(request("?v=stale"), id, read).status, 404);
   assert.equal(storedImageResponse(request(), randomUUID(), read).status, 404);
   assert.equal(storedImageResponse(request(), id, read).headers.get("cache-control"), "no-cache");
+});
+
+/** A destination photo's saved focal point (TRA-53). */
+function focal(store, id, photoId) {
+  const { focusX, focusY } = destination(store, id).images.find((image) => image.id === photoId);
+  return [focusX, focusY];
+}
+const point = (id, focusX = 50, focusY = 50) => ({ id, focusX, focusY });
+
+test("each destination photo keeps its own focal point through saves, reopening, primary choice, order and other edits (TRA-53)", (t) => {
+  const path = fileDatabase(t);
+  let store = createOwnedStore(path);
+  try {
+    const { tripId, id } = plan(store);
+    const [first, second, third] = [photo(), photo(), photo()];
+    store.applyMutation({ type: "destination.save", id, gallery: { add: [first, second], remove: [], mainImageId: first.id } });
+    assert.deepEqual([focal(store, id, first.id), focal(store, id, second.id)], [[50, 50], [50, 50]], "new photos start centered");
+    const before = store.getSnapshot();
+    const budget = calculateBudget(before, tripId);
+    const version = store.getDestinationPhoto(id, second.id).version;
+    store.applyMutation({ type: "destination.save", id, gallery: { add: [third], remove: [], focus: [point(second.id, 50, 12.5), point(third.id, 100, 0)] } });
+    assert.deepEqual([focal(store, id, first.id), focal(store, id, second.id), focal(store, id, third.id)], [[50, 50], [50, 12.5], [100, 0]], "each photo has its own focal point, a new one's saved with it");
+    assert.deepEqual(store.getDestinationPhoto(id, second.id), { version, data: webp }, "the photo itself is unchanged");
+    assert.deepEqual(destination(store, id).images.map((image) => image.id), [first.id, second.id, third.id], "recentering puts no photo in a new order");
+    assert.equal(destination(store, id).mainImageId, first.id, "recentering chooses no new primary photo");
+    assert.deepEqual(store.getSnapshot().legs, before.legs);
+    assert.deepEqual(calculateBudget(store.getSnapshot(), tripId), budget);
+    store.applyMutation({ type: "destination.save", id, gallery: { add: [], remove: [], mainImageId: second.id, order: [third.id, second.id, first.id] } });
+    store.applyMutation({ type: "destination.save", id, notes: "Only notes" });
+    assert.deepEqual([focal(store, id, second.id), focal(store, id, third.id)], [[50, 12.5], [100, 0]], "a new primary photo, order and other edits keep focal points");
+    const saved = store.getSnapshot();
+    store.close(); store = null;
+    store = createOwnedStore(path);
+    assert.deepEqual(store.getSnapshot(), saved, "reopening keeps every focal point");
+    store.applyMutation({ type: "destination.save", id, gallery: { add: [], remove: [third.id], focus: [point(second.id)] } });
+    assert.deepEqual(destination(store, id).images.map((image) => [image.id, image.focusX, image.focusY]), [[second.id, 50, 50], [first.id, 50, 50]], "recentering one photo changes only it, and a removed photo goes with its focal point");
+  } finally { store?.close(); }
+});
+
+test("focal points are refused outside a photo, for photos a destination doesn't keep, twice in a save, and for idea and church photos (TRA-53)", (t) => {
+  const store = createOwnedStore(":memory:");
+  t.after(() => store.close());
+  const { id } = plan(store);
+  const [own, removed, ideaPhoto, churchPhoto] = [photo(), photo(), photo(), photo()];
+  store.applyMutation({ type: "destination.save", id, gallery: { add: [own, removed], remove: [] } });
+  const before = store.getSnapshot();
+  const invalid = [
+    [point(own.id, -0.1)], [point(own.id, 50, 100.5)], [point(own.id, Number.NaN)], [point(own.id, Infinity)], [point(own.id, "50")], [{ id: own.id, focusX: 50 }],
+    [null], "center", {}, [point("invalid")], [point(own.id), point(own.id.toUpperCase(), 10)], [point(randomUUID())], Array.from({ length: 11 }, () => point(randomUUID())),
+  ];
+  for (const focus of invalid) {
+    assert.throws(() => store.applyMutation({ type: "destination.save", id, city: "Unsaved city", gallery: { add: [], remove: [], focus } }), ValidationError);
+    assert.deepEqual(store.getSnapshot(), before, "nothing is saved");
+  }
+  assert.throws(() => store.applyMutation({ type: "destination.save", id, gallery: { add: [], remove: [removed.id], focus: [point(removed.id, 10, 10)] } }), /no longer exists/, "a photo the save removes keeps no focal point");
+  assert.deepEqual(store.getSnapshot(), before);
+  const hotel = { type: "candidate.save", destinationId: id, category: "hotels", name: "Hotel", price: "", address: "", url: "", notes: "", included: false };
+  const hotelId = store.applyMutation({ ...hotel, ...newItem(), gallery: { add: [ideaPhoto], remove: [] } }).id;
+  assert.throws(() => store.applyMutation({ ...hotel, id: hotelId, gallery: { add: [], remove: [], focus: [point(ideaPhoto.id, 10, 10)] } }), /Only a destination's photos can be recentered/);
+  const church = { type: "church.save", destinationId: id, name: "Church", address: "", denomination: "", url: "", massTimes: [] };
+  const churchId = store.applyMutation({ ...church, ...newItem(), gallery: { add: [churchPhoto], remove: [] } }).id;
+  assert.throws(() => store.applyMutation({ ...church, id: churchId, gallery: { add: [], remove: [], focus: [point(churchPhoto.id, 10, 10)] } }), /Only a destination's photos can be recentered/);
+  assert.deepEqual(store.getSnapshot().candidates[0].images, [{ id: ideaPhoto.id, version: store.getCandidatePhoto(hotelId, ideaPhoto.id).version }], "idea photos have no focal point");
+});
+
+test("an old client's replacement of the primary photo starts it centered, and other photos keep their focal points (TRA-53)", (t) => {
+  const store = createOwnedStore(":memory:");
+  t.after(() => store.close());
+  const { id } = plan(store);
+  const [primary, other] = [photo(), photo()];
+  store.applyMutation({ type: "destination.save", id, gallery: { add: [primary, other], remove: [], mainImageId: primary.id, focus: [point(primary.id, 10, 90), point(other.id, 70, 30)] } });
+  const version = store.getDestinationImage(id).version;
+  store.applyMutation({ type: "destination.save", id, image: webp });
+  assert.notEqual(store.getDestinationImage(id).version, version, "the primary photo was replaced");
+  assert.deepEqual([focal(store, id, primary.id), focal(store, id, other.id)], [[50, 50], [70, 30]]);
+});
+
+test("schema 29 databases upgrade with every destination photo centered, and a replay keeps focal points saved since (TRA-53)", (t) => {
+  const path = fileDatabase(t);
+  let store = createOwnedStore(path);
+  try {
+    const { id } = plan(store);
+    const [first, second] = [photo(), photo()];
+    store.applyMutation({ type: "destination.save", id, gallery: { add: [first, second], remove: [], mainImageId: second.id } });
+    const saved = store.getSnapshot();
+    const original = store.getDestinationPhoto(id, first.id);
+    store.close(); store = null;
+    const db = new DatabaseSync(path);
+    db.exec("ALTER TABLE destination_images DROP COLUMN focusX; ALTER TABLE destination_images DROP COLUMN focusY; PRAGMA user_version = 29;");
+    db.close();
+    store = createOwnedStore(path);
+    assert.deepEqual(store.getSnapshot(), saved, "every photo keeps its order, primary choice and version, centered");
+    assert.deepEqual(store.getDestinationPhoto(id, first.id), original);
+    store.applyMutation({ type: "destination.save", id, gallery: { add: [], remove: [], focus: [point(first.id, 25, 62.5)] } });
+    const later = store.getSnapshot();
+    // A replay of schema 30, also from the gallery upgrade and after the schema 1 build resets the schema version, keeps it.
+    for (const version of [29, 16, 1]) {
+      store.close(); store = null;
+      const replay = new DatabaseSync(path);
+      replay.exec(`PRAGMA user_version = ${version};`);
+      replay.close();
+      store = createOwnedStore(path);
+      assert.deepEqual(store.getSnapshot(), later, `a replay from schema ${version} keeps saved focal points`);
+    }
+    const observer = new DatabaseSync(path);
+    try {
+      assert.equal(observer.prepare("PRAGMA user_version").get().user_version, SCHEMA_VERSION);
+      assert.equal(observer.prepare("PRAGMA integrity_check").get().integrity_check, "ok");
+      assert.deepEqual(observer.prepare("PRAGMA foreign_key_check").all(), []);
+      // The database itself keeps each focal point within its photo.
+      for (const [column, value] of [["focusX", -1], ["focusY", 100.5], ["focusX", null]]) {
+        assert.throws(() => observer.prepare(`UPDATE destination_images SET ${column} = ? WHERE id = ?`).run(value, first.id), /constraint failed/);
+      }
+    } finally { observer.close(); }
+  } finally { store?.close(); }
 });

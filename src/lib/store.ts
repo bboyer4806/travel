@@ -22,7 +22,7 @@ import type { EntryRequirements } from "./entry-requirements.ts";
 import type { HealthSafety } from "./health-safety.ts";
 import type { AiConnection, AiPhotoToAdd, AiProposal, DestinationFields, GalleryUpdate } from "./types";
 import type { AuthorizedAccount, DestinationAccess, GoogleIdentity, TripAccess, TripMember, TripStop } from "./types";
-import type { FoodBudgetMode, ActivitiesBudgetMode, Candidate, CandidateImage, Category, Church, MassTime, Destination, HomeItem, StoredImage, ItineraryStop, Mutation, ResearchLink, RestaurantType, Snapshot, TravelLeg, Trip } from "./types";
+import type { FoodBudgetMode, ActivitiesBudgetMode, Candidate, CandidateImage, Category, Church, MassTime, Destination, DestinationImage, HomeItem, StoredImage, ItineraryStop, Mutation, ResearchLink, RestaurantType, Snapshot, TravelLeg, Trip } from "./types";
 
 type StoredDestination = Omit<Destination, "churchEnabled" | "cityFromSuggestion" | "images" | "entryRequirements" | "healthSafety" | "mainImageId" | "imageVersion"> & { churchEnabled: number; cityFromSuggestion: number; ownerId: string; cityKey: string };
 type StoredChurch = Omit<Church, "massTimes" | "images"> & { massTimesJson: string };
@@ -316,12 +316,31 @@ function galleryField(input: Input, label = "Idea"): GalleryUpdate | undefined {
     return id;
   });
   const mainImageId = gallery.mainImageId === undefined || gallery.mainImageId === null ? gallery.mainImageId : idField({ id: gallery.mainImageId });
-  if (gallery.order === undefined) return { add, remove, mainImageId };
+  const focus = gallery.focus === undefined ? {} : { focus: focusField(gallery.focus, label, tooMany) };
+  if (gallery.order === undefined) return { add, remove, mainImageId, ...focus };
   // A rearranged gallery's order, which any gallery's editor sends (TRA-126).
   if (!Array.isArray(gallery.order) || gallery.order.length > maxImages) throw new ValidationError(tooMany);
   const order = gallery.order.map((id) => idField({ id }));
   if (new Set(order.map((id) => id.toLowerCase())).size !== order.length) throw new ValidationError("Each photo must appear once in the photo order.");
-  return { add, remove, mainImageId, order };
+  return { add, remove, mainImageId, order, ...focus };
+}
+/** Destination photos' new focal points, each photo once, as percentages from 0 to 100 (TRA-53). Idea and church photos have none. */
+function focusField(value: unknown, label: string, tooMany: string): NonNullable<GalleryUpdate["focus"]> {
+  if (label !== "Destination") throw new ValidationError("Only a destination's photos can be recentered.");
+  if (!Array.isArray(value) || value.length > MAX_DESTINATION_IMAGES) throw new ValidationError(tooMany);
+  const seen = new Set<string>();
+  return value.map((entry) => {
+    if (!entry || typeof entry !== "object" || Array.isArray(entry)) throw new ValidationError("Choose where each photo is centered.");
+    const id = idField(entry);
+    if (seen.has(id.toLowerCase())) throw new ValidationError("Each photo can be recentered once in a save.");
+    seen.add(id.toLowerCase());
+    const percent = (key: "focusX" | "focusY") => {
+      const number = (entry as Input)[key];
+      if (typeof number !== "number" || !Number.isFinite(number) || number < 0 || number > 100) throw new ValidationError("A photo's focal point must be within the photo.");
+      return number;
+    };
+    return { id, focusX: percent("focusX"), focusY: percent("focusY") };
+  });
 }
 function massTimesField(input: Input): MassTime[] {
   if (!Array.isArray(input.massTimes) || input.massTimes.length > 30) throw new ValidationError("A church can have up to 30 Mass times. Leave the list empty when times are unknown.");
@@ -452,6 +471,8 @@ function proposedPhotoChange(value: Input & { type: PhotoChange["type"] }): { id
   if (value.type !== "destination.photos" && order !== undefined) {
     throw new ValidationError("Only a destination's photos can be put in order. An idea's or church's photos keep their saved order, with new photos last.");
   }
+  // Destination photos' focal points are chosen only in Travel's photo editor, so the owner's preview never hides one (TRA-53).
+  if ((gallery as Input).focus !== undefined) throw new ValidationError("A photo's focal point can only be chosen in Travel. Photo changes keep each photo's focal point, and new photos start centered.");
   return { id, gallery: gallery as Input & { add: Input[] } };
 }
 /** A photo change, with the photos it adds from `photos`, which Travel downloaded and prepared for its proposal. */
@@ -532,7 +553,7 @@ const LIVE: Make = { id: () => randomUUID(), now: () => new Date().toISOString()
  * The schema this build upgrades every database to, as SQLite's user_version. A schema change adds the next
  * upgrade in createStore and raises this to match; earlier upgrades keep their own numbers.
  */
-export const SCHEMA_VERSION = 29;
+export const SCHEMA_VERSION = 30;
 
 /** A destination as schema 20 saved it, inside one trip, with that trip's owner and name. */
 type TripDestinationRow = Omit<StoredDestination, "cityKey"> & Omit<TripStop, "destinationId"> & { tripName: string };
@@ -1114,6 +1135,15 @@ export function createStore(databasePath: string, ownerEmail: string) {
       if (!hasColumn("legs", "miscCents")) db.exec(`ALTER TABLE legs ADD COLUMN miscCents INTEGER CHECK(miscCents BETWEEN 0 AND ${MAX_AMOUNT_CENTS});`);
       db.exec("PRAGMA user_version = 29;");
     }
+    if (version < 30) {
+      // Each destination photo's focal point (TRA-53): the point of the photo, as percentages of its width and height from
+      // its top left corner, that stays in view where it is cropped to fit. Every saved photo starts centered, as galleries
+      // have always shown it. A replay keeps saved focal points.
+      for (const column of ["focusX", "focusY"]) {
+        if (!hasColumn("destination_images", column)) db.exec(`ALTER TABLE destination_images ADD COLUMN ${column} REAL NOT NULL DEFAULT 50 CHECK(${column} BETWEEN 0 AND 100);`);
+      }
+      db.exec("PRAGMA user_version = 30;");
+    }
     if (version < SCHEMA_VERSION && db.prepare("PRAGMA foreign_key_check").get()) {
       throw new Error("This upgrade would leave saved items without the trip or destination they belong to. Nothing was changed; review the database against a backup before upgrading.");
     }
@@ -1136,11 +1166,12 @@ export function createStore(databasePath: string, ownerEmail: string) {
   function among(column: string, ids: readonly string[] | null): [string, string[]] {
     return ids === null ? ["", []] : [` WHERE ${column} IN (SELECT value FROM json_each(?))`, [JSON.stringify(ids)]];
   }
-  function photosOf(table: "destination_images" | "candidate_images" | "church_images", ownerColumn: string, ids: readonly string[] | null): Map<string, CandidateImage[]> {
+  /** Each of the given owners' photos in order, or every owner's, with `columns`: a destination's have their focal points too (TRA-53). */
+  function photosOf<Photo extends CandidateImage>(table: "destination_images" | "candidate_images" | "church_images", ownerColumn: string, ids: readonly string[] | null, columns = "id, version"): Map<string, Photo[]> {
     const [where, args] = among(ownerColumn, ids);
-    const photos = new Map<string, CandidateImage[]>();
-    for (const row of db.prepare(`SELECT id, ${ownerColumn} AS ownerId, version FROM ${table}${where} ORDER BY ${ownerColumn}, position, id`).all(...args)) {
-      photos.set(row.ownerId as string, [...(photos.get(row.ownerId as string) ?? []), { id: row.id as string, version: row.version as string }]);
+    const photos = new Map<string, Photo[]>();
+    for (const { ownerId, ...photo } of db.prepare(`SELECT ${ownerColumn} AS ownerId, ${columns} FROM ${table}${where} ORDER BY ${ownerColumn}, position, id`).all(...args)) {
+      photos.set(ownerId as string, [...(photos.get(ownerId as string) ?? []), photo as unknown as Photo]);
     }
     return photos;
   }
@@ -1200,7 +1231,7 @@ export function createStore(databasePath: string, ownerEmail: string) {
       .map((row) => [row.destinationId as string, JSON.parse(row.requirementsJson as string) as EntryRequirements]));
     const healthSafety = new Map(db.prepare("SELECT destinationId, healthSafetyJson FROM destination_health_safety" + researchWhere).all(...researchArgs)
       .map((row) => [row.destinationId as string, JSON.parse(row.healthSafetyJson as string) as HealthSafety]));
-    const photos = photosOf("destination_images", "destinationId", ids);
+    const photos = photosOf<DestinationImage>("destination_images", "destinationId", ids, "id, version, focusX, focusY");
     return db.prepare(`SELECT ${DESTINATION_COLUMNS}, destination_images.version AS imageVersion, destination_images.id AS mainImageId FROM destinations
       LEFT JOIN destination_images ON destination_images.destinationId = destinations.id AND destination_images.isMain = 1${where} ORDER BY destinations.city COLLATE NOCASE, destinations.id`).all(...args).map((row) => {
       const destination = row as unknown as Omit<Destination, "churchEnabled" | "cityFromSuggestion" | "images" | "entryRequirements" | "healthSafety"> & { churchEnabled: number; cityFromSuggestion: number };
@@ -1397,8 +1428,8 @@ export function createStore(databasePath: string, ownerEmail: string) {
       if (image === null) {
         gallery = { add: [], remove: currentMain ? [currentMain] : [] };
       } else if (image !== undefined && currentMain) {
-        // Old clients and URLs continue to replace or remove only the primary photo.
-        db.prepare("INSERT INTO destination_images(id,destinationId,version,data,position,isMain) VALUES(?,?,?,?,?,1) ON CONFLICT(id) DO UPDATE SET version = excluded.version, data = excluded.data").run(currentMain, destinationId, make.id(), image, current.find((photo) => photo.id === currentMain)!.position);
+        // Old clients and URLs continue to replace or remove only the primary photo. A new photo starts centered (TRA-53).
+        db.prepare("INSERT INTO destination_images(id,destinationId,version,data,position,isMain) VALUES(?,?,?,?,?,1) ON CONFLICT(id) DO UPDATE SET version = excluded.version, data = excluded.data, focusX = excluded.focusX, focusY = excluded.focusY").run(currentMain, destinationId, make.id(), image, current.find((photo) => photo.id === currentMain)!.position);
         return;
       } else {
         gallery = { add: image ? [{ id: make.id(), data: image }] : [], remove: [] };
@@ -1418,9 +1449,12 @@ export function createStore(databasePath: string, ownerEmail: string) {
     if (order.length !== remaining.length || order.some((id) => !remaining.includes(id))) throw new ValidationError("The destination photos have changed. Refresh before rearranging them.");
     const main = gallery.mainImageId === undefined ? (currentMain && !removed.has(currentMain) ? currentMain : order[0] ?? null) : gallery.mainImageId;
     if ((main === null && order.length > 0) || (main !== null && !order.includes(main))) throw new ValidationError("Choose a primary photo from the remaining destination photos. Refresh if the gallery has changed.");
+    if (gallery.focus?.some((photo) => !order.includes(photo.id))) throw new ValidationError("A destination photo has changed or no longer exists. Refresh and try again.");
     for (const id of gallery.remove) db.prepare("DELETE FROM destination_images WHERE destinationId = ? AND id = ?").run(destinationId, id);
     added.forEach((photo) => db.prepare("INSERT INTO destination_images(id,destinationId,version,data,position,isMain) VALUES(?,?,?,?,?,0)").run(photo.id, destinationId, make.id(), photo.data, order.indexOf(photo.id)));
     order.forEach((id, position) => db.prepare("UPDATE destination_images SET position = ? WHERE destinationId = ? AND id = ?").run(position, destinationId, id));
+    // Photos the save doesn't recenter keep their focal points, and new ones start centered (TRA-53).
+    for (const { id, focusX, focusY } of gallery.focus ?? []) db.prepare("UPDATE destination_images SET focusX = ?, focusY = ? WHERE destinationId = ? AND id = ?").run(focusX, focusY, destinationId, id);
     db.prepare("UPDATE destination_images SET isMain = 0 WHERE destinationId = ? AND isMain = 1").run(destinationId);
     if (main) db.prepare("UPDATE destination_images SET isMain = 1 WHERE destinationId = ? AND id = ?").run(destinationId, main);
   }

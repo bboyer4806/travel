@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 import test from "node:test";
-import { createGalleryDraft, galleryChanged, galleryForm, movePhoto, placePhoto, removePhoto } from "../src/lib/gallery-draft.ts";
+import { createGalleryDraft, focusPhoto, galleryChanged, galleryForm, movePhoto, placePhoto, removePhoto } from "../src/lib/gallery-draft.ts";
 
 function savedDestination() {
   const images = Array.from({ length: 3 }, () => ({ id: randomUUID(), version: randomUUID() }));
@@ -110,4 +110,42 @@ test("new photos dragged among saved ones are sent in that order, and new photos
   // So are the photos of an idea or church being added.
   const unsaved = { images: [first, second], removedIds: [], mainImageId: first.id };
   assert.deepEqual(manifest(placePhoto(unsaved, second.id, 0)), { addIds: [second.id, first.id], removeIds: [], mainImageId: first.id });
+});
+
+/** A saved destination whose photos have the given saved focal points, as the store reads them (TRA-53). */
+function focusedDestination(...points) {
+  const images = points.map(([focusX, focusY]) => ({ id: randomUUID(), version: randomUUID(), focusX, focusY }));
+  return { id: randomUUID(), city: "Paris", images, mainImageId: images[0].id };
+}
+
+test("an applied focal point is a photo change sent for that photo alone, which moving the photo keeps and removing it drops (TRA-53)", () => {
+  const destination = focusedDestination([50, 50], [30, 75.5]);
+  const [a, b] = destination.images.map((image) => image.id);
+  const draft = createGalleryDraft(destination);
+  assert.deepEqual(draft.images, destination.images, "the draft starts from each photo's saved focal point");
+  const focused = focusPhoto(draft, a, { focusX: 50, focusY: 12.5 });
+  assert.equal(galleryChanged(focused, destination), true, "an applied focal point is a photo change, which Undo photo changes undoes");
+  assert.deepEqual(manifest(focused, destination), { addIds: [], removeIds: [], mainImageId: a, focus: [{ id: a, focusX: 50, focusY: 12.5 }] }, "only the photo whose focal point changed is sent, without an order");
+  assert.deepEqual(order(focused), [a, b], "the photos keep their order");
+  assert.deepEqual(draft.images, destination.images, "the draft it started from is unchanged");
+  assert.equal(galleryForm(focusPhoto(focused, a, { focusX: 50, focusY: 50 }), destination), undefined, "putting back the saved focal point changes nothing");
+  assert.equal(galleryForm(focusPhoto(draft, b, { focusX: 30, focusY: 75.5 }), destination), undefined, "applying the saved focal point changes nothing");
+  assert.equal(galleryForm(createGalleryDraft(destination), destination), undefined, "after Undo, saving changes no photo");
+  const moved = movePhoto(focused, a, "right");
+  assert.deepEqual(manifest(moved, destination), { addIds: [], removeIds: [], mainImageId: a, order: [b, a], focus: [{ id: a, focusX: 50, focusY: 12.5 }] }, "a moved photo keeps its focal point");
+  assert.deepEqual(manifest(removePhoto(focused, a), destination), { addIds: [], removeIds: [a], mainImageId: b }, "a removed photo's focal point isn't sent");
+  assert.equal(focusPhoto(draft, randomUUID(), { focusX: 0, focusY: 0 }).images.every((image, index) => image === draft.images[index]), true, "a photo no longer in the draft changes nothing");
+});
+
+test("a new photo starts centered, and its focal point is sent with it once it is off center (TRA-53)", () => {
+  const destination = focusedDestination([50, 50]);
+  const image = newPhoto("new.png");
+  const initial = createGalleryDraft(destination);
+  const added = { ...initial, images: [...initial.images, image] };
+  assert.equal("focus" in manifest(added, destination), false, "a new photo starts centered");
+  assert.equal("focus" in manifest(focusPhoto(added, image.id, { focusX: 50, focusY: 50 }), destination), false, "applying the center sends no focal point");
+  const focused = focusPhoto(added, image.id, { focusX: 0, focusY: 50 });
+  assert.deepEqual(manifest(focused, destination), { addIds: [image.id], removeIds: [], mainImageId: destination.mainImageId, focus: [{ id: image.id, focusX: 0, focusY: 50 }] });
+  assert.equal(galleryForm(focused, destination).get(`image:${image.id}`), image.file, "the photo itself is sent unchanged");
+  assert.equal(galleryForm(removePhoto(focused, image.id), destination), undefined, "removing the new photo changes nothing");
 });

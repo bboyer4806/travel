@@ -38,8 +38,8 @@ export interface PreviewChange { operation: string; records: PreviewRecord[] }
 type Format = "text" | "number" | "order" | "money" | "flag" | "json" | "account" | "restaurantTypes";
 /**
  * Each column's label in a preview and how its values read, or null for one people never see: IDs, keys, timestamps,
- * photo versions, and values worked out from another column. Hidden columns still count when approving: a proposal
- * makes exactly the rows it previewed, or nothing.
+ * photo versions, destination photos' focal points, which proposals never change (TRA-53), and values worked out from
+ * another column. Hidden columns still count when approving: a proposal makes exactly the rows it previewed, or nothing.
  */
 export const PREVIEW_COLUMNS: Record<DataTable, Record<string, [string, Format] | null>> = {
   trips: { id: null, name: ["Name", "text"], dateLabel: ["Dates", "text"], homeCity: ["Departing city", "text"], travelers: ["Travelers", "number"], notes: ["Notes", "text"], createdAt: null, returnCity: ["Return city", "text"], startDate: ["Start date", "text"], ownerId: ["Owner", "account"] },
@@ -58,7 +58,7 @@ export const PREVIEW_COLUMNS: Record<DataTable, Record<string, [string, Format] 
   },
   destination_entry_requirements: { destinationId: null, requirementsJson: ["Entry requirements", "json"] },
   destination_health_safety: { destinationId: null, healthSafetyJson: ["Health and safety", "json"] },
-  destination_images: { id: null, destinationId: null, version: null, position: ["Order", "order"], isMain: ["Primary photo", "flag"] },
+  destination_images: { id: null, destinationId: null, version: null, position: ["Order", "order"], isMain: ["Primary photo", "flag"], focusX: null, focusY: null },
   candidates: { id: null, destinationId: null, category: null, name: ["Name", "text"], priceCents: ["Price", "money"], address: ["Address", "text"], url: null, notes: ["Notes", "text"], included: ["Included", "flag"], linksJson: ["Research links", "json"], position: ["Order", "order"], mustDo: ["Must do", "flag"], restaurantTypesJson: ["Restaurant types", "restaurantTypes"] },
   candidate_images: { id: null, candidateId: null, version: null, position: ["Order", "order"], isMain: ["Main photo", "flag"] },
   churches: { id: null, destinationId: null, name: ["Name", "text"], address: ["Address", "text"], denomination: ["Denomination", "text"], url: ["Website", "text"], massTimesJson: ["Mass times", "json"] },

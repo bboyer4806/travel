@@ -79,6 +79,8 @@ const descriptions = {
   activities: "Collect the things you would love to do.",
   restaurants: "A good trip deserves a few great meals.",
 };
+/** What a destination's page shows above its name until it has a tagline of its own (TRA-125). */
+const DEFAULT_TAGLINE = "A place worth knowing";
 function displayPrice(cents: number | null) { return cents === null ? "Not estimated" : formatCurrency(cents, "USD"); }
 function BudgetValue({ budget }: { budget: Budget }) {
   return <><strong>{<CurrencyTotals totals={budget.totalsByCurrency} />}</strong>
@@ -291,7 +293,7 @@ export default function PlannerApp({ initialData, initialBudgets, access = {}, d
       }
       case "destination": {
         const imageForm = galleryForm(destinationGallery, editor.item);
-        const shared = { city: text("city"), cityFromSuggestion, notes: text("notes"), miscDailyAmount: text("miscDailyAmount"), hotelNightlyAmount: text("hotelNightlyAmount"), activitiesBudgetMode: text("activitiesBudgetMode") as ActivitiesBudgetMode, activitiesGeneralAmount: text("activitiesGeneralAmount"), foodBudgetMode: text("foodBudgetMode") as FoodBudgetMode, foodDailyAmount: text("foodDailyAmount"), shoppingAmount: text("shoppingAmount") };
+        const shared = { city: text("city"), cityFromSuggestion, tagline: text("tagline"), notes: text("notes"), miscDailyAmount: text("miscDailyAmount"), hotelNightlyAmount: text("hotelNightlyAmount"), activitiesBudgetMode: text("activitiesBudgetMode") as ActivitiesBudgetMode, activitiesGeneralAmount: text("activitiesGeneralAmount"), foodBudgetMode: text("foodBudgetMode") as FoodBudgetMode, foodDailyAmount: text("foodDailyAmount"), shoppingAmount: text("shoppingAmount") };
         const stay = { stay: text("stay"), nights };
         if (editor.stop) void perform({ type: "destination.save", id: editor.item.id, stopId: editor.stop.id, ...shared, ...stay }, "Destination saved. Review any new travel connections.", undefined, imageForm);
         else void perform({ type: "destination.save", id: editor.item.id, ...shared }, "Destination saved in every trip that visits it.", undefined, imageForm);
@@ -424,7 +426,7 @@ export default function PlannerApp({ initialData, initialBudgets, access = {}, d
     const stays = visitsOf(place.id);
     return <>
       <Link href="/destinations" className="breadcrumb"><ArrowLeft size={16} />All destinations</Link>
-      <section className="trip-heading"><div><p className="eyebrow">A PLACE WORTH KNOWING</p><h1>{label}</h1><div className="trip-meta">{label !== place.city && <span><MapPin size={17} />{place.city}</span>}<span><Plane size={17} />{stays.length ? "In " + count(new Set(stays.map((visit) => visit.trip.id)).size, "trip", "trips") : "Not in a trip"}</span>{placeAccess?.role === "editor" && <span><Share2 size={17} />{"Shared by " + memberLabel(placeAccess.owner)}</span>}</div>{place.notes && <p className="trip-notes">{place.notes}</p>}</div>
+      <section className="trip-heading"><div><p className="eyebrow">{(place.tagline || DEFAULT_TAGLINE).toUpperCase()}</p><h1>{label}</h1><div className="trip-meta">{label !== place.city && <span><MapPin size={17} />{place.city}</span>}<span><Plane size={17} />{stays.length ? "In " + count(new Set(stays.map((visit) => visit.trip.id)).size, "trip", "trips") : "Not in a trip"}</span>{placeAccess?.role === "editor" && <span><Share2 size={17} />{"Shared by " + memberLabel(placeAccess.owner)}</span>}</div>{place.notes && <p className="trip-notes">{place.notes}</p>}</div>
         <div className="heading-actions"><button className="button secondary" onClick={() => open({ kind: "destination", item: place })}><Pencil size={15} />Edit destination</button>{placeAccess?.role === "owner" && stays.length === 0 && <button className="icon-button" aria-label="Delete destination" onClick={() => confirmDelete({ type: "destination.delete", id: place.id }, "Delete this destination?", "“" + label + "” and everything saved for it will be removed: its hotels, activities, restaurants, churches, photos, notes, budget amounts, entry requirements, health and safety, and typical weather.", "/destinations")}><Trash2 size={18} /></button>}</div>
       </section>
       <div className="trip-layout"><div className="trip-main">
@@ -566,8 +568,9 @@ export default function PlannerApp({ initialData, initialBudgets, access = {}, d
         <TripRouteFields trip={editor.item} disabled={busy} /><Notes value={editor.item?.notes} />
       </>}
       {editor.kind === "destination" && <>
-        <p className="helper wide">The city, budget amounts, photos, and notes are shared by every trip that visits this destination.{editor.stop && " Stay notes and nights are for this trip only."}</p>
+        <p className="helper wide">The city, tagline, budget amounts, photos, and notes are shared by every trip that visits this destination.{editor.stop && " Stay notes and nights are for this trip only."}</p>
         <LocationField compactDestination label="City or destination" name="city" defaultValue={editor.item.city} required disabled={busy} placeholder="Start typing a city, e.g. Vienna" helpText="Choose a suggestion or enter any destination." hint="Changing the city changes it in every trip that visits this destination, and clears travel details for its incoming and outgoing connections." />
+        <Field label="Tagline" hint="Shown in capitals above the destination’s name on its page. Leave it blank for the default." wide><input name="tagline" defaultValue={editor.item.tagline} maxLength={120} placeholder={DEFAULT_TAGLINE} /></Field>
         {trip && editor.stop && <Field label="Stay notes" hint="For this trip only." wide><input name="stay" defaultValue={editor.stop.stay} maxLength={120} placeholder="3 nights, or sometime in May" /></Field>}
         <DestinationBudgetEditor stay={trip && editor.stop ? { trip, stops, stop: editor.stop } : undefined} destination={editor.item} selectedHotel={selectedHotel(editor.item.id)} disabled={busy} />
         <DestinationGalleryEditor destination={editor.item} draft={destinationGallery} onChange={setDestinationGallery} disabled={busy} />

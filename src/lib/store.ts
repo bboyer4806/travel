@@ -40,7 +40,7 @@ const VISIBLE_DESTINATIONS = `SELECT id FROM destinations WHERE ownerId = ? UNIO
 /** Every trip column but the owner's account ID, which stays on the server. */
 const TRIP_COLUMNS = "id, name, dateLabel, homeCity, returnCity, travelers, notes, createdAt, startDate";
 /** Every destination column but its owner's account ID and its city key, which stay on the server. */
-const DESTINATION_COLUMNS = ["id", "city", "cityFromSuggestion", "notes", "miscDailyMinor", "miscCurrency", "hotelNightlyMinor", "hotelCurrency", "activitiesBudgetMode", "activitiesGeneralMinor", "activitiesCurrency", "foodBudgetMode", "foodDailyMinor", "foodCurrency", "shoppingMinor", "shoppingCurrency", "weatherHighF", "weatherLowF", "weatherRainfall", "weatherPeriod", "weatherSource", "churchEnabled"]
+const DESTINATION_COLUMNS = ["id", "city", "cityFromSuggestion", "tagline", "notes", "miscDailyMinor", "miscCurrency", "hotelNightlyMinor", "hotelCurrency", "activitiesBudgetMode", "activitiesGeneralMinor", "activitiesCurrency", "foodBudgetMode", "foodDailyMinor", "foodCurrency", "shoppingMinor", "shoppingCurrency", "weatherHighF", "weatherLowF", "weatherRainfall", "weatherPeriod", "weatherSource", "churchEnabled"]
   .map((column) => "destinations." + column).join(", ");
 /** How each saved trip item finds its trip. */
 const TRIP_OF = {
@@ -388,7 +388,7 @@ function validate(input: unknown): Mutation {
       if (value.create !== undefined || value.tripId !== undefined) throw new ValidationError(PLANNER_UPDATED);
       if (value.arrivalDate !== undefined || value.departureDate !== undefined) throw new ValidationError("Destination dates are calculated. Edit the trip start date or destination nights instead.");
       const id = saveIdField(value);
-      const fields = { city: value.city === undefined ? undefined : textField(value, "city", 120, true), cityFromSuggestion: cityFromSuggestionField(value), stay: value.stay === undefined ? undefined : textField(value, "stay", 120), nights: nightsField(value), miscDailyAmount: value.miscDailyAmount === undefined ? undefined : textField(value, "miscDailyAmount", 32), hotelNightlyAmount: value.hotelNightlyAmount === undefined ? undefined : textField(value, "hotelNightlyAmount", 32), activitiesBudgetMode: activitiesModeField(value), activitiesGeneralAmount: value.activitiesGeneralAmount === undefined ? undefined : textField(value, "activitiesGeneralAmount", 32), foodBudgetMode: foodModeField(value), foodDailyAmount: value.foodDailyAmount === undefined ? undefined : textField(value, "foodDailyAmount", 32), shoppingAmount: value.shoppingAmount === undefined ? undefined : textField(value, "shoppingAmount", 32), weatherHighF: temperatureField(value, "weatherHighF"), weatherLowF: temperatureField(value, "weatherLowF"), weatherRainfall: value.weatherRainfall === undefined ? undefined : textField(value, "weatherRainfall", 4000), weatherPeriod: value.weatherPeriod === undefined ? undefined : textField(value, "weatherPeriod", 120), weatherSource: value.weatherSource === undefined ? undefined : textField(value, "weatherSource", 2048), notes: value.notes === undefined ? undefined : textField(value, "notes", 8000), image: imageField(value), gallery: galleryField(value, "Destination") };
+      const fields = { city: value.city === undefined ? undefined : textField(value, "city", 120, true), cityFromSuggestion: cityFromSuggestionField(value), tagline: value.tagline === undefined ? undefined : textField(value, "tagline", 120), stay: value.stay === undefined ? undefined : textField(value, "stay", 120), nights: nightsField(value), miscDailyAmount: value.miscDailyAmount === undefined ? undefined : textField(value, "miscDailyAmount", 32), hotelNightlyAmount: value.hotelNightlyAmount === undefined ? undefined : textField(value, "hotelNightlyAmount", 32), activitiesBudgetMode: activitiesModeField(value), activitiesGeneralAmount: value.activitiesGeneralAmount === undefined ? undefined : textField(value, "activitiesGeneralAmount", 32), foodBudgetMode: foodModeField(value), foodDailyAmount: value.foodDailyAmount === undefined ? undefined : textField(value, "foodDailyAmount", 32), shoppingAmount: value.shoppingAmount === undefined ? undefined : textField(value, "shoppingAmount", 32), weatherHighF: temperatureField(value, "weatherHighF"), weatherLowF: temperatureField(value, "weatherLowF"), weatherRainfall: value.weatherRainfall === undefined ? undefined : textField(value, "weatherRainfall", 4000), weatherPeriod: value.weatherPeriod === undefined ? undefined : textField(value, "weatherPeriod", 120), weatherSource: value.weatherSource === undefined ? undefined : textField(value, "weatherSource", 2048), notes: value.notes === undefined ? undefined : textField(value, "notes", 8000), image: imageField(value), gallery: galleryField(value, "Destination") };
       // A destination is changed by its own ID, and only a trip's stop has stay notes and nights, so a save that
       // changes them names that stop.
       const stopId = value.stopId === undefined ? undefined : idField(value, "stopId");
@@ -553,7 +553,7 @@ const LIVE: Make = { id: () => randomUUID(), now: () => new Date().toISOString()
  * The schema this build upgrades every database to, as SQLite's user_version. A schema change adds the next
  * upgrade in createStore and raises this to match; earlier upgrades keep their own numbers.
  */
-export const SCHEMA_VERSION = 30;
+export const SCHEMA_VERSION = 31;
 
 /** A destination as schema 20 saved it, inside one trip, with that trip's owner and name. */
 type TripDestinationRow = Omit<StoredDestination, "cityKey"> & Omit<TripStop, "destinationId"> & { tripName: string };
@@ -1144,6 +1144,12 @@ export function createStore(databasePath: string, ownerEmail: string) {
       }
       db.exec("PRAGMA user_version = 30;");
     }
+    if (version < 31) {
+      // Each destination's tagline (TRA-125): the line its page shows above its name, saved as typed. Every saved
+      // destination starts without one, so its page keeps the default heading. A replay keeps saved taglines.
+      if (!hasColumn("destinations", "tagline")) db.exec("ALTER TABLE destinations ADD COLUMN tagline TEXT NOT NULL DEFAULT '';");
+      db.exec("PRAGMA user_version = 31;");
+    }
     if (version < SCHEMA_VERSION && db.prepare("PRAGMA foreign_key_check").get()) {
       throw new Error("This upgrade would leave saved items without the trip or destination they belong to. Nothing was changed; review the database against a backup before upgrading.");
     }
@@ -1579,6 +1585,7 @@ export function createStore(databasePath: string, ownerEmail: string) {
       // Only a chosen suggestion's label is shown shorter (TRA-76). An unchanged city keeps its record; a new one sent
       // without it was entered some other way.
       cityFromSuggestion: input.cityFromSuggestion ? 1 : before && city === before.city ? before.cityFromSuggestion : 0,
+      tagline: input.tagline ?? before?.tagline ?? "",
       notes: input.notes ?? before?.notes ?? "",
       miscDailyMinor: misc.minor, miscCurrency: misc.currency, hotelNightlyMinor: hotel.minor, hotelCurrency: hotel.currency,
       activitiesBudgetMode: input.activitiesBudgetMode ?? before?.activitiesBudgetMode ?? "itemized", activitiesGeneralMinor: activities.minor, activitiesCurrency: activities.currency,

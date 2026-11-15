@@ -16,8 +16,9 @@ export interface HomeItem { id: string; tripId: string; name: string; notes: str
 /**
  * A city's research, ideas, selections and budget amounts, shared by every trip that visits it. Each owner has one per city.
  * `cityFromSuggestion` records that `city` is the label of a city suggestion chosen for it, the only city shown shorter (TRA-76).
+ * `tagline` is the line its page shows above its name, saved as typed, or empty for the default heading (TRA-125).
  */
-export interface Destination extends TypicalWeather, DestinationPhotos { entryRequirements: EntryRequirements | null; healthSafety: HealthSafety | null; churchEnabled: boolean; id: string; city: string; cityFromSuggestion: boolean; miscDailyMinor: number | null; miscCurrency: string | null; hotelNightlyMinor: number | null; hotelCurrency: string | null; activitiesBudgetMode: ActivitiesBudgetMode; activitiesGeneralMinor: number | null; activitiesCurrency: string | null; foodBudgetMode: FoodBudgetMode; foodDailyMinor: number | null; foodCurrency: string | null; shoppingMinor: number | null; shoppingCurrency: string | null; notes: string; imageVersion: string | null; }
+export interface Destination extends TypicalWeather, DestinationPhotos { entryRequirements: EntryRequirements | null; healthSafety: HealthSafety | null; churchEnabled: boolean; id: string; city: string; cityFromSuggestion: boolean; tagline: string; miscDailyMinor: number | null; miscCurrency: string | null; hotelNightlyMinor: number | null; hotelCurrency: string | null; activitiesBudgetMode: ActivitiesBudgetMode; activitiesGeneralMinor: number | null; activitiesCurrency: string | null; foodBudgetMode: FoodBudgetMode; foodDailyMinor: number | null; foodCurrency: string | null; shoppingMinor: number | null; shoppingCurrency: string | null; notes: string; imageVersion: string | null; }
 /** One trip's stay at a destination: its place in the route, stay notes, nights and calculated dates. */
 export interface TripStop { id: string; tripId: string; destinationId: string; position: number; stay: string; nights: number | null; arrivalDate: string | null; departureDate: string | null; legacyArrivalDate: string | null; legacyDepartureDate: string | null; }
 /** A destination with the nights of one stay there, which its duration-based amounts use. Outside a trip they are unknown. */
@@ -54,7 +55,7 @@ export interface Snapshot { churches: Church[]; trips: Trip[]; homeItems: HomeIt
  * A destination's shared research and budget amounts as a save sends them. A field left out keeps its saved value, except
  * that a new city sent without `cityFromSuggestion` was entered some other way.
  */
-export interface DestinationFields { city?: string; cityFromSuggestion?: true; notes?: string; miscDailyAmount?: string; hotelNightlyAmount?: string; activitiesBudgetMode?: ActivitiesBudgetMode; activitiesGeneralAmount?: string; foodBudgetMode?: FoodBudgetMode; foodDailyAmount?: string; shoppingAmount?: string; weatherHighF?: number | null; weatherLowF?: number | null; weatherRainfall?: string; weatherPeriod?: string; weatherSource?: string; image?: Uint8Array | null; gallery?: GalleryUpdate }
+export interface DestinationFields { city?: string; cityFromSuggestion?: true; tagline?: string; notes?: string; miscDailyAmount?: string; hotelNightlyAmount?: string; activitiesBudgetMode?: ActivitiesBudgetMode; activitiesGeneralAmount?: string; foodBudgetMode?: FoodBudgetMode; foodDailyAmount?: string; shoppingAmount?: string; weatherHighF?: number | null; weatherLowF?: number | null; weatherRainfall?: string; weatherPeriod?: string; weatherSource?: string; image?: Uint8Array | null; gallery?: GalleryUpdate }
 /** One trip's stay notes and nights at a destination. */
 export interface StopFields { stay?: string; nights?: number | null }
 /**

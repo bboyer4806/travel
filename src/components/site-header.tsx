@@ -5,6 +5,7 @@ import { usePathname } from "next/navigation";
 import { useEffect, useSyncExternalStore } from "react";
 import { Compass } from "lucide-react";
 import { signOutOfTravel } from "@/app/auth-actions";
+import { HelpButton } from "@/components/help";
 import { hasUnreadRelease, publishedReleases, releases } from "@/lib/change-log";
 
 const key = "travel.latestSeenRelease";
@@ -29,7 +30,7 @@ export default function SiteHeader({ account }: { account: { email: string; name
     window.dispatchEvent(new Event("travel-release-seen"));
   }, [pathname, latest]);
   return <header className="site-header"><Link href="/" className="brand"><span className="brand-mark"><Compass size={24} strokeWidth={1.6} /></span><span>travel<span className="brand-dot">.</span></span></Link>
-    {account && <><nav aria-label="Main navigation"><Link href="/" className={pathname === "/" ? "nav-link active" : "nav-link"} aria-current={pathname === "/" ? "page" : undefined}>All trips</Link><Link href="/destinations" className={pathname.startsWith("/destinations") ? "nav-link active" : "nav-link"} aria-current={pathname === "/destinations" ? "page" : undefined}>Destinations</Link><Link href="/whats-new" className={pathname === "/whats-new" ? "nav-link active" : "nav-link"} aria-current={pathname === "/whats-new" ? "page" : undefined}>What&apos;s new{unread && <span className="unread-dot"><span className="sr-only"> new</span></span>}</Link>{account.aiOwner && <Link href="/ai" className={pathname.startsWith("/ai") ? "nav-link active" : "nav-link"} aria-current={pathname === "/ai" ? "page" : undefined}>AI assistants</Link>}</nav>
+    {account && <><nav aria-label="Main navigation"><Link href="/" className={pathname === "/" ? "nav-link active" : "nav-link"} aria-current={pathname === "/" ? "page" : undefined}>All trips</Link><Link href="/destinations" className={pathname.startsWith("/destinations") ? "nav-link active" : "nav-link"} aria-current={pathname === "/destinations" ? "page" : undefined}>Destinations</Link><Link href="/whats-new" className={pathname === "/whats-new" ? "nav-link active" : "nav-link"} aria-current={pathname === "/whats-new" ? "page" : undefined}>What&apos;s new{unread && <span className="unread-dot"><span className="sr-only"> new</span></span>}</Link>{account.aiOwner && <Link href="/ai" className={pathname.startsWith("/ai") ? "nav-link active" : "nav-link"} aria-current={pathname === "/ai" ? "page" : undefined}>AI assistants</Link>}<HelpButton className="nav-link">Help</HelpButton></nav>
       <div className="account-menu"><span className="account-identity">{account.name && <span className="account-name">{account.name}</span>}<span className="account-email">{account.email}</span></span>
         <form action={signOutOfTravel}><button type="submit" className="text-button" title={"Sign out of " + account.email}>Sign out</button></form></div></>}
   </header>;

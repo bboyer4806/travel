@@ -1,0 +1,51 @@
+/* TRA-130: a destination's saved places on a map, below its photos and before its budget. */
+.section { margin: 0 0 20px; }
+/* The categories' checkboxes, each with its symbol as the map's key. */
+.filters { display: flex; flex-wrap: wrap; gap: 0 18px; min-width: 0; margin: 0 0 8px; padding: 0; border: 0; }
+.filter { display: inline-flex; align-items: center; gap: 8px; min-height: 44px; color: var(--ink); font-size: 13px; cursor: pointer; }
+.filter input { width: 18px; height: 18px; margin: 0; accent-color: var(--green); }
+.filter .symbol { width: 24px; height: 24px; border-width: 0; box-shadow: none; }
+.filter .symbol svg { width: 13px; height: 13px; }
+/* Leaflet's panes and controls stack within the frame, below the page's messages and dialogs. */
+.frame { position: relative; height: 340px; border: 1px solid var(--line); border-radius: 10px; overflow: hidden; background: var(--wash); isolation: isolate; }
+.map { position: absolute; inset: 0; }
+.frame :global(.leaflet-container) { background: var(--wash); font: 11px/1.5 Arial, Helvetica, sans-serif; }
+.message { position: absolute; inset: 0; display: grid; place-items: center; margin: 0; padding: 24px; color: var(--muted); font-size: 13px; text-align: center; }
+
+/* Leaflet centers a marker's element, sized for what it draws, on its point. */
+.anchor { outline: none; }
+.content { display: flex; width: 100%; height: 100%; align-items: center; justify-content: center; }
+.symbol { display: grid; place-items: center; width: 30px; height: 30px; border: 2px solid var(--white); border-radius: 50%; color: var(--white); box-shadow: 0 2px 6px #15281d40; font: 700 12px/1 Arial, Helvetica, sans-serif; }
+.hotels { background: var(--green); }
+.activities { background: var(--orange); }
+.restaurants { background: #2d5a7b; }
+.churches { background: #6a4c6e; }
+.group { background: var(--ink); }
+.anchor:focus-visible .content > * { outline: 3px solid var(--ink); outline-offset: 2px; }
+
+/* A marker's popup: each place found there, with its category and View details. */
+.popupPlaces { display: grid; gap: 10px; min-width: 160px; margin: 0; padding: 0; list-style: none; }
+.popupPlaces li { display: grid; justify-items: start; gap: 1px; overflow-wrap: anywhere; }
+.popupPlaces li + li { padding-top: 10px; border-top: 1px solid var(--line); }
+.popupPlaces strong { color: var(--ink); font-size: 13px; font-weight: 600; }
+.category { color: var(--muted); font-size: 11px; }
+
+.status { margin: 8px 0 0; color: var(--muted); font-size: 11px; }
+.status:empty { display: none; }
+
+.unmapped { margin-top: 18px; padding-top: 16px; border-top: 1px solid var(--line); }
+.unmapped h5 { margin: 0; font-size: 15px; }
+.unmapped > p { margin: 6px 0 4px; max-width: 640px; color: var(--muted); font-size: 12px; }
+.unmapped h6 { margin: 14px 0 6px; color: var(--muted); font-size: 11px; font-weight: 600; letter-spacing: .04em; text-transform: uppercase; }
+.unmapped ul { display: grid; gap: 4px; margin: 0 0 6px; padding: 0; list-style: none; }
+.unmapped li { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 0 16px; font-size: 12px; }
+.unmapped li :global(.text-button) { min-height: 44px; }
+.place { display: grid; gap: 1px; min-width: 0; overflow-wrap: anywhere; }
+.place strong { font-weight: 600; }
+.reason { color: var(--orange); font-size: 11px; }
+.credit { margin-top: 12px; color: var(--muted); font-size: 10px; }
+.credit a { text-decoration: underline; }
+
+@media (max-width: 540px) {
+  .frame { height: 280px; }
+}

@@ -11,7 +11,7 @@ import { EntryRequirementsPanel, EntryRequirementsEditor } from "@/components/en
 import { entryRequirementsFromForm } from "@/lib/entry-requirements";
 import { HealthSafetyPanel, HealthSafetyEditor } from "@/components/health-safety";
 import { healthSafetyFromForm, type EmergencyContact } from "@/lib/health-safety";
-import { ChurchOptions, ChurchEditor } from "@/components/churches";
+import { ChurchOptions, ChurchEditor, ChurchDetails } from "@/components/churches";
 import { TypicalWeatherPanel, TypicalWeatherEditor } from "@/components/typical-weather";
 import { DestinationGallery, DestinationGalleryEditor } from "@/components/destination-gallery";
 import CandidateList from "@/components/candidate-list";
@@ -39,6 +39,8 @@ import { formatSavedDestinationLabel } from "@/lib/destination-label";
 import { TransportationIcons } from "@/components/transportation-icons";
 import TripMap from "@/components/trip-map";
 import { connectionTarget, tripJourney } from "@/lib/trip-map";
+import DestinationMap from "@/components/destination-map";
+import { destinationPlaces, type SavedPlace } from "@/lib/destination-map";
 import { calculateBudget, calculateDestinationBudget, tripVisits } from "@/lib/budget";
 import { formatCurrency, MAX_AMOUNT_DOLLARS, minorAmountValue } from "@/lib/money";
 import { ShoppingBudgetEditor, FoodBudgetEditor, FoodSummary, ActivitiesBudgetEditor, ActivitiesSummary, AccommodationBudgetEditor, AccommodationSummary, CurrencyTotals, DestinationBudget, DestinationBudgetEditor, MiscellaneousBudgetEditor, StayNightsEditor } from "@/components/destination-budget";
@@ -68,8 +70,10 @@ type Editor =
   // An idea's editor, which adds one to the destination without `item`. Opened from its details, Cancel and saving return there.
   // `deleting` shows a saved idea's Delete confirmation above it, which leaves the editor and its draft as they are (TRA-128).
   | { kind: "candidate"; destinationId: string; category: Category; item?: Candidate; details?: true; deleting?: boolean }
-  // An idea's details, read only, from its destination's carousels (TRA-120).
+  // An idea's details, read only, from its destination's carousels (TRA-120) and map (TRA-130).
   | { kind: "ideaDetails"; item: Candidate }
+  // A church's details, read only, from its destination's map (TRA-130).
+  | { kind: "churchDetails"; item: Church }
   | { kind: "church"; destinationId: string; item?: Church }
   | { kind: "homeItem"; item?: HomeItem }
   | { kind: "share" }
@@ -223,6 +227,16 @@ export default function PlannerApp({ initialData, initialBudgets, access = {}, d
   const cancel = () => { const details = detailsOf(editor); if (details) open(details); else close(); };
   /** An idea as the page last loaded it, so its details show what was saved once the page refreshes. */
   const latest = (item: Candidate) => data.candidates.find((saved) => saved.id === item.id) ?? item;
+  /** A place's details, from its marker on its destination's map or its place under Not on the map (TRA-130). */
+  const viewPlace = (place: SavedPlace) => {
+    if (place.category === "churches") {
+      const church = data.churches.find((item) => item.id === place.id);
+      if (church) open({ kind: "churchDetails", item: church });
+    } else {
+      const idea = data.candidates.find((item) => item.id === place.id);
+      if (idea) open({ kind: "ideaDetails", item: idea });
+    }
+  };
   /** The saved idea whose Delete confirmation shows above its editor (TRA-128). */
   const deleting = editor?.kind === "candidate" && editor.deleting ? editor.item : undefined;
   /** Shows or hides the Delete confirmation above an idea's editor, which keeps its draft either way. */
@@ -390,7 +404,8 @@ export default function PlannerApp({ initialData, initialBudgets, access = {}, d
     : editor?.kind === "homeItem" ? (editor.item ? "Edit home item" : "Add an item at home")
     : editor?.kind === "share" ? "Share this trip"
     : editor?.kind === "candidate" ? (editor.item ? "Edit " : editor.category === "activities" ? "Add " : "Add a ") + singular[editor.category]
-    : editor?.kind === "ideaDetails" ? latest(editor.item).name : "";
+    : editor?.kind === "ideaDetails" ? latest(editor.item).name
+    : editor?.kind === "churchDetails" ? editor.item.name : "";
   /** A destination's Church section. In a trip, that stay's dates decide whether it can appear and which Sundays it lists. */
   function renderChurch(place: Destination, stay?: TripStop) {
     if (stay && !churchDateEligible(stay)) return null;
@@ -446,6 +461,11 @@ export default function PlannerApp({ initialData, initialBudgets, access = {}, d
     return <><div className="dialog-body"><IdeaDetails item={item} /></div>
       <div className="dialog-footer"><div className="dialog-actions"><button type="button" className="button secondary" onClick={close}>Close</button><button type="button" className="button primary" data-autofocus onClick={() => open({ kind: "candidate", destinationId: item.destinationId, category: item.category, item, details: true })}><Pencil size={15} aria-hidden="true" />Edit</button></div></div></>;
   }
+  /** A church's details, read only, with Close (TRA-130). Its card in the Church section edits it. */
+  function renderChurchDetails(item: Church) {
+    return <><div className="dialog-body"><ChurchDetails item={item} /></div>
+      <div className="dialog-footer"><div className="dialog-actions"><button type="button" className="button secondary" data-autofocus onClick={close}>Close</button></div></div></>;
+  }
   /** One destination's page in Destinations: its shared research, and the trips that visit it with each stay's estimate. */
   function renderDestination(place: Destination) {
     const label = formatSavedDestinationLabel(place);
@@ -458,6 +478,7 @@ export default function PlannerApp({ initialData, initialBudgets, access = {}, d
       </section>
       <div className="trip-layout"><div className="trip-main">
         <article className="destination-card" id={"destination-" + place.id}><DestinationGallery destination={place} />
+          <DestinationMap destination={place} places={destinationPlaces(data, place.id)} onView={viewPlace} />
           <DestinationBudget snapshot={data} visit={{ ...place, nights: null }} onShoppingEdit={() => open({ kind: "shoppingBudget", item: place })} onMiscellaneousEdit={() => open({ kind: "miscellaneousBudget", item: place, nights: null })} />
           {renderIdeaSections(place)}
           <EntryRequirementsPanel requirements={place.entryRequirements} disabled={busy} onEdit={() => open({ kind: "entryRequirements", item: place })} onClear={() => confirmDelete({ type: "destination.entryRequirements", id: place.id, requirements: null }, "Clear entry requirements?", "This removes the recorded requirements, sources, and last checked date for " + label + ", in every trip that visits it.")} />
@@ -535,6 +556,8 @@ export default function PlannerApp({ initialData, initialBudgets, access = {}, d
             {visits.length === 0 ? <div className="empty-state"><MapPin size={29} strokeWidth={1.4} /><h3>Where should this trip take you?</h3><p>Add your first destination. Your departure and return connections will appear automatically.</p><button className="text-button" onClick={() => open({ kind: "addStop" })}>Add a destination <ArrowRight size={16} /></button></div>
               : <div className="destination-list">{visits.map(({ stop: visitStop, visit }, index) => { const label = formatSavedDestinationLabel(visit); return <article className="destination-card" key={visitStop.id} id={"destination-" + visitStop.id} tabIndex={-1}><DestinationGallery destination={visit} /><div className="destination-top"><span className="stop-number">{String(index + 1).padStart(2, "0")}</span><div className="destination-name"><h3><Link href={"/destinations/" + visit.id}>{label}</Link></h3><p>{visitStop.stay || "Stay notes not added"}</p></div><div className="destination-tools"><button className="icon-button" disabled={busy || index === 0} aria-label={"Move " + label + " up"} onClick={(event) => saveFrom(event.currentTarget, { type: "stop.move", id: visitStop.id, direction: "up" }, "Route updated. Review the new travel connections.")}><ArrowUp size={15} /></button><button className="icon-button" disabled={busy || index === visits.length - 1} aria-label={"Move " + label + " down"} onClick={(event) => saveFrom(event.currentTarget, { type: "stop.move", id: visitStop.id, direction: "down" }, "Route updated. Review the new travel connections.")}><ArrowDown size={15} /></button><button className="icon-button" aria-label={"Edit " + label} onClick={() => open({ kind: "destination", item: visit, stop: visitStop })}><Pencil size={15} /></button><button className="icon-button" aria-label={"Remove " + label + " from this trip"} onClick={() => confirmDelete({ type: "stop.remove", id: visitStop.id }, "Remove “" + label + "” from this trip?", "Its hotels, activities, restaurants, photos, and research stay in Destinations and in any other trip. This trip’s nights, stay notes, and travel plans to and from it are removed, and the remaining route reconnects.")}><Trash2 size={15} /></button></div></div>
                 {visit.notes && <p className="destination-notes">{visit.notes}</p>}
+                {/* The card's photos come first, then its name, stay notes and notes, so its map follows them, before its budget (TRA-130). */}
+                <DestinationMap destination={visit} places={destinationPlaces(data, visit.id)} onView={viewPlace} />
                 <DestinationBudget snapshot={data} visit={visit} stop={visitStop} onShoppingEdit={() => open({ kind: "shoppingBudget", item: visit })} onMiscellaneousEdit={() => open({ kind: "miscellaneousBudget", item: visit, nights: visit.nights })} />
                 {renderIdeaSections(visit, visitStop)}
                 <EntryRequirementsPanel requirements={visit.entryRequirements} stay={visitStop} disabled={busy} onEdit={() => open({ kind: "entryRequirements", item: visit })} onClear={() => confirmDelete({ type: "destination.entryRequirements", id: visit.id, requirements: null }, "Clear entry requirements?", "This removes the recorded requirements, sources, and last checked date for " + label + ", in every trip that visits it.")} />
@@ -591,7 +614,7 @@ export default function PlannerApp({ initialData, initialBudgets, access = {}, d
       {error && !editor && <div className="toast error-toast" role="alert"><CircleAlert size={17} aria-hidden="true" />{error}<button aria-label="Dismiss error" className="icon-button" onClick={() => setError("")}><X size={14} /></button></div>}
     </main>
     <footer className="site-footer"><span><Compass size={15} />For the trips still taking shape.</span><span>Shared editing · whole-party estimates</span></footer>
-    {editor && <Dialog title={pageTitle} view={editor.kind} confirm={editor.kind === "delete"} busy={busy} onClose={close} onClosed={forget}>{editor.kind === "ideaDetails" ? renderIdeaDetails(latest(editor.item)) : <form id="planner-editor" onSubmit={submit}><div className="form-grid dialog-body">
+    {editor && <Dialog title={pageTitle} view={editor.kind} confirm={editor.kind === "delete"} busy={busy} onClose={close} onClosed={forget}>{editor.kind === "ideaDetails" ? renderIdeaDetails(latest(editor.item)) : editor.kind === "churchDetails" ? renderChurchDetails(editor.item) : <form id="planner-editor" onSubmit={submit}><div className="form-grid dialog-body">
       {editor.kind === "delete" && <p className="delete-description wide">{editor.description} This cannot be undone.</p>}
       {editor.kind === "trip" && <>
         <Field label="Trip name" wide><input name="name" defaultValue={editor.item?.name} required maxLength={120} placeholder="A long weekend in the mountains" /></Field>

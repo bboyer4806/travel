@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { createLocationSearch, LocationSearchError } from "../src/lib/location-search.ts";
+import { airportByCode, airportName } from "../src/lib/airports.ts";
+import { airportSuggestions, createLocationSearch, LocationSearchError } from "../src/lib/location-search.ts";
 
 const wooster = { id: 5177358, name: "Wooster", admin1: "Ohio", country: "United States" };
 const json = (data, status = 200) => Response.json(data, { status });
@@ -428,4 +429,50 @@ test("a map looks up a few names at a time and shares lookups already under way"
   assert.equal(most, 3);
   assert.equal(calls, 5, "the second map waits for the first map's lookup of the same name");
   assert.deepEqual(one.One, many.One);
+});
+
+// An airport suggested for its IATA code (TRA-132): its name and code, the city it serves, and where it is.
+const cle = airportByCode("CLE");
+const cleveland = { id: "CLE", name: "Cleveland Hopkins International Airport (CLE)", region: "Cleveland", country: "United States", countryCode: "US", label: "CLE", airport: { latitude: cle.latitude, longitude: cle.longitude } };
+
+test("an airport's code, in any letter case, suggests the airport first, then the places Open-Meteo has for it (TRA-132)", async () => {
+  const requests = [];
+  const { searchLocations: search } = createLocationSearch({ fetcher: async (url) => {
+    requests.push(url.searchParams.get("name"));
+    return json({ results: Array.from({ length: 8 }, (_, i) => ({ id: 100 + i, name: `Cle ${i}`, country: "Somewhere" })) });
+  } });
+  for (const query of ["CLE", "cle", "Cle", "  cLe "]) {
+    const locations = await search(query);
+    assert.deepEqual(locations[0], cleveland, query);
+    assert.deepEqual(locations.slice(1).map(({ name }) => name), ["Cle 0", "Cle 1", "Cle 2", "Cle 3", "Cle 4", "Cle 5", "Cle 6"], "then places, eight in all");
+  }
+  assert.deepEqual(requests, ["CLE"], "every letter case shares one lookup");
+});
+
+test("unknown, ICAO and city codes and other text suggest no airport, and a code alone needs no lookup (TRA-132)", async () => {
+  const { searchLocations: search } = createLocationSearch({ fetcher: async () => json({ results: [wooster] }) });
+  for (const query of ["ZZZ", "KCLE", "NYC", "Cleveland", "CLE airport", "C L E"]) {
+    assert.deepEqual((await search(query)).map(({ label }) => label), ["Wooster, Ohio, United States"], query);
+  }
+  assert.deepEqual(airportSuggestions(" cle "), [cleveland]);
+  assert.deepEqual(airportSuggestions("hnd").map(({ name, label }) => [name, label]), [[airportName(airportByCode("HND")), "HND"]]);
+  for (const text of ["ZZZ", "RJTT", "NYC", "Tokyo", "", "H N D"]) assert.deepEqual(airportSuggestions(text), [], text);
+});
+
+test("a map's airport names written as an airport's code in capitals are at that airport, without a lookup (TRA-132)", async () => {
+  const requests = [];
+  const { locatePlaces } = createLocationSearch({ fetcher: placeFetcher(requests) });
+  const atAirport = (code) => {
+    const airport = airportByCode(code);
+    return { status: "found", latitude: airport.latitude, longitude: airport.longitude, label: airportName(airport) };
+  };
+  const located = await locatePlaces(["PHL", "CLT", "HND", "phl", "Phl", "ZZZ", "UAE", "Vienna"], ["PHL", "CLT", "HND", "phl", "Phl", "ZZZ"]);
+  assert.deepEqual(located, {
+    PHL: atAirport("PHL"), CLT: atAirport("CLT"), HND: atAirport("HND"),
+    // Only capitals are a code, as "Phl" may be a name. An unknown code, and a place that isn't among the airport
+    // names, such as a destination named "UAE", are looked up by name.
+    phl: { status: "missing" }, Phl: { status: "missing" }, ZZZ: { status: "missing" }, UAE: { status: "missing" },
+    Vienna: at(places.Vienna[0]),
+  });
+  assert.deepEqual(requests.map((url) => url.searchParams.get("name")).sort(), ["UAE", "Vienna", "ZZZ", "phl"]);
 });

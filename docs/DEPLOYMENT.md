@@ -212,7 +212,7 @@ Prefer fixing forward. Rolling back an image does not reverse a database schema 
 
 ## Schema history
 
-The schema version is SQLite's `user_version`; the current schema is 34, `SCHEMA_VERSION` in `src/lib/store.ts`. At every start, `createStore` in `src/lib/store.ts` upgrades an older database in one transaction, through each version in turn. Each upgrade checks what already exists, so running it again on a database that already has its changes (a replay) keeps saved data. The notes below are in schema order. **Superseded** marks behavior that a later schema replaced; the current behavior is in [README.md](../README.md).
+The schema version is SQLite's `user_version`; the current schema is 35, `SCHEMA_VERSION` in `src/lib/store.ts`. At every start, `createStore` in `src/lib/store.ts` upgrades an older database in one transaction, through each version in turn. Each upgrade checks what already exists, so running it again on a database that already has its changes (a replay) keeps saved data. The notes below are in schema order. **Superseded** marks behavior that a later schema replaced; the current behavior is in [README.md](../README.md).
 
 ### Schema 1: first shared planner
 The first release creates the `trips`, `destinations`, `legs` and `candidates` tables, with prices in integer USD cents for the whole party. Anyone with the URL can view and edit every trip. The schema 1 build sets `user_version` to 1 at every start and does not refuse a newer database, so later upgrades check what already exists as well as the version: redeploying a newer build after a rollback to schema 1 cannot repeat an `ALTER TABLE` or replace saved links.
@@ -393,6 +393,11 @@ Restoring the pre-upgrade backup to run a schema 32 build again shows every list
 Trip headline images upgrade the database to schema 34 in the startup transaction with a `trip_images` table: at most one row per trip, keyed by its ID, holding the image as WebP, prepared as uploads are, its version, which its address names, and its two crops: `cardFocusX`, `cardFocusY` and `cardZoom` for the top of the trip's card on All trips, and `bannerFocusX`, `bannerFocusY` and `bannerZoom` for the banner on its page. Check constraints keep each focal point between 0 and 100, the percentages of the image's width and height from its top left corner, and each zoom between 1 and 3. The image has no thumbnail. Every existing trip starts without an image, so no card or page looks different, and nothing else changes. Deleting a trip deletes its image. The table is in the same online backups, and a replay keeps saved images.
 
 Restoring the pre-upgrade backup to run a schema 33 build again loses every headline image, and that build shows no trip images.
+
+### Schema 35: trip taglines (TRA-134)
+Trip taglines upgrade the database to schema 35 in the startup transaction, adding `tagline` to `trips`: the line a trip's page shows in capitals above its name, saved as typed, up to 120 characters, which the store checks. Every existing trip starts with an empty tagline, which shows the default AN ADVENTURE IN THE MAKING, so no page looks different until a tagline is entered. Nothing else changes. The column is in the same online backups, and a replay keeps saved taglines.
+
+Restoring the pre-upgrade backup to run a schema 34 build again shows AN ADVENTURE IN THE MAKING on every trip's page and loses every trip tagline.
 
 ## Feedback and release notes
 Configure server-only JIRA_URL (HTTPS Jira base URL), JIRA_EMAIL, and JIRA_API_TOKEN with permission to create Tasks in TRA. Use the host's secret configuration; never put credentials in source, image layers, client variables, or logs. Preserve the browser Host and Origin headers through the proxy; the feedback endpoint compares them and ignores forwarded-host claims. Its limits count per signed-in account. A failed send logs one line saying why, such as a missing setting's name, an invalid JIRA_URL, or Jira's HTTP status (401 for wrong credentials, 403 for missing permission), never the settings' values.

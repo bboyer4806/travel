@@ -85,6 +85,8 @@ const descriptions = {
 };
 /** What a destination's page shows above its name until it has a tagline of its own (TRA-125). */
 const DEFAULT_TAGLINE = "A place worth knowing";
+/** What a trip's page shows above its name until it has a tagline of its own (TRA-134). */
+const DEFAULT_TRIP_TAGLINE = "An adventure in the making";
 function displayPrice(cents: number | null) { return cents === null ? "Not estimated" : formatCurrency(cents, "USD"); }
 function BudgetValue({ budget }: { budget: Budget }) {
   return <><strong>{<CurrencyTotals totals={budget.totalsByCurrency} />}</strong>
@@ -297,7 +299,7 @@ export default function PlannerApp({ initialData, initialBudgets, access = {}, d
     const cityFromSuggestion = fields.has("cityFromSuggestion") || undefined;
     switch (editor.kind) {
       case "delete": void perform(editor.mutation, "Removed from your notebook.", editor.redirect); break;
-      case "trip": void perform({ type: "trip.save", ...itemToSave(editor.item), name: text("name"), startDate: text("startDate") || null, dateLabel: text("dateLabel"), homeCity: text("homeCity"), returnCity: fields.has("differentReturn") ? text("returnCity") : null, travelers: Number(text("travelers")), notes: text("notes") }, undefined, undefined, tripImageForm(tripImage, editor.item?.image ?? null)); break;
+      case "trip": void perform({ type: "trip.save", ...itemToSave(editor.item), name: text("name"), tagline: text("tagline"), startDate: text("startDate") || null, dateLabel: text("dateLabel"), homeCity: text("homeCity"), returnCity: fields.has("differentReturn") ? text("returnCity") : null, travelers: Number(text("travelers")), notes: text("notes") }, undefined, undefined, tripImageForm(tripImage, editor.item?.image ?? null)); break;
       case "entryRequirements": {
         void perform({ type: "destination.entryRequirements", id: editor.item.id, requirements: entryRequirementsFromForm(fields, researchLinks) }, "Entry requirements saved.");
         break;
@@ -522,7 +524,7 @@ export default function PlannerApp({ initialData, initialBudgets, access = {}, d
       {trip && !stopId && <>
         <Link href="/" className="breadcrumb"><ArrowLeft size={16} />All trips</Link>
         <TripImageView trip={trip} frame="banner" />
-        <section className="trip-heading"><div><p className="eyebrow">AN ADVENTURE IN THE MAKING</p><h1>{trip.name}</h1><div className="trip-meta"><span><CalendarDays size={17} />{trip.startDate ? formatCalendarDate(trip.startDate) + " → " + formatCalendarDate(trip.endDate) : trip.dateLabel || "Dates to be decided"}</span><span><Users size={17} />{trip.travelers} {trip.travelers === 1 ? "traveler" : "travelers"}</span><span><MapPin size={17} />{trip.homeCity ? "Departing: " + trip.homeCity : "Add departing city"}</span>{trip.returnCity && <span><MapPin size={17} />Returning: {trip.returnCity}</span>}{tripAccess?.role === "editor" && <span><Share2 size={17} />{"Shared by " + memberLabel(tripAccess.owner)}</span>}{tripAccess?.role === "owner" && tripAccess.sharedWith.length > 0 && <span><Share2 size={17} />{"Shared with " + tripAccess.sharedWith.length + (tripAccess.sharedWith.length === 1 ? " person" : " people")}</span>}</div>
+        <section className="trip-heading"><div><p className="eyebrow">{(trip.tagline || DEFAULT_TRIP_TAGLINE).toUpperCase()}</p><h1>{trip.name}</h1><div className="trip-meta"><span><CalendarDays size={17} />{trip.startDate ? formatCalendarDate(trip.startDate) + " → " + formatCalendarDate(trip.endDate) : trip.dateLabel || "Dates to be decided"}</span><span><Users size={17} />{trip.travelers} {trip.travelers === 1 ? "traveler" : "travelers"}</span><span><MapPin size={17} />{trip.homeCity ? "Departing: " + trip.homeCity : "Add departing city"}</span>{trip.returnCity && <span><MapPin size={17} />Returning: {trip.returnCity}</span>}{tripAccess?.role === "editor" && <span><Share2 size={17} />{"Shared by " + memberLabel(tripAccess.owner)}</span>}{tripAccess?.role === "owner" && tripAccess.sharedWith.length > 0 && <span><Share2 size={17} />{"Shared with " + tripAccess.sharedWith.length + (tripAccess.sharedWith.length === 1 ? " person" : " people")}</span>}</div>
           <TripTagsEditor tags={trip.tags} available={data.tags} busy={busy} onAdd={(name) => perform({ type: "trip.tag", tripId: trip.id, name }, "Tag added.")} onRemove={(name) => void perform({ type: "trip.untag", tripId: trip.id, name }, "Tag removed.")} />
           {trip.notes && <p className="trip-notes">{trip.notes}</p>}</div>
           <div className="heading-actions"><button className="button secondary" onClick={() => open({ kind: "trip", item: trip })}><Pencil size={15} />Edit trip</button>{tripAccess?.role === "owner" && <><button className="button secondary" onClick={() => open({ kind: "share" })}><UserPlus size={15} />Share</button><button className="icon-button" aria-label="Delete trip" onClick={() => confirmDelete({ type: "trip.delete", id: trip.id }, "Delete this trip?", "“" + trip.name + "”, its travel plans, and At home items will be removed. Its destinations, with their saved ideas and research, stay in Destinations." + sharedDeleteNote(tripAccess), "/")}><Trash2 size={18} /></button></>}</div>
@@ -593,6 +595,7 @@ export default function PlannerApp({ initialData, initialBudgets, access = {}, d
       {editor.kind === "delete" && <p className="delete-description wide">{editor.description} This cannot be undone.</p>}
       {editor.kind === "trip" && <>
         <Field label="Trip name" wide><input name="name" defaultValue={editor.item?.name} required maxLength={120} placeholder="A long weekend in the mountains" /></Field>
+        <Field label="Tagline" hint="Shown in capitals above the trip’s name on its page. Leave it blank for the default." wide><input name="tagline" defaultValue={editor.item?.tagline} maxLength={120} placeholder={DEFAULT_TRIP_TAGLINE} /></Field>
         <Field label="General date" hint="Exact dates can wait."><input name="dateLabel" defaultValue={editor.item?.dateLabel} maxLength={120} placeholder="Spring 2027, or sometime soon" /></Field>
         <Field label="Trip start date" hint="Destination dates and the trip end are calculated from this date and each stay’s nights."><input name="startDate" type="date" min="0001-01-01" max="9999-12-31" defaultValue={editor.item?.startDate ?? ""} /></Field>
         <p className="helper wide">Trip end (calculated after saving): {formatCalendarDate(editor.item?.endDate)}</p>

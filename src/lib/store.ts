@@ -39,7 +39,7 @@ const VISIBLE_TRIPS = "SELECT id FROM trips WHERE ownerId = ? UNION SELECT tripI
 /** The destinations an account owns or that a trip it can open visits, as SQL binding the account's ID three times. */
 const VISIBLE_DESTINATIONS = `SELECT id FROM destinations WHERE ownerId = ? UNION SELECT destinationId FROM trip_stops WHERE tripId IN (${VISIBLE_TRIPS})`;
 /** Every trip column but the owner's account ID, which stays on the server. */
-const TRIP_COLUMNS = "id, name, dateLabel, homeCity, returnCity, travelers, notes, createdAt, startDate";
+const TRIP_COLUMNS = "id, name, tagline, dateLabel, homeCity, returnCity, travelers, notes, createdAt, startDate";
 /** Every destination column but its owner's account ID and its city key, which stay on the server. */
 const DESTINATION_COLUMNS = ["id", "city", "cityFromSuggestion", "tagline", "notes", "miscDailyMinor", "miscCurrency", "hotelNightlyMinor", "hotelCurrency", "activitiesBudgetMode", "activitiesGeneralMinor", "activitiesCurrency", "foodBudgetMode", "foodDailyMinor", "foodCurrency", "shoppingMinor", "shoppingCurrency", "weatherHighF", "weatherLowF", "weatherRainfall", "weatherPeriod", "weatherSource", "churchEnabled"]
   .map((column) => "destinations." + column).join(", ");
@@ -398,7 +398,7 @@ function validate(input: unknown): Mutation {
       if (typeof value.travelers !== "number" || !Number.isInteger(value.travelers) || value.travelers < 1 || value.travelers > 999) {
         throw new ValidationError("Number of travelers must be a whole number between 1 and 999.");
       }
-      return { type: value.type, id: saveIdField(value), create: createField(value), name: textField(value, "name", 120, true), startDate: destinationDateField(value, "startDate"), dateLabel: textField(value, "dateLabel", 120), homeCity: textField(value, "homeCity", 120), returnCity: returnCityField(value), travelers: value.travelers, notes: textField(value, "notes", 8000), image: tripImageField(value) };
+      return { type: value.type, id: saveIdField(value), create: createField(value), name: textField(value, "name", 120, true), tagline: value.tagline === undefined ? undefined : textField(value, "tagline", 120), startDate: destinationDateField(value, "startDate"), dateLabel: textField(value, "dateLabel", 120), homeCity: textField(value, "homeCity", 120), returnCity: returnCityField(value), travelers: value.travelers, notes: textField(value, "notes", 8000), image: tripImageField(value) };
     }
     case "trip.delete":
     case "stop.remove":
@@ -598,7 +598,7 @@ const LIVE: Make = { id: () => randomUUID(), now: () => new Date().toISOString()
  * The schema this build upgrades every database to, as SQLite's user_version. A schema change adds the next
  * upgrade in createStore and raises this to match; earlier upgrades keep their own numbers.
  */
-export const SCHEMA_VERSION = 34;
+export const SCHEMA_VERSION = 35;
 
 /** A destination as schema 20 saved it, inside one trip, with that trip's owner and name. */
 type TripDestinationRow = Omit<StoredDestination, "cityKey"> & Omit<TripStop, "destinationId"> & { tripName: string };
@@ -1241,6 +1241,12 @@ export function createStore(databasePath: string, ownerEmail: string) {
         PRAGMA user_version = 34;
       `);
     }
+    if (version < 35) {
+      // Each trip's tagline (TRA-134): the line its page shows above its name, saved as typed. Every saved trip starts
+      // without one, so its page keeps the default heading. A replay keeps saved taglines.
+      if (!hasColumn("trips", "tagline")) db.exec("ALTER TABLE trips ADD COLUMN tagline TEXT NOT NULL DEFAULT '';");
+      db.exec("PRAGMA user_version = 35;");
+    }
     if (version < SCHEMA_VERSION && db.prepare("PRAGMA foreign_key_check").get()) {
       throw new Error("This upgrade would leave saved items without the trip or destination they belong to. Nothing was changed; review the database against a backup before upgrading.");
     }
@@ -1811,14 +1817,14 @@ export function createStore(databasePath: string, ownerEmail: string) {
         if (changesSaved("trips", input)) {
           const before = existing<Trip>("trips", id);
           const returnCity = input.returnCity === undefined ? before.returnCity : input.returnCity;
-          db.prepare("UPDATE trips SET name = ?, dateLabel = ?, homeCity = ?, returnCity = ?, travelers = ?, notes = ? WHERE id = ?").run(input.name, input.dateLabel, input.homeCity, returnCity, input.travelers, input.notes, id);
+          db.prepare("UPDATE trips SET name = ?, tagline = ?, dateLabel = ?, homeCity = ?, returnCity = ?, travelers = ?, notes = ? WHERE id = ?").run(input.name, input.tagline ?? before.tagline, input.dateLabel, input.homeCity, returnCity, input.travelers, input.notes, id);
           const departingChanged = before.homeCity !== input.homeCity;
           const returningChanged = (before.returnCity ?? before.homeCity) !== (returnCity ?? input.homeCity);
           const affectedLegs = db.prepare("SELECT id FROM legs WHERE tripId = ? AND ((? AND fromId IS NULL) OR (? AND toId IS NULL))").all(id, Number(departingChanged), Number(returningChanged));
           for (const leg of affectedLegs) clearLeg(leg.id as string);
         } else {
           // A new trip belongs to the account that creates it.
-          db.prepare("INSERT INTO trips(id,name,dateLabel,homeCity,returnCity,travelers,notes,createdAt,ownerId) VALUES(?,?,?,?,?,?,?,?,?)").run(id, input.name, input.dateLabel, input.homeCity, input.returnCity ?? null, input.travelers, input.notes, make.now(), accountId);
+          db.prepare("INSERT INTO trips(id,name,tagline,dateLabel,homeCity,returnCity,travelers,notes,createdAt,ownerId) VALUES(?,?,?,?,?,?,?,?,?,?)").run(id, input.name, input.tagline ?? "", input.dateLabel, input.homeCity, input.returnCity ?? null, input.travelers, input.notes, make.now(), accountId);
         }
         if (input.startDate !== undefined) db.prepare("UPDATE trips SET startDate = ? WHERE id = ?").run(input.startDate, id);
         saveTripImage(id, input.image, make);

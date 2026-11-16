@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { FeedbackButton } from "@/components/feedback";
+import { HelpButton } from "@/components/help";
 import { churchDateEligible, formatCalendarDate } from "@/lib/trip-dates";
 import LocationField from "@/components/location-field";
 import HomeItems from "@/components/home-items";
@@ -24,7 +25,7 @@ import { ResearchLinks, ResearchLinksEditor } from "@/components/research-links"
 import { unstable_isUnrecognizedActionError, useRouter } from "next/navigation";
 import { useEffect, useId, useRef, useState, useTransition, type FormEvent, type ReactNode } from "react";
 import { controlOrNeighbor, useFocusAfter } from "@/components/focus-after";
-import { ArrowDown, ArrowLeft, ArrowRight, ArrowUp, BedDouble, Binoculars, CalendarDays, CheckCircle2, CircleAlert, Compass, MapPin, MoreHorizontal, Pencil, Plane, Plus, Search, Share2, Trash2, UserPlus, Users, Utensils, Wallet, X } from "lucide-react";
+import { ArrowDown, ArrowLeft, ArrowRight, ArrowUp, BedDouble, Binoculars, CalendarDays, CheckCircle2, CircleAlert, CircleHelp, Compass, MapPin, MoreHorizontal, Pencil, Plane, Plus, Search, Share2, Trash2, UserPlus, Users, Utensils, Wallet, X } from "lucide-react";
 import TripSharing, { memberLabel } from "@/components/trip-sharing";
 import { TripTagFilter, TripTagList, TripTagsEditor } from "@/components/trip-tags";
 import { hasEveryTag, tagKey } from "@/lib/trip-tags";
@@ -98,10 +99,11 @@ function Notes({ name = "notes", value = "" }: { name?: string; value?: string }
  * when an idea's details open its editor and saving returns to them. Editors don't use `autoFocus`: React runs it
  * before `showModal()`, while the fields can't take focus.
  * Send feedback is inside the dialog so it shows above the backdrop; opening it leaves this editor and its draft open.
+ * So does Help, beside the X, which describes the page beneath rather than the editor (TRA-3).
  * A confirmation (`confirm`) is centered over a darker backdrop, and its title and message scroll together above its
  * buttons (TRA-32). One can open above an editor, which stays open beneath it with its draft (TRA-128).
- * The X and Escape call `onClose`, except while saving. Chrome closes a dialog anyway after repeated Escapes or Android's
- * back button, so `onClosed` follows the browser even while saving (TRA-81).
+ * Help, the X and Escape wait while saving, and then the X and Escape call `onClose`. Chrome closes a dialog anyway
+ * after repeated Escapes or Android's back button, so `onClosed` follows the browser even while saving (TRA-81).
  */
 function Dialog({ title, view, confirm, children, busy, onClose, onClosed }: { title: string; view: string; confirm: boolean; children: ReactNode; busy: boolean; onClose: () => void; onClosed: () => void }) {
   const ref = useRef<HTMLDialogElement>(null);
@@ -109,7 +111,7 @@ function Dialog({ title, view, confirm, children, busy, onClose, onClosed }: { t
   useEffect(() => { const dialog = ref.current; const opener = document.activeElement instanceof HTMLElement ? document.activeElement : null; dialog?.showModal(); return () => { dialog?.close(); if (opener?.isConnected) opener.focus(); }; }, []);
   useEffect(() => { ref.current?.querySelector<HTMLElement>("input:not([type=hidden]), select, textarea, [data-autofocus]")?.focus(); }, [view]);
   return <dialog ref={ref} className={confirm ? "editor-dialog confirm-dialog" : "editor-dialog"} aria-labelledby={titleId} onCancel={(event) => { event.preventDefault(); if (!busy) onClose(); }} onClose={onClosed}>
-    <div className="dialog-heading"><h2 id={titleId}>{title}</h2><button className="icon-button" aria-label="Close" onClick={onClose} disabled={busy}><X size={20} /></button></div>{children}<FeedbackButton />
+    <div className="dialog-heading"><h2 id={titleId}>{title}</h2><div className="dialog-heading-tools"><HelpButton className="text-button" disabled={busy}><CircleHelp size={16} aria-hidden="true" />Help</HelpButton><button className="icon-button" aria-label="Close" onClick={onClose} disabled={busy}><X size={20} /></button></div></div>{children}<FeedbackButton />
   </dialog>;
 }
 

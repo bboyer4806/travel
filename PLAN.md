@@ -497,3 +497,12 @@ This replaces TRA-62's destination Save in a sticky header.
 - The orange accent (`--orange`) is #a65135, darkened from #b75a3b, so eyebrows, the map's reasons, **Remove** buttons, links and buttons that turn orange on hover, and the AI proposal badges on their light orange all reach 4.5:1. Before, eyebrows measured 4.28:1 and the badges 3.82:1.
 - Each other text color below 4.5:1 is darkened in its own hue until it reaches 4.5:1 on its backgrounds: trip numbers, stop numbers, the budget panel's eyebrow, breakdown labels and note, estimate status, prices not yet estimated, selection tags, idea notes, the route at the top of a connection's editor, and the note and N in the home page's illustration. Placeholders are #6d736b, the trip, destination and airport searches' included, which used the browser's default gray.
 - Not included: icons and other graphics, disabled controls, which WCAG exempts, and other color changes.
+
+## Added scope: November 16, 2026, in-app Help (TRA-3)
+- **Help** at the end of the header's navigation opens help for the page shown, above it, without leaving it: "Help:" and the page's name, then up to six short points in plain language on what the page is for and its common tasks.
+- Every signed-in page has its own help: All trips, a trip, Destinations, a destination, the Hotels, Activities, Restaurants and Church pages in a trip and in Destinations, What's new, AI assistants, Connect an AI assistant and a proposal. The not-found page has its own, including where an address names a trip, destination or proposal that can't be opened.
+- Planner editors, confirmations and an idea's details have **Help** beside their X. It opens above the editor, which keeps its draft, and describes the page beneath, not the editor. It waits while the editor saves, as the X does.
+- Help closes with its X, Escape or the backdrop and returns focus to the button that opened it. Opening and closing it changes no page or editor and makes no request.
+- The help is static text in `src/lib/help.ts`, organized by route as Meals' is, and typed against the routes Next.js generates so a page without help fails the type check.
+- On screens up to 400 pixels wide the navigation's links are closer together, so the owner's five links stay on one line down to 360 pixels, as four did before.
+- Not included, as the ticket says: AI or conversational help, searching help or separate help pages, tours or walkthroughs, help for individual editors, help people can edit, and changes to Travel's features or data.

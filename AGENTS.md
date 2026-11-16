@@ -143,6 +143,11 @@ Repeat passing checks when subsequent changes affect their coverage or required 
 - Feedback uses `/api/feedback` and server-only Jira configuration. Local testing must use
   `scripts/jira-feedback-stub.mjs`, never real Jira. Do not expose credentials or log messages.
   Its limits count per signed-in account, which the route passes to the handler (TRA-92).
+- Help (TRA-3) is static text in `src/lib/help.ts`: each signed-in page's title and at most six
+  points, keyed by its route in the `AppRoutes` Next.js generates, so a page added without help
+  fails `pnpm typecheck`. `src/components/help.tsx` opens it from the header and from the heading
+  of every planner dialog, always for the page's route, never the editor. The not-found page
+  renders `NotFoundHelp`, so Help there describes it rather than its address's route.
 - Client components create new IDs with `randomUuid()` from `src/lib/uuid.ts`, never
   `crypto.randomUUID()`, which browsers leave out of plain-HTTP pages opened from another device.
 - Publish `src/lib/change-log.ts` entries only for verified shipped changes at release close.
@@ -180,8 +185,9 @@ schema and add a note for the new version, with only what its rollback adds to t
 
 ## Workflow
 
-A behavior change updates README.md in the same change; new scope adds a dated "Added scope"
-section to PLAN.md. A push to `main`, including documentation-only changes, runs the checks,
+A behavior change updates README.md, and the help of each page it changes in `src/lib/help.ts`, in
+the same change; new scope adds a dated "Added scope" section to PLAN.md. A push to `main`,
+including documentation-only changes, runs the checks,
 then requires a verified off-host encrypted backup before deploying to travel.dev.boyersoftware.com; PRs run checks only.
 Update these instructions alongside changes to the commands or conventions they describe.
 `CLAUDE.md` imports this shared guidance.

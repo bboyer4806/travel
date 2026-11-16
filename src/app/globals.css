@@ -2,9 +2,9 @@
   --paper:#f8f6f0;
   --white:#fffefb;
   --ink:#253d35;
-  --muted:#738077;
+  --muted:#5f6b63;
   --green:#254f42;
-  --orange:#b75a3b;
+  --orange:#a65135;
   --line:#e2e5db;
   --wash:#edf0e6;
   --soft:#f1eee5;
@@ -245,7 +245,7 @@ button svg,a svg {
   border-radius:50%;
   display:grid;
   place-items:center;
-  color:#557560
+  color:#54735f
 }
 .orbit {
   position:absolute;
@@ -277,7 +277,7 @@ button svg,a svg {
   transform:rotate(-9deg);
   padding:17px 25px;
   font:italic 20px/1.3 Georgia,serif;
-  color:#8b704e
+  color:#8a6f4e
 }
 .art-plane {
   position:absolute;
@@ -335,6 +335,9 @@ button svg,a svg {
   padding:5px;
   color:var(--ink)
 }
+.search-field input::placeholder {
+  color:#6d736b
+}
 .trip-grid {
   display:grid;
   grid-template-columns:repeat(3,minmax(0,1fr));
@@ -361,13 +364,13 @@ button svg,a svg {
   display:flex;
   justify-content:space-between;
   align-items:flex-start;
-  color:#819878
+  color:#697b61
 }
 .tone-1 .trip-card-top {
-  color:#a88667
+  color:#8d7056
 }
 .tone-2 .trip-card-top {
-  color:#7b959f
+  color:#647982
 }
 .trip-number {
   font-size:9px;
@@ -435,11 +438,11 @@ button svg,a svg {
 .estimate-status {
   display:block;
   font-size:10px;
-  color:#95754f;
+  color:#856847;
   margin-top:4px
 }
 .estimate-status.complete {
-  color:#668566
+  color:#597459
 }
 .round-arrow {
   display:grid;
@@ -616,7 +619,7 @@ button svg,a svg {
 }
 .stop-number {
   font:21px Georgia,serif;
-  color:#889b79;
+  color:#6b7a60;
   width:39px;
   height:42px;
   border-right:1px solid var(--line);
@@ -752,7 +755,7 @@ button svg,a svg {
   color:var(--green)
 }
 .travel-content .price.unknown {
-  color:#967c59;
+  color:#846d4f;
   font-size:10px
 }
 .travel-tools {
@@ -775,7 +778,7 @@ button svg,a svg {
   margin-bottom:20px
 }
 .budget-panel .eyebrow {
-  color:#7a8e70;
+  color:#62725a;
   font-size:9px;
   letter-spacing:1.7px;
   margin-bottom:9px
@@ -812,7 +815,7 @@ button svg,a svg {
   gap:12px
 }
 .budget-breakdown dt {
-  color:#718269
+  color:#63715c
 }
 .budget-breakdown dd {
   margin:0;
@@ -822,7 +825,7 @@ button svg,a svg {
   display:flex;
   align-items:flex-start;
   gap:8px;
-  color:#697e5e;
+  color:#5f7355;
   font-size:11px
 }
 .budget-note svg {
@@ -913,7 +916,7 @@ button svg,a svg {
   padding:4px 8px;
   border-radius:4px;
   background:#f1eee6;
-  color:#9a8666
+  color:#7a6a51
 }
 .selection-tag.chosen {
   color:#527347;
@@ -968,7 +971,7 @@ button svg,a svg {
 }
 .idea-notes {
   font-size:13px;
-  color:#6c7a6d;
+  color:#6b796c;
   line-height:1.8;
   margin-top:17px;
   white-space:pre-wrap;
@@ -997,7 +1000,7 @@ button svg,a svg {
 }
 .idea-price.unknown {
   font-size:19px;
-  color:#9a8567
+  color:#867359
 }
 .ideas-empty {
   padding:56px 24px
@@ -1128,7 +1131,7 @@ button svg,a svg {
   min-height:85px
 }
 .field input::placeholder,.field textarea::placeholder {
-  color:#99a196;
+  color:#6d736b;
   font-size:12px
 }
 /* A number field without its increment and decrement arrows (TRA-46), hidden by appearance in
@@ -1177,7 +1180,7 @@ button svg,a svg {
   align-items:center;
   flex-wrap:wrap;
   gap:11px;
-  color:#6e8265;
+  color:#687b60;
   font-size:13px
 }
 .checkbox-field {

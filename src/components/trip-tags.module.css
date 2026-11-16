@@ -9,7 +9,7 @@
 .remove:hover:not(:disabled) { background: #dfe6d6; color: var(--orange); }
 .add { display: flex; align-items: center; gap: 6px; }
 .add input { width: 160px; min-height: 37px; padding: 7px 10px; border: 1px solid #ccd6c7; border-radius: 6px; background: #fffffc; color: var(--ink); font-size: 12px; }
-.add input::placeholder { color: #99a196; }
+.add input::placeholder { color: #6d736b; }
 .add input:focus { outline: 2px solid #719683; outline-offset: 1px; }
 
 .filter { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: -8px 0 24px; }

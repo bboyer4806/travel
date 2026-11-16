@@ -122,6 +122,9 @@ Feedback errors appear only when there is a message. Unreadable server responses
 
 The error page's **Try again** reloads failed server data. Initial requests for missing trips, destinations, or categories return HTTP 404; server-rendering failures return HTTP 500. Pages wait for their server checks before sending a response, instead of streaming the root loading screen first.
 
+## Text contrast
+All text has at least 4.5:1 contrast with its background at every size, the WCAG AA level for normal text (TRA-88). That includes small helper text, eyebrows, trip and stop numbers, budget notes, prices not yet estimated, and the placeholders in empty fields and the search fields. Gray secondary text is #5f6b63 and the orange accent #a65135; every other text color is darkened in its own hue until it reaches 4.5:1 on each background it sits on. Disabled controls, which WCAG exempts, keep their faded look.
+
 ## Trip dates and nights
 Set the trip's optional **Start date**, then enter each destination's nonnegative whole number of **Nights** from the trip's page. Nights and stay notes belong to the trip, so a destination shared with other trips can have different nights in each. Arrival and departure dates, their weekdays, and the trip end date are calculated in destination order. A departure is the next destination's arrival; changing the start, nights, or order recalculates the route. A zero-night stop arrives and departs on the same day. Dates cannot be overridden individually. Travel-leg timing notes do not determine the schedule.
 

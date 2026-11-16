@@ -3,10 +3,12 @@ import { randomUUID } from "node:crypto";
 import { fstatSync, readdirSync, statSync, writeFileSync } from "node:fs";
 import { DatabaseSync } from "node:sqlite";
 import test from "node:test";
-import { SCHEMA_VERSION, ValidationError } from "../src/lib/store.ts";
-import { createOwnedStore } from "./owned-store.mjs";
+import { createStore, SCHEMA_VERSION, ValidationError } from "../src/lib/store.ts";
+import { createOwnedStore, OWNER_EMAIL } from "./owned-store.mjs";
 import { addCity, fileDatabase, newItem, prepared, setup, destinationEdit, stopEdit } from "./budget-fixtures.mjs";
+import { aiSetup, OWNER } from "./ai-fixtures.mjs";
 import { calculateBudget, calculateDestinationBudget } from "../src/lib/budget.ts";
+import { TOOLS } from "../src/lib/mcp-tools.ts";
 import { formatCurrency } from "../src/lib/money.ts";
 import { PLANNER_UPDATED } from "../src/lib/planner-updated.ts";
 
@@ -591,4 +593,179 @@ test("schema 23 adds trip tags to an existing database without changing it, and 
     // The database keeps each tag on a trip once.
     assert.throws(() => db.prepare("INSERT INTO trip_tags(tripId, tagKey, name) VALUES(?, 'asia', 'ASIA')").run(tripId), /UNIQUE/);
   } finally { db.close(); }
+});
+
+/** A tagline as someone types it, capitals and all, which the trip's page shows in capitals (TRA-134). */
+const TRIP_TAGLINE = "Cherry blossoms and late trains";
+const TAGLINE_TOO_LONG = "tagline must be 120 characters or fewer.";
+/** A refusal with exactly this message. */
+const refusal = (message) => (error) => error instanceof ValidationError && error.message === message;
+const tagline = (store, tripId) => store.getSnapshot().trips.find((trip) => trip.id === tripId).tagline;
+/** A snapshot with every trip's tagline left out, to compare everything else. */
+const withoutTaglines = (snapshot) => ({ ...snapshot, trips: snapshot.trips.map((trip) => ({ ...trip, tagline: null })) });
+
+test("a trip starts without a tagline unless one is typed, saves it as typed, and clearing it restores the default (TRA-134)", (t) => {
+  const path = fileDatabase(t);
+  let store = createOwnedStore(path);
+  try {
+    // A page opened before taglines, ChatGPT and Claude can add a trip without one.
+    const plain = store.applyMutation(tripInput()).id;
+    const typed = store.applyMutation(tripInput({ tagline: `  ${TRIP_TAGLINE} ` })).id;
+    const blank = store.applyMutation(tripInput({ tagline: "" })).id;
+    assert.deepEqual([tagline(store, plain), tagline(store, typed), tagline(store, blank)], ["", TRIP_TAGLINE, ""], "saved with its capitalization, without the spaces around it");
+    store.applyMutation(tripInput({ id: plain, tagline: "Ramen, temples and one long train ride" }));
+    assert.equal(tagline(store, plain), "Ramen, temples and one long train ride", "editing a trip saves its tagline");
+    // The trip's page shows it, and All trips, whose cards open the trip's editor, has it to edit.
+    assert.equal(store.getTripSnapshot(typed).data.trips[0].tagline, TRIP_TAGLINE);
+    assert.deepEqual(Object.fromEntries(store.getHomeOverview().data.trips.map((trip) => [trip.id, trip.tagline])), { [plain]: "Ramen, temples and one long train ride", [typed]: TRIP_TAGLINE, [blank]: "" });
+    store.close(); store = null;
+    store = createOwnedStore(path);
+    assert.deepEqual([tagline(store, plain), tagline(store, typed)], ["Ramen, temples and one long train ride", TRIP_TAGLINE], "reopening keeps them");
+    for (const cleared of ["", "   ", "\t\n"]) {
+      store.applyMutation(tripInput({ id: typed, tagline: TRIP_TAGLINE }));
+      store.applyMutation(tripInput({ id: typed, tagline: cleared }));
+      assert.equal(tagline(store, typed), "", `clearing it with ${JSON.stringify(cleared)} restores the default`);
+    }
+    assert.equal(tagline(store, plain), "Ramen, temples and one long train ride", "another trip's tagline is its own");
+  } finally { store?.close(); }
+});
+
+test("saving a trip without a tagline, or changing anything else, keeps its tagline, and changing it changes nothing else", (t) => {
+  const { store, tripId } = setup(t, tripInput({ tagline: TRIP_TAGLINE }));
+  const destinationId = addDestination(store, tripId, { nights: 4 });
+  for (const leg of legsFor(store, tripId)) store.applyMutation(legInput(leg.id));
+  store.applyMutation(candidateInput(destinationId));
+  // A page opened before taglines, ChatGPT and Claude can save a trip without one, which keeps it. So does every other change.
+  for (const edit of [
+    tripInput({ id: tripId, name: "Japan 2027", travelers: 3, startDate: "2027-04-01" }),
+    { type: "trip.tag", tripId, name: "Asia" },
+    { type: "trip.untag", tripId, name: "Asia" },
+    stopEdit(destinationId, { nights: 5 }),
+    { type: "homeItem.save", ...newItem(), tripId, name: "House sitting", price: "120", notes: "", completed: false },
+  ]) {
+    store.applyMutation(edit);
+    assert.equal(tagline(store, tripId), TRIP_TAGLINE, JSON.stringify(edit));
+  }
+  const before = store.getSnapshot();
+  const budget = calculateBudget(before, tripId);
+  const saved = before.trips[0];
+  for (const value of ["Ramen, temples and one long train ride", "", TRIP_TAGLINE]) {
+    // The trip's editor sends every detail as saved, with the tagline typed.
+    store.applyMutation({ type: "trip.save", id: tripId, name: saved.name, tagline: value, startDate: saved.startDate, dateLabel: saved.dateLabel, homeCity: saved.homeCity, returnCity: saved.returnCity, travelers: saved.travelers, notes: saved.notes });
+    assert.equal(tagline(store, tripId), value);
+    assert.deepEqual(withoutTaglines(store.getSnapshot()), withoutTaglines(before), "the trip's name, dates, cities, notes, stays, connections and ideas are unchanged");
+    assert.deepEqual(calculateBudget(store.getSnapshot(), tripId), budget);
+  }
+});
+
+test("a trip's tagline has at most 120 characters, and a refused save keeps the saved one", (t) => {
+  const { store, tripId } = setup(t, tripInput({ tagline: TRIP_TAGLINE }));
+  const longest = "Ä".repeat(120);
+  const longestTrip = store.applyMutation(tripInput({ tagline: ` ${longest} ` })).id;
+  assert.equal(tagline(store, longestTrip), longest, "spaces around it don't count");
+  const before = store.getSnapshot();
+  for (const [value, message] of [["Ä".repeat(121), TAGLINE_TOO_LONG], [`${"word ".repeat(24)}x`, TAGLINE_TOO_LONG], [42, "tagline must be text."], [null, "tagline must be text."]]) {
+    // Neither a new trip nor a change to a saved one is saved.
+    for (const input of [tripInput({ tagline: value }), tripInput({ id: tripId, tagline: value })]) {
+      assert.throws(() => store.applyMutation(input), refusal(message), JSON.stringify(input));
+      assert.deepEqual(store.getSnapshot(), before);
+    }
+  }
+  // A save refused for any other reason keeps the saved tagline too, even one refused after the trip's details are written.
+  const uncropped = { focusX: 50, focusY: 50, zoom: 1 };
+  for (const [input, message] of [
+    [tripInput({ id: tripId, tagline: "Not saved", travelers: 0 }), "Number of travelers must be a whole number between 1 and 999."],
+    [tripInput({ id: tripId, tagline: "Not saved", name: " " }), "Please enter name."],
+    [tripInput({ id: tripId, tagline: "Not saved", image: { version: randomUUID(), card: uncropped, banner: uncropped } }), "This trip's headline image has changed since you opened the editor. Refresh and try again."],
+  ]) {
+    assert.throws(() => store.applyMutation(input), refusal(message), JSON.stringify(input));
+    assert.deepEqual(store.getSnapshot(), before);
+  }
+});
+
+test("someone a trip is shared with sees its tagline and can change it", (t) => {
+  const store = createStore(":memory:", OWNER_EMAIL);
+  t.after(() => store.close());
+  const owner = store.authorizeAccount(OWNER_EMAIL).id;
+  const tripId = store.applyMutation(owner, tripInput({ tagline: TRIP_TAGLINE })).id;
+  store.applyMutation(owner, { type: "trip.share", tripId, email: "friend@example.test" });
+  const friend = store.authorizeAccount("friend@example.test").id;
+  /** The tagline the account sees on the trip's page and on All trips. */
+  const shown = (account) => [store.getTripSnapshot(account, tripId).data.trips[0].tagline, store.getHomeOverview(account).data.trips.find((trip) => trip.id === tripId).tagline];
+  assert.deepEqual([shown(owner), shown(friend)], [[TRIP_TAGLINE, TRIP_TAGLINE], [TRIP_TAGLINE, TRIP_TAGLINE]]);
+  store.applyMutation(friend, tripInput({ id: tripId, tagline: "Ramen, temples and one long train ride" }));
+  assert.deepEqual([shown(owner), shown(friend)], Array(2).fill(Array(2).fill("Ramen, temples and one long train ride")));
+});
+
+test("schema 34 databases upgrade without a tagline on any trip, and a replay keeps the taglines saved since", (t) => {
+  const path = fileDatabase(t);
+  let store = createOwnedStore(path);
+  try {
+    const tripId = store.applyMutation(tripInput()).id;
+    addDestination(store, tripId);
+    store.applyMutation({ type: "trip.tag", tripId, name: "Asia" });
+    store.applyMutation(tripInput({ name: "Europe", returnCity: "Boston" }));
+    const saved = store.getSnapshot();
+    store.close(); store = null;
+    const db = new DatabaseSync(path);
+    db.exec("ALTER TABLE trips DROP COLUMN tagline; PRAGMA user_version = 34;");
+    db.close();
+    store = createOwnedStore(path);
+    assert.ok(store.getSnapshot().trips.every((trip) => trip.tagline === ""), "every trip shows the default heading");
+    assert.deepEqual(store.getSnapshot(), saved, "every trip keeps everything saved for it");
+    store.applyMutation(tripInput({ id: tripId, tagline: TRIP_TAGLINE }));
+    const later = store.getSnapshot();
+    // A replay of schema 35, also after the schema 1 build resets the schema version, keeps it.
+    for (const version of [34, 1]) {
+      store.close(); store = null;
+      const replay = new DatabaseSync(path);
+      replay.exec(`PRAGMA user_version = ${version};`);
+      replay.close();
+      store = createOwnedStore(path);
+      assert.deepEqual(store.getSnapshot(), later, `a replay from schema ${version} keeps saved taglines`);
+    }
+    const observer = new DatabaseSync(path);
+    try {
+      assert.equal(observer.prepare("PRAGMA user_version").get().user_version, SCHEMA_VERSION);
+      assert.equal(observer.prepare("PRAGMA integrity_check").get().integrity_check, "ok");
+      assert.deepEqual(observer.prepare("PRAGMA foreign_key_check").all(), []);
+    } finally { observer.close(); }
+  } finally { store?.close(); }
+});
+
+test("ChatGPT and Claude read a trip's tagline and propose one, previewed as typed, and approving saves it", (t) => {
+  const { store, ownerTrip, propose, decide } = aiSetup(t);
+  /** The trip's Tagline field in a proposal's preview, or undefined when the proposal doesn't change it. */
+  const previewed = (proposal) => proposal.preview[0].records.find((record) => record.record === `Trip “Owner trip” (${OWNER})`)?.fields.find((field) => field.name === "Tagline");
+  const taglineNow = () => store.aiTrip(ownerTrip).trip.tagline;
+  /** The owner's trip as an assistant changes it, with every detail as saved and `overrides`. */
+  const change = (overrides) => {
+    const { name, dateLabel, homeCity, travelers, notes } = store.aiTrip(ownerTrip).trip;
+    return { type: "trip.save", id: ownerTrip, name, dateLabel, homeCity, travelers, notes, ...overrides };
+  };
+
+  const added = propose([change({ tagline: TRIP_TAGLINE })]);
+  assert.deepEqual(previewed(added), { name: "Tagline", before: null, after: TRIP_TAGLINE });
+  assert.equal(taglineNow(), "", "proposing changes nothing");
+  assert.equal(decide(added, true).status, "applied");
+  assert.equal(taglineNow(), TRIP_TAGLINE);
+  assert.equal(store.aiTrips().find((trip) => trip.id === ownerTrip).tagline, TRIP_TAGLINE, "assistants read it with the trip's other details");
+
+  const noted = propose([change({ notes: "Book the ryokan early" })]);
+  assert.equal(previewed(noted), undefined, "a change without a tagline keeps it, so the preview leaves it out");
+  assert.equal(decide(noted, true).status, "applied");
+  assert.equal(taglineNow(), TRIP_TAGLINE);
+
+  const cleared = propose([change({ tagline: "" })]);
+  assert.deepEqual(previewed(cleared), { name: "Tagline", before: TRIP_TAGLINE, after: null });
+  assert.equal(decide(cleared, true).status, "applied");
+  assert.equal(taglineNow(), "");
+
+  const before = store.getSnapshot();
+  assert.throws(() => propose([change({ tagline: "A".repeat(121) })]), refusal(`Change 1: ${TAGLINE_TOO_LONG}`));
+  assert.deepEqual(store.getSnapshot(), before, "a refused proposal changes nothing");
+
+  const schema = TOOLS.find((tool) => tool.name === "propose_changes").inputSchema.properties.changes.items.anyOf.find((item) => item.title === "trip.save");
+  assert.equal(schema.properties.tagline.maxLength, 120, "assistants are told the limit");
+  assert.ok(!schema.required.includes("tagline"), "left out, it is kept");
 });

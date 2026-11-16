@@ -13,7 +13,7 @@ import { HealthSafetyPanel, HealthSafetyEditor } from "@/components/health-safet
 import { healthSafetyFromForm, type EmergencyContact } from "@/lib/health-safety";
 import { ChurchOptions, ChurchEditor, ChurchDetails } from "@/components/churches";
 import { TypicalWeatherPanel, TypicalWeatherEditor } from "@/components/typical-weather";
-import { DestinationGallery, DestinationGalleryEditor } from "@/components/destination-gallery";
+import { DestinationCardPhoto, DestinationGallery, DestinationGalleryEditor } from "@/components/destination-gallery";
 import CandidateList from "@/components/candidate-list";
 import { DestinationIdeas, IdeaDetails, priceNotes, selectionLabels } from "@/components/destination-ideas";
 import { CandidateGalleryEditor } from "@/components/candidate-gallery";
@@ -594,7 +594,7 @@ export default function PlannerApp({ initialData, initialBudgets, access = {}, d
               const itemAccess = destinationAccess[item.id];
               const ideas = (kind: Category) => data.candidates.filter((candidate) => candidate.destinationId === item.id && candidate.category === kind).length;
               return <article className={"trip-card tone-" + (index % 3)} key={item.id}>
-                <Link className="trip-card-main" href={"/destinations/" + item.id}><div className="trip-card-top"><span className="trip-number">DESTINATION {String(index + 1).padStart(2, "0")}</span><MapPin size={34} strokeWidth={1} /></div>
+                <Link className="trip-card-main" href={"/destinations/" + item.id}><DestinationCardPhoto destination={item} /><div className="trip-card-top"><span className="trip-number">DESTINATION {String(index + 1).padStart(2, "0")}</span><MapPin size={34} strokeWidth={1} /></div>
                   <h3>{formatSavedDestinationLabel(item)}</h3>{sharesLabel(item) && <p className="destination-full-name">{item.city}</p>}
                   <p className="city-list"><Plane size={15} />{trips.length ? [...new Set(trips)].join(" · ") : "Not in a trip"}</p>
                   <div className="trip-meta"><span><BedDouble size={15} />{count(ideas("hotels"), "hotel", "hotels")}</span><span><Binoculars size={15} />{count(ideas("activities"), "activity", "activities")}</span><span><Utensils size={15} />{count(ideas("restaurants"), "restaurant", "restaurants")}</span>{itemAccess?.role === "editor" && <span><Share2 size={15} />{"Shared by " + memberLabel(itemAccess.owner)}</span>}</div>

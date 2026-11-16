@@ -206,6 +206,6 @@ test("a slow answer times out as unavailable, and too many requests or a refusal
 
 test("saved text with nothing to look up is never sent", async () => {
   const lookup = search({});
-  assert.deepEqual(await lookup.locateNear(vienna, { blank: { address: "  ", name: "—" }, control: { address: "Main\u0000Street", name: "?!" } }), { blank: { status: "missing" }, control: { status: "missing" } });
+  assert.deepEqual(await lookup.locateNear(vienna, { blank: { address: "  ", name: "..." }, control: { address: "Main\u0000Street", name: "?!" } }), { blank: { status: "missing" }, control: { status: "missing" } });
   assert.deepEqual(lookup.requests, []);
 });

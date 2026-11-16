@@ -8,7 +8,10 @@
   --line:#e2e5db;
   --wash:#edf0e6;
   --soft:#f1eee5;
-  --shadow:0 12px 36px #233d3510
+  --shadow:0 12px 36px #233d3510;
+  /* TRA-133: the shapes of a trip's headline image on its card and its page's banner, the same on every screen and in the trip editor's previews. */
+  --trip-card-image-shape:2/1;
+  --trip-banner-shape:3/1
 }
 
 * {
@@ -359,6 +362,20 @@ button svg,a svg {
   padding:24px 24px 18px;
   outline-offset:-4px /* The card hides what overflows it, so the focus ring is drawn inside (TRA-87). */
 }
+/* TRA-133: a trip's headline image runs across the top of its card, edge to edge, above the trip's details. */
+.trip-card-image {
+  position:relative;
+  overflow:hidden;
+  aspect-ratio:var(--trip-card-image-shape);
+  margin:-24px -24px 20px;
+  background:var(--wash)
+}
+.trip-card-image img,.trip-banner img {
+  display:block;
+  width:100%;
+  height:100%;
+  object-fit:cover
+}
 .trip-card-top {
   height:65px;
   display:flex;
@@ -613,6 +630,16 @@ button svg,a svg {
 }
 .breadcrumb:hover {
   color:var(--orange)
+}
+/* TRA-133: a trip's headline image as a wide banner between the way back to All trips and the trip's name. */
+.trip-banner {
+  position:relative;
+  overflow:hidden;
+  aspect-ratio:var(--trip-banner-shape);
+  margin-top:20px;
+  border:1px solid var(--line);
+  border-radius:11px;
+  background:var(--wash)
 }
 .trip-heading {
   display:flex;
@@ -1512,6 +1539,9 @@ button svg,a svg {
 }
 .trip-card-main {
   padding:21px
+}
+.trip-card-image {
+  margin:-21px -21px 18px
 }
 .trip-card-top {
   height:51px

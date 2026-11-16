@@ -80,7 +80,7 @@ const HELP: { [Route in SignedInRoute]: Route extends `${string}/[category]` ? R
     title: "All trips",
     points: [
       "Your trips and the trips shared with you, in your own order, each with its destinations, dates and estimated budget.",
-      "New trip starts a trip with just a name. Select a trip's card to plan it, or Edit on the card to change its name, dates and cities.",
+      "New trip starts a trip with just a name. Select a trip's card to plan it, or Edit on the card to change its name, dates, cities and headline image.",
       "Drag a trip by its handle to a new place, or press Space on the handle, then the arrow keys, then Space. New trips go last.",
       "Search by trip or city, and select tags under Filter by tag to see only trips with every one. Trips move only while all of them show.",
       "Trips marked Shared by belong to someone else. You can change them, but only their owner can share or delete them.",
@@ -91,7 +91,7 @@ const HELP: { [Route in SignedInRoute]: Route extends `${string}/[category]` ? R
     title: "Trip",
     points: [
       "Plan one trip: its route on the map, each stay, the travel between them, arrangements at home and the estimated cost.",
-      "Edit trip changes its name, dates, travelers and the cities you leave from and return to. Tags under its details group it in All trips.",
+      "Edit trip changes its name, dates, travelers, the cities you leave from and return to, and its headline image. Tags under its details group it in All trips.",
       "Add destination adds a city as the last stop. On each card, the arrows change the route, the pencil edits it and the trash can removes it from this trip.",
       "Each stay's nights set its dates from the trip's start date. A destination's ideas, research and budget amounts are shared by every trip that visits it.",
       "Between the places has the travel between stops: Edit adds a connection's transportation, price and layovers. At home keeps arrangements such as pet care.",

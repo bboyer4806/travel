@@ -5,6 +5,7 @@ import { applyMutation, isValidationError } from "@/lib/store";
 import { ImageValidationError, prepareImage } from "@/lib/image-upload";
 import { prepareCandidateGallery } from "@/lib/candidate-gallery-upload";
 import { prepareDestinationGallery } from "@/lib/destination-gallery-upload";
+import { prepareTripImage } from "@/lib/trip-image-upload";
 import type { ActionResult, Mutation } from "@/lib/types";
 
 // Next.js Server Actions enforce same-origin requests; all input is validated in the store.
@@ -23,6 +24,8 @@ export async function mutatePlanner(input: Mutation, imageForm?: FormData): Prom
       // Only validated multipart uploads can supply idea and church photo bytes.
       mutation = { ...input, gallery: await prepareCandidateGallery(imageForm) };
     }
+    // Only the trip editor's form changes a trip's headline image, and only a validated upload supplies its bytes (TRA-133).
+    else if (input.type === "trip.save") mutation = { ...input, image: await prepareTripImage(imageForm) };
     // The store decides what this account may change; the browser never says who is asking.
     const result = applyMutation(account.id, mutation);
     if (input.type === "trip.delete") revalidatePath("/"); else revalidatePath("/", "layout");

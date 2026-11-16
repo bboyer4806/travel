@@ -10,8 +10,8 @@ export const RESTAURANT_TYPES = ["breakfast", "lunch", "dinner", "snack", "drink
 export type RestaurantType = typeof RESTAURANT_TYPES[number];
 export const RESTAURANT_TYPE_LABELS: Record<RestaurantType, string> = { breakfast: "Breakfast", lunch: "Lunch", dinner: "Dinner", snack: "Snack", drinks: "Drinks" };
 export interface TypicalWeather { weatherHighF: number | null; weatherLowF: number | null; weatherRainfall: string; weatherPeriod: string; weatherSource: string; }
-/** A trip, with its tags in alphabetical order. */
-export interface Trip { startDate: string | null; endDate: string | null; id: string; name: string; dateLabel: string; homeCity: string; returnCity: string | null; travelers: number; notes: string; createdAt: string; tags: string[]; }
+/** A trip, with its tags in alphabetical order, and its headline image, or null without one (TRA-133). */
+export interface Trip { startDate: string | null; endDate: string | null; id: string; name: string; dateLabel: string; homeCity: string; returnCity: string | null; travelers: number; notes: string; createdAt: string; tags: string[]; image: TripImage | null; }
 export interface HomeItem { id: string; tripId: string; name: string; notes: string; priceCents: number | null; completed: boolean; createdAt: string; }
 /**
  * A city's research, ideas, selections and budget amounts, shared by every trip that visits it. Each owner has one per city.
@@ -42,6 +42,21 @@ export interface CandidateImage { id: string; version: string; }
  */
 export interface PhotoFocus { focusX: number; focusY: number; }
 export interface DestinationImage extends CandidateImage, PhotoFocus {}
+/**
+ * How a trip's headline image is cropped to fit one of its frames (TRA-133): its focal point, as a destination photo's
+ * is, and its zoom, how many times larger than the smallest size covering the frame it shows, from 1 to MAX_PHOTO_ZOOM.
+ * Zooming keeps the focal point at the same place in the frame.
+ */
+export interface PhotoCrop extends PhotoFocus { zoom: number; }
+/** A trip's headline image crops (TRA-133): one for the top of its card on All trips, and one for the banner on its page. */
+export interface TripImageCrops { card: PhotoCrop; banner: PhotoCrop; }
+/** A trip's headline image (TRA-133): its version, which its address names, and its crops. */
+export interface TripImage extends TripImageCrops { version: string; }
+/**
+ * A trip save's change to its headline image (TRA-133): a new image Travel prepared from an upload, with its crops; new
+ * crops for the saved image of `version`; or null to remove the image. A save without one keeps the image and its crops.
+ */
+export type TripImageUpdate = ({ data: Uint8Array } & TripImageCrops) | TripImage | null;
 export interface DestinationPhotos { images: DestinationImage[]; mainImageId: string | null; }
 /**
  * A photo editor's changes to a destination's, idea's or church's photos. `order` lists every photo it keeps and adds, and
@@ -68,7 +83,8 @@ export interface StopFields { stay?: string; nights?: number | null }
  * save changes a saved item, and is refused when the item no longer exists.
  */
 export type Mutation =
- | { type: "trip.save"; id: string; create?: true; startDate?: string | null; name: string; dateLabel: string; homeCity: string; returnCity?: string | null; travelers: number; notes: string }
+ // `image` changes the trip's headline image (TRA-133), only from an upload or the trip editor's crops. Left out, it keeps it.
+ | { type: "trip.save"; id: string; create?: true; startDate?: string | null; name: string; dateLabel: string; homeCity: string; returnCity?: string | null; travelers: number; notes: string; image?: TripImageUpdate }
  | { type: "trip.delete"; id: string }
  | { type: "trip.share"; tripId: string; email: string }
  | { type: "trip.unshare"; tripId: string; email: string }

@@ -1,0 +1,28 @@
+/* TRA-133: the trip editor's headline image, with a preview of each crop in the shape it shows everywhere. */
+.editor { grid-column: 1 / -1; min-width: 0; margin: 0; padding: 0; border: 0; }
+.editor legend { padding: 0; margin-bottom: 6px; font-size: 12px; font-weight: 600; }
+.optional { color: var(--muted); font-weight: 400; }
+.hint { margin: 0 0 12px; color: var(--muted); font-size: 11px; line-height: 1.55; }
+.previews { display: grid; gap: 14px; margin-bottom: 12px; }
+.preview { min-width: 0; }
+.previewTitle { margin: 0 0 6px; font-size: 11px; font-weight: 600; }
+/* The image is dragged within its frame by mouse or touch. Touch drags move the image, never the page, and the image itself never drags out as a file. */
+.frame { position: relative; overflow: hidden; border: 1px solid var(--line); border-radius: 8px; background: var(--wash); cursor: grab; touch-action: none; user-select: none; -webkit-user-select: none; }
+.frame:active { cursor: grabbing; }
+.frame img { display: block; width: 100%; height: 100%; object-fit: cover; pointer-events: none; }
+.card { aspect-ratio: var(--trip-card-image-shape); max-width: 320px; }
+.banner { aspect-ratio: var(--trip-banner-shape); }
+.zoom { display: flex; align-items: center; gap: 10px; min-height: 44px; color: var(--muted); font-size: 11px; }
+.zoom input { flex: 1 1 auto; min-width: 0; max-width: 260px; margin: 0; accent-color: var(--green); }
+.zoom output { min-width: 4ch; text-align: right; font-variant-numeric: tabular-nums; }
+.actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 14px; }
+.remove,
+.restore { display: inline-flex; align-items: center; gap: 6px; min-height: 36px; padding: 5px 0; border: 0; background: transparent; font-size: 11px; }
+.remove { color: var(--orange); }
+.restore { color: var(--green); }
+.remove:hover:not(:disabled),
+.restore:hover:not(:disabled) { text-decoration: underline; }
+.error,
+.status { margin: 10px 0 0; font-size: 11px; line-height: 1.55; }
+.error { color: #a33d2d; }
+.status { color: var(--muted); }

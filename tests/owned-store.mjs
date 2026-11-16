@@ -70,6 +70,7 @@ export function createOwnedStore(path) {
     getTripSnapshot: (tripId, stopId) => store.getTripSnapshot(owner, tripId, stopId),
     getDestinationsOverview: () => store.getDestinationsOverview(owner),
     getDestinationSnapshot: (destinationId) => store.getDestinationSnapshot(owner, destinationId),
+    getTripImage: (tripId) => store.getTripImage(owner, tripId),
     getDestinationImage: (id) => store.getDestinationImage(owner, id),
     getDestinationPhoto: (destinationId, imageId) => store.getDestinationPhoto(owner, destinationId, imageId),
     getCandidatePhoto: (candidateId, imageId) => store.getCandidatePhoto(owner, candidateId, imageId),

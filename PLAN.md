@@ -490,3 +490,10 @@ This replaces TRA-62's destination Save in a sticky header.
 - An idea's **Must do** control is named by the label it shows, **Mark as must do** or **Must do**, followed by the idea's name. Before, it was always named "Must do:" and the idea's name, which left out the **Mark as must do** people see and say to select it.
 - Below each destination card's h4 **Church** heading, the Sundays during the stay, each church and the message shown without any are h5 headings, and each church's Mass times an h6, so a trip page's headings nest in order. Before, they were h3, h2 and h3. The Sundays and the churches take their heading level from the section that shows them, and each heading keeps its look.
 - Not included: the Church page and a destination's page in Destinations, which still go from their h1 straight to the card's h4 sections; other names, headings or labels; and any visible change.
+
+## Added scope: November 16, 2026, text contrast (TRA-88)
+- From review: all text has at least 4.5:1 contrast with its background at every size, WCAG AA for normal text.
+- Gray secondary text (`--muted`) is #5f6b63, darkened from #738077, which measured 3.82:1 on the page and 3.61:1 in the budget panel. It now measures 5.15:1 and 4.87:1, and at least 4.6:1 on every other background it is shown on.
+- The orange accent (`--orange`) is #a65135, darkened from #b75a3b, so eyebrows, the map's reasons, **Remove** buttons, links and buttons that turn orange on hover, and the AI proposal badges on their light orange all reach 4.5:1. Before, eyebrows measured 4.28:1 and the badges 3.82:1.
+- Each other text color below 4.5:1 is darkened in its own hue until it reaches 4.5:1 on its backgrounds: trip numbers, stop numbers, the budget panel's eyebrow, breakdown labels and note, estimate status, prices not yet estimated, selection tags, idea notes, the route at the top of a connection's editor, and the note and N in the home page's illustration. Placeholders are #6d736b, the trip, destination and airport searches' included, which used the browser's default gray.
+- Not included: icons and other graphics, disabled controls, which WCAG exempts, and other color changes.

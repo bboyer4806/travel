@@ -5,6 +5,7 @@ import test from "node:test";
 import { runInNewContext } from "node:vm";
 import ts from "typescript";
 import * as budget from "../src/lib/budget.ts";
+import * as destinationLabel from "../src/lib/destination-label.ts";
 import * as money from "../src/lib/money.ts";
 import { ValidationError } from "../src/lib/store.ts";
 import * as tripDates from "../src/lib/trip-dates.ts";
@@ -120,7 +121,7 @@ runInNewContext(ts.transpileModule(readFileSync(new URL("../src/components/desti
       "react": { useId: () => "id", useState: (initial) => [initial, () => {}] },
       "react/jsx-runtime": { jsx: element, jsxs: element, Fragment: "fragment" },
       "next/link": { default: "a" }, "lucide-react": { ChevronDown: "icon" },
-      "@/lib/trip-dates": tripDates, "@/lib/budget": budget, "@/lib/money": money,
+      "@/lib/trip-dates": tripDates, "@/lib/budget": budget, "@/lib/money": money, "@/lib/destination-label": destinationLabel,
     };
     if (!(name in modules)) throw new Error("Unexpected component import: " + name);
     return modules[name];

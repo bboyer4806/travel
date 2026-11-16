@@ -9,12 +9,20 @@ import type { Church, MassTime } from "@/lib/types";
 import { randomUuid } from "@/lib/uuid";
 import styles from "./churches.module.css";
 
-export function ChurchOptions({ items, busy, onAdd, onEdit, onDelete }: {
-  items: Church[]; busy: boolean; onAdd: () => void; onEdit: (item: Church) => void; onDelete: (item: Church) => void;
+const HEADINGS = ["h1", "h2", "h3", "h4", "h5", "h6"] as const;
+
+/**
+ * A destination's churches. Each church's name is a heading at `headingLevel`, below the section that lists them, and
+ * its Mass times one level lower (TRA-95).
+ */
+export function ChurchOptions({ items, headingLevel, busy, onAdd, onEdit, onDelete }: {
+  items: Church[]; headingLevel: 2 | 3 | 4 | 5; busy: boolean; onAdd: () => void; onEdit: (item: Church) => void; onDelete: (item: Church) => void;
 }) {
+  const Heading = HEADINGS[headingLevel - 1];
+  const TimesHeading = HEADINGS[headingLevel];
   if (!items.length) return <div className="empty-state ideas-empty">
     <ChurchIcon size={34} strokeWidth={1.3} aria-hidden="true" />
-    <h2>Find a church for your visit.</h2>
+    <Heading className={styles.emptyHeading}>Find a church for your visit.</Heading>
     <p>Save church options and Mass times here.<br />You can add details and photos later.</p>
     <button type="button" className="button secondary" onClick={onAdd} disabled={busy}><Plus size={16} />Add church</button>
   </div>;
@@ -24,11 +32,11 @@ export function ChurchOptions({ items, busy, onAdd, onEdit, onDelete }: {
       <button type="button" className="icon-button" aria-label={`Edit ${item.name}`} onClick={() => onEdit(item)} disabled={busy}><Pencil size={16} /></button>
       <button type="button" className="icon-button" aria-label={`Delete ${item.name}`} onClick={() => onDelete(item)} disabled={busy}><Trash2 size={16} /></button>
     </div></div>
-    <h2>{item.name}</h2>
+    <Heading className={styles.name}>{item.name}</Heading>
     {item.address && <p className="idea-address"><MapPin size={15} aria-hidden="true" />{item.address}</p>}
     {item.denomination && <p className={styles.denomination}>{item.denomination}</p>}
     {item.url && <a className={styles.website} href={item.url} target="_blank" rel="noopener noreferrer"><ExternalLink size={14} aria-hidden="true" />Church website<span className="sr-only"> for {item.name} (opens in a new tab)</span></a>}
-    <div className={styles.times}><h3>Mass times</h3>
+    <div className={styles.times}><TimesHeading className={styles.timesHeading}>Mass times</TimesHeading>
       {item.massTimes.length ? <dl>{item.massTimes.map((entry) => <div key={entry.id}><dt>{entry.day}</dt><dd>{entry.time}</dd></div>)}</dl> : <p className={styles.unknown}>Mass times unknown</p>}
     </div>
   </article>)}</div>;

@@ -5,13 +5,14 @@ import test from "node:test";
 import { runInNewContext } from "node:vm";
 import ts from "typescript";
 import * as budget from "../src/lib/budget.ts";
+import * as destinationLabel from "../src/lib/destination-label.ts";
 import * as galleryDraft from "../src/lib/gallery-draft.ts";
 import * as imageLimits from "../src/lib/image-limits.ts";
 import * as money from "../src/lib/money.ts";
 import * as tripDates from "../src/lib/trip-dates.ts";
 import * as types from "../src/lib/types.ts";
 import * as uuid from "../src/lib/uuid.ts";
-import { addDestination, candidateInput, prepared, setup, stop, visit } from "./budget-fixtures.mjs";
+import { addDestination, candidateInput, newItem, prepared, setup, stop, visit } from "./budget-fixtures.mjs";
 
 // The actual components, rendered with each hook's initial state, as on a page's first render. No browser is involved.
 const element = (type, props) => ({ type, props });
@@ -19,7 +20,7 @@ const shared = {
   "react": { useId: () => "id", useState: (initial) => [initial, () => {}], useRef: (current) => ({ current }), useEffect: () => {} },
   "react/jsx-runtime": { jsx: element, jsxs: element, Fragment: "fragment" },
   "next/link": { default: "a" }, "lucide-react": new Proxy({}, { get: (_, name) => "icon:" + String(name) }),
-  "@/lib/budget": budget, "@/lib/gallery-draft": galleryDraft, "@/lib/image-limits": imageLimits, "@/lib/money": money, "@/lib/trip-dates": tripDates, "@/lib/types": types, "@/lib/uuid": uuid,
+  "@/lib/budget": budget, "@/lib/destination-label": destinationLabel, "@/lib/gallery-draft": galleryDraft, "@/lib/image-limits": imageLimits, "@/lib/money": money, "@/lib/trip-dates": tripDates, "@/lib/types": types, "@/lib/uuid": uuid,
 };
 /** A component module, given the components it imports. A CSS module's class names are their own names. */
 function load(file, modules = {}) {
@@ -45,6 +46,8 @@ const { DestinationIdeas, IdeaDetails } = load("../src/components/destination-id
 const { default: CandidateList } = load("../src/components/candidate-list.tsx", ideaModules);
 const { RestaurantTypesField } = ideaModules["./restaurant-types"];
 const { DestinationBudget } = load("../src/components/destination-budget.tsx");
+const { ChurchOptions } = load("../src/components/churches.tsx", { "./candidate-gallery": ideaModules["./candidate-gallery"], "./focus-after": load("../src/components/focus-after.ts") });
+const { ChurchSundays } = load("../src/components/church-sundays.tsx");
 
 /** The host elements an element renders to, with every component rendered. */
 function hosts(node) {
@@ -59,6 +62,14 @@ function text(node) {
   if (typeof node !== "object") return String(node);
   if (Array.isArray(node)) return node.map(text).join("");
   return text(typeof node.type === "function" ? node.type(node.props) : node.props.children);
+}
+/** An element's text as the page shows it, without what only screen readers read. */
+function shownText(node) {
+  if (node === null || node === undefined || typeof node === "boolean") return "";
+  if (typeof node !== "object") return String(node);
+  if (Array.isArray(node)) return node.map(shownText).join("");
+  if (typeof node.type === "function") return shownText(node.type(node.props));
+  return String(node.props.className ?? "").split(" ").includes("sr-only") ? "" : shownText(node.props.children);
 }
 const byClass = (nodes, className) => nodes.filter((node) => String(node.props.className ?? "").split(" ").includes(className));
 
@@ -205,6 +216,30 @@ test("the destination budget no longer links to the idea pages, and keeps its ot
     ["Accommodation", ""], ["Activities", ""], ["Food", ""],
     ["Shopping", "Edit shopping budget for Vienna"], ["Miscellaneous", "Edit miscellaneous budget for Vienna"],
   ]);
+});
+
+test("a destination card's names say what it shows, and its Church headings sit below the card's h4 (TRA-95)", (t) => {
+  const { store, id } = seed(t);
+  // A city chosen from the suggestions shows shorter, and the budget's editors name it that way.
+  store.applyMutation({ type: "destination.save", id, city: "Vienna, Vienna, Austria", cityFromSuggestion: true });
+  const budget = hosts({ type: DestinationBudget, props: { snapshot: store.getSnapshot(), visit: visit(store, id), stop: stop(store, id), onShoppingEdit() {}, onMiscellaneousEdit() {} } });
+  assert.deepEqual(byClass(budget, "budget-category-action").map(text), ["Edit shopping budget for Vienna, Austria", "Edit miscellaneous budget for Vienna, Austria"]);
+  // The Must do toggle's name is the label it shows, then the activity's name.
+  const activities = store.getSnapshot().candidates.filter((item) => item.category === "activities");
+  const toggles = byClass(hosts({ type: CandidateList, props: { items: activities, category: "activities", destination: visit(store, id), busy: false, onEdit() {}, onDelete() {}, onMutate() {} } }), "must-do");
+  assert.deepEqual(toggles.map((toggle) => [shownText(toggle), text(toggle), toggle.props["aria-pressed"], toggle.props["aria-label"]]), [
+    ["Mark as must do", "Mark as must do for Opera", false, undefined],
+    ["Must do", "Must do for Palace", true, undefined],
+    ["Mark as must do", "Mark as must do for Museum", false, undefined],
+  ]);
+  // At level 5, as the card's Church section passes them below its h4, the Sundays and each church are h5 headings and
+  // its Mass times h6, styled by class.
+  const headings = (element) => hosts(element).filter((node) => /^h[1-6]$/.test(node.type)).map((node) => [node.type, text(node), node.props.className]);
+  const churches = (items) => ({ type: ChurchOptions, props: { items, headingLevel: 5, busy: false, onAdd() {}, onEdit() {}, onDelete() {} } });
+  assert.deepEqual(headings({ type: ChurchSundays, props: { destination: stop(store, id), headingLevel: 5 } }), [["h5", "Sundays during your stay", "heading"]]);
+  assert.deepEqual(headings(churches([])), [["h5", "Find a church for your visit.", "emptyHeading"]]);
+  store.applyMutation({ type: "church.save", ...newItem(), destinationId: id, name: "St. Stephen's Cathedral", address: "", denomination: "", url: "", massTimes: [{ id: randomUUID(), day: "Sunday", time: "10:15 AM" }] });
+  assert.deepEqual(headings(churches(store.getSnapshot().churches)), [["h5", "St. Stephen's Cathedral", "name"], ["h6", "Mass times", "timesHeading"]]);
 });
 
 test("activity photos fill frames of one shape, and an activity without photos keeps its photo's place on the Activities page (TRA-124)", (t) => {

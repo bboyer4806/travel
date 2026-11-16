@@ -6,6 +6,7 @@ import { useId, useState, type ReactNode } from "react";
 import type { FoodBudgetMode, ActivitiesBudgetMode, Candidate, Destination, DestinationVisit, Snapshot, Trip, TripStop } from "@/lib/types";
 import { calculateFoodBudget, calculateFoodEstimate, calculateActivitiesBudget, calculateAccommodation, calculateDestinationBudget, calculateHotelEstimate, calculateMiscellaneous } from "@/lib/budget";
 import { formatCurrency, MAX_AMOUNT_DOLLARS, minorAmountValue, parseMinorAmount } from "@/lib/money";
+import { formatSavedDestinationLabel } from "@/lib/destination-label";
 
 export function CurrencyTotals({ totals, empty = "Not estimated" }: { totals: Record<string, number>; empty?: string }) {
   const entries = Object.entries(totals).sort(([a], [b]) => a.localeCompare(b));
@@ -161,8 +162,8 @@ export function DestinationBudget({ snapshot, visit, stop, onShoppingEdit, onMis
       <BudgetCategory name="Accommodation" amount={accommodation.totalMinor !== null && accommodation.currency ? formatCurrency(accommodation.totalMinor, accommodation.currency) : "Not estimated"} />
       <BudgetCategory name="Activities" amount={<CurrencyTotals totals={activities.totalsByCurrency} empty={activities.complete ? "$0" : "Not estimated"} />} partial={!activities.complete && activities.knownCount > 0} />
       <BudgetCategory name="Food" amount={<CurrencyTotals totals={food.totalsByCurrency} empty={food.complete ? "$0" : "Not estimated"} />} partial={!food.complete && food.knownCount > 0} />
-      <BudgetCategory name="Shopping" amount={shopping} action={<button type="button" className="text-button" onClick={onShoppingEdit}>Edit shopping budget<span className="sr-only"> for {visit.city}</span></button>} />
-      <BudgetCategory name="Miscellaneous" amount={misc.subtotalMinor !== null && misc.currency ? formatCurrency(misc.subtotalMinor, misc.currency) : "Not estimated"} action={<button type="button" className="text-button" onClick={onMiscellaneousEdit}>Edit miscellaneous budget<span className="sr-only"> for {visit.city}</span></button>} />
+      <BudgetCategory name="Shopping" amount={shopping} action={<button type="button" className="text-button" onClick={onShoppingEdit}>Edit shopping budget<span className="sr-only"> for {formatSavedDestinationLabel(visit)}</span></button>} />
+      <BudgetCategory name="Miscellaneous" amount={misc.subtotalMinor !== null && misc.currency ? formatCurrency(misc.subtotalMinor, misc.currency) : "Not estimated"} action={<button type="button" className="text-button" onClick={onMiscellaneousEdit}>Edit miscellaneous budget<span className="sr-only"> for {formatSavedDestinationLabel(visit)}</span></button>} />
     </dl>
     {stop && <div className="destination-budget-total"><span>Destination {estimate.complete ? "estimate" : "partial estimate"}<small>Accommodation, activities, food, shopping, and miscellaneous · whole party</small></span><strong><CurrencyTotals totals={estimate.totalsByCurrency} /></strong></div>}
     <div id={detailsId} className="destination-budget-details" hidden={!expanded}>

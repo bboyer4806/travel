@@ -1,7 +1,13 @@
 .denomination { color: var(--muted); font-size: 13px; margin: 12px 0; overflow-wrap: anywhere; }
 .website { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; text-decoration: underline; margin: 8px 0; }
+/* Church headings take their level from the section listing the churches (TRA-95), so their class, not their tag, keeps
+   the look they had as serif h2 and h3 headings. */
+.emptyHeading, .name, .timesHeading { margin: 0; font-family: Georgia, "Times New Roman", serif; font-weight: 400; line-height: 1.16; }
+.emptyHeading { font-size: 1.5em; }
+.name { font-size: 28px; overflow-wrap: anywhere; }
+@media (max-width: 780px) { .name { font-size: 25px; } }
 .times { margin-top: 20px; padding-top: 16px; border-top: 1px solid var(--line); }
-.times h3 { font-size: 15px; margin: 0 0 10px; }
+.timesHeading { font-size: 15px; margin: 0 0 10px; }
 .times dl { margin: 0; font-size: 14px; }
 .times dl > div { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin: 8px 0; overflow-wrap: anywhere; }
 .times dd { margin: 0; }

@@ -4,7 +4,7 @@ import { DatabaseSync } from "node:sqlite";
 import test from "node:test";
 import { SCHEMA_VERSION, ValidationError } from "../src/lib/store.ts";
 import { createOwnedStore } from "./owned-store.mjs";
-import { addCity, fileDatabase, destinationEdit, newItem } from "./budget-fixtures.mjs";
+import { addCity, fileDatabase, destinationEdit, newItem, prepared } from "./budget-fixtures.mjs";
 import { calculateBudget } from "../src/lib/budget.ts";
 
 const webp = new Uint8Array(Buffer.from("UklGRiIAAABXRUJQVlA4IBYAAAAwAQCdASoBAAEADsD+JaQAA3AAAAAA", "base64"));
@@ -27,7 +27,7 @@ test("destination images persist, replace with new versions, and preserve routes
   let store = createOwnedStore(path);
   try {
     const tripId = store.applyMutation({ ...tripInput, ...newItem() }).id;
-    const destinationId = addDestination(store, tripId, { image: webp });
+    const destinationId = addDestination(store, tripId, { image: prepared(webp) });
     const initialImage = store.getDestinationImage(destinationId);
     assert.ok(initialImage.data instanceof Uint8Array);
     assert.deepEqual(initialImage.data, webp);
@@ -42,7 +42,7 @@ test("destination images persist, replace with new versions, and preserve routes
     store.applyMutation(destinationEdit(destinationId, { notes: "A note added by an older client" }));
     assert.deepEqual(store.getDestinationImage(destinationId), initialImage, "omitting image preserves bytes and version");
     assert.deepEqual(store.getSnapshot().legs, legs);
-    store.applyMutation(destinationEdit(destinationId, { image: replacement }));
+    store.applyMutation(destinationEdit(destinationId, { image: prepared(replacement) }));
     const updatedImage = store.getDestinationImage(destinationId);
     assert.notEqual(updatedImage.version, initialImage.version);
     assert.deepEqual(updatedImage.data, replacement);
@@ -71,8 +71,8 @@ test("destination photos stay when a trip stops visiting the destination or is d
   const observer = new DatabaseSync(path);
   try {
     const tripId = store.applyMutation({ ...tripInput, ...newItem() }).id;
-    const first = addDestination(store, tripId, { image: webp });
-    const second = addDestination(store, tripId, { city: "Paris", image: replacement });
+    const first = addDestination(store, tripId, { image: prepared(webp) });
+    const second = addDestination(store, tripId, { city: "Paris", image: prepared(replacement) });
     const photos = [store.getDestinationImage(first), store.getDestinationImage(second)];
     store.applyMutation({ type: "stop.remove", id: first });
     assert.deepEqual(store.getDestinationImage(first), photos[0], "a destination keeps its photos after leaving a trip");
@@ -90,7 +90,7 @@ test("invalid destination image bytes are rejected before any trip or route data
   const store = createOwnedStore(":memory:");
   t.after(() => store.close());
   const tripId = store.applyMutation({ ...tripInput, ...newItem() }).id;
-  const destinationId = addDestination(store, tripId, { image: webp });
+  const destinationId = addDestination(store, tripId, { image: prepared(webp) });
   planConnections(store);
   const before = store.getSnapshot();
   const beforeImage = store.getDestinationImage(destinationId);
@@ -100,14 +100,16 @@ test("invalid destination image bytes are rejected before any trip or route data
   wrongWebp[8] = 0;
   const oversized = new Uint8Array(2 * 1024 * 1024 + 1);
   oversized.set(webp);
-  for (const image of ["https://example.com/image.webp", [...webp], { data: webp }, new Uint16Array(20), new Uint8Array(), webp.subarray(0, 11), wrongRiff, wrongWebp, oversized]) {
-    assert.throws(() => store.applyMutation(destinationEdit(destinationId, { city: "Berlin", notes: "Should not be saved", image })), ValidationError);
-    assert.deepEqual(store.getSnapshot(), before);
-    assert.deepEqual(store.getDestinationImage(destinationId), beforeImage);
+  for (const bytes of ["https://example.com/image.webp", [...webp], { data: webp }, new Uint16Array(20), new Uint8Array(), webp.subarray(0, 11), wrongRiff, wrongWebp, oversized]) {
+    for (const image of [bytes, prepared(bytes, webp), prepared(webp, bytes)]) {
+      assert.throws(() => store.applyMutation(destinationEdit(destinationId, { city: "Berlin", notes: "Should not be saved", image })), ValidationError);
+      assert.deepEqual(store.getSnapshot(), before);
+      assert.deepEqual(store.getDestinationImage(destinationId), beforeImage);
+    }
   }
   const boundary = new Uint8Array(2 * 1024 * 1024);
   boundary.set(webp);
-  store.applyMutation(destinationEdit(destinationId, { image: boundary }));
+  store.applyMutation(destinationEdit(destinationId, { image: prepared(boundary) }));
   assert.equal(store.getDestinationImage(destinationId).data.byteLength, boundary.byteLength);
   assert.deepEqual(store.getSnapshot().legs, before.legs);
 });
@@ -118,12 +120,12 @@ test("a failed image write rolls back destination edits and all connection chang
   const observer = new DatabaseSync(path);
   try {
     const tripId = store.applyMutation({ ...tripInput, ...newItem() }).id;
-    const destinationId = addDestination(store, tripId, { image: webp });
+    const destinationId = addDestination(store, tripId, { image: prepared(webp) });
     planConnections(store);
     const before = store.getSnapshot();
     const beforeImage = store.getDestinationImage(destinationId);
     observer.exec("CREATE TRIGGER reject_image BEFORE INSERT ON destination_images BEGIN SELECT RAISE(ABORT, 'Injected image failure'); END;");
-    assert.throws(() => store.applyMutation(destinationEdit(destinationId, { city: "Paris", notes: "Unsaved", image: replacement })), /Injected image failure/);
+    assert.throws(() => store.applyMutation(destinationEdit(destinationId, { city: "Paris", notes: "Unsaved", image: prepared(replacement) })), /Injected image failure/);
     assert.deepEqual(store.getSnapshot(), before);
     assert.deepEqual(store.getDestinationImage(destinationId), beforeImage);
   } finally {
@@ -148,7 +150,7 @@ test("schema 3 upgrades add image storage without changing destinations, and rep
     store = createOwnedStore(path);
     assert.deepEqual(store.getSnapshot(), before);
     assert.equal(store.getDestinationImage(destinationId), undefined);
-    store.applyMutation(destinationEdit(destinationId, { image: webp }));
+    store.applyMutation(destinationEdit(destinationId, { image: prepared(webp) }));
     const withImage = store.getSnapshot();
     const image = store.getDestinationImage(destinationId);
     store.close();

@@ -7,7 +7,7 @@ import { handleMcp } from "../src/lib/mcp.ts";
 import { handleRegistration, handleToken } from "../src/lib/oauth-handlers.ts";
 import { allowAiConnection, applyMutation, authorizeGoogleSignIn, createStore, decideAiProposal, SCHEMA_VERSION } from "../src/lib/store.ts";
 import { aiSetup, CHALLENGE, CLAUDE, connectClaude, DAY, GUEST, NOW, OWNER, VERIFIER } from "./ai-fixtures.mjs";
-import { fileDatabase, newItem, tripInput } from "./budget-fixtures.mjs";
+import { fileDatabase, newItem, prepared, tripInput } from "./budget-fixtures.mjs";
 
 const HOUR = 60 * 60 * 1000;
 const CHATGPT = "https://chatgpt.com/connector_platform_oauth_redirect";
@@ -173,7 +173,7 @@ test("Claude connects through Travel's OAuth endpoints, reads every trip and pro
   const guestId = guest.authorizeAccount(GUEST).id;
   const guestTrip = guest.applyMutation(guestId, tripInput({ name: "Guest's private trip" })).id;
   const destinationId = guest.applyMutation(guestId, { type: "stop.add", tripId: guestTrip, city: "Oslo" }).id;
-  guest.applyMutation(guestId, { type: "destination.save", id: destinationId, image: Buffer.from("UklGRh4AAABXRUJQVlA4TBEAAAAvAUAAAAfQtSZVrP+BiOh/AAA=", "base64") });
+  guest.applyMutation(guestId, { type: "destination.save", id: destinationId, image: prepared(Buffer.from("UklGRh4AAABXRUJQVlA4TBEAAAAvAUAAAAfQtSZVrP+BiOh/AAA=", "base64")) });
   const code = allowAiConnection(owner.id, { clientId: client.client_id, redirectUri: CLAUDE, codeChallenge: CHALLENGE });
 
   const form = (fields) => post("/api/oauth/token", new URLSearchParams(fields).toString(), { "Content-Type": "application/x-www-form-urlencoded" });

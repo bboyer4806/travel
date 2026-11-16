@@ -8,12 +8,12 @@ import test from "node:test";
 import { calculateBudget } from "../src/lib/budget.ts";
 import { createStore, SCHEMA_VERSION, ValidationError } from "../src/lib/store.ts";
 import { UNDO_SCHEMA_20, UNDO_SCHEMA_21 } from "./owned-store.mjs";
-import { addCity, fileDatabase, newItem } from "./budget-fixtures.mjs";
+import { addCity, fileDatabase, newItem, prepared } from "./budget-fixtures.mjs";
 
 const OWNER = "owner@example.com";
 const NOT_AVAILABLE = { name: "ValidationError", message: "This item no longer exists or isn't shared with you. Please refresh and try again." };
 const webp = new Uint8Array([82, 73, 70, 70, 4, 0, 0, 0, 87, 69, 66, 80]);
-const photo = () => ({ id: randomUUID(), data: webp });
+const photo = () => ({ id: randomUUID(), ...prepared(webp) });
 const google = (subject, email, name = null) => ({ subject, email, emailVerified: true, name });
 const requirements = () => ({ passportNationality: "United States", travelPurpose: "Tourism", travelerCircumstances: "Two adults", visaRequirements: "None for short stays", passportValidity: "Three months", requiredDocuments: "Return ticket", transitRequirements: "None", notes: "Checked", sources: [{ id: randomUUID(), url: "https://example.gov/entry", description: "Entry guidance" }], lastCheckedDate: "2026-11-03" });
 const healthSafety = () => ({ advisoryLevel: "Level 1", advisoryWarnings: "", healthPrecautions: "Routine vaccines", localSafety: "Watch for pickpockets", emergencyContacts: [{ id: randomUUID(), name: "Emergency services", phone: "112", notes: "" }], sources: [{ id: randomUUID(), url: "https://example.gov/advisory", description: "Travel advisory" }], lastCheckedDate: "2026-11-10" });

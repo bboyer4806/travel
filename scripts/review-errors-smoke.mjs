@@ -1,4 +1,4 @@
-// Production HTTP regressions for TRA-73, TRA-75, TRA-94, TRA-115 and TRA-122. Run after pnpm build with Node 24.
+// Production HTTP regressions for TRA-73, TRA-75, TRA-89, TRA-94, TRA-115 and TRA-122. Run after pnpm build with Node 24.
 // All writes and failure injection use a new, isolated database under test-results.
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
@@ -35,7 +35,7 @@ const cookie = `${sessionCookieName(false)}=${store.createSession(owner.id, Date
 const tripInput = { type: "trip.save", name: "Review smoke trip", dateLabel: "", homeCity: "Test", travelers: 2, notes: "" };
 // A new item carries the ID its editor gives it.
 const newItem = () => ({ id: randomUUID(), create: true });
-/** A photo as Travel prepares an upload, or a photo it downloads for a proposal (TRA-122). */
+/** A photo as Travel prepares an upload, or a photo it downloads for a proposal (TRA-122), with its thumbnail (TRA-89). */
 async function preparedPhoto(color) {
   const form = new FormData();
   form.set("image", new File([await sharp({ create: { width: 48, height: 32, channels: 3, background: color } }).png().toBuffer()], "photo.png", { type: "image/png" }));
@@ -44,10 +44,8 @@ async function preparedPhoto(color) {
 const tripId = store.applyMutation(owner.id, { ...tripInput, ...newItem() }).id;
 // A city added to a trip is a new destination whose first stop shares its ID.
 const destinationId = store.applyMutation(owner.id, { type: "stop.add", tripId, city: "Vienna" }).id;
-store.applyMutation(owner.id, {
-  type: "destination.save", id: destinationId,
-  image: Buffer.from("UklGRh4AAABXRUJQVlA4TBEAAAAvAUAAAAfQtSZVrP+BiOh/AAA=", "base64"),
-});
+const seedPhoto = Buffer.from("UklGRh4AAABXRUJQVlA4TBEAAAAvAUAAAAfQtSZVrP+BiOh/AAA=", "base64");
+store.applyMutation(owner.id, { type: "destination.save", id: destinationId, image: { data: seedPhoto, thumbnail: seedPhoto } });
 const otherTripId = store.applyMutation(owner.id, { ...tripInput, ...newItem(), name: "Other smoke trip" }).id;
 store.close();
 const manifest = JSON.parse(readFileSync(".next/server/server-reference-manifest.json", "utf8"));
@@ -155,6 +153,23 @@ for (const [label, firstPath] of [
         assert.equal(response.status, 404, path);
         assert.match(await response.text(), /This page has moved on\./);
       }
+      // TRA-89: a photo's thumbnail is served as the photo is, and a photo saved before thumbnails has one made from it
+      // whenever asked for, saving nothing. This changes only this test's disposable fixture.
+      const photos = new DatabaseSync(database);
+      try {
+        const { id: photoId, version } = photos.prepare("SELECT id, version FROM destination_images WHERE destinationId = ? AND isMain = 1").get(destinationId);
+        const thumbnailPath = `/api/destination-images/${destinationId}/${photoId}/thumbnail?v=${version}`;
+        const saved = await server.request(thumbnailPath);
+        assert.deepEqual([saved.status, saved.headers.get("content-type"), saved.headers.get("cache-control")], [200, "image/webp", "private, max-age=31536000, immutable"]);
+        assert.deepEqual(new Uint8Array(await saved.arrayBuffer()), new Uint8Array(seedPhoto), "a saved thumbnail is served as saved");
+        photos.prepare("UPDATE destination_images SET thumbnail = NULL WHERE id = ?").run(photoId);
+        const made = await server.request(thumbnailPath);
+        assert.deepEqual([made.status, (await sharp(Buffer.from(await made.arrayBuffer())).metadata()).format], [200, "webp"], "a photo saved before thumbnails has one made");
+        assert.equal(photos.prepare("SELECT thumbnail FROM destination_images WHERE id = ?").get(photoId).thumbnail, null, "making a thumbnail saves nothing");
+        assert.equal((await server.request(thumbnailPath, { headers: { Cookie: "" } })).status, 401);
+      } finally {
+        photos.close();
+      }
       // Keep accounts/authentication available while causing page data reads to fail.
       // This changes only this test's disposable fixture, never application code/data.
       const db = new DatabaseSync(database);
@@ -185,7 +200,7 @@ for (const [label, firstPath] of [
   // TRA-122: the guest's destination with two photos, the first of them primary.
   const bergenId = seed.applyMutation(guest.id, { type: "stop.add", tripId: guestTripId, city: "Bergen" }).id;
   const [firstPhoto, secondPhoto] = [randomUUID(), randomUUID()];
-  seed.applyMutation(guest.id, { type: "destination.save", id: bergenId, gallery: { add: [{ id: firstPhoto, data: await preparedPhoto("#285f56") }, { id: secondPhoto, data: await preparedPhoto("#c46b2d") }], remove: [], mainImageId: firstPhoto } });
+  seed.applyMutation(guest.id, { type: "destination.save", id: bergenId, gallery: { add: [{ id: firstPhoto, ...await preparedPhoto("#285f56") }, { id: secondPhoto, ...await preparedPhoto("#c46b2d") }], remove: [], mainImageId: firstPhoto } });
   seed.close();
   const aiActions = Object.fromEntries(Object.entries(manifest.node ?? {}).filter(([, action]) => action.filename === "src/app/ai/actions.ts").map(([id, action]) => [action.exportedName, id]));
   assert.deepEqual(Object.keys(aiActions).sort(), ["answerAiConnection", "decideProposal", "revokeConnection"]);
@@ -272,11 +287,11 @@ for (const [label, firstPath] of [
       // A proposal adding a photo Travel downloaded and prepared, removing a saved one and choosing the new one as
       // primary. No public image server is reachable here, so it is proposed through the store with the prepared photo.
       const addedPhoto = randomUUID();
-      const addedData = await preparedPhoto("#3b4f8a");
+      const addedImage = await preparedPhoto("#3b4f8a");
       const writer = createStore(database, ownerEmail);
       let photoProposal;
       try {
-        photoProposal = writer.proposeAiChanges(connectionId, { summary: "Add a photo of Bergen", changes: [{ type: "destination.photos", id: bergenId, gallery: { add: [{ id: addedPhoto, url: "https://images.example.com/bergen.jpg" }], remove: [secondPhoto], mainImageId: addedPhoto } }] }, new Map([[addedPhoto, addedData]]), Date.now());
+        photoProposal = writer.proposeAiChanges(connectionId, { summary: "Add a photo of Bergen", changes: [{ type: "destination.photos", id: bergenId, gallery: { add: [{ id: addedPhoto, url: "https://images.example.com/bergen.jpg" }], remove: [secondPhoto], mainImageId: addedPhoto } }] }, new Map([[addedPhoto, addedImage]]), Date.now());
       } finally {
         writer.close();
       }
@@ -287,7 +302,7 @@ for (const [label, firstPath] of [
       for (const photoId of [addedPhoto, firstPhoto, secondPhoto]) assert.ok(photoPage.includes(`src="${photoRoute(photoId)}"`), `the proposal's page shows ${photoId}`);
       const shown = await server.request(photoRoute(addedPhoto));
       assert.deepEqual([shown.status, shown.headers.get("content-type")], [200, "image/webp"]);
-      assert.deepEqual(new Uint8Array(await shown.arrayBuffer()), addedData, "the photo shown is the one approving saves");
+      assert.deepEqual(new Uint8Array(await shown.arrayBuffer()), addedImage.data, "the photo shown is the one approving saves");
       assert.equal((await server.request(photoRoute(secondPhoto))).status, 200, "the owner sees the saved photo it deletes");
       assert.equal((await server.request(photoRoute(addedPhoto), { headers: { Cookie: guestCookie } })).status, 404, "nobody else sees a proposal's photos");
       assert.equal((await server.request(photoRoute(addedPhoto), { headers: { Cookie: "" } })).status, 401);
@@ -297,7 +312,13 @@ for (const [label, firstPath] of [
       const photoDecision = { proposalId: photoProposal.id, digest: photoPage.match(/name="digest" value="([^"]+)"/)[1], decision: "approve" };
       assert.equal((await formAction(photoPath, "decideProposal", [null, "$K1"], photoDecision)).status, 200);
       assert.deepEqual(check.prepare("SELECT id, isMain FROM destination_images WHERE destinationId = ? ORDER BY position").all(bergenId).map((row) => [row.id, row.isMain]), [[firstPhoto, 0], [addedPhoto, 1]]);
-      assert.deepEqual(new Uint8Array(check.prepare("SELECT data FROM destination_images WHERE id = ?").get(addedPhoto).data), addedData);
+      assert.deepEqual(new Uint8Array(check.prepare("SELECT data FROM destination_images WHERE id = ?").get(addedPhoto).data), addedImage.data);
+      // TRA-89: its thumbnail, as Travel prepared it, goes to the guest whose destination it is, and to nobody else.
+      const thumbnailRoute = `/api/destination-images/${bergenId}/${addedPhoto}/thumbnail`;
+      const thumbnail = await server.request(thumbnailRoute, { headers: { Cookie: guestCookie } });
+      assert.deepEqual([thumbnail.status, thumbnail.headers.get("content-type")], [200, "image/webp"]);
+      assert.deepEqual(new Uint8Array(await thumbnail.arrayBuffer()), addedImage.thumbnail, "the approved photo's thumbnail is the one Travel prepared");
+      assert.equal((await server.request(thumbnailRoute)).status, 404, "the owner, whom the guest's trip isn't shared with, doesn't see it");
       assert.equal(check.prepare("SELECT count(*) AS count FROM ai_proposal_photos").get().count, 0, "an approved proposal keeps no photos of its own");
       assert.equal((await server.request(photoRoute(addedPhoto))).status, 404, "a decided proposal shows no photos");
       assert.equal(JSON.parse((await mcp("tools/call", { name: "get_change_proposal", arguments: { proposal_id: photoProposal.id } })).content[0].text).status, "applied");

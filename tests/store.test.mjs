@@ -5,7 +5,7 @@ import { DatabaseSync } from "node:sqlite";
 import test from "node:test";
 import { SCHEMA_VERSION, ValidationError } from "../src/lib/store.ts";
 import { createOwnedStore } from "./owned-store.mjs";
-import { addCity, fileDatabase, newItem, setup, destinationEdit, stopEdit } from "./budget-fixtures.mjs";
+import { addCity, fileDatabase, newItem, prepared, setup, destinationEdit, stopEdit } from "./budget-fixtures.mjs";
 import { calculateBudget, calculateDestinationBudget } from "../src/lib/budget.ts";
 import { formatCurrency } from "../src/lib/money.ts";
 import { PLANNER_UPDATED } from "../src/lib/planner-updated.ts";
@@ -17,7 +17,7 @@ const legInput = (id, overrides = {}) => ({ type: "leg.save", id, method: "Fligh
 const legsFor = (store, tripId) => store.getSnapshot().legs.filter((leg) => leg.tripId === tripId);
 const pair = (leg) => JSON.stringify([leg.fromId, leg.toId]);
 const NOT_AVAILABLE = { name: "ValidationError", message: "This item no longer exists or isn't shared with you. Please refresh and try again." };
-const photo = () => ({ add: [{ id: randomUUID(), data: new Uint8Array([82, 73, 70, 70, 4, 0, 0, 0, 87, 69, 66, 80]) }], remove: [] });
+const photo = () => ({ add: [{ id: randomUUID(), ...prepared(new Uint8Array([82, 73, 70, 70, 4, 0, 0, 0, 87, 69, 66, 80])) }], remove: [] });
 /** Every kind of research a destination keeps, saved from its own page, as Destinations saves it without a trip. */
 function saveResearch(store, destinationId) {
   store.applyMutation(destinationEdit(destinationId, { notes: "Gardens at dawn", hotelNightlyAmount: "180", miscDailyAmount: "40", foodBudgetMode: "daily", foodDailyAmount: "75", shoppingAmount: "120", activitiesBudgetMode: "general", activitiesGeneralAmount: "300", weatherHighF: 70, weatherLowF: 55, weatherPeriod: "April", gallery: photo() }));

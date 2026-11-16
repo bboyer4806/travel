@@ -5,7 +5,7 @@ import { randomUUID } from "node:crypto";
 import { addNights, backfillDates, churchDateEligible, churchSundayDates, formatCalendarDate, sequenceDates } from "../src/lib/trip-dates.ts";
 import { ValidationError } from "../src/lib/store.ts";
 import { createOwnedStore, UNDO_SCHEMA_21 } from "./owned-store.mjs";
-import { newItem, setup, tripInput, addDestination, destination, fileDatabase, candidateInput, destinationEdit, stopEdit, stop } from "./budget-fixtures.mjs";
+import { newItem, prepared, setup, tripInput, addDestination, destination, fileDatabase, candidateInput, destinationEdit, stopEdit, stop } from "./budget-fixtures.mjs";
 
 test("automatic sequence, calendar boundaries, same-day and unknown lengths", () => {
   const stops = [{ id: "Paris", nights: 3 }, { id: "Rome", nights: 2 }];
@@ -150,7 +150,7 @@ for (const consistent of [true,false]) test(`schema 14 date backfill, originals,
   const second=addDestination(store, tripId,{city:"Rome"});
   const candidateId=store.applyMutation(candidateInput(first,"hotels")).id;
   const image=new Uint8Array([82,73,70,70,4,0,0,0,87,69,66,80]);
-  store.applyMutation({type:"church.save",...newItem(),destinationId:first,name:"Chapel",address:"",denomination:"",url:"",massTimes:[],gallery:{add:[{id:randomUUID(),data:image}],remove:[]}});
+  store.applyMutation({type:"church.save",...newItem(),destinationId:first,name:"Chapel",address:"",denomination:"",url:"",massTimes:[],gallery:{add:[{id:randomUUID(),...prepared(image)}],remove:[]}});
   const old=store.getSnapshot();
   store.close();
   let db=new DatabaseSync(path);

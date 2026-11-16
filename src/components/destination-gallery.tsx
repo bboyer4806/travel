@@ -17,6 +17,10 @@ type DestinationGalleryOwner = Pick<Destination, "id" | "city" | "cityFromSugges
 function photoUrl(destinationId: string, image: { id: string; version?: string }) {
   return `/api/destination-images/${destinationId}/${image.id}?v=${image.version}`;
 }
+/** A photo's thumbnail (TRA-89), which the gallery's thumbnails and the editor's previews show in place of the photo. */
+function thumbnailUrl(destinationId: string, image: { id: string; version?: string }) {
+  return `/api/destination-images/${destinationId}/${image.id}/thumbnail?v=${image.version}`;
+}
 
 export function DestinationGallery({ destination }: { destination: DestinationGalleryOwner }) {
   if (!destination.images.length) return null;
@@ -50,10 +54,10 @@ function GalleryView({ destination }: { destination: DestinationGalleryOwner }) 
   </div>;
 }
 
-/** A saved photo, cropped to fit its frame around its focal point (TRA-53). */
-function SavedPhoto({ destinationId, image, alt, focus }: { destinationId: string; image: { id: string; version?: string }; alt: string; focus: PhotoFocus }) {
+/** A saved photo, cropped to fit its frame around its focal point (TRA-53): its thumbnail (TRA-89), or with `full` the photo itself. */
+function SavedPhoto({ destinationId, image, alt, focus, full = false }: { destinationId: string; image: { id: string; version?: string }; alt: string; focus: PhotoFocus; full?: boolean }) {
   // eslint-disable-next-line @next/next/no-img-element
-  return <img className={styles.image} src={photoUrl(destinationId, image)} alt={alt} loading="lazy" decoding="async" width={240} height={160} style={{ objectPosition: objectPosition(focus) }} />;
+  return <img className={styles.image} src={full ? photoUrl(destinationId, image) : thumbnailUrl(destinationId, image)} alt={alt} loading="lazy" decoding="async" width={240} height={160} style={{ objectPosition: objectPosition(focus) }} />;
 }
 
 /** A new photo before it is saved, cropped to fit its frame around its focal point (TRA-53). */
@@ -68,10 +72,10 @@ function UploadPreview({ file, alt, focus }: { file: File; alt: string; focus: P
   return <img ref={image} className={styles.image} alt={alt} width={240} height={160} style={{ objectPosition: objectPosition(focus) }} />;
 }
 
-/** A draft photo: a new one from its file, or a saved one of `destination`. */
-function DraftPhoto({ destination, image, alt, focus }: { destination?: DestinationGalleryOwner; image: DraftImage; alt: string; focus: PhotoFocus }) {
+/** A draft photo: a new one from its file, or a saved one of `destination`, as its thumbnail unless `full`. */
+function DraftPhoto({ destination, image, alt, focus, full = false }: { destination?: DestinationGalleryOwner; image: DraftImage; alt: string; focus: PhotoFocus; full?: boolean }) {
   if (image.file) return <UploadPreview file={image.file} alt={alt} focus={focus} />;
-  return destination ? <SavedPhoto destinationId={destination.id} image={image} alt={alt} focus={focus} /> : null;
+  return destination ? <SavedPhoto destinationId={destination.id} image={image} alt={alt} focus={focus} full={full} /> : null;
 }
 
 /** A photo being dragged in the crop editor: the pointer dragging it, where it started, and the sizes its focal point moves by. */
@@ -182,7 +186,7 @@ export function DestinationGalleryEditor({ destination, draft, onChange, disable
     {crop && cropIndex >= 0 ? <div className={styles.crop} role="group" aria-labelledby={`${id}-crop-title`} aria-describedby={`${id}-crop-hint`}>
       <p id={`${id}-crop-title`} className={styles.cropTitle}>Adjust crop of photo {cropIndex + 1}</p>
       <div className={styles.cropFrame} onPointerDown={startCropDrag} onPointerMove={moveCropDrag} onPointerUp={endCropDrag} onPointerCancel={endCropDrag}>
-        <DraftPhoto destination={destination} image={draft.images[cropIndex]} alt={`Photo ${cropIndex + 1}, cropped as the destination's main photo shows it`} focus={crop.focus} />
+        <DraftPhoto destination={destination} image={draft.images[cropIndex]} alt={`Photo ${cropIndex + 1}, cropped as the destination's main photo shows it`} focus={crop.focus} full />
       </div>
       <p id={`${id}-crop-hint`} className={styles.hint}>Drag the photo to choose what the destination&apos;s main photo shows. It is cropped to this shape on every screen, and the photo itself isn&apos;t changed.</p>
       <div className={styles.cropActions}>

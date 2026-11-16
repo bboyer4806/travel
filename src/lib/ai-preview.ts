@@ -16,10 +16,10 @@ export const DATA_TABLES = ["trips", "trip_shares", "trip_tags", "trip_stops", "
 export type DataTable = typeof DATA_TABLES[number];
 /** The photos of destinations, ideas and churches. The owner sees each photo a change adds, changes or deletes beside its record (TRA-122). */
 export const PHOTO_TABLES: readonly DataTable[] = ["destination_images", "candidate_images", "church_images"];
-/** Never read for a proposal: photo bytes, and the Google account each authorization is bound to. */
+/** Never read for a proposal: photo and thumbnail bytes (TRA-89), and the Google account each authorization is bound to. */
 export const UNREAD_COLUMNS: Record<DataTable, string[]> = {
   trips: [], trip_shares: [], trip_tags: [], trip_stops: [], legs: [], home_items: [], destinations: [], destination_entry_requirements: [], destination_health_safety: [],
-  destination_images: ["data"], candidates: [], candidate_images: ["data"], churches: [], church_images: ["data"], accounts: ["googleSubject"],
+  destination_images: ["data", "thumbnail"], candidates: [], candidate_images: ["data", "thumbnail"], churches: [], church_images: ["data", "thumbnail"], accounts: ["googleSubject"],
 };
 
 export type Value = string | number | null;

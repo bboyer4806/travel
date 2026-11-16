@@ -5,10 +5,10 @@ import sharp from "sharp";
 import { formatMegabytes, IMAGE_UPLOAD_TYPES, MAX_CANDIDATE_IMAGES, MAX_DESTINATION_IMAGES, MAX_GALLERY_UPLOAD_BYTES, MAX_IMAGE_UPLOAD_BYTES, MAX_STORED_IMAGE_BYTES } from "../src/lib/image-limits.ts";
 import { prepareCandidateGallery } from "../src/lib/candidate-gallery-upload.ts";
 import { prepareImage } from "../src/lib/image-upload.ts";
-import { candidateInput, addDestination, setup, destinationEdit } from "./budget-fixtures.mjs";
+import { candidateInput, addDestination, prepared, setup, destinationEdit } from "./budget-fixtures.mjs";
 
 const webp = new Uint8Array(Buffer.from("UklGRiIAAABXRUJQVlA4IBYAAAAwAQCdASoBAAEADsD+JaQAA3AAAAAA", "base64"));
-const photo = (data = webp) => ({ id: randomUUID(), data });
+const photo = (data = webp) => ({ id: randomUUID(), ...prepared(data) });
 const photos = (count) => Array.from({ length: count }, () => photo());
 const file = (bytes, type = "image/png") => new File([bytes], "photo", { type });
 
@@ -24,7 +24,7 @@ test("uploads accept every shared type and state the shared limits they enforce"
     const source = await sharp({ create: { width: 4, height: 2, channels: 3, background: "#285f56" } })[type.slice("image/".length)]().toBuffer();
     const form = new FormData();
     form.set("image", file(source, type));
-    assert.equal((await sharp(await prepareImage(form)).metadata()).format, "webp", type);
+    assert.equal((await sharp((await prepareImage(form)).data).metadata()).format, "webp", type);
   }
   const oversized = new FormData();
   oversized.set("image", file(new Uint8Array(MAX_IMAGE_UPLOAD_BYTES + 1)));

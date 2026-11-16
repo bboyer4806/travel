@@ -78,9 +78,9 @@ export async function prepareCandidateGallery(form?: FormData, maxImages = MAX_C
   for (const { id, file } of files) {
     const single = new FormData();
     single.set("image", file);
-    const data = await prepareImage(single);
-    if (!data) throw new ImageValidationError("One of your photos could not be read. Select it again.");
-    add.push({ id, data });
+    const image = await prepareImage(single);
+    if (!image) throw new ImageValidationError("One of your photos could not be read. Select it again.");
+    add.push({ id, ...image });
   }
   return { add, remove, ...(main !== undefined ? { mainImageId: main } : {}), ...(order === undefined ? {} : { order }), ...(focus === undefined ? {} : { focus }) };
 }

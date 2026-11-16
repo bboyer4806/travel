@@ -31,7 +31,7 @@ test("gallery uploads preserve omitted changes and support main selection or rem
   assert.deepEqual(await prepareCandidateGallery(manifestForm()), { add: [], remove: [] });
 });
 
-test("multiple JPEG, PNG, and WebP files are decoded to ordered, bounded WebP photos", async () => {
+test("multiple JPEG, PNG, and WebP files are decoded to ordered, bounded WebP photos, each with its thumbnail (TRA-89)", async () => {
   const formats = ["jpeg", "png", "webp"];
   const files = await Promise.all(formats.map(async (format) => file(await fixture(format), "image/" + format)));
   const { form, photos } = uploadForm(files);
@@ -50,6 +50,8 @@ test("multiple JPEG, PNG, and WebP files are decoded to ordered, bounded WebP ph
     assert.equal(decoded.height, 20);
     assert.equal(decoded.exif, undefined);
     assert.equal(decoded.icc, undefined);
+    const thumbnail = await sharp(photo.thumbnail).metadata();
+    assert.deepEqual([thumbnail.format, thumbnail.width, thumbnail.height], ["webp", 40, 20]);
   }
 });
 

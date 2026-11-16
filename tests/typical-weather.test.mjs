@@ -5,7 +5,7 @@ import test from "node:test";
 import { calculateBudget, calculateDestinationBudget } from "../src/lib/budget.ts";
 import { SCHEMA_VERSION, ValidationError } from "../src/lib/store.ts";
 import { createOwnedStore } from "./owned-store.mjs";
-import { addCity, fileDatabase, newItem, setup, destinationEdit, stopEdit } from "./budget-fixtures.mjs";
+import { addCity, fileDatabase, newItem, prepared, setup, destinationEdit, stopEdit } from "./budget-fixtures.mjs";
 
 const tripInput = (overrides = {}) => ({ type: "trip.save", name: "Weather planning", dateLabel: "2027", homeCity: "Boston", travelers: 2, notes: "", ...overrides, ...newItem(overrides) });
 const addDestination = (store, tripId, { city = "Reykjavik", ...overrides } = {}) => addCity((input) => store.applyMutation(input).id, tripId, city, { stay: "A few nights", notes: "", ...overrides });
@@ -67,7 +67,7 @@ test("weather save, edit, per-field omission, and clearing survive closing and r
 
 test("invalid weather types, text lengths, and high/low combinations reject the entire save", (t) => {
   const { store, tripId } = setup(t, tripInput());
-  const id = addDestination(store, tripId, { ...winterWeather, image: webp });
+  const id = addDestination(store, tripId, { ...winterWeather, image: prepared(webp) });
   const before = store.getSnapshot();
   const image = store.getDestinationImage(id);
   const invalid = [
@@ -107,7 +107,7 @@ test("date changes and other destination editors preserve manually entered weath
     { activitiesBudgetMode: "general", activitiesGeneralAmount: "50" },
     { shoppingAmount: "12.34" },
     { miscDailyAmount: "100" },
-    { image: webp }, { image: null },
+    { image: prepared(webp) }, { image: null },
   ]) {
     store.applyMutation(stopEdit(id, { ...fields }));
     assert.deepEqual(weather(store, id), winterWeather);
@@ -121,7 +121,7 @@ test("weather edits leave existing destination data, routes, choices, and separa
   const id = addDestination(store, tripId, {
     ...dates, hotelNightlyAmount: "100", miscDailyAmount: "10",
     activitiesBudgetMode: "general", activitiesGeneralAmount: "20",
-    foodBudgetMode: "daily", foodDailyAmount: "30", shoppingAmount: "12.34", image: webp,
+    foodBudgetMode: "daily", foodDailyAmount: "30", shoppingAmount: "12.34", image: prepared(webp),
   });
   store.applyMutation({ type: "candidate.save", ...newItem(), destinationId: id, category: "activities", name: "Museum", price: "999", address: "", url: "", notes: "Preserve this idea", included: true });
   for (const leg of store.getSnapshot().legs) store.applyMutation({ type: "leg.save", id: leg.id, method: "Flight", price: "100", departure: "Morning", arrival: "Evening", url: "", notes: "Booked" });
@@ -147,11 +147,11 @@ test("schema 12 upgrade defaults weather to missing and preserves old data; migr
   try {
     const tripId = store.applyMutation(tripInput()).id;
     const id = addDestination(store, tripId, {
-      ...dates, image: webp, hotelNightlyAmount: "125.25", miscDailyAmount: "10.01",
+      ...dates, image: prepared(webp), hotelNightlyAmount: "125.25", miscDailyAmount: "10.01",
       activitiesBudgetMode: "general", activitiesGeneralAmount: "55.55",
       foodBudgetMode: "daily", foodDailyAmount: "20", shoppingAmount: "12.34",
     });
-    const hotelPhoto = { id: randomUUID(), data: webp };
+    const hotelPhoto = { id: randomUUID(), ...prepared(webp) };
     const candidateId = store.applyMutation({ type: "candidate.save", ...newItem(), destinationId: id, category: "hotels", name: "Saved hotel", price: "123.45", address: "Main street", url: "", notes: "", included: true, gallery: { add: [hotelPhoto], remove: [] }, links: [{ id: randomUUID(), url: "https://example.com/hotel", description: "Booking" }] }).id;
     store.applyMutation({ type: "homeItem.save", ...newItem(), tripId, name: "House sitting", price: "23.95", notes: "Leave a key", completed: true });
     for (const leg of store.getSnapshot().legs) store.applyMutation({ type: "leg.save", id: leg.id, method: "Flight", price: "100", departure: "Morning", arrival: "Evening", url: "", notes: "Booked", itinerary: [{ id: randomUUID(), kind: "layover", place: "London", arrival: "10:00", departure: "12:00", notes: "" }] });

@@ -8,8 +8,9 @@ import { handleMcp } from "../src/lib/mcp.ts";
 import { checkAiProposal, createStore, SCHEMA_VERSION, ValidationError } from "../src/lib/store.ts";
 import { aiSetup, connectClaude, DAY, GUEST, NOW, OWNER } from "./ai-fixtures.mjs";
 import { candidateInput, fileDatabase, newItem, tripInput } from "./budget-fixtures.mjs";
+import { UNDO_SCHEMA_32 } from "./owned-store.mjs";
 
-/** A photo as Travel prepares an upload or a download: resized WebP without metadata. */
+/** A photo as Travel prepares an upload or a download: resized WebP without metadata, with its thumbnail (TRA-89). */
 async function prepared(color) {
   const form = new FormData();
   form.set("image", new File([await sharp({ create: { width: 48, height: 32, channels: 3, background: color } }).png().toBuffer()], "photo.png", { type: "image/png" }));
@@ -33,7 +34,7 @@ const count = (path, sql) => { const db = new DatabaseSync(path, { readOnly: tru
 async function guestPlans(store, guest, guestTrip) {
   const saved = await photos(5);
   const [P1, P2, Q1, S1, X1] = ids(saved);
-  const photo = (id) => ({ id, data: saved.get(id) });
+  const photo = (id) => ({ id, ...saved.get(id) });
   const destinationId = store.applyMutation(guest, { type: "stop.add", tripId: guestTrip, city: "Oslo" }).id;
   store.applyMutation(guest, { type: "destination.save", id: destinationId, notes: "Fjords", hotelNightlyAmount: "180", gallery: { add: [photo(P1), photo(P2)], remove: [], mainImageId: P1 } });
   const hotelId = store.applyMutation(guest, candidateInput(destinationId, "hotels", { name: "Fjord Hotel", price: "300", notes: "Harbor view", gallery: { add: [photo(Q1)], remove: [] } })).id;
@@ -82,9 +83,9 @@ test("assistants propose adding, removing, ordering and choosing photos for dest
   ]));
 
   // While it waits, only the owner sees the photos it adds, changes and deletes, and no others.
-  assert.deepEqual(store.getAiProposalPhoto(owner, proposal.id, N1, NOW), { version: N1, data: added.get(N1) });
-  assert.deepEqual(store.getAiProposalPhoto(owner, proposal.id, P2, NOW).data, plans.saved.get(P2), "a saved photo it deletes");
-  assert.deepEqual(store.getAiProposalPhoto(owner, proposal.id, Q1, NOW).data, plans.saved.get(Q1), "a saved photo it changes");
+  assert.deepEqual(store.getAiProposalPhoto(owner, proposal.id, N1, NOW), { version: N1, data: added.get(N1).data });
+  assert.deepEqual(store.getAiProposalPhoto(owner, proposal.id, P2, NOW).data, plans.saved.get(P2).data, "a saved photo it deletes");
+  assert.deepEqual(store.getAiProposalPhoto(owner, proposal.id, Q1, NOW).data, plans.saved.get(Q1).data, "a saved photo it changes");
   assert.equal(store.getAiProposalPhoto(guest, proposal.id, N1, NOW), undefined, "nobody else sees them");
   assert.equal(store.getAiProposalPhoto(owner, proposal.id, X1, NOW), undefined, "nor a photo it doesn't change");
   assert.equal(store.getAiProposalPhoto(owner, randomUUID(), N1, NOW), undefined);
@@ -96,8 +97,10 @@ test("assistants propose adding, removing, ordering and choosing photos for dest
   assert.deepEqual(gallery(after.ideas.find((idea) => idea.id === hotelId)), { images: [Q1, N2], main: N2 });
   assert.deepEqual(gallery(after.ideas.find((idea) => idea.id === restaurantId)), { images: [N3], main: N3 });
   assert.deepEqual(gallery(after.churches[0]), { images: [N4], main: N4 });
+  const thumbnails = { destination: store.getDestinationThumbnail, idea: store.getCandidateThumbnail, church: store.getChurchThumbnail };
   for (const [kind, ownerId, photoId] of [["destination", destinationId, N1], ["idea", hotelId, N2], ["idea", restaurantId, N3], ["church", churchId, N4]]) {
-    assert.deepEqual(store.aiPhoto(kind, ownerId, photoId).data, added.get(photoId), "each saved photo is the one Travel prepared");
+    assert.deepEqual(store.aiPhoto(kind, ownerId, photoId).data, added.get(photoId).data, "each saved photo is the one Travel prepared");
+    assert.deepEqual(thumbnails[kind](guest, ownerId, photoId).data, added.get(photoId).thumbnail, "with the thumbnail Travel prepared (TRA-89)");
   }
   assert.equal(store.aiPhoto("destination", destinationId, P2), undefined);
   assert.equal(store.aiPhoto("church", churchId, S1), undefined);
@@ -120,7 +123,7 @@ test("approving makes exactly the photo changes previewed, all of them with the 
 
   // A gallery rearranged since: the photos to put in order are no longer all of them, so nothing changes.
   const order = propose([{ type: "destination.photos", id: destinationId, gallery: { add: [], remove: [], order: [P2, P1] } }]);
-  store.applyMutation(guest, { type: "destination.save", id: destinationId, gallery: { add: [{ id: N3, data: added.get(N3) }], remove: [] } });
+  store.applyMutation(guest, { type: "destination.save", id: destinationId, gallery: { add: [{ id: N3, ...added.get(N3) }], remove: [] } });
   let unchanged = store.getSnapshot();
   const reordered = decide(order, true);
   assert.deepEqual([reordered.status, reordered.error], ["failed", "Change 1: The destination photos have changed. Refresh before rearranging them."]);
@@ -130,7 +133,7 @@ test("approving makes exactly the photo changes previewed, all of them with the 
   const hotel = propose([{ type: "candidate.photos", id: hotelId, gallery: { add: add(added, N1), remove: [] } }], "Add a hotel photo", NOW, new Map([[N1, added.get(N1)]]));
   assert.deepEqual(hotel.preview[0].records.map(({ action, photo, fields }) => [action, photo, fields]), [["Adds", N1, [{ name: "Order", before: null, after: "2" }, { name: "Main photo", before: null, after: "No" }]]]);
   const Q2 = randomUUID();
-  store.applyMutation(guest, candidateInput(plans.destinationId, "hotels", { id: hotelId, name: "Fjord Hotel", price: "300", notes: "Harbor view", gallery: { add: [{ id: Q2, data: added.get(N2) }], remove: [], mainImageId: Q2 } }));
+  store.applyMutation(guest, candidateInput(plans.destinationId, "hotels", { id: hotelId, name: "Fjord Hotel", price: "300", notes: "Harbor view", gallery: { add: [{ id: Q2, ...added.get(N2) }], remove: [], mainImageId: Q2 } }));
   unchanged = store.getSnapshot();
   const changed = decide(hotel, true);
   assert.equal(changed.status, "failed");
@@ -233,16 +236,16 @@ test("photo changes follow the gallery editors' rules, and refuse what they refu
 test("people change photos only in Travel's own editors; photo changes are for assistants' proposals", async (t) => {
   const { store, owner, guest, guestTrip } = aiSetup(t);
   const { P1, destinationId, hotelId, churchId } = await guestPlans(store, guest, guestTrip);
-  const [N1, data] = [...(await photos(1))][0];
+  const [N1, image] = [...(await photos(1))][0];
   for (const [account, change] of [
-    [guest, { type: "destination.photos", id: destinationId, gallery: { add: [{ id: N1, data }], remove: [P1] } }],
-    [guest, { type: "candidate.photos", id: hotelId, gallery: { add: [{ id: N1, data }], remove: [] } }],
+    [guest, { type: "destination.photos", id: destinationId, gallery: { add: [{ id: N1, ...image }], remove: [P1] } }],
+    [guest, { type: "candidate.photos", id: hotelId, gallery: { add: [{ id: N1, ...image }], remove: [] } }],
     [owner, { type: "church.photos", id: churchId, gallery: { add: [], remove: [] } }],
   ]) {
     assert.throws(() => store.applyMutation(account, change), (error) => error instanceof ValidationError && error.message === "This action is not supported. Please refresh and try again.");
   }
   // The guest's own gallery editing works as before.
-  store.applyMutation(guest, { type: "destination.save", id: destinationId, gallery: { add: [{ id: N1, data }], remove: [], mainImageId: N1 } });
+  store.applyMutation(guest, { type: "destination.save", id: destinationId, gallery: { add: [{ id: N1, ...image }], remove: [], mainImageId: N1 } });
   assert.equal(store.aiDestination(destinationId).destination.mainImageId, N1);
 });
 
@@ -326,13 +329,37 @@ test("schema 25 adds the table for proposals' photos, keeping every proposal, an
   store = createStore(path, OWNER);
   t.after(() => store.close());
   const [photoId] = ids(added);
-  assert.deepEqual(store.getAiProposalPhoto(owner, proposal.id, photoId, NOW)?.data, added.get(photoId), "a replay keeps proposals' photos");
+  assert.deepEqual(store.getAiProposalPhoto(owner, proposal.id, photoId, NOW)?.data, added.get(photoId).data, "a replay keeps proposals' photos");
   db = new DatabaseSync(path);
   t.after(() => db.close());
   assert.equal(db.prepare("PRAGMA user_version").get().user_version, SCHEMA_VERSION);
   assert.throws(() => db.prepare("UPDATE ai_proposal_photos SET data = x'00'").run(), /A proposal's photos can't be changed once it is made/);
   assert.equal(db.prepare("PRAGMA integrity_check").get().integrity_check, "ok");
   assert.deepEqual(db.prepare("PRAGMA foreign_key_check").all(), []);
+});
+
+test("a photo proposed before thumbnails can't be approved, and the owner learns to have it proposed again (TRA-89)", async (t) => {
+  const path = fileDatabase(t);
+  let store = createStore(path, OWNER);
+  const owner = store.authorizeAccount(OWNER).id;
+  const tripId = store.applyMutation(owner, tripInput({ name: "Kept" })).id;
+  const destinationId = store.applyMutation(owner, { type: "stop.add", tripId, city: "Lisbon" }).id;
+  const { tokens } = connectClaude(store);
+  const connection = store.readAiConnection(tokens.accessToken, NOW);
+  const added = await photos(1);
+  const [photoId] = ids(added);
+  const proposal = store.proposeAiChanges(connection.id, { summary: "A photo", changes: [{ type: "destination.photos", id: destinationId, gallery: { add: add(added, photoId), remove: [] } }] }, added, NOW);
+  store.close();
+  const db = new DatabaseSync(path);
+  db.exec(UNDO_SCHEMA_32);
+  db.close();
+  store = createStore(path, OWNER);
+  t.after(() => store.close());
+  assert.deepEqual(store.getAiProposalPhoto(owner, proposal.id, photoId, NOW)?.data, added.get(photoId).data, "the owner still sees the photo it adds");
+  const decided = store.decideAiProposal(owner, proposal.id, proposal.digest, true, NOW + 1000);
+  assert.deepEqual([decided.status, decided.error], ["failed", "Change 1: This proposal's new photos are no longer available. Ask the assistant to propose them again."]);
+  assert.deepEqual(store.aiDestination(destinationId).destination.images, [], "no photo is saved without its thumbnail");
+  assert.equal(count(path, "SELECT count(*) AS count FROM ai_proposal_photos"), 0, "and the failed proposal keeps no photo");
 });
 
 test("assistants can't propose a destination photo's focal point, and photos they add start centered while saved ones keep theirs (TRA-53)", async (t) => {

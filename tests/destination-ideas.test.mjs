@@ -11,7 +11,7 @@ import * as money from "../src/lib/money.ts";
 import * as tripDates from "../src/lib/trip-dates.ts";
 import * as types from "../src/lib/types.ts";
 import * as uuid from "../src/lib/uuid.ts";
-import { addDestination, candidateInput, setup, stop, visit } from "./budget-fixtures.mjs";
+import { addDestination, candidateInput, prepared, setup, stop, visit } from "./budget-fixtures.mjs";
 
 // The actual components, rendered with each hook's initial state, as on a page's first render. No browser is involved.
 const element = (type, props) => ({ type, props });
@@ -70,9 +70,9 @@ function seed(t) {
   const [first, second] = [randomUUID(), randomUUID()];
   const save = (category, name, overrides) => store.applyMutation(candidateInput(id, category, { name, price: "", included: false, ...overrides })).id;
   const ideas = {
-    first: save("hotels", "First hotel", { price: "980", gallery: { add: [{ id: first, data: webp }, { id: second, data: webp }], remove: [], mainImageId: second } }),
+    first: save("hotels", "First hotel", { price: "980", gallery: { add: [{ id: first, ...prepared(webp) }, { id: second, ...prepared(webp) }], remove: [], mainImageId: second } }),
     chosen: save("hotels", "Chosen hotel", { price: "1250", included: true }),
-    third: save("hotels", "Third hotel", { gallery: { add: [{ id: randomUUID(), data: webp }], remove: [] } }),
+    third: save("hotels", "Third hotel", { gallery: { add: [{ id: randomUUID(), ...prepared(webp) }], remove: [] } }),
     opera: save("activities", "Opera", { price: "260" }),
     palace: save("activities", "Palace", { price: "80", included: true, mustDo: true }),
     museum: save("activities", "Museum", { price: "40", included: true }),
@@ -210,12 +210,13 @@ test("the destination budget no longer links to the idea pages, and keeps its ot
 test("activity photos fill frames of one shape, and an activity without photos keeps its photo's place on the Activities page (TRA-124)", (t) => {
   const { store, id } = seed(t);
   const [other, main] = [randomUUID(), randomUUID()];
-  store.applyMutation(candidateInput(id, "activities", { name: "Tower", included: false, gallery: { add: [{ id: other, data: webp }, { id: main, data: webp }], remove: [], mainImageId: main } }));
+  store.applyMutation(candidateInput(id, "activities", { name: "Tower", included: false, gallery: { add: [{ id: other, ...prepared(webp) }, { id: main, ...prepared(webp) }], remove: [], mainImageId: main } }));
   store.applyMutation(candidateInput(id, "restaurants", { name: "Cafe", included: false }));
   const snapshot = store.getSnapshot();
   const ideas = snapshot.candidates.filter((item) => item.destinationId === id);
   const tower = ideas.find((item) => item.name === "Tower");
   const photo = (image) => `/api/candidate-images/${tower.id}/${image}?v=${tower.images.find((saved) => saved.id === image).version}`;
+  const thumbnail = (image) => `/api/candidate-images/${tower.id}/${image}/thumbnail?v=${tower.images.find((saved) => saved.id === image).version}`;
   // The destination's carousels: only the activities' frame their photos as one shape, so hotels and restaurants are unchanged.
   const overview = hosts({ type: DestinationIdeas, props: { ideas, city: "Vienna", pages: "/destinations/vienna", busy: false, onView() {}, onAdd() {}, onBudgetEdit() {} } });
   assert.deepEqual(byClass(overview, "carousel").map((carousel) => carousel.props.className), ["carousel", "carousel activities", "carousel"]);
@@ -237,7 +238,7 @@ test("activity photos fill frames of one shape, and an activity without photos k
   ]);
   assert.deepEqual(frames("hotels").map(([name, frame]) => [name, frame?.[1]]), [["First hotel", "hero"], ["Chosen hotel", undefined], ["Third hotel", "hero"]]);
   assert.deepEqual(frames("restaurants"), [["Cafe", undefined]]);
-  // The gallery still opens on the main photo, with every photo's thumbnail in its saved order.
+  // The gallery still opens on the main photo, with every photo's thumbnail in its saved order, as a small image (TRA-89).
   const card = byClass(hosts({ type: CandidateList, props: { items: [tower], category: "activities", destination: snapshot.destinations.find((item) => item.id === id), busy: false, onEdit() {}, onDelete() {}, onMutate() {} } }), "thumbnails");
-  assert.deepEqual(hosts(card).filter((node) => node.type === "img").map((node) => node.props.src), [photo(other), photo(main)]);
+  assert.deepEqual(hosts(card).filter((node) => node.type === "img").map((node) => node.props.src), [thumbnail(other), thumbnail(main)]);
 });

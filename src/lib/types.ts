@@ -24,6 +24,10 @@ export interface TripStop { id: string; tripId: string; destinationId: string; p
 /** A destination with the nights of one stay there, which its duration-based amounts use. Outside a trip they are unknown. */
 export type DestinationVisit = Destination & { nights: number | null };
 export interface StoredImage { version: string; data: Uint8Array; }
+/** A photo as Travel saves it, re-encoded as WebP with its thumbnail, which gallery thumbnails and editor previews show (TRA-89). */
+export interface PreparedImage { data: Uint8Array; thumbnail: Uint8Array; }
+/** A saved photo's thumbnail, or for a photo saved before Travel kept thumbnails (TRA-89), the photo to make one from. */
+export type StoredThumbnail = StoredImage | { version: string; photo: Uint8Array };
 export interface ResearchLink { id: string; url: string; description: string; }
 export interface ItineraryStop { id: string; kind: "layover" | "stop"; place: string; arrival: string; departure: string; notes: string; }
 /**
@@ -44,7 +48,7 @@ export interface DestinationPhotos { images: DestinationImage[]; mainImageId: st
  * is sent only when they are rearranged (TRA-126). `focus` gives destination photos it keeps or adds new focal points, and
  * is sent only for those that change (TRA-53); idea and church photos have none.
  */
-export interface GalleryUpdate { add: { id: string; data: Uint8Array }[]; remove: string[]; mainImageId?: string | null; order?: string[]; focus?: ({ id: string } & PhotoFocus)[]; }
+export interface GalleryUpdate { add: ({ id: string } & PreparedImage)[]; remove: string[]; mainImageId?: string | null; order?: string[]; focus?: ({ id: string } & PhotoFocus)[]; }
 /** A hotel, activity or restaurant idea. `restaurantTypes` is empty for hotels and activities, and for a restaurant without any. */
 export interface Candidate { id: string; destinationId: string; category: Category; position: number; mustDo: boolean; name: string; priceCents: number | null; address: string; url: string; notes: string; included: boolean; links: ResearchLink[]; images: CandidateImage[]; mainImageId: string | null; restaurantTypes: RestaurantType[]; }
 export interface MassTime { id: string; day: string; time: string; }
@@ -55,7 +59,7 @@ export interface Snapshot { churches: Church[]; trips: Trip[]; homeItems: HomeIt
  * A destination's shared research and budget amounts as a save sends them. A field left out keeps its saved value, except
  * that a new city sent without `cityFromSuggestion` was entered some other way.
  */
-export interface DestinationFields { city?: string; cityFromSuggestion?: true; tagline?: string; notes?: string; miscDailyAmount?: string; hotelNightlyAmount?: string; activitiesBudgetMode?: ActivitiesBudgetMode; activitiesGeneralAmount?: string; foodBudgetMode?: FoodBudgetMode; foodDailyAmount?: string; shoppingAmount?: string; weatherHighF?: number | null; weatherLowF?: number | null; weatherRainfall?: string; weatherPeriod?: string; weatherSource?: string; image?: Uint8Array | null; gallery?: GalleryUpdate }
+export interface DestinationFields { city?: string; cityFromSuggestion?: true; tagline?: string; notes?: string; miscDailyAmount?: string; hotelNightlyAmount?: string; activitiesBudgetMode?: ActivitiesBudgetMode; activitiesGeneralAmount?: string; foodBudgetMode?: FoodBudgetMode; foodDailyAmount?: string; shoppingAmount?: string; weatherHighF?: number | null; weatherLowF?: number | null; weatherRainfall?: string; weatherPeriod?: string; weatherSource?: string; image?: PreparedImage | null; gallery?: GalleryUpdate }
 /** One trip's stay notes and nights at a destination. */
 export interface StopFields { stay?: string; nights?: number | null }
 /**

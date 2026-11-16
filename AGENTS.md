@@ -99,6 +99,13 @@ Repeat passing checks when subsequent changes affect their coverage or required 
   browser. `tripJourney` and `mapLayout` in `src/lib/trip-map.ts` decide what it shows, and `/api/trip-map/[tripId]` looks
   the trip's saved names up with `locatePlaces` in `src/lib/location-search.ts`, within the city suggestions' Open-Meteo
   limits. Travel stores no coordinates and never guesses one: a place the map can't find is listed below it.
+- The destination map (TRA-130) is `src/components/destination-map.tsx`, with Leaflet in `destination-map-canvas.tsx`,
+  loaded only in the browser, on each trip destination card and destination page. `destinationPlaces` and
+  `destinationMapLayout` in `src/lib/destination-map.ts` decide what it shows, and `/api/destination-map/[destinationId]`
+  finds the destination with `locatePlaces` and its saved ideas and churches around it with `locateNear` in
+  `src/lib/place-search.ts`. That is the only code that asks Nominatim, whose usage policy it keeps: one request at a
+  time, more than a second apart, named `TravelPlanner/1.0`, with answers kept for a day. A place is found only when
+  exactly one place matches its address, or else its name, within 50 km; tests use a stand-in, never Nominatim.
 - Airports (TRA-132) are OurAirports' public-domain list in `src/lib/airports.json`, written only by
   `node scripts/update-airports.mjs` and found only by `airportByCode` in `src/lib/airports.ts`. City suggestions
   offer the airport for a three-letter IATA code in any letter case, except in destination fields, and the trip map

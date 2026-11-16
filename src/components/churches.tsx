@@ -8,6 +8,7 @@ import { useFocusAfter } from "./focus-after";
 import type { Church, MassTime } from "@/lib/types";
 import { randomUuid } from "@/lib/uuid";
 import styles from "./churches.module.css";
+import ideaStyles from "./destination-ideas.module.css";
 
 const HEADINGS = ["h1", "h2", "h3", "h4", "h5", "h6"] as const;
 
@@ -40,6 +41,20 @@ export function ChurchOptions({ items, headingLevel, busy, onAdd, onEdit, onDele
       {item.massTimes.length ? <dl>{item.massTimes.map((entry) => <div key={entry.id}><dt>{entry.day}</dt><dd>{entry.time}</dd></div>)}</dl> : <p className={styles.unknown}>Mass times unknown</p>}
     </div>
   </article>)}</div>;
+}
+
+/**
+ * A church's saved details, read only, as an idea's details show theirs: from its marker on its destination's map, or its
+ * place under Not on the map (TRA-130). Its name is the dialog's title.
+ */
+export function ChurchDetails({ item }: { item: Church }) {
+  return <dl className={ideaStyles.details}>
+    <div><dt>Location or address</dt><dd>{item.address || "Not added"}</dd></div>
+    <div><dt>Denomination</dt><dd>{item.denomination || "Not added"}</dd></div>
+    <div><dt>Website</dt><dd>{item.url ? <a className={styles.website} href={item.url} target="_blank" rel="noopener noreferrer"><ExternalLink size={14} aria-hidden="true" />Church website<span className="sr-only"> for {item.name} (opens in a new tab)</span></a> : "Not added"}</dd></div>
+    <div><dt>Mass times</dt><dd>{item.massTimes.length ? <dl className={styles.detailTimes}>{item.massTimes.map((entry) => <div key={entry.id}><dt>{entry.day}</dt><dd>{entry.time}</dd></div>)}</dl> : "Mass times unknown"}</dd></div>
+    <div><dt>Church photos</dt><dd>{item.images.length ? <CandidateGallery candidate={item} imageKind="church" /> : "Not added"}</dd></div>
+  </dl>;
 }
 
 export function ChurchEditor({ item, massTimes, onTimesChange, gallery, onGalleryChange, busy }: {

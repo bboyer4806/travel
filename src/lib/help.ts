@@ -90,7 +90,7 @@ const HELP: { [Route in SignedInRoute]: Route extends `${string}/[category]` ? R
   "/trips/[tripId]": {
     title: "Trip",
     points: [
-      "Plan one trip: its route on the map, each stay, the travel between them, arrangements at home and the estimated cost.",
+      "Plan one trip: its route on the map, each stay with a map of its places, the travel between them, arrangements at home and the estimated cost.",
       "Edit trip changes its name, tagline, dates, travelers, departing and return cities, and headline image. Tags under its details group it in All trips.",
       "Add destination adds a city as the last stop. On each card, the arrows change the route, the pencil edits it and the trash can removes it from this trip.",
       "Each stay's nights set its dates from the trip's start date. A destination's ideas, research and budget amounts are shared by every trip that visits it.",
@@ -114,10 +114,10 @@ const HELP: { [Route in SignedInRoute]: Route extends `${string}/[category]` ? R
     points: [
       "One city's research, shared by every trip that visits it: photos, notes, budget, ideas, entry requirements, health and safety, weather and churches.",
       "Edit destination changes its city, tagline, budget amounts, photos and notes.",
+      "Its map shows its hotels, activities, restaurants and churches, and the checkboxes choose which. Select a marker, then View details.",
       "Hotels, Activities and Restaurants show its ideas. Select one for its details, or Manage to reorder, choose and delete them.",
-      "Select a heading, such as Budget or Entry requirements, to show or hide it. The buttons beside it add or edit what's there.",
-      "In your trips lists each of your trips that visits it, with its nights and estimate. Nights belong to each trip.",
-      "Its owner can delete it, with everything saved for it, once no trip visits it.",
+      "Select a heading, such as Map, Budget or Entry requirements, to show or hide it. The buttons beside it add or edit what's there.",
+      "In your trips lists each of your trips that visits it, with its nights and estimate. Its owner can delete it once no trip visits it.",
     ],
   },
   "/destinations/[destinationId]/[category]": IDEA_PAGES,

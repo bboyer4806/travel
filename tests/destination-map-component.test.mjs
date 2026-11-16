@@ -1,0 +1,354 @@
+import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+import test from "node:test";
+import { runInNewContext } from "node:vm";
+import ts from "typescript";
+import * as destinationLabel from "../src/lib/destination-label.ts";
+import * as destinationMap from "../src/lib/destination-map.ts";
+
+// Run the destination map's components with a small hook harness and stand-ins for fetch and Leaflet: no browser or
+// server is involved (TRA-130).
+const compile = (path) => ts.transpileModule(readFileSync(new URL(path, import.meta.url), "utf8"), {
+  compilerOptions: { module: ts.ModuleKind.CommonJS, jsx: ts.JsxEmit.ReactJSX, target: ts.ScriptTarget.ES2022 },
+}).outputText;
+const jsx = (type, props) => ({ type, props });
+const nodes = (node) => !node || typeof node !== "object" ? [] : [node, ...[node.props?.children].flat(Infinity).flatMap(nodes)];
+const text = (node) => typeof node === "string" || typeof node === "number" ? String(node) : !node || typeof node !== "object" ? "" : [node.props?.children].flat(Infinity).map(text).join("");
+// A CSS module's class names are their own names. Values from a component are copied into this test's realm to compare.
+const styles = new Proxy({}, { get: (_target, name) => name });
+const copy = (value) => JSON.parse(JSON.stringify(value));
+const unchanged = (previous, deps) => previous && deps.every((dep, i) => Object.is(dep, previous.deps[i]));
+const settle = () => new Promise((resolve) => setImmediate(resolve));
+
+/** Hooks that keep their state between renders, running effects after each render whose dependencies changed. */
+function hooks() {
+  const slots = [];
+  let cursor = 0, pending = [];
+  const effect = (run, deps) => {
+    const index = cursor++;
+    const previous = slots[index];
+    if (unchanged(previous, deps)) return;
+    pending.push(() => { previous?.cleanup?.(); slots[index] = { deps, cleanup: run() }; });
+  };
+  return {
+    react: {
+      useState(initial) {
+        const index = cursor++;
+        if (!(index in slots)) slots[index] = initial;
+        return [slots[index], (value) => { slots[index] = typeof value === "function" ? value(slots[index]) : value; }];
+      },
+      useRef: (initial) => slots[cursor++] ??= { current: initial },
+      useMemo(make, deps) {
+        const index = cursor++;
+        if (!unchanged(slots[index], deps)) slots[index] = { deps, value: make() };
+        return slots[index].value;
+      },
+      useId: () => "id",
+      useEffect: effect,
+      useLayoutEffect: effect,
+    },
+    render(component, props) {
+      cursor = 0;
+      pending = [];
+      const tree = component(props);
+      for (const run of pending) run();
+      return tree;
+    },
+    unmount() {
+      for (const slot of slots) slot?.cleanup?.();
+      slots.length = 0;
+    },
+  };
+}
+
+const vienna = { id: "vienna", city: "Vienna, Vienna, Austria", cityFromSuggestion: true };
+const saved = [
+  { id: "h1", category: "hotels", name: "Hotel Sacher", address: "Philharmonikerstraße 4" },
+  { id: "h2", category: "hotels", name: "Hotel Nowhere", address: "" },
+  { id: "a1", category: "activities", name: "Albertina", address: "" },
+  { id: "r1", category: "restaurants", name: "Figlmüller", address: "" },
+  { id: "c1", category: "churches", name: "St. Stephen's Cathedral", address: "Stephansplatz 3" },
+];
+const found = (latitude, longitude) => ({ status: "found", latitude, longitude, label: "Found at " + latitude });
+
+/**
+ * The map section for a destination's places. `respond` answers each request with the places' statuses by ID, as
+ * `[area, statuses]`, or throws for an outage. Answers carry each place's current key unless a status gives its own.
+ */
+function destinationMapSection(respond, places = saved) {
+  const { react, render } = hooks();
+  const requests = [], viewed = [];
+  const Canvas = () => null;
+  const loaded = { exports: {} };
+  runInNewContext(compile("../src/components/destination-map.tsx"), {
+    exports: loaded.exports,
+    require(name) {
+      const modules = {
+        react,
+        "react/jsx-runtime": { jsx, jsxs: jsx, Fragment: "fragment" },
+        "next/dynamic": { default: () => Canvas },
+        "lucide-react": { ChevronDown: "chevron" },
+        "@/lib/destination-label": destinationLabel,
+        "@/lib/destination-map": destinationMap,
+        "./destination-map-symbols": { PlaceSymbol: "symbol" },
+        "./destination-map.module.css": { default: styles },
+      };
+      if (!(name in modules)) throw new Error("Unexpected component import: " + name);
+      return modules[name];
+    },
+    fetch: async (url) => {
+      requests.push(url);
+      const [area, statuses] = await respond(requests.length);
+      const places = Object.fromEntries(props.places.filter((place) => place.id in statuses).map((place) => [place.id, { key: destinationMap.placeKey(props.destination.city, place), ...statuses[place.id] }]));
+      return Response.json({ area, places });
+    },
+    AbortController,
+  });
+  let props = { destination: vienna, places, onView: (place) => viewed.push(place.id) }, tree;
+  const show = () => { tree = render(loaded.exports.default, props); };
+  const find = (predicate) => nodes(tree).filter(predicate);
+  show();
+  return {
+    requests, viewed,
+    /** Renders again once every request so far has been answered, as React does after each state change. */
+    async update(changes = {}) {
+      props = { ...props, ...changes };
+      for (let round = 0; round < 10; round++) { show(); await settle(); }
+      show();
+    },
+    /** The IDs of the places on the map's markers, by marker. */
+    markers: () => copy(find((node) => node.type === Canvas).flatMap((node) => node.props.markers.map((marker) => marker.places.map((place) => place.id)))),
+    canvas: () => find((node) => node.type === Canvas)[0],
+    position: (index) => copy(find((node) => node.type === Canvas)[0].props.markers[index].position),
+    /** Not on the map's places, as each category's heading and each place's name and reason. */
+    unmapped: () => find((node) => node.type === "h6" || node.type === "li").map(text),
+    message: () => find((node) => node.type === "p" && node.props.className === "message").map(text)[0],
+    status: () => text(find((node) => node.props?.role === "status")[0]),
+    checkbox: (label) => find((node) => node.type === "label" && text(node).includes(label)).flatMap((node) => nodes(node).filter((child) => child.type === "input"))[0],
+    button: (label) => find((node) => node.type === "button" && text(node).startsWith(label)),
+    tree: () => tree,
+  };
+}
+
+test("every category shows by default, and any combination of checkboxes filters the markers and Not on the map alike", async () => {
+  const map = destinationMapSection(() => ["found", { h1: found(48.204, 16.369), h2: { status: "missing" }, a1: found(48.2046, 16.3682), r1: { status: "ambiguous" }, c1: found(48.2086, 16.3731) }]);
+  assert.equal(map.message(), "Finding Vienna, Austria’s places…", "the destination shows as its card does");
+  assert.equal(map.status(), "Finding places on the map…");
+  await map.update();
+  assert.deepEqual(map.requests, ["/api/destination-map/vienna"]);
+  assert.equal(map.status(), "");
+  assert.deepEqual(destinationMap.MAP_CATEGORIES.map((category) => map.checkbox(destinationMap.MAP_CATEGORY_LABELS[category]).props.checked), [true, true, true, true]);
+  assert.deepEqual(map.markers(), [["h1"], ["a1"], ["c1"]]);
+  assert.deepEqual(map.unmapped(), ["Hotels", "Hotel NowhereNo place nearby has this name.View details for Hotel Nowhere", "Restaurants", "FiglmüllerMore than one place nearby matches.View details for Figlmüller"]);
+  // Unchecking hotels and restaurants leaves activities and churches, on the map and in the list.
+  map.checkbox("Hotels").props.onChange();
+  map.checkbox("Restaurants").props.onChange();
+  await map.update();
+  assert.deepEqual(map.markers(), [["a1"], ["c1"]]);
+  assert.deepEqual(map.unmapped(), []);
+  map.checkbox("Activities").props.onChange();
+  map.checkbox("Churches").props.onChange();
+  map.checkbox("Restaurants").props.onChange();
+  await map.update();
+  // With no marker left, a message replaces the map, and Not on the map still lists what it can't show.
+  assert.equal(map.canvas(), undefined);
+  assert.equal(map.message(), "None of the selected places can be shown on the map yet.");
+  assert.deepEqual(map.unmapped(), ["Restaurants", "FiglmüllerMore than one place nearby matches.View details for Figlmüller"]);
+  map.checkbox("Restaurants").props.onChange();
+  await map.update();
+  assert.equal(map.message(), "Select a category to see its places on the map.");
+  assert.deepEqual(map.unmapped(), []);
+  // Filtering never looks places up again.
+  assert.equal(map.requests.length, 1);
+});
+
+test("View details, on a marker or under Not on the map, opens the place's details", async () => {
+  const map = destinationMapSection(() => ["found", { h1: found(48.204, 16.369), h2: { status: "missing" }, a1: { status: "missing" }, r1: { status: "missing" }, c1: { status: "missing" } }]);
+  await map.update();
+  for (const button of map.button("View details")) button.props.onClick();
+  assert.deepEqual(map.viewed, ["h2", "a1", "r1", "c1"]);
+  map.canvas().props.onView(map.canvas().props.markers[0].places[0]);
+  assert.equal(map.viewed.at(-1), "h1");
+});
+
+test("places still waiting their turn are asked for again until each is answered, and an outage offers Try again", async () => {
+  const answers = [
+    ["found", { h1: found(48.204, 16.369), h2: { status: "pending" }, a1: { status: "pending" }, r1: { status: "pending" }, c1: { status: "pending" } }],
+    // The hotel, found already, is pending again, as when the server restarted and looks it up anew.
+    ["found", { h1: { status: "pending" }, h2: { status: "missing" }, a1: found(48.2046, 16.3682), r1: { status: "unavailable" }, c1: { status: "pending" } }],
+    ["found", { h1: found(48.204, 16.369), h2: { status: "missing" }, a1: found(48.2046, 16.3682), r1: { status: "unavailable" }, c1: { status: "unavailable" } }],
+  ];
+  let markersWhileWaiting;
+  const map = destinationMapSection(async (count) => {
+    // What the map shows once the second answer is in, while the third is asked for.
+    if (count === 3) { await settle(); markersWhileWaiting = map.markers(); }
+    if (count > answers.length) throw new Error("Offline");
+    return answers[count - 1];
+  });
+  await map.update();
+  assert.equal(map.requests.length, 3, "asked again for the places still waiting");
+  // The hotel found first stayed on the map while its second answer waited.
+  assert.deepEqual(markersWhileWaiting, [["h1"], ["a1"]]);
+  assert.deepEqual(map.markers(), [["h1"], ["a1"]]);
+  assert.equal(map.status(), "");
+  assert.deepEqual(map.unmapped(), ["Hotels", "Hotel NowhereNo place nearby has this name.View details for Hotel Nowhere", "Restaurants", "FiglmüllerCouldn't be looked up right now.View details for Figlmüller", "Churches", "St. Stephen's CathedralCouldn't be looked up right now.View details for St. Stephen's Cathedral"]);
+  // Trying again while offline keeps every place already found.
+  map.button("Try again")[0].props.onClick();
+  await map.update();
+  assert.equal(map.requests.length, 4);
+  assert.deepEqual(map.markers(), [["h1"], ["a1"]]);
+  assert.equal(map.button("Try again").length, 1);
+});
+
+test("an added, edited or removed place is looked up again, and its marker moves or goes, never twice", async () => {
+  const positions = { h1: found(48.204, 16.369), h2: { status: "missing" }, a1: found(48.2046, 16.3682), r1: { status: "missing" }, c1: found(48.2086, 16.3731), n1: found(48.2104, 16.3656) };
+  let moved = false;
+  const map = destinationMapSection(() => ["found", { ...positions, ...(moved && { h1: found(48.2005, 16.3725) }) }]);
+  await map.update();
+  assert.deepEqual(map.markers(), [["h1"], ["a1"], ["c1"]]);
+  // The hotel's address changes, the church is deleted and a restaurant is added.
+  const edited = [{ ...saved[0], address: "Kärntner Ring 1" }, saved[1], saved[2], saved[3], { id: "n1", category: "restaurants", name: "Café Central", address: "" }];
+  moved = true;
+  await map.update({ places: edited });
+  assert.equal(map.requests.length, 2);
+  assert.deepEqual(map.markers(), [["h1"], ["a1"], ["n1"]]);
+  assert.deepEqual(map.position(0), [48.2005, 16.3725], "the hotel at its new address, and not at its old one");
+  const ids = map.markers().flat();
+  assert.equal(new Set(ids).size, ids.length);
+  // A saved change that doesn't change what a place is looked up by asks for nothing.
+  await map.update({ places: edited.map((place) => ({ ...place })) });
+  assert.equal(map.requests.length, 2);
+});
+
+test("a destination with nothing saved, or that the map can't find, says so instead of showing an empty map", async () => {
+  const empty = destinationMapSection(() => { throw new Error("Nothing to ask for"); }, []);
+  await empty.update();
+  assert.equal(empty.message(), "Save a hotel, activity, restaurant or church for Vienna, Austria to see it on the map.");
+  assert.deepEqual(empty.requests, []);
+  const nowhere = destinationMapSection(() => ["missing", Object.fromEntries(saved.map((place) => [place.id, { status: "missing" }]))]);
+  await nowhere.update();
+  assert.equal(nowhere.message(), "The map can’t find Vienna, Austria itself, so it can’t look up its places.");
+  // Every place is listed, without reasons of its own.
+  assert.deepEqual(nowhere.unmapped().filter((line) => !destinationMap.MAP_CATEGORIES.some((category) => destinationMap.MAP_CATEGORY_LABELS[category] === line)), saved.map((place) => place.name + "View details for " + place.name));
+});
+
+/** The map itself, with a stand-in for Leaflet that records its markers, popups and framing. */
+function mapCanvas() {
+  const { react, render } = hooks();
+  const calls = [], markers = [];
+  const document = { body: { name: "body" }, activeElement: null };
+  const focusable = (name) => ({ name, focus(options) { document.activeElement = this; calls.push(["focus", name, { ...options }]); }, setAttribute(key, value) { this[key] = value; } });
+  const instance = { on() {}, remove() {}, fitBounds: (bounds, options) => calls.push(["fitBounds", Array.from(bounds, (position) => [...position]), options.maxZoom]) };
+  const group = { addTo() { return this; }, clearLayers() { markers.length = 0; } };
+  const L = {
+    map: () => instance,
+    tileLayer: () => ({ addTo() { return this; } }),
+    layerGroup: () => group,
+    latLngBounds: (positions) => positions,
+    divIcon: (options) => options,
+    marker(position, options) {
+      const handlers = {};
+      const element = focusable("marker " + options.title.split("\n")[0]);
+      const container = { contains: (node) => node === content.button || node === content.close };
+      let content;
+      const marker = {
+        position, options, element, handlers, open: false,
+        on(name, handler) { handlers[name] = handler; return this; },
+        bindPopup(popup) { content = popup; this.popup = popup; return this; },
+        addTo() { markers.push(this); return this; },
+        getElement: () => element,
+        getPopup: () => ({ getElement: () => container }),
+        openPopup() { this.open = true; handlers.popupopen?.(); },
+        closePopup() { this.open = false; handlers.popupclose?.(); },
+      };
+      return marker;
+    },
+  };
+  const loaded = { exports: {} };
+  runInNewContext(compile("../src/components/destination-map-canvas.tsx"), {
+    exports: loaded.exports,
+    require(name) {
+      const modules = {
+        react,
+        "react/jsx-runtime": { jsx, jsxs: jsx, Fragment: "fragment" },
+        "react-dom": { createPortal: (child, container) => ({ type: "portal", props: { container, children: child } }) },
+        leaflet: { default: L },
+        "leaflet/dist/leaflet.css": {},
+        "@/lib/destination-map": destinationMap,
+        "./destination-map-symbols": { PlaceSymbol: "symbol", GroupSymbol: "group" },
+        "./destination-map.module.css": { default: styles },
+      };
+      if (!(name in modules)) throw new Error("Unexpected component import: " + name);
+      return modules[name];
+    },
+    document: {
+      ...document,
+      get body() { return document.body; },
+      get activeElement() { return document.activeElement; },
+      // Each popup has its View details, and Leaflet's close button, both able to take focus.
+      createElement() {
+        const listeners = {};
+        const popup = { button: focusable("View details"), close: focusable("close"), listeners, addEventListener: (type, listener) => { listeners[type] = listener; }, removeEventListener: (type) => { delete listeners[type]; }, querySelector: () => popup.button };
+        return popup;
+      },
+    },
+  });
+  return { calls, markers, document, render: (props) => render(loaded.exports.default, props) };
+}
+
+const sacher = { key: "48.20406,16.36949", position: [48.20406, 16.36949], places: [
+  { id: "h1", category: "hotels", name: "Hotel Sacher", address: "Philharmonikerstraße 4", found: "Hotel Sacher, 4, Philharmonikerstraße" },
+  { id: "r2", category: "restaurants", name: "Café Sacher", address: "Philharmonikerstraße 4", found: "Hotel Sacher, 4, Philharmonikerstraße" },
+] };
+const albertina = { key: "48.20462,16.36818", position: [48.20462, 16.36818], places: [{ id: "a1", category: "activities", name: "Albertina", address: "", found: "Albertina, Vienna" }] };
+
+test("each marker names its places, and its popup shows each place's name and category with View details", () => {
+  const map = mapCanvas();
+  const viewed = [];
+  const tree = map.render({ markers: [sacher, albertina], onView: (place) => viewed.push(place.id) });
+  assert.deepEqual(map.markers.map((marker) => marker.element["aria-label"]), ["Hotel: Hotel Sacher; Restaurant: Café Sacher", "Activity: Albertina"]);
+  assert.equal(map.markers[1].options.title, "Activity: Albertina\nShown at Albertina, Vienna");
+  assert.ok(map.markers.every((marker) => marker.options.keyboard));
+  const portals = nodes(tree).filter((node) => node.type === "portal");
+  // Places at one position share a marker, which shows how many.
+  assert.deepEqual(portals.slice(0, 2).map((portal) => portal.props.children.type), ["group", "symbol"]);
+  const popups = portals.slice(2);
+  assert.equal(popups[0].props.container, map.markers[0].popup);
+  assert.deepEqual(nodes(popups[0]).filter((node) => node.type === "li").map(text), ["Hotel SacherHotelView details for Hotel Sacher", "Café SacherRestaurantView details for Café Sacher"]);
+  for (const button of nodes(tree).filter((node) => node.type === "button")) button.props.onClick();
+  assert.deepEqual(viewed, ["h1", "r2", "a1"]);
+});
+
+test("Space opens a marker's popup as Enter does, its View details takes focus, and Escape returns focus to the marker", () => {
+  const map = mapCanvas();
+  map.render({ markers: [albertina], onView() {} });
+  const [marker] = map.markers;
+  let prevented = false;
+  marker.handlers.keydown({ originalEvent: { key: "x", preventDefault() { prevented = true; } } });
+  assert.equal(marker.open, false);
+  marker.handlers.keydown({ originalEvent: { key: " ", preventDefault() { prevented = true; } } });
+  assert.ok(marker.open && prevented);
+  assert.deepEqual(map.calls.filter(([name]) => name === "focus"), [["focus", "View details", { preventScroll: true }]]);
+  // Leaflet handles Escape only while the map itself has focus, so the popup handles it.
+  let escaped = false;
+  marker.popup.listeners.keydown({ key: "Escape", preventDefault() { escaped = true; } });
+  assert.ok(!marker.open && escaped);
+  assert.deepEqual(map.calls.filter(([name]) => name === "focus").at(-1), ["focus", "marker Activity: Albertina", { preventScroll: true }]);
+  // Closed with focus elsewhere, as when another marker is selected, the popup leaves focus where it is.
+  marker.openPopup();
+  map.document.activeElement = { name: "another marker" };
+  marker.closePopup();
+  assert.equal(map.document.activeElement.name, "another marker");
+});
+
+test("the map frames its markers when their positions change, and leaves zoom and panning alone otherwise", () => {
+  const map = mapCanvas();
+  const markers = [sacher, albertina];
+  map.render({ markers, onView() {} });
+  assert.deepEqual(map.calls.filter(([name]) => name === "fitBounds"), [["fitBounds", [[48.20406, 16.36949], [48.20462, 16.36818]], 16]]);
+  map.render({ markers: markers.map((marker) => ({ ...marker })), onView() {} });
+  assert.equal(map.calls.filter(([name]) => name === "fitBounds").length, 1);
+  map.render({ markers: [albertina], onView() {} });
+  assert.deepEqual(map.calls.filter(([name]) => name === "fitBounds").at(-1), ["fitBounds", [[48.20462, 16.36818]], 16]);
+  assert.equal(map.markers.length, 1, "markers from before are cleared");
+});

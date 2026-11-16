@@ -68,7 +68,7 @@ function text(value: unknown): string {
 }
 
 /** Text compared without letter case, accents or punctuation, so "Zurich" is "Zürich" and "Saint-Malo" is "Saint Malo". */
-function comparable(value: string): string {
+export function comparable(value: string): string {
   return value.normalize("NFD").replace(/\p{M}/gu, "").toLowerCase().replace(/[^\p{L}\p{N}]+/gu, " ").trim();
 }
 

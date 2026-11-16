@@ -36,7 +36,7 @@ function harness(props, locations = []) {
     require(name) {
       if (name === "react") return react;
       if (name === "react/jsx-runtime") return { jsx, jsxs: jsx };
-      if (name === "lucide-react") return { MapPin: "map-pin" };
+      if (name === "lucide-react") return { MapPin: "map-pin", Plane: "plane" };
       if (name === "@/lib/destination-label") return destinationLabel;
       throw new Error("Unexpected component import: " + name);
     },
@@ -60,11 +60,20 @@ function harness(props, locations = []) {
     /** What the form sends: each named input's value. */
     sent: () => Object.fromEntries(nodes(tree).filter((node) => node.type === "input" && node.props.name).map((node) => [node.props.name, node.props.value])),
     type(value) { field().props.onChange({ target: { value } }); render(); },
-    /** Waits out the search delay, then chooses the suggestion at `index`. */
-    async choose(index) {
+    /** Waits out the search delay, then shows the suggestions. */
+    async search() {
       for (const timer of [...timers]) { timers.delete(timer); timer.callback(); }
       for (let i = 0; i < 20; i++) await Promise.resolve();
       render();
+    },
+    /** Each suggestion's icon, name and where it is. */
+    options: () => nodes(tree).filter((node) => node.props?.role === "option").map((node) => {
+      const [icon, text] = node.props.children;
+      return [icon.type, ...text.props.children.map((line) => line.props.children)];
+    }),
+    /** Waits out the search delay, then chooses the suggestion at `index`. */
+    async choose(index) {
+      await this.search();
       find((node) => node.props?.id === `city-option-${index}`).props.onClick();
       render();
     },
@@ -101,4 +110,30 @@ test("departing and return city fields send a chosen suggestion's full label, wi
   field.type("Wooster");
   await field.choose(0);
   assert.deepEqual([field.shown(), field.sent()], ["Wooster, Ohio, United States", { homeCity: "Wooster, Ohio, United States" }]);
+});
+
+// An airport suggested for its code (TRA-132), as the location search sends it.
+const clevelandAirport = { id: "CLE", name: "Cleveland Hopkins International Airport (CLE)", region: "Cleveland", country: "United States", countryCode: "US", label: "CLE", airport: { latitude: 41.4117, longitude: -81.8498 } };
+
+test("departing and return city fields suggest an airport for its code, and choosing it saves the code (TRA-132)", async () => {
+  for (const name of ["homeCity", "returnCity"]) {
+    const field = harness({ name, label: "City" }, [clevelandAirport, wooster]);
+    field.type("cle");
+    await field.search();
+    assert.deepEqual(field.options(), [
+      ["plane", "Cleveland Hopkins International Airport (CLE)", "Cleveland, United States"],
+      ["map-pin", "Wooster", "Ohio, United States"],
+    ]);
+    await field.choose(0);
+    assert.deepEqual([field.shown(), field.sent()], ["CLE", { [name]: "CLE" }]);
+  }
+});
+
+test("a destination's city field suggests no airports, since a destination is a city (TRA-132)", async () => {
+  const field = destinationField("", [clevelandAirport, wooster]);
+  field.type("cle");
+  await field.search();
+  assert.deepEqual(field.options(), [["map-pin", "Wooster", "Ohio, United States"]]);
+  await field.choose(0);
+  assert.deepEqual(field.sent(), { city: "Wooster, Ohio, United States", cityFromSuggestion: "true" });
 });

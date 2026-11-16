@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
 import ts from "typescript";
+import { airportByCode, airportName } from "../src/lib/airports.ts";
 import { createLocationSearch } from "../src/lib/location-search.ts";
 import { createStore } from "../src/lib/store.ts";
 import * as tripMap from "../src/lib/trip-map.ts";
@@ -74,4 +75,27 @@ test("a trip's map finds the places of a trip the account can open, and nothing 
   const signedOut = await route({ account: null, store, fetcher })(tripId);
   assert.equal(signedOut.status, 401);
   assert.deepEqual(requests, []);
+});
+
+test("a trip's map finds its departure, return and layovers written as airport codes at the airport, without Open-Meteo (TRA-132)", async (t) => {
+  const store = createStore(":memory:", "owner@example.com");
+  t.after(() => store.close());
+  const owner = store.authorizeAccount("owner@example.com");
+  const tripId = store.applyMutation(owner.id, { type: "trip.save", ...newItem(), name: "Gulf", dateLabel: "", homeCity: "CLE", travelers: 2, notes: "" }).id;
+  // A destination is a city, so "UAE" is never taken for Mount Aue Airport's code, nor is a stop along the way.
+  const uae = store.applyMutation(owner.id, { type: "stop.add", tripId, city: "UAE" }).id;
+  const leg = store.getSnapshot().legs.find((item) => item.tripId === tripId && item.toId === uae);
+  const entry = (kind, place) => ({ id: crypto.randomUUID(), kind, place, arrival: "", departure: "", notes: "" });
+  store.applyMutation(owner.id, { type: "leg.save", id: leg.id, method: "Flight", price: "", departure: "", arrival: "", url: "", notes: "", itinerary: [entry("layover", "PHL"), entry("stop", "OBX")] });
+
+  const requests = [];
+  const fetcher = async (url) => { requests.push(url.searchParams.get("name")); return Response.json({}); };
+  const response = await route({ account: owner, store, fetcher })(tripId);
+  assert.equal(response.status, 200);
+  const atAirport = (code) => {
+    const airport = airportByCode(code);
+    return { status: "found", latitude: airport.latitude, longitude: airport.longitude, label: airportName(airport) };
+  };
+  assert.deepEqual(await response.json(), { places: { CLE: atAirport("CLE"), PHL: atAirport("PHL"), UAE: { status: "missing" }, OBX: { status: "missing" } } });
+  assert.deepEqual(requests.sort(), ["OBX", "UAE"]);
 });

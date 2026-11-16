@@ -7,6 +7,7 @@ import { DatabaseSync } from "node:sqlite";
 import test from "node:test";
 import { calculateBudget } from "../src/lib/budget.ts";
 import { createStore, SCHEMA_VERSION, ValidationError } from "../src/lib/store.ts";
+import { UNCROPPED } from "../src/lib/photo-focus.ts";
 import { UNDO_SCHEMA_20, UNDO_SCHEMA_21 } from "./owned-store.mjs";
 import { addCity, fileDatabase, newItem, prepared } from "./budget-fixtures.mjs";
 
@@ -29,12 +30,12 @@ function setup(t, path = ":memory:") {
 }
 
 /**
- * A trip with something in every part: dates, two destinations and their connections, ideas, a church, entry
- * requirements, health and safety, an At home item and photos. Each account has one destination per city, so one account's trips need different cities.
+ * A trip with something in every part: dates, a headline image (TRA-133), two destinations and their connections, ideas,
+ * a church, entry requirements, health and safety, an At home item and photos. Each account has one destination per city, so one account's trips need different cities.
  */
 function plannedTrip(store, accountId, name = "Portugal", [firstCity, secondCity] = ["Lisbon", "Porto"]) {
   const change = (input) => store.applyMutation(accountId, input).id;
-  const tripId = change({ type: "trip.save", ...newItem(), name, startDate: "2027-05-02", dateLabel: "Spring", homeCity: "Boston", travelers: 2, notes: "Trip notes" });
+  const tripId = change({ type: "trip.save", ...newItem(), name, startDate: "2027-05-02", dateLabel: "Spring", homeCity: "Boston", travelers: 2, notes: "Trip notes", image: { data: webp, card: UNCROPPED, banner: UNCROPPED } });
   const lisbon = addCity(change, tripId, firstCity, { nights: 3, hotelNightlyAmount: "150", gallery: { add: [photo(), photo()], remove: [] } });
   const porto = addCity(change, tripId, secondCity, { nights: 2 });
   const hotel = change({ type: "candidate.save", ...newItem(), destinationId: lisbon, category: "hotels", name: "Hotel", price: "400", address: "", url: "", notes: "", included: true, gallery: { add: [photo()], remove: [] } });
@@ -61,6 +62,7 @@ function readsAs(store, accountId, trip) {
     page: store.getTripSnapshot(accountId, trip.tripId) !== undefined,
     category: store.getTripSnapshot(accountId, trip.tripId, trip.lisbon) !== undefined,
     tripName: store.getTripName(accountId, trip.tripId) !== undefined,
+    tripImage: store.getTripImage(accountId, trip.tripId) !== undefined,
     stopName: store.getStopName(accountId, trip.tripId, trip.lisbon) !== undefined,
     destinationList: store.getDestinationsOverview(accountId).data.destinations.some((item) => item.id === trip.lisbon),
     destinationPage: store.getDestinationSnapshot(accountId, trip.lisbon) !== undefined,
@@ -71,7 +73,7 @@ function readsAs(store, accountId, trip) {
     churchPhoto: store.getChurchPhoto(accountId, trip.church, trip.photos.church) !== undefined,
   };
 }
-const everything = (value) => ({ home: value, page: value, category: value, tripName: value, stopName: value, destinationList: value, destinationPage: value, destinationName: value, destinationImage: value, destinationPhoto: value, candidatePhoto: value, churchPhoto: value });
+const everything = (value) => ({ home: value, page: value, category: value, tripName: value, tripImage: value, stopName: value, destinationList: value, destinationPage: value, destinationName: value, destinationImage: value, destinationPhoto: value, candidatePhoto: value, churchPhoto: value });
 
 test("a new trip belongs to whoever creates it, and only its owner can open it until it is shared", (t) => {
   const { store, owner, editor, outsider } = setup(t);
@@ -138,7 +140,7 @@ test("people a trip is shared with change everything in it, but only its owner d
   const { tripId, lisbon, porto, hotel, activity, church, homeItem, legs } = trip;
   const portoPhoto = photo();
 
-  change({ type: "trip.save", id: tripId, name: "Portugal together", startDate: "2027-05-03", dateLabel: "Spring", homeCity: "Boston", travelers: 3, notes: "Edited together" });
+  change({ type: "trip.save", id: tripId, name: "Portugal together", startDate: "2027-05-03", dateLabel: "Spring", homeCity: "Boston", travelers: 3, notes: "Edited together", image: { data: webp, card: { focusX: 20, focusY: 80, zoom: 2 }, banner: UNCROPPED } });
   change({ type: "trip.tag", tripId, name: "Together" });
   change({ type: "leg.save", id: legs[0], method: "Train", price: "45", departure: "", arrival: "", url: "", notes: "" });
   change({ type: "leg.clear", id: legs[1] });
@@ -166,6 +168,7 @@ test("people a trip is shared with change everything in it, but only its owner d
   const asOwner = store.getTripSnapshot(owner, tripId);
   assert.deepEqual(store.getTripSnapshot(editor, tripId).data, asOwner.data);
   assert.equal(asOwner.data.trips[0].name, "Portugal together");
+  assert.deepEqual(asOwner.data.trips[0].image.card, { focusX: 20, focusY: 80, zoom: 2 }, "the trip's headline image too (TRA-133)");
   assert.deepEqual(asOwner.data.trips[0].tags, ["Together"]);
   assert.equal(asOwner.data.destinations.find((item) => item.id === porto).notes, "Port wine");
   assert.equal(asOwner.data.destinations.find((item) => item.id === porto).healthSafety.localSafety, "Watch for pickpockets");

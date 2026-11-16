@@ -10,6 +10,7 @@ import { MAX_AMOUNT_CENTS, parseMinorAmount } from "./money.ts";
 import { formatMegabytes, MAX_CANDIDATE_IMAGES, MAX_DESTINATION_IMAGES, MAX_STORED_IMAGE_BYTES } from "./image-limits.ts";
 import { ENTRY_REQUIREMENT_FIELDS, normalizeEntryRequirements } from "./entry-requirements.ts";
 import { normalizeHealthSafety } from "./health-safety.ts";
+import { MAX_PHOTO_ZOOM } from "./photo-focus.ts";
 import { SESSION_DAYS } from "./session-cookie.ts";
 import { alreadyTagged, cleanTagName, MAX_TAG_LENGTH, tagKey } from "./trip-tags.ts";
 import { PLANNER_UPDATED } from "./planner-updated.ts";
@@ -20,7 +21,7 @@ import type { AiPlatform } from "./ai-auth.ts";
 import type { Effect, PreviewChange, Row, Tables } from "./ai-preview.ts";
 import type { EntryRequirements } from "./entry-requirements.ts";
 import type { HealthSafety } from "./health-safety.ts";
-import type { AiConnection, AiPhotoToAdd, AiProposal, DestinationFields, GalleryUpdate, PreparedImage, StoredThumbnail } from "./types";
+import type { AiConnection, AiPhotoToAdd, AiProposal, DestinationFields, GalleryUpdate, PhotoCrop, PreparedImage, StoredThumbnail, TripImage, TripImageUpdate } from "./types";
 import type { AuthorizedAccount, DestinationAccess, GoogleIdentity, TripAccess, TripMember, TripStop } from "./types";
 import type { FoodBudgetMode, ActivitiesBudgetMode, Candidate, CandidateImage, Category, Church, MassTime, Destination, DestinationImage, HomeItem, StoredImage, ItineraryStop, Mutation, ResearchLink, RestaurantType, Snapshot, TravelLeg, Trip } from "./types";
 
@@ -300,6 +301,32 @@ function webpBytes(value: unknown, label: string): Uint8Array {
   }
   return new Uint8Array(value);
 }
+/**
+ * A trip save's change to its headline image (TRA-133): a new image Travel prepared, with its crops; new crops for the
+ * saved image of `version`; null to remove the image; or undefined to keep the image and its crops.
+ */
+function tripImageField(input: Input): TripImageUpdate | undefined {
+  const value = input.image;
+  if (value === undefined || value === null) return value;
+  if (typeof value !== "object" || Array.isArray(value)) throw new ValidationError("These headline image changes are invalid. Refresh and try again.");
+  const image = value as Input;
+  const crops = { card: cropField(image.card), banner: cropField(image.banner) };
+  if (image.data === undefined) return { version: idField(image, "version"), ...crops };
+  if (image.version !== undefined) throw new ValidationError("These headline image changes are invalid. Refresh and try again.");
+  return { data: webpBytes(image.data, "Headline"), ...crops };
+}
+/** One of a trip's headline image crops (TRA-133): its focal point within the image, and its zoom from 1 to MAX_PHOTO_ZOOM. */
+function cropField(value: unknown): PhotoCrop {
+  if (!value || typeof value !== "object" || Array.isArray(value)) throw new ValidationError("Choose how the headline image is cropped on the trip's card and banner.");
+  const crop = value as Input;
+  const number = (key: keyof PhotoCrop, min: number, max: number, message: string) => {
+    const entered = crop[key];
+    if (typeof entered !== "number" || !Number.isFinite(entered) || entered < min || entered > max) throw new ValidationError(message);
+    return entered;
+  };
+  const within = "A headline image's focal point must be within the image.";
+  return { focusX: number("focusX", 0, 100, within), focusY: number("focusY", 0, 100, within), zoom: number("zoom", 1, MAX_PHOTO_ZOOM, `Zoom the headline image from 100% to ${MAX_PHOTO_ZOOM * 100}%.`) };
+}
 function galleryField(input: Input, label = "Idea"): GalleryUpdate | undefined {
   if (input.gallery === undefined) return undefined;
   if (input.image !== undefined) throw new ValidationError("Use either a photo gallery or a single image change.");
@@ -371,7 +398,7 @@ function validate(input: unknown): Mutation {
       if (typeof value.travelers !== "number" || !Number.isInteger(value.travelers) || value.travelers < 1 || value.travelers > 999) {
         throw new ValidationError("Number of travelers must be a whole number between 1 and 999.");
       }
-      return { type: value.type, id: saveIdField(value), create: createField(value), name: textField(value, "name", 120, true), startDate: destinationDateField(value, "startDate"), dateLabel: textField(value, "dateLabel", 120), homeCity: textField(value, "homeCity", 120), returnCity: returnCityField(value), travelers: value.travelers, notes: textField(value, "notes", 8000) };
+      return { type: value.type, id: saveIdField(value), create: createField(value), name: textField(value, "name", 120, true), startDate: destinationDateField(value, "startDate"), dateLabel: textField(value, "dateLabel", 120), homeCity: textField(value, "homeCity", 120), returnCity: returnCityField(value), travelers: value.travelers, notes: textField(value, "notes", 8000), image: tripImageField(value) };
     }
     case "trip.delete":
     case "stop.remove":
@@ -517,6 +544,8 @@ function aiChange(input: unknown, photos: ReadonlyMap<string, PreparedImage>): M
   if (isPhotoChange(value.type)) return photoChange(value as Input & { type: PhotoChange["type"] }, photos);
   // Each person arranges their own trips on All trips (TRA-16), an order assistants can't read.
   if (value.type === "trip.order") throw new ValidationError("Each person puts their own trips in order on All trips, so trip order can't be proposed.");
+  // A trip's headline image comes only from a person's device, in its editor (TRA-133).
+  if (value.type === "trip.save" && "image" in value) throw new ValidationError("A trip's headline image can only be chosen in Travel.");
   if ("image" in value || "gallery" in value) throw new ValidationError("Change photos with destination.photos, candidate.photos or church.photos.");
   if (value.type === "destination.save" && (value.create !== undefined || value.tripId !== undefined)) throw new ValidationError("Add a destination to a trip with stop.add, or outside any trip with destination.create.");
   if (["trip.save", "homeItem.save", "destination.save", "church.save", "candidate.save"].includes(value.type as string) && value.id === undefined) {
@@ -569,7 +598,7 @@ const LIVE: Make = { id: () => randomUUID(), now: () => new Date().toISOString()
  * The schema this build upgrades every database to, as SQLite's user_version. A schema change adds the next
  * upgrade in createStore and raises this to match; earlier upgrades keep their own numbers.
  */
-export const SCHEMA_VERSION = 33;
+export const SCHEMA_VERSION = 34;
 
 /** A destination as schema 20 saved it, inside one trip, with that trip's owner and name. */
 type TripDestinationRow = Omit<StoredDestination, "cityKey"> & Omit<TripStop, "destinationId"> & { tripName: string };
@@ -1196,6 +1225,22 @@ export function createStore(databasePath: string, ownerEmail: string) {
       `);
       db.exec("PRAGMA user_version = 33;");
     }
+    if (version < 34) {
+      // Each trip's optional headline image (TRA-133), prepared as uploads are, with its crops: a focal point and zoom
+      // for the top of the trip's card on All trips, and its own for the banner on the trip's page. Every saved trip starts
+      // without one, so nothing looks different. Deleting a trip deletes its image. A replay keeps saved images.
+      db.exec(`
+        CREATE TABLE IF NOT EXISTS trip_images (
+          tripId TEXT PRIMARY KEY REFERENCES trips(id) ON DELETE CASCADE,
+          version TEXT NOT NULL, data BLOB NOT NULL,
+          cardFocusX REAL NOT NULL CHECK(cardFocusX BETWEEN 0 AND 100), cardFocusY REAL NOT NULL CHECK(cardFocusY BETWEEN 0 AND 100),
+          cardZoom REAL NOT NULL CHECK(cardZoom BETWEEN 1 AND ${MAX_PHOTO_ZOOM}),
+          bannerFocusX REAL NOT NULL CHECK(bannerFocusX BETWEEN 0 AND 100), bannerFocusY REAL NOT NULL CHECK(bannerFocusY BETWEEN 0 AND 100),
+          bannerZoom REAL NOT NULL CHECK(bannerZoom BETWEEN 1 AND ${MAX_PHOTO_ZOOM})
+        ) STRICT;
+        PRAGMA user_version = 34;
+      `);
+    }
     if (version < SCHEMA_VERSION && db.prepare("PRAGMA foreign_key_check").get()) {
       throw new Error("This upgrade would leave saved items without the trip or destination they belong to. Nothing was changed; review the database against a backup before upgrading.");
     }
@@ -1236,6 +1281,15 @@ export function createStore(databasePath: string, ownerEmail: string) {
     }
     return tags;
   }
+  /** Each of the given trips' headline images (TRA-133), or every trip's, without their bytes. A trip without one has no entry. */
+  function imagesOf(tripIds: readonly string[] | null): Map<string, TripImage> {
+    const [where, args] = among("tripId", tripIds);
+    return new Map(db.prepare(`SELECT tripId, version, cardFocusX, cardFocusY, cardZoom, bannerFocusX, bannerFocusY, bannerZoom FROM trip_images${where}`).all(...args).map((row) => [row.tripId as string, {
+      version: row.version as string,
+      card: { focusX: row.cardFocusX as number, focusY: row.cardFocusY as number, zoom: row.cardZoom as number },
+      banner: { focusX: row.bannerFocusX as number, focusY: row.bannerFocusY as number, zoom: row.bannerZoom as number },
+    }]));
+  }
   /**
    * One spelling of each tag on the given trips, or on every trip, in alphabetical order. A tag spelled differently on
    * two trips is listed once, with the spelling a new tag of the same name reuses.
@@ -1247,9 +1301,10 @@ export function createStore(databasePath: string, ownerEmail: string) {
   function readTrips(ids: readonly string[] | null): Trip[] {
     const [where, args] = among("id", ids);
     const tags = tagsOf(ids);
+    const images = imagesOf(ids);
     return db.prepare(`SELECT ${TRIP_COLUMNS} FROM trips${where} ORDER BY createdAt DESC, id`).all(...args).map((row) => {
       const trip = row as unknown as Trip;
-      return { ...trip, tags: tags.get(trip.id) ?? [], endDate: sequenceDates(trip.startDate, orderedStops(trip.id)).endDate };
+      return { ...trip, tags: tags.get(trip.id) ?? [], image: images.get(trip.id) ?? null, endDate: sequenceDates(trip.startDate, orderedStops(trip.id)).endDate };
     });
   }
   /** Stops matching a WHERE clause, as plain objects a page can hand to the browser. */
@@ -1330,7 +1385,8 @@ export function createStore(databasePath: string, ownerEmail: string) {
       .map((row) => ({ ...row, cityFromSuggestion: row.cityFromSuggestion === 1 })) as unknown as Destination[];
     const tripIds = rawTrips.map((trip) => trip.id);
     const tags = tagsOf(tripIds);
-    const trips = rawTrips.map((trip) => ({ ...trip, tags: tags.get(trip.id) ?? [], endDate: sequenceDates(trip.startDate, stops.filter((stop) => stop.tripId === trip.id)).endDate }));
+    const images = imagesOf(tripIds);
+    const trips = rawTrips.map((trip) => ({ ...trip, tags: tags.get(trip.id) ?? [], image: images.get(trip.id) ?? null, endDate: sequenceDates(trip.startDate, stops.filter((stop) => stop.tripId === trip.id)).endDate }));
     const input: Snapshot = {
       trips, stops, destinations,
       legs: db.prepare(`SELECT tripId,fromId,toId,priceCents,miscCents FROM legs WHERE tripId IN (${VISIBLE_TRIPS})`).all(...visible) as unknown as TravelLeg[],
@@ -1458,6 +1514,12 @@ export function createStore(databasePath: string, ownerEmail: string) {
   }
   function checkHealth(): void { db.prepare("SELECT 1").get(); }
 
+  /** A trip's headline image (TRA-133), served only to the accounts that can open the trip, as everything else in it is. */
+  function getTripImage(accountId: string, tripId: string): StoredImage | undefined {
+    if (!tripRole(accountId, tripId)) return undefined;
+    const row = db.prepare("SELECT version, data FROM trip_images WHERE tripId = ?").get(tripId);
+    return row ? { version: row.version as string, data: new Uint8Array(row.data as Uint8Array) } : undefined;
+  }
   // Photos are served only from destinations the account can open, the same as everything else in them.
   function getDestinationImage(accountId: string, id: string): StoredImage | undefined {
     if (!destinationRole(accountId, id)) return undefined;
@@ -1537,6 +1599,24 @@ export function createStore(databasePath: string, ownerEmail: string) {
     for (const { id, focusX, focusY } of gallery.focus ?? []) db.prepare("UPDATE destination_images SET focusX = ?, focusY = ? WHERE destinationId = ? AND id = ?").run(focusX, focusY, destinationId, id);
     db.prepare("UPDATE destination_images SET isMain = 0 WHERE destinationId = ? AND isMain = 1").run(destinationId);
     if (main) db.prepare("UPDATE destination_images SET isMain = 1 WHERE destinationId = ? AND id = ?").run(destinationId, main);
+  }
+  /**
+   * Changes a trip's headline image as its editor saves it (TRA-133): a new image, with a version from `make`, replaces
+   * any saved one; new crops change the saved image's, only while it is the image they were chosen for; and null removes it.
+   */
+  function saveTripImage(tripId: string, image: TripImageUpdate | undefined, make: Make) {
+    if (image === undefined) return;
+    if (image === null) {
+      db.prepare("DELETE FROM trip_images WHERE tripId = ?").run(tripId);
+      return;
+    }
+    const crops = [image.card.focusX, image.card.focusY, image.card.zoom, image.banner.focusX, image.banner.focusY, image.banner.zoom];
+    if ("data" in image) {
+      db.prepare("INSERT OR REPLACE INTO trip_images(tripId, version, data, cardFocusX, cardFocusY, cardZoom, bannerFocusX, bannerFocusY, bannerZoom) VALUES(?,?,?,?,?,?,?,?,?)").run(tripId, make.id(), image.data, ...crops);
+      return;
+    }
+    const cropped = db.prepare("UPDATE trip_images SET cardFocusX = ?, cardFocusY = ?, cardZoom = ?, bannerFocusX = ?, bannerFocusY = ?, bannerZoom = ? WHERE tripId = ? AND version = ?").run(...crops, tripId, image.version);
+    if (cropped.changes === 0) throw new ValidationError("This trip's headline image has changed since you opened the editor. Refresh and try again.");
   }
   /** New photos go last, unless the save rearranges the gallery, giving the order of every photo it keeps and adds (TRA-126). */
   function saveGallery(kind: "candidate" | "church", ownerId: string, gallery: GalleryUpdate | undefined, make: Make) {
@@ -1741,6 +1821,7 @@ export function createStore(databasePath: string, ownerEmail: string) {
           db.prepare("INSERT INTO trips(id,name,dateLabel,homeCity,returnCity,travelers,notes,createdAt,ownerId) VALUES(?,?,?,?,?,?,?,?,?)").run(id, input.name, input.dateLabel, input.homeCity, input.returnCity ?? null, input.travelers, input.notes, make.now(), accountId);
         }
         if (input.startDate !== undefined) db.prepare("UPDATE trips SET startDate = ? WHERE id = ?").run(input.startDate, id);
+        saveTripImage(id, input.image, make);
         return id;
       }
       case "trip.delete":
@@ -2445,7 +2526,7 @@ export function createStore(databasePath: string, ownerEmail: string) {
   // getSnapshot reads everything, for checks and tests. Everything the app shows or changes takes the signed-in account,
   // or an AI connection of the designated owner's.
   return {
-    getSnapshot, getHomeOverview, getTripSnapshot, getDestinationsOverview, getDestinationSnapshot, getTripName, getStopName, getDestinationName, checkHealth, getDestinationImage, getDestinationPhoto, getCandidatePhoto, getChurchPhoto, getDestinationThumbnail, getCandidateThumbnail, getChurchThumbnail, applyMutation, authorizeAccount, getAccountByGoogleSubject, authorizeGoogleSignIn, createSession, readSession, deleteSession,
+    getSnapshot, getHomeOverview, getTripSnapshot, getDestinationsOverview, getDestinationSnapshot, getTripName, getStopName, getDestinationName, checkHealth, getTripImage, getDestinationImage, getDestinationPhoto, getCandidatePhoto, getChurchPhoto, getDestinationThumbnail, getCandidateThumbnail, getChurchThumbnail, applyMutation, authorizeAccount, getAccountByGoogleSubject, authorizeGoogleSignIn, createSession, readSession, deleteSession,
     isAiOwner, aiAccounts, aiTrips, aiTrip, aiDestinations, aiDestination, aiPhoto, proposeAiChanges, getAiProposal, getAiProposalPhoto, decideAiProposal, aiOverview,
     registerAiClient, aiClientPlatform, allowAiConnection, exchangeAiCode, refreshAiTokens, readAiConnection, revokeAiConnection,
     close: () => db.close(),
@@ -2472,6 +2553,9 @@ function defaultStore(): Store {
   return globalStore.travelStore;
 }
 // Each takes the signed-in account's ID from the server's session, and sees only that account's trips and destinations.
+export function getTripImage(accountId: string, tripId: string): StoredImage | undefined {
+  return defaultStore().getTripImage(accountId, tripId);
+}
 export function getDestinationImage(accountId: string, id: string): StoredImage | undefined {
   return defaultStore().getDestinationImage(accountId, id);
 }

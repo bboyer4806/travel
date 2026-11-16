@@ -12,13 +12,13 @@ import type { Category, Mutation, RestaurantType } from "./types";
  * Travel's own data, in the order a preview lists it. Sessions and the AI integration's tables are never read for a
  * proposal, and every other table must be listed here: tests check each column has a preview label.
  */
-export const DATA_TABLES = ["trips", "trip_shares", "trip_tags", "trip_order", "trip_stops", "legs", "home_items", "destinations", "destination_entry_requirements", "destination_health_safety", "destination_images", "candidates", "candidate_images", "churches", "church_images", "accounts"] as const;
+export const DATA_TABLES = ["trips", "trip_images", "trip_shares", "trip_tags", "trip_order", "trip_stops", "legs", "home_items", "destinations", "destination_entry_requirements", "destination_health_safety", "destination_images", "candidates", "candidate_images", "churches", "church_images", "accounts"] as const;
 export type DataTable = typeof DATA_TABLES[number];
 /** The photos of destinations, ideas and churches. The owner sees each photo a change adds, changes or deletes beside its record (TRA-122). */
 export const PHOTO_TABLES: readonly DataTable[] = ["destination_images", "candidate_images", "church_images"];
-/** Never read for a proposal: photo and thumbnail bytes (TRA-89), and the Google account each authorization is bound to. */
+/** Never read for a proposal: photo and thumbnail bytes (TRA-89), trips' headline image bytes (TRA-133), and the Google account each authorization is bound to. */
 export const UNREAD_COLUMNS: Record<DataTable, string[]> = {
-  trips: [], trip_shares: [], trip_tags: [], trip_order: [], trip_stops: [], legs: [], home_items: [], destinations: [], destination_entry_requirements: [], destination_health_safety: [],
+  trips: [], trip_images: ["data"], trip_shares: [], trip_tags: [], trip_order: [], trip_stops: [], legs: [], home_items: [], destinations: [], destination_entry_requirements: [], destination_health_safety: [],
   destination_images: ["data", "thumbnail"], candidates: [], candidate_images: ["data", "thumbnail"], churches: [], church_images: ["data", "thumbnail"], accounts: ["googleSubject"],
 };
 
@@ -38,11 +38,12 @@ export interface PreviewChange { operation: string; records: PreviewRecord[] }
 type Format = "text" | "number" | "order" | "money" | "flag" | "json" | "account" | "restaurantTypes";
 /**
  * Each column's label in a preview and how its values read, or null for one people never see: IDs, keys, timestamps,
- * photo versions, destination photos' focal points, which proposals never change (TRA-53), and values worked out from
- * another column. Hidden columns still count when approving: a proposal makes exactly the rows it previewed, or nothing.
+ * photo versions, destination photos' focal points, which proposals never change (TRA-53), trips' headline image crops,
+ * which only the trip editor changes (TRA-133), and values worked out from another column. Hidden columns still count when approving: a proposal makes exactly the rows it previewed, or nothing.
  */
 export const PREVIEW_COLUMNS: Record<DataTable, Record<string, [string, Format] | null>> = {
   trips: { id: null, name: ["Name", "text"], dateLabel: ["Dates", "text"], homeCity: ["Departing city", "text"], travelers: ["Travelers", "number"], notes: ["Notes", "text"], createdAt: null, returnCity: ["Return city", "text"], startDate: ["Start date", "text"], ownerId: ["Owner", "account"] },
+  trip_images: { tripId: null, version: null, cardFocusX: null, cardFocusY: null, cardZoom: null, bannerFocusX: null, bannerFocusY: null, bannerZoom: null },
   trip_shares: { tripId: null, accountId: null, sharedAt: null },
   trip_tags: { tripId: null, tagKey: null, name: null },
   trip_order: { accountId: null, tripId: null, position: ["Order", "order"] },
@@ -108,6 +109,7 @@ export function previewChange(change: Mutation, effects: Effect[], before: Table
   const label = (table: DataTable, row: Row): string => {
     switch (table) {
       case "trips": return trip(row.id);
+      case "trip_images": return `${trip(row.tripId)}: headline image`;
       case "trip_shares": return `${trip(row.tripId)}: shared with ${email(row.accountId)}`;
       case "trip_tags": return `${trip(row.tripId)}: tag “${row.name}”`;
       case "trip_order": return `${trip(row.tripId)}: place in ${email(row.accountId)}'s trip order`;

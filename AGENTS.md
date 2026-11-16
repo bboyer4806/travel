@@ -40,8 +40,8 @@ check Dokku runs, trip and destination isolation, and AI access limits. A Next.j
 not verify those.
 After building, CI runs `node scripts/review-errors-smoke.mjs` against disposable databases and
 fixture sessions to check production HTTP errors, recovery, cross-bundle save validation,
-connecting Claude through OAuth, MCP and the owner's Server Actions, and proposing, showing,
-approving and rejecting photo changes.
+connecting Claude through OAuth, MCP and the owner's Server Actions, proposing, showing,
+approving and rejecting photo changes, and serving trips' headline images only to accounts that can open them.
 Fix regressions caused by your change; report unrelated baseline failures and blocked checks.
 Repeat passing checks when subsequent changes affect their coverage or required gates demand it.
 
@@ -137,10 +137,17 @@ Repeat passing checks when subsequent changes affect their coverage or required 
   on the photos one AI proposal downloads. The photo editors, upload decoding, the store and the MCP
   tools use them, and messages state them from there.
 - Each photo is saved with its thumbnail (TRA-89): `prepareImage` returns both as a `PreparedImage`, and
-  every save of a photo, an AI proposal's included, carries both. Gallery thumbnails and editor previews
+  every save of a photo, an AI proposal's included, carries both. A trip's headline image keeps only the photo, since it
+  shows only cropped in its card and banner. Gallery thumbnails and editor previews
   load each photo's `/thumbnail` route; the main photo and the crop editor load the photo. A photo saved
   before schema 32 has a NULL thumbnail, so `storedThumbnailResponse` makes one with `makeThumbnail` for
   each request and saves nothing: image routes never write.
+- A trip's optional headline image (TRA-133) is its one row of `trip_images`, deleted with the trip, with its own
+  crop for the trip's card on All trips and for its page's banner: a `PhotoCrop`, a focal point and a zoom, shown with
+  `cropStyle` and dragged with `draggedFocus` from `src/lib/photo-focus.ts`. Only `trip.save` changes it, with `image`,
+  which `mutatePlanner` always builds from the trip editor's form with `prepareTripImage` in
+  `src/lib/trip-image-upload.ts`, so no mutation supplies it, and `aiChange` refuses it. New crops name the version of the
+  image they were chosen for. `src/components/trip-image.tsx` shows it only when a trip has one, and edits it.
 - Trip startDate and each stop's nights are schedule inputs. Use `src/lib/trip-dates.ts`
   for ordered read-only destination dates and trip end; retain legacy date columns for migration review.
   Hotels use nights; daily food/miscellaneous use `nightsToBudgetDays` (zero nights = one day).

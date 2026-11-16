@@ -18,6 +18,8 @@ import CandidateList from "@/components/candidate-list";
 import { DestinationIdeas, IdeaDetails, priceNotes, selectionLabels } from "@/components/destination-ideas";
 import { CandidateGalleryEditor } from "@/components/candidate-gallery";
 import { createGalleryDraft, galleryForm, type GalleryDraft } from "@/lib/gallery-draft";
+import { TripImageEditor, TripImageView } from "@/components/trip-image";
+import { createTripImageDraft, tripImageForm, type TripImageDraft } from "@/lib/trip-image-draft";
 import { RestaurantTypesField } from "@/components/restaurant-types";
 import TripRouteFields from "@/components/trip-route-fields";
 import { ConnectionItinerary, ConnectionItineraryEditor } from "@/components/connection-itinerary";
@@ -146,6 +148,8 @@ export default function PlannerApp({ initialData, initialBudgets, access = {}, d
   const [emergencyContacts, setEmergencyContacts] = useState<EmergencyContact[]>([]);
   const [destinationGallery, setDestinationGallery] = useState<GalleryDraft>(() => createGalleryDraft());
   const [candidateGallery, setCandidateGallery] = useState<GalleryDraft>(() => createGalleryDraft());
+  // The trip editor's headline image and its crops (TRA-133), saved with the trip.
+  const [tripImage, setTripImage] = useState<TripImageDraft>(null);
   // The ID of the item an editor adds, given once when it opens, so saving again after a response is lost changes that item instead of adding another.
   const [newId, setNewId] = useState("");
   const [error, setError] = useState("");
@@ -199,6 +203,7 @@ export default function PlannerApp({ initialData, initialBudgets, access = {}, d
     if (value.kind === "church") setMassTimes(value.item?.massTimes ?? []);
     setDestinationGallery(createGalleryDraft(value.kind === "destination" ? value.item : undefined));
     setCandidateGallery(createGalleryDraft(value.kind === "candidate" || value.kind === "church" ? value.item : undefined));
+    setTripImage(createTripImageDraft(value.kind === "trip" ? value.item?.image ?? null : null));
     setNewId(randomUuid());
     setEditor(value); setError(""); setMessage("");
   };
@@ -208,7 +213,7 @@ export default function PlannerApp({ initialData, initialBudgets, access = {}, d
    * Forgets the open editor and its photo drafts, keeping any error. When the browser closes an editor while it saves,
    * this lets the save's error show on the page and the next editor open as a new dialog (TRA-81).
    */
-  const forget = () => { setEditor(null); setDestinationGallery(createGalleryDraft()); setCandidateGallery(createGalleryDraft()); };
+  const forget = () => { setEditor(null); setDestinationGallery(createGalleryDraft()); setCandidateGallery(createGalleryDraft()); setTripImage(null); };
   const close = () => { if (!busy) { forget(); setError(""); } };
   /** Where saving or Cancel leaves an editor: an idea's editor opened from its details returns to them, and others close. */
   const detailsOf = (value: Editor | null): Editor | null => value?.kind === "candidate" && value.details && value.item ? { kind: "ideaDetails", item: value.item } : null;
@@ -235,7 +240,7 @@ export default function PlannerApp({ initialData, initialBudgets, access = {}, d
       if (!result.ok) { setError(result.error); return false; }
       // A deleted idea has no details to return to (TRA-128).
       const details = mutation.type === "candidate.delete" ? null : detailsOf(editor);
-      const finish = () => { setEditor(details); setDestinationGallery(createGalleryDraft()); setCandidateGallery(createGalleryDraft()); };
+      const finish = () => { setEditor(details); setDestinationGallery(createGalleryDraft()); setCandidateGallery(createGalleryDraft()); setTripImage(null); };
       if (details) startReturning(finish); else finish();
       setMessage(success);
       if (mutation.type === "stop.add" && result.id) {
@@ -292,7 +297,7 @@ export default function PlannerApp({ initialData, initialBudgets, access = {}, d
     const cityFromSuggestion = fields.has("cityFromSuggestion") || undefined;
     switch (editor.kind) {
       case "delete": void perform(editor.mutation, "Removed from your notebook.", editor.redirect); break;
-      case "trip": void perform({ type: "trip.save", ...itemToSave(editor.item), name: text("name"), startDate: text("startDate") || null, dateLabel: text("dateLabel"), homeCity: text("homeCity"), returnCity: fields.has("differentReturn") ? text("returnCity") : null, travelers: Number(text("travelers")), notes: text("notes") }); break;
+      case "trip": void perform({ type: "trip.save", ...itemToSave(editor.item), name: text("name"), startDate: text("startDate") || null, dateLabel: text("dateLabel"), homeCity: text("homeCity"), returnCity: fields.has("differentReturn") ? text("returnCity") : null, travelers: Number(text("travelers")), notes: text("notes") }, undefined, undefined, tripImageForm(tripImage, editor.item?.image ?? null)); break;
       case "entryRequirements": {
         void perform({ type: "destination.entryRequirements", id: editor.item.id, requirements: entryRequirementsFromForm(fields, researchLinks) }, "Entry requirements saved.");
         break;
@@ -503,7 +508,7 @@ export default function PlannerApp({ initialData, initialBudgets, access = {}, d
               const estimate = homeBudgets[item.id];
               const itemAccess = access[item.id];
               return <article className={"trip-card tone-" + (index % 3)} key={item.id} {...tripDrag.card(item.id)}>
-                <Link className="trip-card-main" href={"/trips/" + item.id}><div className="trip-card-top"><span className="trip-number">TRIP {String(index + 1).padStart(2, "0")}</span><Compass size={38} strokeWidth={1} /></div>
+                <Link className="trip-card-main" href={"/trips/" + item.id}><TripImageView trip={item} frame="card" /><div className="trip-card-top"><span className="trip-number">TRIP {String(index + 1).padStart(2, "0")}</span><Compass size={38} strokeWidth={1} /></div>
                   <h3>{item.name}</h3><p className="city-list"><MapPin size={15} />{places.length ? places.map((place) => formatSavedDestinationLabel(place)).join(" → ") : "Destinations to be decided"}</p>
                   <div className="trip-meta"><span><CalendarDays size={15} />{item.startDate ? formatCalendarDate(item.startDate) + " → " + formatCalendarDate(item.endDate) : item.dateLabel || "Whenever the time is right"}</span><span><Users size={15} />{item.travelers} {item.travelers === 1 ? "traveler" : "travelers"}</span>{itemAccess.role === "editor" && <span><Share2 size={15} />{"Shared by " + memberLabel(itemAccess.owner)}</span>}</div>
                   <TripTagList tags={item.tags} />
@@ -516,6 +521,7 @@ export default function PlannerApp({ initialData, initialBudgets, access = {}, d
 
       {trip && !stopId && <>
         <Link href="/" className="breadcrumb"><ArrowLeft size={16} />All trips</Link>
+        <TripImageView trip={trip} frame="banner" />
         <section className="trip-heading"><div><p className="eyebrow">AN ADVENTURE IN THE MAKING</p><h1>{trip.name}</h1><div className="trip-meta"><span><CalendarDays size={17} />{trip.startDate ? formatCalendarDate(trip.startDate) + " → " + formatCalendarDate(trip.endDate) : trip.dateLabel || "Dates to be decided"}</span><span><Users size={17} />{trip.travelers} {trip.travelers === 1 ? "traveler" : "travelers"}</span><span><MapPin size={17} />{trip.homeCity ? "Departing: " + trip.homeCity : "Add departing city"}</span>{trip.returnCity && <span><MapPin size={17} />Returning: {trip.returnCity}</span>}{tripAccess?.role === "editor" && <span><Share2 size={17} />{"Shared by " + memberLabel(tripAccess.owner)}</span>}{tripAccess?.role === "owner" && tripAccess.sharedWith.length > 0 && <span><Share2 size={17} />{"Shared with " + tripAccess.sharedWith.length + (tripAccess.sharedWith.length === 1 ? " person" : " people")}</span>}</div>
           <TripTagsEditor tags={trip.tags} available={data.tags} busy={busy} onAdd={(name) => perform({ type: "trip.tag", tripId: trip.id, name }, "Tag added.")} onRemove={(name) => void perform({ type: "trip.untag", tripId: trip.id, name }, "Tag removed.")} />
           {trip.notes && <p className="trip-notes">{trip.notes}</p>}</div>
@@ -591,7 +597,9 @@ export default function PlannerApp({ initialData, initialBudgets, access = {}, d
         <Field label="Trip start date" hint="Destination dates and the trip end are calculated from this date and each stay’s nights."><input name="startDate" type="date" min="0001-01-01" max="9999-12-31" defaultValue={editor.item?.startDate ?? ""} /></Field>
         <p className="helper wide">Trip end (calculated after saving): {formatCalendarDate(editor.item?.endDate)}</p>
         <Field label="Travelers"><input name="travelers" type="number" min="1" max="999" step="1" required defaultValue={editor.item?.travelers ?? 2} /></Field>
-        <TripRouteFields trip={editor.item} disabled={busy} /><Notes value={editor.item?.notes} />
+        <TripRouteFields trip={editor.item} disabled={busy} />
+        <TripImageEditor trip={editor.item} draft={tripImage} onChange={setTripImage} disabled={busy} />
+        <Notes value={editor.item?.notes} />
       </>}
       {editor.kind === "destination" && <>
         <p className="helper wide">The city, tagline, budget amounts, photos, and notes are shared by every trip that visits this destination.{editor.stop && " Stay notes and nights are for this trip only."}</p>

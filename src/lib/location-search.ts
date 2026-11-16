@@ -1,5 +1,10 @@
-import { recognizedCountry, usStateName } from "./destination-label.ts";
+import { airportByCode, airportName, type Airport } from "./airports.ts";
+import { countryName, recognizedCountry, usStateName } from "./destination-label.ts";
 
+/**
+ * A city, or an airport suggested for its IATA code (TRA-132), and the `label` choosing it saves. An airport's name
+ * includes its code, its region is the city it serves, its label is its code, and it has a position for the map.
+ */
 export type LocationSuggestion = {
   id: string;
   name: string;
@@ -7,6 +12,7 @@ export type LocationSuggestion = {
   country: string;
   countryCode?: string;
   label: string;
+  airport?: { latitude: number; longitude: number };
 };
 
 /**
@@ -91,6 +97,22 @@ function suggestionOf(result: Record<string, unknown>): LocationSuggestion | nul
   if (label.length > MAX_QUERY_LENGTH) label = [name, country].join(", ");
   if (label.length > MAX_QUERY_LENGTH) label = name;
   return { id: String(result.id), name, region, country, ...(countryCode ? { countryCode } : {}), label };
+}
+
+/** An airport suggested for its IATA code (TRA-132). Choosing it saves the code, which the trip map finds. */
+function airportSuggestion(airport: Airport): LocationSuggestion {
+  const { code, city, countryCode, latitude, longitude } = airport;
+  return { id: code, name: airportName(airport), region: city, country: countryName(countryCode), countryCode, label: code, airport: { latitude, longitude } };
+}
+
+/**
+ * The airport whose three-letter IATA code `code` is, in any letter case, anywhere in the world, as a suggestion
+ * (TRA-132). It needs no lookup, so it counts against no limits. Any other text, an ICAO code included, suggests none.
+ */
+export function airportSuggestions(code: string): LocationSuggestion[] {
+  const text = code.trim();
+  const airport = /^[a-z]{3}$/i.test(text) ? airportByCode(text.toUpperCase()) : undefined;
+  return airport ? [airportSuggestion(airport)] : [];
 }
 
 function normalizeResults(results: unknown[]): LocationSuggestion[] {
@@ -230,12 +252,22 @@ export function createLocationSearch({
     }
   }
 
+  /**
+   * Suggestions for a search of at least two characters: the places Open-Meteo has for it, after the airport whose IATA
+   * code it is, in any letter case (TRA-132).
+   */
   async function searchLocations(rawQuery: string | null, clientId = "anonymous"): Promise<LocationSuggestion[]> {
     const query = (rawQuery ?? "").trim().replace(/\s+/g, " ");
     if (query.length > MAX_QUERY_LENGTH || /\p{Cc}/u.test(query)) {
       throw new LocationSearchError("Enter a city using 120 characters or fewer.", 400);
     }
     if (query.length < 2) return [];
+    const places = await placeSuggestions(query, clientId);
+    return [...airportSuggestions(query), ...places].slice(0, MAX_RESULTS);
+  }
+
+  /** The places Open-Meteo has for a search, kept for ten minutes, with one upstream lookup shared by everyone searching it. */
+  async function placeSuggestions(query: string, clientId: string): Promise<LocationSuggestion[]> {
     const key = query.toLowerCase();
     const cached = cache.get(key);
     if (cached && cached.expiresAt > now()) return cached.locations;
@@ -281,15 +313,22 @@ export function createLocationSearch({
   }
 
   /**
-   * Where each saved place is (TRA-44). A place is found when Open-Meteo has a place whose name is the place's name, or
-   * begins with it as whole words, in every region and country written after it, and the first such place in
+   * Where each saved place is (TRA-44). A place among `airportNames` that is an airport's IATA code in capitals, such as
+   * "PHL", is at that airport (TRA-132). Any other place is found when Open-Meteo has a place whose name is the place's
+   * name, or begins with it as whole words, in every region and country written after it, and the first such place in
    * Open-Meteo's order is used. Nothing is guessed. Once a lookup fails, names not yet looked up are unavailable
    * instead of waiting on more.
    */
-  async function locatePlaces(saved: readonly string[]): Promise<Record<string, PlaceLocation>> {
+  async function locatePlaces(saved: readonly string[], airportNames: readonly string[] = []): Promise<Record<string, PlaceLocation>> {
     const located: Record<string, PlaceLocation> = {};
     const byName = new Map<string, { name: string; places: { place: string; qualifiers: string[] }[] }>();
+    const codes = new Set(airportNames);
     for (const place of new Set(saved)) {
+      const airport = codes.has(place) ? airportByCode(place) : undefined;
+      if (airport) {
+        located[place] = { status: "found", latitude: airport.latitude, longitude: airport.longitude, label: airportName(airport) };
+        continue;
+      }
       const query = placeQuery(place);
       if (!query) {
         located[place] = { status: "missing" };

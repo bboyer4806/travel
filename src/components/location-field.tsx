@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useId, useRef, useState, type KeyboardEvent } from "react";
-import { MapPin } from "lucide-react";
+import { MapPin, Plane } from "lucide-react";
 import { formatDestinationLabel } from "@/lib/destination-label";
 import type { LocationSuggestion } from "@/lib/location-search";
 
@@ -36,12 +36,13 @@ export default function LocationField({ name, label, defaultValue = "", hint, di
   const query = value.trim();
   const searching = open && !disabled && !composing && query.length >= 2;
   const current = result?.query === query ? result : null;
-  const locations = searching && current ? current.locations : [];
+  // A destination is a city, so its field suggests no airports (TRA-132).
+  const locations = searching && current ? current.locations.filter((location) => !(compactDestination && location.airport)) : [];
   const expanded = locations.length > 0;
   const status = !searching ? "" : !current ? "Finding cities…" : current.failed
     ? "City suggestions are unavailable. You can still enter your own location."
     : !locations.length ? "No matching cities. Try adding a state or country, or keep your own text."
-    : `${locations.length} ${locations.length === 1 ? "city suggestion" : "city suggestions"}. Use the arrow keys to choose, then press Enter.`;
+    : `${locations.length} ${locations.length === 1 ? "suggestion" : "suggestions"}. Use the arrow keys to choose, then press Enter.`;
 
   useEffect(() => {
     if (!searching) return;
@@ -122,12 +123,12 @@ export default function LocationField({ name, label, defaultValue = "", hint, di
       onCompositionStart={() => setComposing(true)} onCompositionEnd={() => setComposing(false)}
       onKeyDown={onKeyDown} />
     {searching && <div className="location-panel">
-      {expanded && <ul ref={list} id={`${id}-suggestions`} className="location-suggestions" role="listbox" aria-label="City suggestions">
+      {expanded && <ul ref={list} id={`${id}-suggestions`} className="location-suggestions" role="listbox" aria-label={compactDestination ? "City suggestions" : "City and airport suggestions"}>
         {locations.map((location, index) => <li key={location.id} role="presentation">
           <button type="button" id={`${id}-option-${index}`} role="option" aria-selected={active === index}
             tabIndex={-1} className="location-option" onMouseDown={(event) => event.preventDefault()}
             onClick={() => choose(location)}>
-            <MapPin size={17} aria-hidden="true" /><span><strong>{location.name}</strong><small>{[location.region, location.country].filter(Boolean).join(", ")}</small></span>
+            {location.airport ? <Plane size={17} aria-hidden="true" /> : <MapPin size={17} aria-hidden="true" />}<span><strong>{location.name}</strong><small>{[location.region, location.country].filter(Boolean).join(", ")}</small></span>
           </button>
         </li>)}
       </ul>}
@@ -136,7 +137,7 @@ export default function LocationField({ name, label, defaultValue = "", hint, di
     </div>
     <span className="sr-only" role="status" aria-live="polite">{status}</span>
     <small id={`${id}-help`}>{helpText}</small>
-    <p className="location-credit">Locations by <a href="https://open-meteo.com/" target="_blank" rel="noreferrer">Open-Meteo</a> / <a href="https://www.geonames.org/" target="_blank" rel="noreferrer">GeoNames</a></p>
+    <p className="location-credit">Locations by <a href="https://open-meteo.com/" target="_blank" rel="noreferrer">Open-Meteo</a> / <a href="https://www.geonames.org/" target="_blank" rel="noreferrer">GeoNames</a>{!compactDestination && <>, airports by <a href="https://ourairports.com/" target="_blank" rel="noreferrer">OurAirports</a></>}</p>
     {hint && <small id={`${id}-hint`}>{hint}</small>}
   </div>;
 }

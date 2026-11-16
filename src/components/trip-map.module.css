@@ -5,6 +5,16 @@
 .toggle svg { flex-shrink: 0; transition: transform .16s; }
 .toggle[aria-expanded="true"] svg { transform: rotate(180deg); }
 .help { font-size: 12px; color: var(--muted); margin: 0 0 14px; max-width: 640px; }
+/* The airport search above the map (TRA-132): a search field, then the airport it finds or why it finds none. */
+.airportSearch { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 16px; margin: 0 0 12px; }
+.airport { display: inline-flex; align-items: center; gap: 9px; max-width: 100%; padding: 7px 12px; border: 1px solid var(--line); border-radius: 8px; background: var(--white); color: var(--ink); font-size: 12px; text-align: left; cursor: pointer; }
+.airport:hover { background: #edf2e7; }
+.airport > svg { flex-shrink: 0; color: var(--green); }
+.airport > span { min-width: 0; overflow-wrap: anywhere; }
+.airport strong, .airport small { display: block; }
+.airport strong { font-weight: 600; }
+.airport small { color: var(--muted); font-size: 11px; }
+.airportMessage { margin: 0; color: var(--muted); font-size: 11px; }
 /* Leaflet's panes and controls stack within the frame, below the page's messages and dialogs. */
 .frame { position: relative; height: 380px; border: 1px solid var(--line); border-radius: 10px; overflow: hidden; background: var(--wash); isolation: isolate; }
 .map { position: absolute; inset: 0; }

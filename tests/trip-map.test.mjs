@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 import test from "node:test";
-import { journeyPlaceNames, mapLayout, placeRole, tripJourney } from "../src/lib/trip-map.ts";
+import { journeyAirportNames, journeyPlaceNames, mapLayout, placeRole, tripJourney } from "../src/lib/trip-map.ts";
 import { setup, tripInput } from "./budget-fixtures.mjs";
 
 const legSave = (id, overrides = {}) => ({ type: "leg.save", id, method: "", price: "", departure: "", arrival: "", url: "", notes: "", ...overrides });
@@ -67,6 +67,11 @@ test("a separate return city is its own endpoint, and a trip without destination
   const visited = empty.store.applyMutation({ type: "stop.add", tripId: empty.tripId, city: "Lisbon" }).id;
   assert.ok(visited);
   assert.deepEqual(tripJourney(empty.store.getSnapshot(), empty.tripId).legs.map((item) => [item.from, item.to]), [["Departing city", "Lisbon"], ["Lisbon", "Return city"]]);
+});
+
+test("a journey's departure, return and layovers may be airport codes, never its destinations or other stops (TRA-132)", (t) => {
+  const { store, tripId } = plannedTrip(t, { homeCity: "CLE", returnCity: "PHL" });
+  assert.deepEqual(journeyAirportNames(tripJourney(store.getSnapshot(), tripId)), ["CLE", "Frankfurt (FRA)", "Munich", "PHL"]);
 });
 
 /** A journey from home to two destinations and back, with a layover on the way out, as `tripJourney` builds one. */

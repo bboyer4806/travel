@@ -90,6 +90,16 @@ export function journeyPlaceNames(journey: Journey): string[] {
   return [...new Set(journey.places.map((place) => place.place).filter(Boolean))];
 }
 
+/**
+ * The saved names a journey's map finds at an airport when they are its IATA code in capitals, such as "PHL", each once
+ * (TRA-132): its departure's, return's and layovers'. Destinations and other stops are looked up only by name, so a
+ * destination such as "UAE" is never taken for an airport's code.
+ */
+export function journeyAirportNames(journey: Journey): string[] {
+  const airportKinds: MapPlaceKind[] = ["departure", "return", "layover"];
+  return [...new Set(journey.places.filter((place) => airportKinds.includes(place.kind)).map((place) => place.place).filter(Boolean))];
+}
+
 /** The latitude Leaflet's Mercator map reaches, beyond which latitudes are drawn at its edge. */
 const MAX_LATITUDE = 85.0511287798;
 /** Mercator's vertical coordinate for a latitude, in which the map's straight lines are straight. */

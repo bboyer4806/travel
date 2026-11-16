@@ -32,6 +32,11 @@ export function recognizedCountry(value: string): string | undefined {
   return countryCodesByName.get(clean(value).toLowerCase());
 }
 
+/** A country's English name for its ISO code, such as "United States" for "US", or the code when it has none. */
+export function countryName(code: string): string {
+  return countryNames.of(code) ?? code;
+}
+
 /** The US state, district or territory a postal abbreviation such as "OH" or "D.C." names. */
 export function usStateName(value: string): string | undefined {
   const code = value.replace(/[^a-z]/gi, "").toUpperCase();

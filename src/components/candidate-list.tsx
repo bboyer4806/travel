@@ -37,9 +37,9 @@ export default function CandidateList({ items, category, destination, busy, onEd
         <h2>{item.name}</h2>
         <RestaurantTypeTags types={item.restaurantTypes} className="idea-types" />
         {category !== "hotels" && <button className={item.mustDo ? "button selected-button small must-do" : "button secondary small must-do"}
-          disabled={busy} aria-pressed={item.mustDo} aria-label={"Must do: " + item.name}
+          disabled={busy} aria-pressed={item.mustDo}
           onClick={(event) => onMutate({ type: "candidate.mustDo", id: item.id, mustDo: !item.mustDo }, item.mustDo ? "Must do removed." : "Marked as must do.", event.currentTarget)}>
-          <Star size={15} fill={item.mustDo ? "currentColor" : "none"} />{item.mustDo ? "Must do" : "Mark as must do"}
+          <Star size={15} fill={item.mustDo ? "currentColor" : "none"} />{item.mustDo ? "Must do" : "Mark as must do"}<span className="sr-only"> for {item.name}</span>
         </button>}
         {item.address && <p className="idea-address"><MapPin size={15} />{item.address}</p>}
         {item.notes && <p className="idea-notes">{item.notes}</p>}

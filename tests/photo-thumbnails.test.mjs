@@ -99,7 +99,6 @@ test("schema 32 keeps every photo; one saved before has no thumbnail and gives i
   db = new DatabaseSync(path);
   t.after(() => db.close());
   assert.equal(db.prepare("PRAGMA user_version").get().user_version, SCHEMA_VERSION);
-  assert.equal(SCHEMA_VERSION, 32);
   assert.equal(db.prepare("PRAGMA integrity_check").get().integrity_check, "ok");
   assert.deepEqual(db.prepare("PRAGMA foreign_key_check").all(), []);
 });

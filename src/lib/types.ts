@@ -76,6 +76,8 @@ export type Mutation =
  | { type: "trip.tag"; tripId: string; name: string }
  // Removes one tag from a trip. The trip, its other tags and other trips' tags stay.
  | { type: "trip.untag"; tripId: string; name: string }
+ // Puts every trip the account can open, each once, in the account's own order on All trips (TRA-16). Other accounts keep theirs.
+ | { type: "trip.order"; tripIds: string[] }
  | { type: "homeItem.save"; id: string; create?: true; tripId: string; name: string; price: string; notes: string; completed: boolean }
  | { type: "homeItem.delete"; id: string; tripId: string }
  | { type: "homeItem.complete"; id: string; tripId: string; completed: boolean }

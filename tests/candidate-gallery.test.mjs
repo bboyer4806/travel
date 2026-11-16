@@ -4,13 +4,13 @@ import { DatabaseSync } from "node:sqlite";
 import test from "node:test";
 import { SCHEMA_VERSION, ValidationError } from "../src/lib/store.ts";
 import { createOwnedStore } from "./owned-store.mjs";
-import { addCity, fileDatabase, newItem } from "./budget-fixtures.mjs";
+import { addCity, fileDatabase, newItem, prepared } from "./budget-fixtures.mjs";
 import { calculateBudget } from "../src/lib/budget.ts";
 
 const webp = new Uint8Array(Buffer.from("UklGRiIAAABXRUJQVlA4IBYAAAAwAQCdASoBAAEADsD+JaQAA3AAAAAA", "base64"));
 const alternative = new Uint8Array(webp);
 alternative[alternative.length - 1] = 1;
-const photo = (data = webp) => ({ id: randomUUID(), data });
+const photo = (data = webp) => ({ id: randomUUID(), ...prepared(data) });
 const tripInput = { type: "trip.save", name: "Photo research", dateLabel: "Spring", homeCity: "Boston", travelers: 2, notes: "" };
 const addDestination = (store, tripId, city = "Vienna") => addCity((input) => store.applyMutation(input).id, tripId, city, { stay: "3 nights", notes: "" });
 const ideaInput = (destinationId, overrides = {}) => ({ type: "candidate.save", destinationId, category: "hotels", name: "An idea", price: "275.50", address: "City center", url: "https://example.com", notes: "Keep these details", included: true, ...overrides, ...newItem(overrides) });
@@ -114,9 +114,11 @@ test("gallery ownership, stale edits, duplicate IDs, and main-photo checks fail 
     { add: [extra, extra], remove: [] },
     { add: [extra, { ...extra, id: extra.id.toUpperCase() }], remove: [] },
     { add: [], remove: [own.id, own.id] },
-    { add: [{ id: randomUUID(), data: null }], remove: [] },
-    { add: [{ id: randomUUID(), data: "not bytes" }], remove: [] },
-    { add: [{ id: "not-an-id", data: webp }], remove: [] },
+    { add: [{ id: randomUUID(), data: null, thumbnail: webp }], remove: [] },
+    { add: [{ id: randomUUID(), data: "not bytes", thumbnail: webp }], remove: [] },
+    { add: [{ id: randomUUID(), data: webp }], remove: [] },
+    { add: [{ id: randomUUID(), data: webp, thumbnail: "not bytes" }], remove: [] },
+    { add: [{ id: "not-an-id", ...prepared(webp) }], remove: [] },
     { add: [], remove: [], mainImageId: "bad-id" },
   ];
   for (const gallery of galleries) {
@@ -124,7 +126,7 @@ test("gallery ownership, stale edits, duplicate IDs, and main-photo checks fail 
     assert.deepEqual(store.getSnapshot(), before, "failed photo edits also roll back hotel selection and fields");
     assert.deepEqual(store.getCandidatePhoto(id, own.id).data, webp);
   }
-  for (const image of [null, webp]) {
+  for (const image of [null, prepared(webp)]) {
     assert.throws(() => store.applyMutation({ ...input, id, image, gallery: { add: [], remove: [] } }), ValidationError);
     assert.deepEqual(store.getSnapshot(), before);
   }
@@ -185,7 +187,7 @@ test("schema 5 photos migrate with their exact bytes and versions, and repeated 
     const input = ideaInput(destinationId);
     const single = photo(alternative);
     const id = store.applyMutation({ ...input, gallery: { add: [single], remove: [] } }).id;
-    store.applyMutation({ type: "destination.save", id: destinationId, image: webp });
+    store.applyMutation({ type: "destination.save", id: destinationId, image: prepared(webp) });
     const before = store.getSnapshot();
     const original = store.getCandidatePhoto(id, single.id);
     const destinationPhoto = store.getDestinationImage(destinationId);

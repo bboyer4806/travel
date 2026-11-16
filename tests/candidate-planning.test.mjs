@@ -6,7 +6,7 @@ import { DatabaseSync } from "node:sqlite";
 import test from "node:test";
 import { SCHEMA_VERSION, ValidationError } from "../src/lib/store.ts";
 import { createOwnedStore } from "./owned-store.mjs";
-import { addCity, fileDatabase, newItem } from "./budget-fixtures.mjs";
+import { addCity, fileDatabase, newItem, prepared } from "./budget-fixtures.mjs";
 import { calculateBudget } from "../src/lib/budget.ts";
 
 const tripInput = { type: "trip.save", name: "Planning priorities", dateLabel: "", homeCity: "Home", travelers: 2, notes: "" };
@@ -31,7 +31,7 @@ for (const category of ["hotels", "activities", "restaurants"]) {
       store.applyMutation(ideaInput(destinationId, other, "Other category"));
     }
     const photoId = randomUUID();
-    const a = store.applyMutation(ideaInput(destinationId, category, "Zulu", { included: true, gallery: { add: [{ id: photoId, data: image }], remove: [], mainImageId: photoId } })).id;
+    const a = store.applyMutation(ideaInput(destinationId, category, "Zulu", { included: true, gallery: { add: [{ id: photoId, ...prepared(image) }], remove: [], mainImageId: photoId } })).id;
     const b = store.applyMutation(ideaInput(destinationId, category, "Alpha")).id;
     const c = store.applyMutation(ideaInput(destinationId, category, "Middle")).id;
     const before = store.getSnapshot();
@@ -113,7 +113,7 @@ test("schema 15 upgrade retains alphabetical lists; replay, reopen and online ba
     }
   }
   const photoOwner = list(store, destinationId, "activities")[0].id;
-  store.applyMutation(ideaInput(destinationId, "activities", "Zulu", { id: photoOwner, gallery: { add: [{ id: photoId, data: image }], remove: [], mainImageId: photoId } }));
+  store.applyMutation(ideaInput(destinationId, "activities", "Zulu", { id: photoOwner, gallery: { add: [{ id: photoId, ...prepared(image) }], remove: [], mainImageId: photoId } }));
   store.close();
   const legacy = new DatabaseSync(path);
   legacy.exec("DROP INDEX candidate_order; ALTER TABLE candidates DROP COLUMN position; ALTER TABLE candidates DROP COLUMN mustDo; PRAGMA user_version = 15;");

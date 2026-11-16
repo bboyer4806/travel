@@ -131,6 +131,11 @@ Repeat passing checks when subsequent changes affect their coverage or required 
 - Image upload types and size and gallery limits live in `src/lib/image-limits.ts`, as do the limits
   on the photos one AI proposal downloads. The photo editors, upload decoding, the store and the MCP
   tools use them, and messages state them from there.
+- Each photo is saved with its thumbnail (TRA-89): `prepareImage` returns both as a `PreparedImage`, and
+  every save of a photo, an AI proposal's included, carries both. Gallery thumbnails and editor previews
+  load each photo's `/thumbnail` route; the main photo and the crop editor load the photo. A photo saved
+  before schema 32 has a NULL thumbnail, so `storedThumbnailResponse` makes one with `makeThumbnail` for
+  each request and saves nothing: image routes never write.
 - Trip startDate and each stop's nights are schedule inputs. Use `src/lib/trip-dates.ts`
   for ordered read-only destination dates and trip end; retain legacy date columns for migration review.
   Hotels use nights; daily food/miscellaneous use `nightsToBudgetDays` (zero nights = one day).

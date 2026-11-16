@@ -32,8 +32,9 @@ test("a proposal's photos download together and are prepared as uploads are, by 
   });
   const prepared = await prepareAiPhotos(photos, fetch);
   assert.deepEqual([...prepared.keys()], photos.map(({ id }) => id));
-  const sizes = await Promise.all([...prepared.values()].map(async (data) => { const { format, width, height } = await sharp(data).metadata(); return [format, width, height]; }));
-  assert.deepEqual(sizes, [["webp", 1600, 1067], ["webp", 40, 30], ["webp", 40, 30]], "each is resized and saved as WebP, as an upload is");
+  const size = async (bytes) => { const { format, width, height } = await sharp(bytes).metadata(); return [format, width, height]; };
+  const sizes = await Promise.all([...prepared.values()].map(({ data, thumbnail }) => Promise.all([size(data), size(thumbnail)])));
+  assert.deepEqual(sizes, [[["webp", 1600, 1067], ["webp", 480, 320]], [["webp", 40, 30], ["webp", 40, 30]], [["webp", 40, 30], ["webp", 40, 30]]], "each is resized and saved as WebP with its thumbnail, as an upload is (TRA-89)");
   assert.equal(signals.length, 3);
   assert.ok(signals.every((signal) => signal.aborted), "every request is done with once the photos are ready");
   assert.equal(AI_PHOTO_DOWNLOAD_SECONDS, 15);

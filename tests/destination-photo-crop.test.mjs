@@ -110,7 +110,9 @@ function harness(destination) {
     title: () => text(byClass("cropTitle")[0]),
     status: () => text(byClass("status")[0]),
     /** Each photo shown, in order: its ID from its source (none for a new photo before it loads), and where its crop is centered. */
-    photos: () => nodes.filter((node) => node.type === "img").map((node) => [node.props.src?.split("/").at(-1).split("?")[0], node.props.style.objectPosition]),
+    photos: () => nodes.filter((node) => node.type === "img").map((node) => [node.props.src?.match(/^\/api\/destination-images\/[^/]+\/([^/?]+)/)[1], node.props.style.objectPosition]),
+    /** Each photo's source, in order. */
+    sources: () => nodes.filter((node) => node.type === "img").map((node) => node.props.src),
     /** A pointer event on the crop frame, for a photo of `photo` size in a frame of `frame` size. */
     pointer(type, fields = {}, photo = PHOTO, frame = FRAME) {
       const handler = { down: "onPointerDown", move: "onPointerMove", up: "onPointerUp", cancel: "onPointerCancel" }[type];
@@ -141,12 +143,14 @@ test("Adjust crop shows a photo in the main photo's shape, moves it as it is dra
   const [a, b, c] = destination.images.map((image) => image.id);
   const editor = harness(destination);
   assert.deepEqual(editor.photos(), [shown(destination, 1, "50% 50%"), shown(destination, 2, "50% 50%"), shown(destination, 3, "30% 60%")], "each photo's card keeps its focal point in view");
+  assert.deepEqual(editor.sources(), destination.images.map((image) => `/api/destination-images/${destination.id}/${image.id}/thumbnail?v=${image.version}`), "each photo's card shows its thumbnail (TRA-89)");
   for (const number of [1, 2, 3]) assert.equal(text(editor.button(`Adjust crop of photo ${number}`)), "Adjust crop", "each photo has Adjust crop");
 
   editor.click("Adjust crop of photo 2");
   assert.equal(editor.title(), "Adjust crop of photo 2");
   assert.deepEqual([editor.cards().length, editor.button("Add photos"), editor.button("Move photo 1 right")], [0, undefined, undefined], "the crop editor takes the photos' place");
   assert.deepEqual(editor.photos(), [shown(destination, 2, "50% 50%")], "it shows the photo on its focal point");
+  assert.deepEqual(editor.sources(), [`/api/destination-images/${destination.id}/${b}?v=${destination.images[1].version}`], "the crop editor shows the photo itself, as large as the main photo (TRA-89)");
   assert.deepEqual(Object.keys(editor.frame().props).toSorted(), ["children", "className", "onPointerCancel", "onPointerDown", "onPointerMove", "onPointerUp"], "the frame can't be dragged into another photo's place");
 
   editor.pointer("down", { clientX: 100, clientY: 100 });

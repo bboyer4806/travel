@@ -5,12 +5,12 @@ import test from "node:test";
 import { calculateBudget, calculateDestinationBudget, tripVisits } from "../src/lib/budget.ts";
 import { createStore, SCHEMA_VERSION } from "../src/lib/store.ts";
 import { churchDateEligible } from "../src/lib/trip-dates.ts";
-import { addCity, fileDatabase, newItem } from "./budget-fixtures.mjs";
+import { addCity, fileDatabase, newItem, prepared } from "./budget-fixtures.mjs";
 import { OWNER_EMAIL, UNDO_SCHEMA_21 } from "./owned-store.mjs";
 
 const NOT_AVAILABLE = { name: "ValidationError", message: "This item no longer exists or isn't shared with you. Please refresh and try again." };
 const webp = new Uint8Array([82, 73, 70, 70, 4, 0, 0, 0, 87, 69, 66, 80]);
-const photo = () => ({ id: randomUUID(), data: webp });
+const photo = () => ({ id: randomUUID(), ...prepared(webp) });
 const requirements = (visaRequirements) => ({ passportNationality: "United States", travelPurpose: "Tourism", travelerCircumstances: "", visaRequirements, passportValidity: "", requiredDocuments: "", transitRequirements: "", notes: "", sources: [{ id: randomUUID(), url: "https://example.gov/entry", description: "Official" }], lastCheckedDate: "2026-11-01" });
 const sorted = (items) => [...items].sort((a, b) => a.id.localeCompare(b.id));
 

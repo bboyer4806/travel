@@ -1,7 +1,7 @@
 import { downloadAddress, downloadImage, fetchPublic, type PhotoFetch } from "./image-download.ts";
 import { AI_PHOTO_DOWNLOAD_SECONDS, formatMegabytes, MAX_AI_PROPOSAL_PHOTOS, MAX_GALLERY_UPLOAD_BYTES } from "./image-limits.ts";
 import { ImageValidationError, prepareImage } from "./image-upload.ts";
-import type { AiPhotoToAdd } from "./types";
+import type { AiPhotoToAdd, PreparedImage } from "./types";
 
 /**
  * Downloads the photos a ChatGPT or Claude proposal adds, all at once, and prepares each as an upload is (TRA-122),
@@ -9,7 +9,7 @@ import type { AiPhotoToAdd } from "./types";
  * address, and the other downloads stop: nothing is proposed with a photo Travel couldn't prepare. `fetch` and
  * `timeoutMs` change only for tests.
  */
-export async function prepareAiPhotos(photos: AiPhotoToAdd[], fetch: PhotoFetch = fetchPublic, timeoutMs = AI_PHOTO_DOWNLOAD_SECONDS * 1000): Promise<Map<string, Uint8Array>> {
+export async function prepareAiPhotos(photos: AiPhotoToAdd[], fetch: PhotoFetch = fetchPublic, timeoutMs = AI_PHOTO_DOWNLOAD_SECONDS * 1000): Promise<Map<string, PreparedImage>> {
   if (photos.length > MAX_AI_PROPOSAL_PHOTOS) throw new ImageValidationError(`Propose up to ${MAX_AI_PROPOSAL_PHOTOS} new photos at a time, and the rest in another proposal.`);
   // Every address is checked before anything is downloaded.
   for (const photo of photos) {
@@ -33,7 +33,7 @@ export async function prepareAiPhotos(photos: AiPhotoToAdd[], fetch: PhotoFetch 
   if (files.reduce((total, file) => total + file.size, 0) > MAX_GALLERY_UPLOAD_BYTES) {
     throw new ImageValidationError(`Propose up to ${formatMegabytes(MAX_GALLERY_UPLOAD_BYTES)} of new photos at a time, and the rest in another proposal.`);
   }
-  const prepared = new Map<string, Uint8Array>();
+  const prepared = new Map<string, PreparedImage>();
   for (const [index, photo] of photos.entries()) {
     const form = new FormData();
     form.set("image", files[index]);

@@ -4,12 +4,12 @@ import { DatabaseSync } from "node:sqlite";
 import test from "node:test";
 import { SCHEMA_VERSION, ValidationError } from "../src/lib/store.ts";
 import { createOwnedStore } from "./owned-store.mjs";
-import { addCity, fileDatabase, newItem, stop } from "./budget-fixtures.mjs";
+import { addCity, fileDatabase, newItem, prepared, stop } from "./budget-fixtures.mjs";
 import { calculateBudget } from "../src/lib/budget.ts";
 import { storedImageResponse } from "../src/lib/stored-image-response.ts";
 
 const webp = new Uint8Array(Buffer.from("UklGRiIAAABXRUJQVlA4IBYAAAAwAQCdASoBAAEADsD+JaQAA3AAAAAA", "base64"));
-const photo = () => ({ id: randomUUID(), data: new Uint8Array(webp) });
+const photo = () => ({ id: randomUUID(), ...prepared(new Uint8Array(webp)) });
 const tripInput = { type: "trip.save", name: "Gallery trip", dateLabel: "Next spring", homeCity: "Boston", travelers: 2, notes: "", startDate: "2027-05-01" };
 const addDestination = (store, tripId, { city = "Vienna", ...overrides } = {}) => addCity((input) => store.applyMutation(input).id, tripId, city, { nights: 4, stay: "Near the station", notes: "Walk the old town", ...overrides });
 const destination = (store, id) => store.getSnapshot().destinations.find((item) => item.id === id);
@@ -75,14 +75,15 @@ test("destination galleries validate ownership, ordering, limits and photo data 
     { add: [], remove: [], order: [foreign.id] }, { add: [], remove: [], order: [] },
     { add: [], remove: [], order: [own.id, own.id] }, { add: [], remove: [], order: "bad" },
     { add: [], remove: [], order: ["bad"] }, { add: [photo()], remove: [], order: [own.id] },
-    { add: [{ id: randomUUID(), data: new Uint8Array() }], remove: [] },
+    { add: [{ id: randomUUID(), ...prepared(new Uint8Array(), webp) }], remove: [] },
+    { add: [{ id: randomUUID(), ...prepared(webp, new Uint8Array()) }], remove: [] },
     { add: Array.from({ length: 11 }, photo), remove: [] },
   ];
   for (const gallery of invalid) {
     assert.throws(() => store.applyMutation({ type: "destination.save", id, city: "Unsaved city", gallery }), ValidationError);
     assert.deepEqual(store.getSnapshot(), before);
   }
-  for (const image of [null, webp]) assert.throws(() => store.applyMutation({ type: "destination.save", id, image, gallery: { add: [], remove: [] } }), ValidationError);
+  for (const image of [null, prepared(webp)]) assert.throws(() => store.applyMutation({ type: "destination.save", id, image, gallery: { add: [], remove: [] } }), ValidationError);
   const more = Array.from({ length: 9 }, photo);
   store.applyMutation({ type: "destination.save", id, gallery: { add: more, remove: [] } });
   assert.throws(() => store.applyMutation({ type: "destination.save", id, gallery: { add: [extra], remove: [] } }), /10 photos/);
@@ -128,7 +129,7 @@ test("schema 16 single images migrate unchanged and replay preserves galleries a
   let store = createOwnedStore(path);
   try {
     const { id } = plan(store);
-    store.applyMutation({ type: "destination.save", id, image: webp });
+    store.applyMutation({ type: "destination.save", id, image: prepared(webp) });
     const original = store.getDestinationImage(id);
     const planning = store.getSnapshot();
     store.close();
@@ -169,7 +170,7 @@ test("legacy image changes affect only primary, and a destination keeps its gall
   const candidate = store.getSnapshot().candidates[0];
   const first = store.getDestinationPhoto(id, photos[0].id);
   const originalMain = store.getDestinationImage(id);
-  store.applyMutation({ type: "destination.save", id, image: webp });
+  store.applyMutation({ type: "destination.save", id, image: prepared(webp) });
   assert.notEqual(store.getDestinationImage(id).version, originalMain.version);
   assert.deepEqual(store.getDestinationPhoto(id, photos[0].id), first);
   store.applyMutation({ type: "destination.save", id, image: null });
@@ -273,7 +274,7 @@ test("an old client's replacement of the primary photo starts it centered, and o
   const [primary, other] = [photo(), photo()];
   store.applyMutation({ type: "destination.save", id, gallery: { add: [primary, other], remove: [], mainImageId: primary.id, focus: [point(primary.id, 10, 90), point(other.id, 70, 30)] } });
   const version = store.getDestinationImage(id).version;
-  store.applyMutation({ type: "destination.save", id, image: webp });
+  store.applyMutation({ type: "destination.save", id, image: prepared(webp) });
   assert.notEqual(store.getDestinationImage(id).version, version, "the primary photo was replaced");
   assert.deepEqual([focal(store, id, primary.id), focal(store, id, other.id)], [[50, 50], [70, 30]]);
 });

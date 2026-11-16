@@ -18,6 +18,10 @@ const subjectLabels: Record<ImageSubject, string> = { hotel: "Hotel", activity: 
 export function photoUrl(candidateId: string, image: { id: string; version?: string }, imageKind: ImageKind) {
   return `/api/${imageKind}-images/${candidateId}/${image.id}?v=${image.version}`;
 }
+/** A photo's thumbnail (TRA-89), which a gallery's thumbnails and its editor's previews show in place of the photo. */
+function thumbnailUrl(candidateId: string, image: { id: string; version?: string }, imageKind: ImageKind) {
+  return `/api/${imageKind}-images/${candidateId}/${image.id}/thumbnail?v=${image.version}`;
+}
 
 export function CandidateGallery({ candidate, imageKind = "candidate" }: { candidate: GalleryOwner; imageKind?: ImageKind }) {
   if (!candidate.images.length) return null;
@@ -50,9 +54,10 @@ function GalleryView({ candidate, imageKind }: { candidate: GalleryOwner; imageK
   </div>;
 }
 
+/** A saved photo's thumbnail, in the gallery's thumbnails and the editor's previews. */
 function SavedPhoto({ candidateId, image, alt, imageKind }: { imageKind: ImageKind; candidateId: string; image: { id: string; version?: string }; alt: string }) {
   // eslint-disable-next-line @next/next/no-img-element
-  return <img className={styles.image} src={photoUrl(candidateId, image, imageKind)} alt={alt} loading="lazy" decoding="async" width={240} height={160} />;
+  return <img className={styles.image} src={thumbnailUrl(candidateId, image, imageKind)} alt={alt} loading="lazy" decoding="async" width={240} height={160} />;
 }
 
 function UploadPreview({ file, alt }: { file: File; alt: string }) {

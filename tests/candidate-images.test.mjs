@@ -4,7 +4,7 @@ import { DatabaseSync } from "node:sqlite";
 import test from "node:test";
 import { SCHEMA_VERSION, ValidationError } from "../src/lib/store.ts";
 import { createOwnedStore } from "./owned-store.mjs";
-import { addCity, fileDatabase, newItem } from "./budget-fixtures.mjs";
+import { addCity, fileDatabase, newItem, prepared } from "./budget-fixtures.mjs";
 import { calculateBudget } from "../src/lib/budget.ts";
 
 const webp = new Uint8Array(Buffer.from("UklGRiIAAABXRUJQVlA4IBYAAAAwAQCdASoBAAEADsD+JaQAA3AAAAAA", "base64"));
@@ -15,7 +15,7 @@ const tripInput = { type: "trip.save", name: "Ideas with images", dateLabel: "Ne
 const addDestination = (store, tripId, { city = "Vienna", ...overrides } = {}) => addCity((input) => store.applyMutation(input).id, tripId, city, { stay: "4 nights", notes: "Stay downtown", ...overrides });
 const candidateInput = (destinationId, overrides = {}) => ({ type: "candidate.save", destinationId, category: "hotels", name: "An idea", price: "200.33", address: "City center", url: "https://example.com/booking", notes: "Worth considering", included: true, ...overrides, ...newItem(overrides) });
 const linksInput = () => [{ id: randomUUID(), url: "https://example.com/booking", description: "Booking options" }, { id: randomUUID(), url: "https://example.com/review", description: "Research notes" }];
-const photo = (data = webp) => ({ id: randomUUID(), data });
+const photo = (data = webp, thumbnail = data) => ({ id: randomUUID(), ...prepared(data, thumbnail) });
 const gallery = (...photos) => ({ add: photos, remove: [] });
 function planConnections(store) {
   for (const leg of store.getSnapshot().legs) {
@@ -39,7 +39,7 @@ for (const category of categories) {
     let store = createOwnedStore(path);
     try {
       const tripId = store.applyMutation({ ...tripInput, ...newItem() }).id;
-      const destinationId = addDestination(store, tripId, { image: replacement });
+      const destinationId = addDestination(store, tripId, { image: prepared(replacement) });
       planConnections(store);
       const links = linksInput();
       const input = candidateInput(destinationId, { category, links });
@@ -105,8 +105,8 @@ test("candidate deletion removes only its own images, and removing stops or trip
   const observer = new DatabaseSync(path);
   try {
     const tripId = store.applyMutation({ ...tripInput, ...newItem() }).id;
-    const firstDestination = addDestination(store, tripId, { image: webp });
-    const secondDestination = addDestination(store, tripId, { city: "Paris", image: replacement });
+    const firstDestination = addDestination(store, tripId, { image: prepared(webp) });
+    const secondDestination = addDestination(store, tripId, { city: "Paris", image: prepared(replacement) });
     const hotelPhoto = photo(webp), activityPhoto = photo(replacement), restaurantPhoto = photo(webp);
     const hotelId = store.applyMutation(candidateInput(firstDestination, { gallery: gallery(hotelPhoto) })).id;
     const activityId = store.applyMutation(candidateInput(firstDestination, { category: "activities", gallery: gallery(activityPhoto) })).id;
@@ -146,11 +146,13 @@ test("invalid candidate images leave fields, selection, and existing image uncha
   const oversized = new Uint8Array(2 * 1024 * 1024 + 1);
   oversized.set(webp);
   for (const image of ["https://example.com/image.webp", [...webp], { data: webp }, new Uint16Array(20), new Uint8Array(), webp.subarray(0, 11), wrongRiff, wrongWebp, oversized]) {
-    assert.throws(() => store.applyMutation(candidateInput(destinationId, { id: candidateId, name: "Unsaved edit", gallery: gallery(photo(image)) })), ValidationError);
-    assert.deepEqual(store.getSnapshot(), before);
-    assert.deepEqual(store.getCandidatePhoto(candidateId, savedPhoto.id), beforeImage);
-    assert.throws(() => store.applyMutation(candidateInput(destinationId, { name: "Unsaved new hotel", gallery: gallery(photo(image)) })), ValidationError);
-    assert.deepEqual(store.getSnapshot(), before);
+    for (const invalid of [photo(image, webp), photo(webp, image)]) {
+      assert.throws(() => store.applyMutation(candidateInput(destinationId, { id: candidateId, name: "Unsaved edit", gallery: gallery(invalid) })), ValidationError);
+      assert.deepEqual(store.getSnapshot(), before);
+      assert.deepEqual(store.getCandidatePhoto(candidateId, savedPhoto.id), beforeImage);
+      assert.throws(() => store.applyMutation(candidateInput(destinationId, { name: "Unsaved new hotel", gallery: gallery(invalid) })), ValidationError);
+      assert.deepEqual(store.getSnapshot(), before);
+    }
   }
   const otherDestinationId = addDestination(store, tripId, { city: "Paris" });
   assert.throws(() => store.applyMutation(candidateInput(otherDestinationId, { id: candidateId, gallery: gallery(photo(webp)) })), ValidationError);
@@ -203,7 +205,7 @@ test("schema 4 upgrade preserves destination images and every record, and schema
   let store = createOwnedStore(path);
   try {
     const tripId = store.applyMutation({ ...tripInput, ...newItem() }).id;
-    const destinationId = addDestination(store, tripId, { image: webp });
+    const destinationId = addDestination(store, tripId, { image: prepared(webp) });
     planConnections(store);
     const candidateIds = categories.map((category) => store.applyMutation(candidateInput(destinationId, { category, name: category + " idea", links: linksInput() })).id);
     const before = store.getSnapshot();

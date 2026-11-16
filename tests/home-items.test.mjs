@@ -4,7 +4,7 @@ import { DatabaseSync } from "node:sqlite";
 import test from "node:test";
 import { SCHEMA_VERSION, ValidationError } from "../src/lib/store.ts";
 import { createOwnedStore } from "./owned-store.mjs";
-import { addCity, fileDatabase, newItem, setup } from "./budget-fixtures.mjs";
+import { addCity, fileDatabase, newItem, prepared, setup } from "./budget-fixtures.mjs";
 import { calculateBudget } from "../src/lib/budget.ts";
 
 const tripInput = (overrides = {}) => ({ type: "trip.save", name: "Spring trip", dateLabel: "Spring 2027", homeCity: "Boston", travelers: 2, notes: "", ...overrides, ...newItem(overrides) });
@@ -213,7 +213,7 @@ test("storage failures roll back home-item edits, deletions, and trip cascades",
   try {
     const tripId = store.applyMutation(tripInput()).id;
     const destinationId = pricedTrip(store, tripId);
-    store.applyMutation(candidateInput(destinationId, { name: "Alternate hotel", included: false, gallery: { add: [{ id: randomUUID(), data: webp }], remove: [] } }));
+    store.applyMutation(candidateInput(destinationId, { name: "Alternate hotel", included: false, gallery: { add: [{ id: randomUUID(), ...prepared(webp) }], remove: [] } }));
     const id = store.applyMutation(homeInput(tripId, { price: "98.76" })).id;
     const before = store.getSnapshot();
     const budget = calculateBudget(before, tripId);
@@ -240,8 +240,8 @@ test("schema 6 migration adds home items while preserving trips, research, itine
   let store = createOwnedStore(path);
   try {
     const tripId = store.applyMutation(tripInput()).id;
-    const destinationId = addDestination(store, tripId, { image: webp });
-    const photos = [{ id: randomUUID(), data: webp }, { id: randomUUID(), data: otherWebp }];
+    const destinationId = addDestination(store, tripId, { image: prepared(webp) });
+    const photos = [{ id: randomUUID(), ...prepared(webp) }, { id: randomUUID(), ...prepared(otherWebp) }];
     const candidateId = store.applyMutation(candidateInput(destinationId, { links: [{ id: randomUUID(), url: "https://example.com", description: "Booking research" }], gallery: { add: photos, remove: [], mainImageId: photos[1].id } })).id;
     const firstLeg = store.getSnapshot().legs.find((entry) => entry.tripId === tripId);
     store.applyMutation({ type: "leg.save", id: firstLeg.id, method: "Flight", price: "210.10", departure: "Morning", arrival: "Evening", url: "https://example.com/flights", notes: "Keep itinerary", itinerary: [{ id: randomUUID(), kind: "layover", place: "London", arrival: "10:00", departure: "12:00", notes: "Change planes" }], links: [{ id: randomUUID(), url: "https://example.com/flights", description: "Flight research" }] });

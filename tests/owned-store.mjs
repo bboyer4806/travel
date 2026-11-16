@@ -52,6 +52,10 @@ export const UNDO_SCHEMA_21 = `
   PRAGMA user_version = 20;
   PRAGMA foreign_keys = ON;`;
 
+/** Turns a schema 32 database back into schema 31, before photos had thumbnails (TRA-89), to test the upgrade. */
+export const UNDO_SCHEMA_32 = ["destination_images", "candidate_images", "church_images", "ai_proposal_photos"]
+  .map((table) => `ALTER TABLE ${table} DROP COLUMN thumbnail;`).join(" ") + " PRAGMA user_version = 31;";
+
 /**
  * A store as its designated owner uses it, for tests about planning rather than access: every read and
  * change is made as that account, as Travel's pages and Server Action make them for the signed-in account.

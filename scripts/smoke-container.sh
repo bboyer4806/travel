@@ -131,6 +131,7 @@ start
 docker exec -i -e SCHEMA_VERSION="$schema_version" "$container" node --input-type=module <<'JS'
 import assert from 'node:assert/strict';
 import { DatabaseSync } from 'node:sqlite';
+import sharp from 'sharp';
 const destinationId = '22222222-2222-4222-8222-222222222222';
 const imageVersion = '33333333-3333-4333-8333-333333333333';
 const requirements = { passportNationality: 'United States', travelPurpose: 'Tourism', travelerCircumstances: 'Whole party', visaRequirements: 'Review authorization rules', passportValidity: 'Review passport rules', requiredDocuments: 'Review health and entry documents', transitRequirements: 'Review transit rules separately', notes: 'Manually maintained', sources: [{ id: 'c1000000-0000-4000-8000-000000000001', url: 'https://example.gov/entry', description: 'Official source' }], lastCheckedDate: '2026-11-03' };
@@ -238,10 +239,23 @@ async function verifyImage(path, version, expected) {
   const missingVersion = await fetch(endpoint + '?v=44444444-4444-4444-8444-444444444444', options());
   assert.equal(missingVersion.status, 404, 'Unknown versions must not return the current image');
 }
+// The seeded photos are as photos saved before thumbnails (TRA-89): each has its thumbnail made from it when asked for.
+async function verifyThumbnail(path, version) {
+  const endpoint = base + path + '/thumbnail';
+  const response = await fetch(endpoint + '?v=' + version, options());
+  assert.equal(response.status, 200, endpoint);
+  assert.equal(response.headers.get('content-type'), 'image/webp');
+  assert.equal(response.headers.get('cache-control'), 'private, max-age=31536000, immutable');
+  const { format, width, height } = await sharp(Buffer.from(await response.arrayBuffer())).metadata();
+  assert.deepEqual([format, width, height], ['webp', 2, 2], endpoint + ' must be made from the photo');
+  const missingVersion = await fetch(endpoint + '?v=44444444-4444-4444-8444-444444444444', options());
+  assert.equal(missingVersion.status, 404, 'Unknown versions must not return the current thumbnail');
+}
 await verifyImage('destination-images/' + destinationId, imageVersion, images[0]);
 for (const [index, expected] of images.entries()) {
   const photoId = `a2000000-0000-4000-8000-00000000000${index + 1}`;
   await verifyImage('destination-images/' + destinationId + '/' + photoId, index === 0 ? imageVersion : 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa', expected);
+  await verifyThumbnail('destination-images/' + destinationId + '/' + photoId, index === 0 ? imageVersion : 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa');
   assert.equal((await fetch(base + 'destination-images/11111111-1111-4111-8111-111111111111/' + photoId, options())).status, 404, 'Destination photo ownership must be enforced');
 }
 for (const [index, candidate] of candidates.entries()) {
@@ -251,6 +265,7 @@ for (const [index, candidate] of candidates.entries()) {
     const photoId = `90000000-0000-4000-8000-${String(index * 2 + position + 1).padStart(12, '0')}`;
     const version = position === 1 ? candidate.version : 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
     await verifyImage('candidate-images/' + candidate.id + '/' + photoId, version, expected);
+    await verifyThumbnail('candidate-images/' + candidate.id + '/' + photoId, version);
     const otherCandidate = candidates[(index + 1) % candidates.length];
     const wrongOwner = await fetch(base + 'candidate-images/' + otherCandidate.id + '/' + photoId + '?v=' + version, options());
     assert.equal(wrongOwner.status, 404, 'A photo must only be served under its own candidate');
@@ -262,6 +277,7 @@ for (const [position, expected] of images.entries()) {
   const photoId = `b3000000-0000-4000-8000-${String(position + 1).padStart(12, '0')}`;
   const version = position === 1 ? 'b4000000-0000-4000-8000-000000000001' : 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
   await verifyImage('church-images/' + churches[0].id + '/' + photoId, version, expected);
+  await verifyThumbnail('church-images/' + churches[0].id + '/' + photoId, version);
   const wrongOwner = await fetch(base + 'church-images/' + churches[1].id + '/' + photoId + '?v=' + version, options());
   assert.equal(wrongOwner.status, 404, 'A church photo must only be served under its own church');
   const wrongCandidateRoute = await fetch(base + 'candidate-images/' + churches[0].id + '/' + photoId + '?v=' + version, options());
@@ -275,6 +291,19 @@ const missingImage = await fetch(base + 'destination-images/55555555-5555-4555-8
 assert.equal(missingImage.status, 404);
 const missingPhoto = await fetch(base + 'candidate-images/' + candidates[0].id + '/55555555-5555-4555-8555-555555555555?v=' + imageVersion, options());
 assert.equal(missingPhoto.status, 404);
+assert.equal((await fetch(base + 'candidate-images/' + candidates[0].id + '/55555555-5555-4555-8555-555555555555/thumbnail?v=' + imageVersion, options())).status, 404);
+// Making a thumbnail saves nothing, and a saved thumbnail is served as saved.
+const thumbnails = new DatabaseSync('/data/travel.sqlite');
+try {
+  for (const table of ['destination_images', 'candidate_images', 'church_images']) {
+    assert.equal(thumbnails.prepare(`SELECT count(*) AS count FROM ${table} WHERE thumbnail IS NOT NULL`).get().count, 0, table + ' must not save the thumbnails it makes');
+  }
+  thumbnails.prepare('UPDATE church_images SET thumbnail = ? WHERE id = ?').run(images[0], 'b3000000-0000-4000-8000-000000000002');
+} finally {
+  thumbnails.close();
+}
+const savedThumbnail = await fetch(base + 'church-images/' + churches[0].id + '/b3000000-0000-4000-8000-000000000002/thumbnail?v=b4000000-0000-4000-8000-000000000001', options());
+assert.deepEqual(Buffer.from(await savedThumbnail.arrayBuffer()), images[0], 'A saved thumbnail must be served as saved');
 JS
 
 # A live page, static script, and actual Server Action are required for a usable build,
@@ -348,11 +377,15 @@ const pages = ["/", "/destinations", ...tripPages, ...destinationPages, "/whats-
 const aiPhotoRoute = "/api/ai-proposal-images/c2000000-0000-4000-8000-000000000001/c3000000-0000-4000-8000-000000000001";
 // Where the seeded trip's places are on its map (TRA-44), which only accounts that can open the trip are told.
 const tripMapRoute = "/api/trip-map/container-smoke";
-const dataRoutes = ["/api/destination-images/22222222-2222-4222-8222-222222222222?v=33333333-3333-4333-8333-333333333333",
+// The seeded destination's, idea's and church's photos, with their thumbnails (TRA-89), which go only to accounts that can open them.
+const photoRoutes = ["/api/destination-images/22222222-2222-4222-8222-222222222222?v=33333333-3333-4333-8333-333333333333",
   "/api/destination-images/22222222-2222-4222-8222-222222222222/a2000000-0000-4000-8000-000000000001?v=33333333-3333-4333-8333-333333333333",
+  "/api/destination-images/22222222-2222-4222-8222-222222222222/a2000000-0000-4000-8000-000000000001/thumbnail?v=33333333-3333-4333-8333-333333333333",
   "/api/candidate-images/66666666-6666-4666-8666-666666666666/90000000-0000-4000-8000-000000000002?v=bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+  "/api/candidate-images/66666666-6666-4666-8666-666666666666/90000000-0000-4000-8000-000000000002/thumbnail?v=bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
   "/api/church-images/b1000000-0000-4000-8000-000000000001/b3000000-0000-4000-8000-000000000002?v=b4000000-0000-4000-8000-000000000001",
-  "/api/locations?q=Vienna", aiPhotoRoute, tripMapRoute];
+  "/api/church-images/b1000000-0000-4000-8000-000000000001/b3000000-0000-4000-8000-000000000002/thumbnail?v=b4000000-0000-4000-8000-000000000001"];
+const dataRoutes = [...photoRoutes, "/api/locations?q=Vienna", aiPhotoRoute, tripMapRoute];
 async function assertRefused(label, headers) {
   for (const path of pages) {
     const response = await get(path, headers);
@@ -392,7 +425,7 @@ async function assertHidden(label, headers) {
     assert.ok(body.includes("This page has moved on."), `${label} ${path} must be not found`);
     assert.ok(!body.includes("Persistence test") && !body.includes("Vienna"), `${label} ${path} must not include trip data`);
   }
-  for (const path of dataRoutes.slice(0, 4)) {
+  for (const path of photoRoutes) {
     const response = await get(path, headers);
     assert.equal(response.status, 404, `${label} ${path} must not be served`);
     assert.ok(!response.headers.get("content-type")?.startsWith("image/"), `${label} ${path} must not return image bytes`);
@@ -443,7 +476,7 @@ try {
     assert.match(body, /Persistence test/, `The editor can open ${path}`);
     assert.ok(!body.includes(">Share<") && !body.includes('aria-label="Delete trip"'), `The editor can't share or delete from ${path}`);
   }
-  for (const path of dataRoutes.slice(0, 4)) assert.equal((await get(path, editor)).status, 200, `The editor can load ${path}`);
+  for (const path of photoRoutes) assert.equal((await get(path, editor)).status, 200, `The editor can load ${path}`);
   await assertHidden("outsider", outsider);
   // The editor a trip is shared with is no more able to manage AI assistants than an outsider.
   assert.ok((await (await get("/ai", editor)).text()).includes("This page has moved on."), "editor must not find AI assistants");

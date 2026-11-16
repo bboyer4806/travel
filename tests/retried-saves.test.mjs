@@ -2,12 +2,12 @@ import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 import test from "node:test";
 import { PLANNER_UPDATED } from "../src/lib/planner-updated.ts";
-import { candidateInput, addDestination, newItem, setup, stopEdit, tripInput } from "./budget-fixtures.mjs";
+import { candidateInput, addDestination, newItem, prepared, setup, stopEdit, tripInput } from "./budget-fixtures.mjs";
 import { createOwnedStore } from "./owned-store.mjs";
 
 const NOT_AVAILABLE = "This item no longer exists or isn't shared with you. Please refresh and try again.";
 const webp = new Uint8Array([82, 73, 70, 70, 4, 0, 0, 0, 87, 69, 66, 80]);
-const photo = () => ({ id: randomUUID(), data: webp });
+const photo = () => ({ id: randomUUID(), ...prepared(webp) });
 const gallery = (...photos) => ({ add: photos, remove: [], mainImageId: photos[0].id });
 const homeInput = (tripId, overrides = {}) => ({ type: "homeItem.save", tripId, name: "House sitting", price: "40", notes: "", completed: false, ...overrides, ...newItem(overrides) });
 const churchInput = (destinationId, overrides = {}) => ({ type: "church.save", destinationId, name: "Duomo", address: "", denomination: "", url: "", massTimes: [], ...overrides, ...newItem(overrides) });
@@ -105,7 +105,7 @@ test("photos added by a change whose response was lost are kept once when it is 
   assert.deepEqual(saved.churches.find((item) => item.id === church).images.map((item) => item.id), [churchPhoto.id]);
   // A photo another item has is still refused.
   const romePhoto = saved.destinations.find((item) => item.id === rome).images[0];
-  assert.throws(() => store.applyMutation({ type: "destination.save", id: florence, gallery: { add: [{ id: romePhoto.id, data: webp }], remove: [] } }), { name: "ValidationError", message: "This destination photo already exists. Refresh and try again." });
+  assert.throws(() => store.applyMutation({ type: "destination.save", id: florence, gallery: { add: [{ id: romePhoto.id, ...prepared(webp) }], remove: [] } }), { name: "ValidationError", message: "This destination photo already exists. Refresh and try again." });
   assert.throws(() => store.applyMutation(candidateInput(florence, "hotels", { id: idea, gallery: { add: [romePhotoOfIdea], remove: [] } })), { name: "ValidationError", message: "This photo already exists. Refresh and try again." });
   assert.deepEqual(store.getSnapshot(), saved);
 });

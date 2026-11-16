@@ -6,14 +6,14 @@ import { containsSunday } from "../src/lib/destination-duration.ts";
 import { SCHEMA_VERSION, ValidationError } from "../src/lib/store.ts";
 import { createOwnedStore, UNDO_SCHEMA_21 } from "./owned-store.mjs";
 import { calculateBudget, calculateDestinationBudget } from "../src/lib/budget.ts";
-import { addCity, fileDatabase, newItem, setup, stopEdit, stop } from "./budget-fixtures.mjs";
+import { addCity, fileDatabase, newItem, prepared, setup, stopEdit, stop } from "./budget-fixtures.mjs";
 
 const tripInput = (overrides = {}) => ({ type: "trip.save", name: "Church planning", dateLabel: "May 2027", homeCity: "New York", travelers: 2, notes: "", ...overrides, ...newItem(overrides) });
 const addDestination = (store, tripId, { city = "Rome", ...overrides } = {}) => addCity((input) => store.applyMutation(input).id, tripId, city, { stay: "Spring", notes: "", ...overrides });
 const churchInput = (destinationId, overrides = {}) => ({ type: "church.save", destinationId, name: "St. Mary's", address: "", denomination: "", url: "", massTimes: [], ...overrides, ...newItem(overrides) });
 const mass = (day = "Sunday", time = "9:00 AM") => ({ id: randomUUID(), day, time });
 const webp = new Uint8Array([82, 73, 70, 70, 4, 0, 0, 0, 87, 69, 66, 80]);
-const photo = () => ({ id: randomUUID(), data: webp });
+const photo = () => ({ id: randomUUID(), ...prepared(webp) });
 const destination = (store, id) => store.getSnapshot().destinations.find((item) => item.id === id);
 const church = (store, id) => store.getSnapshot().churches.find((item) => item.id === id);
 
@@ -139,10 +139,10 @@ test("church validation accepts unknown optional details, trims text, and reject
     { massTimes: [mass("x".repeat(121), "9 AM")] }, { massTimes: [mass("Sunday", "x".repeat(121))] },
     { massTimes: [duplicate, { ...duplicate, id: duplicate.id.toUpperCase() }] },
     { massTimes: Array.from({ length: 31 }, () => mass()) }, { massTimes: [{ day: "Sunday", time: "9 AM", id: "bad" }] },
-    { gallery: { add: [{ id: randomUUID(), data: new Uint8Array([1, 2]) }], remove: [] } },
+    { gallery: { add: [{ id: randomUUID(), ...prepared(new Uint8Array([1, 2]), webp) }], remove: [] } },
     { gallery: { add: [duplicatePhoto, duplicatePhoto], remove: [] } },
     { gallery: { add: [photo()], remove: ["bad"] } },
-    { gallery: { add: [{ id: randomUUID(), data: new Uint8Array(2 * 1024 * 1024 + 1) }], remove: [] } },
+    { gallery: { add: [{ id: randomUUID(), ...prepared(new Uint8Array(2 * 1024 * 1024 + 1), webp) }], remove: [] } },
   ];
   for (const fields of invalid) {
     assert.throws(() => store.applyMutation(churchInput(destinationId, { id, ...fields })), ValidationError);
@@ -227,7 +227,7 @@ test("schema 13 upgrade initializes Sunday visibility, preserves prior data and 
   try {
     const tripId = store.applyMutation(tripInput({startDate:"2027-05-01"})).id;
     const id = addDestination(store, tripId, {
-      nights: 2, image: webp,
+      nights: 2, image: prepared(webp),
       miscDailyAmount: "0", hotelNightlyAmount: "125.25",
       activitiesBudgetMode: "general", activitiesGeneralAmount: "55.55",
       foodBudgetMode: "daily", foodDailyAmount: "20", shoppingAmount: "12.34",

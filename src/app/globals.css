@@ -456,6 +456,7 @@ button svg,a svg {
   border-top:1px solid var(--line);
   display:flex;
   justify-content:space-between;
+  align-items:center;
   padding:8px 19px
 }
 .text-button {
@@ -488,6 +489,60 @@ button svg,a svg {
 .icon-button:hover:not(:disabled) {
   background:#e9ede2;
   color:var(--green)
+}
+/* TRA-16: a trip card's handle drags it into a new place in the list. A finger on it drags rather than scrolls. */
+.card-tools-start {
+  display:flex;
+  align-items:center;
+  gap:8px
+}
+.trip-handle {
+  margin-left:-7px;
+  cursor:grab;
+  touch-action:none;
+  user-select:none;
+  -webkit-user-select:none;
+  -webkit-touch-callout:none
+}
+.trip-handle:disabled {
+  cursor:default
+}
+.trip-order-note {
+  margin:0 0 12px
+}
+@media(pointer:coarse) {
+  .trip-handle {
+  width:44px;
+  height:44px
+}
+
+}
+/* The trip being moved is dashed, and a bar on the card whose place it would take shows the side it goes, as photos do (TRA-126). */
+.trip-card {
+  position:relative
+}
+.trip-card[data-drag="dragged"] {
+  border-style:dashed;
+  border-color:var(--green);
+  background:var(--wash)
+}
+.trip-card[data-drag="dragged"] .trip-handle {
+  cursor:grabbing
+}
+.trip-card[data-drag="before"]::before,.trip-card[data-drag="after"]::before {
+  content:"";
+  position:absolute;
+  top:10px;
+  bottom:10px;
+  width:4px;
+  border-radius:2px;
+  background:var(--green)
+}
+.trip-card[data-drag="before"]::before {
+  left:3px
+}
+.trip-card[data-drag="after"]::before {
+  right:3px
 }
 .muted {
   color:var(--muted)
@@ -1439,6 +1494,21 @@ button svg,a svg {
 .trip-grid {
   grid-template-columns:1fr;
   gap:18px
+}
+/* One column: a moved trip goes above or below the card whose place it takes (TRA-16). */
+.trip-card[data-drag="before"]::before,.trip-card[data-drag="after"]::before {
+  top:auto;
+  bottom:auto;
+  left:10px;
+  right:10px;
+  width:auto;
+  height:4px
+}
+.trip-card[data-drag="before"]::before {
+  top:3px
+}
+.trip-card[data-drag="after"]::before {
+  bottom:3px
 }
 .trip-card-main {
   padding:21px

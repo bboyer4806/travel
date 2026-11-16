@@ -385,6 +385,12 @@ function validate(input: unknown): Mutation {
     case "trip.tag":
     case "trip.untag":
       return { type: value.type, tripId: idField(value, "tripId"), name: tagNameField(value) };
+    case "trip.order": {
+      if (!Array.isArray(value.tripIds)) throw new ValidationError("The trip order is invalid. Please refresh and try again.");
+      const tripIds = value.tripIds.map((id) => idField({ id }));
+      if (new Set(tripIds.map((id) => id.toLowerCase())).size !== tripIds.length) throw new ValidationError("Each trip must appear once in the trip order.");
+      return { type: value.type, tripIds };
+    }
     case "homeItem.save":
       return { type: value.type, id: saveIdField(value), create: createField(value), tripId: idField(value, "tripId"), name: textField(value, "name", 160, true), price: priceField(value), notes: textField(value, "notes", 8000), completed: booleanField(value, "completed") };
     case "homeItem.delete":
@@ -509,6 +515,8 @@ function aiChange(input: unknown, photos: ReadonlyMap<string, PreparedImage>): M
   if (!input || typeof input !== "object" || Array.isArray(input)) throw new ValidationError("Each change must be an object.");
   const value = input as Input;
   if (isPhotoChange(value.type)) return photoChange(value as Input & { type: PhotoChange["type"] }, photos);
+  // Each person arranges their own trips on All trips (TRA-16), an order assistants can't read.
+  if (value.type === "trip.order") throw new ValidationError("Each person puts their own trips in order on All trips, so trip order can't be proposed.");
   if ("image" in value || "gallery" in value) throw new ValidationError("Change photos with destination.photos, candidate.photos or church.photos.");
   if (value.type === "destination.save" && (value.create !== undefined || value.tripId !== undefined)) throw new ValidationError("Add a destination to a trip with stop.add, or outside any trip with destination.create.");
   if (["trip.save", "homeItem.save", "destination.save", "church.save", "candidate.save"].includes(value.type as string) && value.id === undefined) {
@@ -561,7 +569,7 @@ const LIVE: Make = { id: () => randomUUID(), now: () => new Date().toISOString()
  * The schema this build upgrades every database to, as SQLite's user_version. A schema change adds the next
  * upgrade in createStore and raises this to match; earlier upgrades keep their own numbers.
  */
-export const SCHEMA_VERSION = 32;
+export const SCHEMA_VERSION = 33;
 
 /** A destination as schema 20 saved it, inside one trip, with that trip's owner and name. */
 type TripDestinationRow = Omit<StoredDestination, "cityKey"> & Omit<TripStop, "destinationId"> & { tripName: string };
@@ -1169,6 +1177,25 @@ export function createStore(databasePath: string, ownerEmail: string) {
       }
       db.exec("PRAGMA user_version = 32;");
     }
+    if (version < 33) {
+      // Each account's own order of the trips it can open on All trips (TRA-16), by position from 0. A trip created or
+      // shared with the account since this upgrade or since it last arranged its trips has no position, and comes after
+      // those that do. The upgrade records the order All trips has shown until now, newest trip first, for each account,
+      // so no list changes. A replay keeps saved orders.
+      if (!db.prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'trip_order'").get()) db.exec(`
+        CREATE TABLE trip_order (
+          accountId TEXT NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
+          tripId TEXT NOT NULL REFERENCES trips(id) ON DELETE CASCADE,
+          position INTEGER NOT NULL CHECK(position >= 0),
+          PRIMARY KEY (accountId, tripId)
+        ) STRICT;
+        INSERT INTO trip_order(accountId, tripId, position)
+          SELECT accountId, tripId, ROW_NUMBER() OVER (PARTITION BY accountId ORDER BY createdAt DESC, tripId) - 1
+          FROM (SELECT ownerId AS accountId, id AS tripId, createdAt FROM trips
+            UNION SELECT trip_shares.accountId, trips.id, trips.createdAt FROM trip_shares JOIN trips ON trips.id = trip_shares.tripId);
+      `);
+      db.exec("PRAGMA user_version = 33;");
+    }
     if (version < SCHEMA_VERSION && db.prepare("PRAGMA foreign_key_check").get()) {
       throw new Error("This upgrade would leave saved items without the trip or destination they belong to. Nothing was changed; review the database against a backup before upgrading.");
     }
@@ -1284,10 +1311,18 @@ export function createStore(databasePath: string, ownerEmail: string) {
   function getSnapshot(): Snapshot {
     return { trips: readTrips(null), stops: readStops(null), destinations: readDestinations(null), legs: readLegs(null), candidates: readCandidates(null), churches: readChurches(null), homeItems: readHomeItems(null), tags: tagNames(null) };
   }
-  /** The trips the account owns or was shared, with their tags and budgets, what the account may do with each, and every tag on them to filter by. */
+  /**
+   * The trips the account owns or was shared, with their tags and budgets, what the account may do with each, and every
+   * tag on them to filter by. Trips are in the account's own order (TRA-16): those it arranged, then any created or
+   * shared with it since, in the order it got them.
+   */
   function getHomeOverview(accountId: string) {
     const visible = [accountId, accountId];
-    const rawTrips = db.prepare(`SELECT ${TRIP_COLUMNS} FROM trips WHERE id IN (${VISIBLE_TRIPS}) ORDER BY createdAt DESC, id`).all(...visible) as unknown as Trip[];
+    const rawTrips = db.prepare(`SELECT ${TRIP_COLUMNS} FROM trips
+      LEFT JOIN trip_order ON trip_order.accountId = ? AND trip_order.tripId = trips.id
+      LEFT JOIN trip_shares ON trip_shares.accountId = ? AND trip_shares.tripId = trips.id
+      WHERE trips.id IN (${VISIBLE_TRIPS}) ORDER BY trip_order.position IS NULL, trip_order.position, coalesce(trip_shares.sharedAt, trips.createdAt), trips.id`)
+      .all(accountId, accountId, ...visible) as unknown as Trip[];
     const stops = db.prepare(`SELECT id, tripId, destinationId, position, nights FROM trip_stops WHERE tripId IN (${VISIBLE_TRIPS}) ORDER BY tripId, position, id`).all(...visible) as unknown as TripStop[];
     const visited = `SELECT destinationId FROM trip_stops WHERE tripId IN (${VISIBLE_TRIPS})`;
     const destinations = db.prepare(`SELECT id,city,cityFromSuggestion,miscDailyMinor,miscCurrency,hotelNightlyMinor,hotelCurrency,activitiesBudgetMode,activitiesGeneralMinor,activitiesCurrency,
@@ -1721,10 +1756,21 @@ export function createStore(databasePath: string, ownerEmail: string) {
         return input.tripId;
       }
       case "trip.unshare": {
-        // Only this trip's access ends. The email stays authorized, and nothing in the trip changes.
+        // Only this trip's access ends. The email stays authorized, and nothing in the trip changes. Its place in their
+        // trip order goes too, so sharing it again adds it at the end, as a new share (TRA-16).
         const removed = db.prepare("DELETE FROM trip_shares WHERE tripId = ? AND accountId = (SELECT id FROM accounts WHERE email = ?)").run(input.tripId, input.email);
         if (removed.changes === 0) throw new ValidationError(`This trip isn't shared with ${input.email}. Refresh to see who has access.`);
+        db.prepare("DELETE FROM trip_order WHERE tripId = ? AND accountId = (SELECT id FROM accounts WHERE email = ?)").run(input.tripId, input.email);
         return input.tripId;
+      }
+      case "trip.order": {
+        // The account's own order lists every trip it can open, so a page opened before one was added or removed must refresh.
+        const visible = new Set(db.prepare(VISIBLE_TRIPS).all(accountId, accountId).map((row) => row.id as string));
+        if (input.tripIds.length !== visible.size || input.tripIds.some((id) => !visible.has(id))) throw new ValidationError("Your trips have changed. Refresh before rearranging them.");
+        db.prepare("DELETE FROM trip_order WHERE accountId = ?").run(accountId);
+        const place = db.prepare("INSERT INTO trip_order(accountId, tripId, position) VALUES(?, ?, ?)");
+        input.tripIds.forEach((tripId, position) => place.run(accountId, tripId, position));
+        return;
       }
       case "trip.tag": {
         const key = tagKey(input.name);
@@ -1926,6 +1972,9 @@ export function createStore(databasePath: string, ownerEmail: string) {
     switch (input.type) {
       case "trip.save": case "trip.delete": return { trip: tripOf("trips", input.id) };
       case "trip.share": case "trip.unshare": case "trip.tag": case "trip.untag": case "stop.add": return { trip: tripOf("trips", input.tripId) };
+      // An account's own trip order names every trip it can open, not one, so nothing places it; authorize lets each
+      // account arrange its own, and mutate checks the trips it names (TRA-16).
+      case "trip.order": return { trip: undefined };
       case "homeItem.save": return { trip: tripOf("home_items", input.id) ?? (input.create && tripOf("trips", input.tripId)) };
       case "homeItem.delete": case "homeItem.complete": return { trip: tripOf("home_items", input.id) };
       case "stop.move": case "stop.remove": return { trip: tripOf("trip_stops", input.id) };
@@ -1948,10 +1997,10 @@ export function createStore(databasePath: string, ownerEmail: string) {
   }
   /**
    * Owners and the accounts they shared a trip with may change it and the destinations it visits; deleting a trip or
-   * destination and changing who has a trip are for its owner.
+   * destination and changing who has a trip are for its owner. Each account puts its own trips in order (TRA-16).
    */
   function authorize(accountId: string, input: Mutation): void {
-    if (addsOwnItem(input)) return;
+    if (addsOwnItem(input) || input.type === "trip.order") return;
     const scope = mutationScope(input);
     const role = "trip" in scope ? tripRole(accountId, scope.trip) : destinationRole(accountId, scope.destination);
     if (!role) throw new ValidationError(NOT_AVAILABLE);

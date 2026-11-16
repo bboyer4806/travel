@@ -62,6 +62,10 @@ Repeat passing checks when subsequent changes affect their coverage or required 
   store decides access: every read and `applyMutation` take the signed-in account's ID from
   `requireAccount()` or `currentAccount()`, never from input, and a trip the account can't open
   looks the same as a missing one. Only owners delete, share or unshare a trip.
+- Each account keeps its own order of the trips it can open on All trips in `trip_order` (TRA-16), which
+  `getHomeOverview` follows. `trip.order` saves an account's whole order and is refused unless it names every trip the
+  account can open, once each. A trip it hasn't placed, as one created or shared since, comes last, in the order the
+  account got it; unsharing removes the trip's place in that account's order.
 - Destinations are shared by their owner's trips (TRA-105). Each owner has one per city
   (`destinations.cityKey`, from `destinationKey` in `src/lib/destination-label.ts`), and trips visit
   them through `trip_stops`, which keep each trip's order, stay notes, nights and dates. A destination
@@ -105,7 +109,8 @@ Repeat passing checks when subsequent changes affect their coverage or required 
   variant in `src/lib/types.ts`, a case in `validate` (or, for a change only proposals make, in
   `aiChange`), `mutationScope` and `mutate` in the store, a schema in `src/lib/mcp-tools.ts` and a
   title in `operationTitle`. `mutationScope` finds the trip or
-  destination a change applies to from saved rows; a change it doesn't place is refused.
+  destination a change applies to from saved rows; a change it doesn't place is refused. Only `trip.order`, each
+  account's own trip order, is for people alone: `aiChange` refuses it and it has no schema.
 - A save that adds a trip, an idea, a church or an At home item sends the
   ID its editor gave it when it opened, with `create: true` (TRA-75). The store adds the item when no
   item has that ID, and the same save sent again after a lost response changes that item instead of

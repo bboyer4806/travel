@@ -25,9 +25,10 @@ import { ResearchLinks, ResearchLinksEditor } from "@/components/research-links"
 import { unstable_isUnrecognizedActionError, useRouter } from "next/navigation";
 import { useEffect, useId, useRef, useState, useTransition, type FormEvent, type ReactNode } from "react";
 import { controlOrNeighbor, useFocusAfter } from "@/components/focus-after";
-import { ArrowDown, ArrowLeft, ArrowRight, ArrowUp, BedDouble, Binoculars, CalendarDays, CheckCircle2, CircleAlert, CircleHelp, Compass, MapPin, MoreHorizontal, Pencil, Plane, Plus, Search, Share2, Trash2, UserPlus, Users, Utensils, Wallet, X } from "lucide-react";
+import { ArrowDown, ArrowLeft, ArrowRight, ArrowUp, BedDouble, Binoculars, CalendarDays, CheckCircle2, CircleAlert, CircleHelp, Compass, GripVertical, MapPin, MoreHorizontal, Pencil, Plane, Plus, Search, Share2, Trash2, UserPlus, Users, Utensils, Wallet, X } from "lucide-react";
 import TripSharing, { memberLabel } from "@/components/trip-sharing";
 import { TripTagFilter, TripTagList, TripTagsEditor } from "@/components/trip-tags";
+import { useTripDrag } from "@/components/trip-drag";
 import { hasEveryTag, tagKey } from "@/lib/trip-tags";
 import { mutatePlanner } from "@/app/actions";
 import { randomUuid } from "@/lib/uuid";
@@ -152,6 +153,7 @@ export default function PlannerApp({ initialData, initialBudgets, access = {}, d
   const [search, setSearch] = useState("");
   // The trip list's selected tag filters, as tag keys.
   const [tagFilter, setTagFilter] = useState<string[]>([]);
+  const tripDragHelp = useId();
   // A stop to scroll to once the page shows it, after adding its city. This scrolls instead of navigating to its
   // #destination- link: after a Server Action, Next.js 16.4 adds that hash to any the URL already has.
   const shownStop = useRef<string | null>(null);
@@ -262,6 +264,20 @@ export default function PlannerApp({ initialData, initialBudgets, access = {}, d
   function saveFrom(control: HTMLButtonElement, mutation: Mutation, success: string, find: () => HTMLElement | null | undefined = () => controlOrNeighbor(control)) {
     focusAfterSave(find);
     void perform(mutation, success);
+  }
+  /**
+   * Shows a trip in its new place in the account's own order at once and saves the order (TRA-16). If saving fails, the
+   * trips go back as they were and the error shows. A trip moved from the keyboard keeps focus on its handle.
+   */
+  function placeTrip(id: string, index: number, keyboard: boolean) {
+    const previous = data.trips;
+    const trips = previous.filter((item) => item.id !== id);
+    trips.splice(index, 0, previous.find((item) => item.id === id)!);
+    setData((current) => ({ ...current, trips }));
+    if (keyboard) focusAfterSave(() => document.querySelector<HTMLElement>(`[data-trip-id="${id}"] .trip-handle`));
+    void perform({ type: "trip.order", tripIds: trips.map((item) => item.id) }, "Trip order saved.").then((saved) => {
+      if (!saved) setData((current) => ({ ...current, trips: previous }));
+    });
   }
   function confirmDelete(mutation: Mutation, title: string, description: string, redirect?: string) {
     open({ kind: "delete", mutation, title, description, redirect });
@@ -460,6 +476,9 @@ export default function PlannerApp({ initialData, initialBudgets, access = {}, d
   const toggleTagFilter = (tag: string) => setTagFilter((keys) => keys.includes(tagKey(tag)) ? keys.filter((key) => key !== tagKey(tag)) : [...keys, tagKey(tag)]);
   // A trip shows when it matches the search and has every selected tag.
   const visibleTrips = data.trips.filter((item) => hasEveryTag(item.tags, filterTags) && [item.name, item.dateLabel, ...tripPlaces(item.id).flatMap((place) => [place.city, formatSavedDestinationLabel(place)])].join(" ").toLowerCase().includes(search.toLowerCase()));
+  // Trips move only while every trip shows, so the list is the account's whole order (TRA-16).
+  const filtered = search !== "" || filterTags.length > 0;
+  const tripDrag = useTripDrag(visibleTrips, placeTrip, !filtered && visibleTrips.length > 1 && !busy && !refreshing);
   const visibleDestinations = data.destinations.filter((item) => [item.city, formatSavedDestinationLabel(item), ...visitsOf(item.id).map((visit) => visit.trip.name)].join(" ").toLowerCase().includes(search.toLowerCase()));
   /** Same-named cities can share a short label, so the list shows their full saved names. */
   const sharesLabel = (item: Destination) => data.destinations.some((other) => other.id !== item.id && formatSavedDestinationLabel(other) === formatSavedDestinationLabel(item));
@@ -474,19 +493,22 @@ export default function PlannerApp({ initialData, initialBudgets, access = {}, d
         <section className="trips-section"><div className="section-heading"><div className="heading-inline"><h2>Your possibilities</h2><span className="count-pill">{data.trips.length}</span></div>
           {data.trips.length > 0 && <label className="search-field"><Search size={17} /><input aria-label="Search trips" value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Find a trip or city" /></label>}</div>
           {data.tags.length > 0 && <TripTagFilter tags={data.tags} selected={filterTags} onToggle={toggleTagFilter} onClear={() => setTagFilter([])} />}
+          {filtered && visibleTrips.length > 0 && data.trips.length > 1 && <p className="helper trip-order-note">Clear the search and tag filters to drag trips into a new order.</p>}
+          <p id={tripDragHelp} className="sr-only">Drag to move this trip, or press Space, move it with the arrow keys, and press Space again to drop it. Escape cancels.</p>
+          <p className="sr-only" aria-live="assertive" aria-atomic="true">{tripDrag.announcement}</p>
           {data.trips.length === 0 ? <div className="empty-state home-empty"><span className="empty-icon"><MapPin size={28} strokeWidth={1.5} /></span><h3>Every trip starts with a possibility.</h3><p>A weekend away? A place you have always wanted to see?<br />Add your first trip and work out the details as you go.</p><button className="button secondary" onClick={() => open({ kind: "trip" })}><Plus size={17} />Create your first trip</button></div>
             : visibleTrips.length === 0 ? <div className="empty-state"><h3>{!filterTags.length ? "No trips match that search." : search ? "No trips match that search and every selected tag." : "No trips have every selected tag."}</h3>{search && <button className="text-button" onClick={() => setSearch("")}>Clear search</button>}{filterTags.length > 0 && <button className="text-button" onClick={() => setTagFilter([])}>Clear tag filters</button>}</div>
             : <div className="trip-grid">{visibleTrips.map((item, index) => {
               const places = tripPlaces(item.id);
               const estimate = homeBudgets[item.id];
               const itemAccess = access[item.id];
-              return <article className={"trip-card tone-" + (index % 3)} key={item.id}>
+              return <article className={"trip-card tone-" + (index % 3)} key={item.id} {...tripDrag.card(item.id)}>
                 <Link className="trip-card-main" href={"/trips/" + item.id}><div className="trip-card-top"><span className="trip-number">TRIP {String(index + 1).padStart(2, "0")}</span><Compass size={38} strokeWidth={1} /></div>
                   <h3>{item.name}</h3><p className="city-list"><MapPin size={15} />{places.length ? places.map((place) => formatSavedDestinationLabel(place)).join(" → ") : "Destinations to be decided"}</p>
                   <div className="trip-meta"><span><CalendarDays size={15} />{item.startDate ? formatCalendarDate(item.startDate) + " → " + formatCalendarDate(item.endDate) : item.dateLabel || "Whenever the time is right"}</span><span><Users size={15} />{item.travelers} {item.travelers === 1 ? "traveler" : "travelers"}</span>{itemAccess.role === "editor" && <span><Share2 size={15} />{"Shared by " + memberLabel(itemAccess.owner)}</span>}</div>
                   <TripTagList tags={item.tags} />
                   <div className="card-budget"><div><span className="small-label">ESTIMATED BUDGET</span><BudgetValue budget={estimate} /></div><span className="round-arrow"><ArrowRight size={19} /></span></div>
-                </Link><div className="card-tools"><button className="text-button" aria-label={"Edit " + item.name} onClick={() => open({ kind: "trip", item })}><Pencil size={14} />Edit</button>{itemAccess.role === "owner" && <button className="icon-button muted" aria-label={"Delete " + item.name} onClick={() => confirmDelete({ type: "trip.delete", id: item.id }, "Delete “" + item.name + "”?", "This removes the trip, its travel plans, and At home items. Its destinations, with their saved ideas and research, stay in Destinations." + sharedDeleteNote(itemAccess))}><Trash2 size={15} /></button>}</div>
+                </Link><div className="card-tools"><span className="card-tools-start"><button type="button" className="icon-button trip-handle" aria-label={"Reorder " + item.name} aria-describedby={tripDragHelp} {...tripDrag.handle(item.id)}><GripVertical size={16} aria-hidden="true" /></button><button className="text-button" aria-label={"Edit " + item.name} onClick={() => open({ kind: "trip", item })}><Pencil size={14} />Edit</button></span>{itemAccess.role === "owner" && <button className="icon-button muted" aria-label={"Delete " + item.name} onClick={() => confirmDelete({ type: "trip.delete", id: item.id }, "Delete “" + item.name + "”?", "This removes the trip, its travel plans, and At home items. Its destinations, with their saved ideas and research, stay in Destinations." + sharedDeleteNote(itemAccess))}><Trash2 size={15} /></button>}</div>
               </article>;
             })}</div>}
         </section>

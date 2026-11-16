@@ -12,13 +12,13 @@ import type { Category, Mutation, RestaurantType } from "./types";
  * Travel's own data, in the order a preview lists it. Sessions and the AI integration's tables are never read for a
  * proposal, and every other table must be listed here: tests check each column has a preview label.
  */
-export const DATA_TABLES = ["trips", "trip_shares", "trip_tags", "trip_stops", "legs", "home_items", "destinations", "destination_entry_requirements", "destination_health_safety", "destination_images", "candidates", "candidate_images", "churches", "church_images", "accounts"] as const;
+export const DATA_TABLES = ["trips", "trip_shares", "trip_tags", "trip_order", "trip_stops", "legs", "home_items", "destinations", "destination_entry_requirements", "destination_health_safety", "destination_images", "candidates", "candidate_images", "churches", "church_images", "accounts"] as const;
 export type DataTable = typeof DATA_TABLES[number];
 /** The photos of destinations, ideas and churches. The owner sees each photo a change adds, changes or deletes beside its record (TRA-122). */
 export const PHOTO_TABLES: readonly DataTable[] = ["destination_images", "candidate_images", "church_images"];
 /** Never read for a proposal: photo and thumbnail bytes (TRA-89), and the Google account each authorization is bound to. */
 export const UNREAD_COLUMNS: Record<DataTable, string[]> = {
-  trips: [], trip_shares: [], trip_tags: [], trip_stops: [], legs: [], home_items: [], destinations: [], destination_entry_requirements: [], destination_health_safety: [],
+  trips: [], trip_shares: [], trip_tags: [], trip_order: [], trip_stops: [], legs: [], home_items: [], destinations: [], destination_entry_requirements: [], destination_health_safety: [],
   destination_images: ["data", "thumbnail"], candidates: [], candidate_images: ["data", "thumbnail"], churches: [], church_images: ["data", "thumbnail"], accounts: ["googleSubject"],
 };
 
@@ -45,6 +45,7 @@ export const PREVIEW_COLUMNS: Record<DataTable, Record<string, [string, Format] 
   trips: { id: null, name: ["Name", "text"], dateLabel: ["Dates", "text"], homeCity: ["Departing city", "text"], travelers: ["Travelers", "number"], notes: ["Notes", "text"], createdAt: null, returnCity: ["Return city", "text"], startDate: ["Start date", "text"], ownerId: ["Owner", "account"] },
   trip_shares: { tripId: null, accountId: null, sharedAt: null },
   trip_tags: { tripId: null, tagKey: null, name: null },
+  trip_order: { accountId: null, tripId: null, position: ["Order", "order"] },
   trip_stops: { id: null, tripId: null, destinationId: null, position: ["Order", "order"], stay: ["Stay notes", "text"], nights: ["Nights", "number"], arrivalDate: ["Arrival", "text"], departureDate: ["Departure", "text"], legacyArrivalDate: null, legacyDepartureDate: null },
   legs: { id: null, tripId: null, fromId: null, toId: null, method: ["Method", "text"], priceCents: ["Price", "money"], miscCents: ["Miscellaneous spending", "money"], departure: ["Departure", "text"], arrival: ["Arrival", "text"], url: null, notes: ["Notes", "text"], itineraryJson: ["Itinerary", "json"], linksJson: ["Research links", "json"] },
   home_items: { id: null, tripId: null, name: ["Name", "text"], notes: ["Notes", "text"], priceCents: ["Price", "money"], completed: ["Done", "flag"], createdAt: null },
@@ -109,6 +110,7 @@ export function previewChange(change: Mutation, effects: Effect[], before: Table
       case "trips": return trip(row.id);
       case "trip_shares": return `${trip(row.tripId)}: shared with ${email(row.accountId)}`;
       case "trip_tags": return `${trip(row.tripId)}: tag “${row.name}”`;
+      case "trip_order": return `${trip(row.tripId)}: place in ${email(row.accountId)}'s trip order`;
       case "trip_stops": return `${trip(row.tripId)}: stay in ${byId("destinations", row.destinationId).city}`;
       case "legs": {
         const route = byId("trips", row.tripId);
@@ -182,6 +184,8 @@ export function operationTitle(change: Mutation): string {
     case "trip.unshare": return `Stop sharing a trip with ${change.email}`;
     case "trip.tag": return `Tag a trip “${change.name}”`;
     case "trip.untag": return `Remove the tag “${change.name}” from a trip`;
+    // Each person's own (TRA-16), so never proposed: aiChange refuses it.
+    case "trip.order": return "Put trips in order";
     case "homeItem.save": return `${change.create ? "Add" : "Change"} the At home item “${change.name}”`;
     case "homeItem.delete": return "Delete an At home item";
     case "homeItem.complete": return change.completed ? "Mark an At home item done" : "Mark an At home item not done";

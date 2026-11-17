@@ -54,6 +54,21 @@ function GalleryView({ destination }: { destination: DestinationGalleryOwner }) 
   </div>;
 }
 
+/**
+ * A destination's primary photo across the top of its card in Destinations (TRA-131), cropped around its focal point,
+ * or nothing for a destination without photos, whose card looks as it always has. The destination's name follows it, so
+ * it is decorative.
+ */
+export function DestinationCardPhoto({ destination }: { destination: Pick<Destination, "id" | "images" | "mainImageId"> }) {
+  const photo = destination.images.find((image) => image.id === destination.mainImageId);
+  if (!photo) return null;
+  return <div className="trip-card-image">
+    {/* Stored photos are resized and optimized on upload. */}
+    {/* eslint-disable-next-line @next/next/no-img-element */}
+    <img src={photoUrl(destination.id, photo)} alt="" loading="lazy" decoding="async" style={{ objectPosition: objectPosition(photo) }} />
+  </div>;
+}
+
 /** A saved photo, cropped to fit its frame around its focal point (TRA-53): its thumbnail (TRA-89), or with `full` the photo itself. */
 function SavedPhoto({ destinationId, image, alt, focus, full = false }: { destinationId: string; image: { id: string; version?: string }; alt: string; focus: PhotoFocus; full?: boolean }) {
   // eslint-disable-next-line @next/next/no-img-element

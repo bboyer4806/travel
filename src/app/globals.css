@@ -362,7 +362,7 @@ button svg,a svg {
   padding:24px 24px 18px;
   outline-offset:-4px /* The card hides what overflows it, so the focus ring is drawn inside (TRA-87). */
 }
-/* TRA-133: a trip's headline image runs across the top of its card, edge to edge, above the trip's details. */
+/* TRA-133: a trip's headline image runs across the top of its card, edge to edge, above the trip's details, as a destination's primary photo does on its card in Destinations (TRA-131). */
 .trip-card-image {
   position:relative;
   overflow:hidden;

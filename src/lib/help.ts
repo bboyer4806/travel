@@ -102,7 +102,7 @@ const HELP: { [Route in SignedInRoute]: Route extends `${string}/[category]` ? R
   "/destinations": {
     title: "Destinations",
     points: [
-      "Every city you've researched, in a trip or not, with the trips that visit it and how many ideas it has.",
+      "Every city you've researched, in a trip or not, with its primary photo if it has one, the trips that visit it and how many ideas it has.",
       "New destination saves a city to research before it's in a trip. A city you already have opens instead.",
       "Search by city or trip, and select a card to open its destination.",
       "A destination's ideas, research and budget amounts are shared by every trip that visits it, and stay here when it leaves them.",

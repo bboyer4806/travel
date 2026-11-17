@@ -2,6 +2,20 @@ export interface Release { version: string; date: string; changes: readonly stri
 
 // Add only verified, deployed changes and their actual release dates at release close.
 export const releases: readonly Release[] = [{
+  version: "1.13",
+  date: "2026-11-16",
+  changes: [
+    "See each destination's saved hotels, activities, restaurants, and churches on a map, on its card in a trip and on its page in Destinations. Checkboxes show or hide each kind, a marker opens a place's details, and places the map can't pin down are listed below it with the reason.",
+    "Give a trip its own headline image in Edit trip, or when creating it. It runs across the top of the trip's card in All trips and as a banner on its page, and you can drag and zoom each one separately to frame it. Replace or remove it any time; a trip without one looks as before.",
+    "Give each trip its own tagline, shown in capitals above its name on its page in place of AN ADVENTURE IN THE MAKING. Type up to 120 characters in Tagline, below Trip name in the trip's editor, or leave it blank for the default. ChatGPT and Claude can propose one too.",
+    "See each destination's primary photo across the top of its card in Destinations, framed with its saved crop.",
+    "Arrange All trips in your own order by dragging each card's handle, or with the keyboard. The order saves as soon as you drop and is yours alone: people you share a trip with keep their own.",
+    "Open Help in the header, or beside the X in any editor, for short notes on what the page you're on is for and how to use it, without leaving the page or losing your changes.",
+    "Type an airport code such as CLE in a departing, return, or layover city to choose that airport. The trip map now places layovers saved as airport codes instead of listing them under Not on the map.",
+    "Photo galleries load faster: their thumbnails and editor previews now download small versions of each photo instead of the full photo.",
+    "Read small and secondary text more easily, now darker to meet accessibility contrast standards, and hear clearer names and a correct heading order on trip pages with a screen reader.",
+  ],
+}, {
   version: "1.12",
   date: "2026-11-15",
   changes: [

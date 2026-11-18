@@ -472,7 +472,7 @@ function validate(input: unknown): Mutation {
     case "leg.save":
       return { type: value.type, id: idField(value), method: textField(value, "method", 120), price: priceField(value), miscAmount: miscAmountField(value), departure: textField(value, "departure", 120), arrival: textField(value, "arrival", 120), url: urlField(value), notes: textField(value, "notes", 8000), itinerary: itineraryField(value), links: linksField(value) };
     case "candidate.save":
-      return { type: value.type, id: saveIdField(value), create: createField(value), destinationId: idField(value, "destinationId"), category: categoryField(value), name: textField(value, "name", 160, true), price: priceField(value), address: textField(value, "address", 500), url: urlField(value), notes: textField(value, "notes", 8000), included: booleanField(value, "included"), mustDo: value.mustDo === undefined ? undefined : booleanField(value, "mustDo"), restaurantTypes: restaurantTypesField(value), links: linksField(value), gallery: galleryField(value) };
+      return { type: value.type, id: saveIdField(value), create: createField(value), destinationId: idField(value, "destinationId"), category: categoryField(value), name: textField(value, "name", 160, true), description: value.description === undefined ? undefined : textField(value, "description", 120), price: priceField(value), address: textField(value, "address", 500), url: urlField(value), notes: textField(value, "notes", 8000), included: booleanField(value, "included"), mustDo: value.mustDo === undefined ? undefined : booleanField(value, "mustDo"), restaurantTypes: restaurantTypesField(value), links: linksField(value), gallery: galleryField(value) };
     case "candidate.move":
       if (value.direction !== "up" && value.direction !== "down") throw new ValidationError("Choose a valid direction for this idea.");
       return { type: value.type, id: idField(value), direction: value.direction };
@@ -606,7 +606,7 @@ const LIVE: Make = { id: () => randomUUID(), now: () => new Date().toISOString()
  * The schema this build upgrades every database to, as SQLite's user_version. A schema change adds the next
  * upgrade in createStore and raises this to match; earlier upgrades keep their own numbers.
  */
-export const SCHEMA_VERSION = 36;
+export const SCHEMA_VERSION = 37;
 
 /** A destination as schema 20 saved it, inside one trip, with that trip's owner and name. */
 type TripDestinationRow = Omit<StoredDestination, "cityKey"> & Omit<TripStop, "destinationId"> & { tripName: string };
@@ -1266,6 +1266,12 @@ export function createStore(databasePath: string, ownerEmail: string) {
         ) STRICT;
         PRAGMA user_version = 36;
       `);
+    }
+    if (version < 37) {
+      // What each hotel, activity and restaurant idea is (TRA-138), below its name on its cards, saved as typed. Every
+      // saved idea starts without one, so its cards look as they did. A replay keeps saved descriptions.
+      if (!hasColumn("candidates", "description")) db.exec("ALTER TABLE candidates ADD COLUMN description TEXT NOT NULL DEFAULT '';");
+      db.exec("PRAGMA user_version = 37;");
     }
     if (version < SCHEMA_VERSION && db.prepare("PRAGMA foreign_key_check").get()) {
       throw new Error("This upgrade would leave saved items without the trip or destination they belong to. Nothing was changed; review the database against a backup before upgrading.");
@@ -2032,10 +2038,10 @@ export function createStore(databasePath: string, ownerEmail: string) {
         const restaurantTypesJson = input.restaurantTypes === undefined ? (before?.restaurantTypesJson ?? "[]") : JSON.stringify(input.restaurantTypes);
         if (input.included && input.category === "hotels") clearHotelSelection(input.destinationId);
         if (before) {
-          db.prepare("UPDATE candidates SET name = ?, priceCents = ?, address = ?, url = ?, notes = ?, included = ?, mustDo = ?, restaurantTypesJson = ?, linksJson = ? WHERE id = ?").run(input.name, priceCents(input.price), input.address, url, input.notes, Number(input.included), mustDo, restaurantTypesJson, JSON.stringify(links), id);
+          db.prepare("UPDATE candidates SET name = ?, description = ?, priceCents = ?, address = ?, url = ?, notes = ?, included = ?, mustDo = ?, restaurantTypesJson = ?, linksJson = ? WHERE id = ?").run(input.name, input.description ?? before.description, priceCents(input.price), input.address, url, input.notes, Number(input.included), mustDo, restaurantTypesJson, JSON.stringify(links), id);
         } else {
           const position = Number(db.prepare("SELECT coalesce(max(position), -1) + 1 AS position FROM candidates WHERE destinationId = ? AND category = ?").get(input.destinationId, input.category)!.position);
-          db.prepare("INSERT INTO candidates(id,destinationId,category,name,priceCents,address,url,notes,included,mustDo,restaurantTypesJson,position,linksJson) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)").run(id, input.destinationId, input.category, input.name, priceCents(input.price), input.address, url, input.notes, Number(input.included), mustDo, restaurantTypesJson, position, JSON.stringify(links));
+          db.prepare("INSERT INTO candidates(id,destinationId,category,name,description,priceCents,address,url,notes,included,mustDo,restaurantTypesJson,position,linksJson) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)").run(id, input.destinationId, input.category, input.name, input.description ?? "", priceCents(input.price), input.address, url, input.notes, Number(input.included), mustDo, restaurantTypesJson, position, JSON.stringify(links));
         }
         saveGallery("candidate", id, input.gallery, make);
         return id;

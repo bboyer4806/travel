@@ -90,6 +90,8 @@ const descriptions = {
   activities: "Collect the things you would love to do.",
   restaurants: "A good trip deserves a few great meals.",
 };
+/** An example of what an idea is, for its editor's What it is (TRA-138). */
+const ideaExamples = { hotels: "Boutique hotel", activities: "Historic cathedral", restaurants: "Traditional Italian restaurant" };
 /** What a destination's page shows above its name until it has a tagline of its own (TRA-125). */
 const DEFAULT_TAGLINE = "A place worth knowing";
 /** What a trip's page shows above its name until it has a tagline of its own (TRA-134). */
@@ -389,7 +391,7 @@ export default function PlannerApp({ initialData, initialBudgets, access = {}, d
         const imageForm = galleryForm(candidateGallery, editor.item);
         // A restaurant's editor sends every type checked, so unchecking them all clears them. Other ideas have none.
         const checkedTypes = fields.getAll("restaurantTypes");
-        void perform({ type: "candidate.save", ...itemToSave(editor.item), destinationId: editor.destinationId, category: editor.category, name: text("name"), price: text("price"), address: text("address"), url: researchLinks[0]?.url ?? "", links: researchLinks, notes: text("notes"), included: fields.has("included"), mustDo: fields.has("mustDo"),
+        void perform({ type: "candidate.save", ...itemToSave(editor.item), destinationId: editor.destinationId, category: editor.category, name: text("name"), description: text("description"), price: text("price"), address: text("address"), url: researchLinks[0]?.url ?? "", links: researchLinks, notes: text("notes"), included: fields.has("included"), mustDo: fields.has("mustDo"),
           ...(editor.category === "restaurants" && { restaurantTypes: RESTAURANT_TYPES.filter((type) => checkedTypes.includes(type)) }) }, "Changes saved.", undefined, imageForm);
         break;
       }
@@ -680,6 +682,7 @@ export default function PlannerApp({ initialData, initialBudgets, access = {}, d
         onRemove={(member) => void perform({ type: "trip.unshare", tripId: trip.id, email: member.email }, member.email + " can no longer open this trip.")} />}
       {editor.kind === "candidate" && <>
         <Field label="Name" wide><input name="name" defaultValue={editor.item?.name} required maxLength={160} placeholder={"Name of the " + singular[editor.category]} /></Field>
+        <Field label="What it is" hint={"Shown below the " + singular[editor.category] + "’s name on its cards. Leave it blank for none."} wide><input name="description" defaultValue={editor.item?.description} maxLength={120} placeholder={ideaExamples[editor.category]} /></Field>
         {editor.category === "restaurants" && <RestaurantTypesField types={editor.item?.restaurantTypes ?? []} disabled={busy} />}
         <Field label="Estimated price (USD)" wide hint={priceNotes[editor.category] + " Leave blank if unknown."}><input name="price" type="number" min="0" max={MAX_AMOUNT_DOLLARS} step="0.01" defaultValue={minorAmountValue(editor.item?.priceCents, "USD")} placeholder="Not estimated" /></Field>
         <Field label="Address or neighborhood" wide><input name="address" defaultValue={editor.item?.address} maxLength={500} placeholder="Optional" /></Field>

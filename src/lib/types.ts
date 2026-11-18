@@ -69,8 +69,12 @@ export interface DestinationPhotos { images: DestinationImage[]; mainImageId: st
  * is sent only for those that change (TRA-53); idea and church photos have none.
  */
 export interface GalleryUpdate { add: ({ id: string } & PreparedImage)[]; remove: string[]; mainImageId?: string | null; order?: string[]; focus?: ({ id: string } & PhotoFocus)[]; }
-/** A hotel, activity or restaurant idea. `restaurantTypes` is empty for hotels and activities, and for a restaurant without any. */
-export interface Candidate { id: string; destinationId: string; category: Category; position: number; mustDo: boolean; name: string; priceCents: number | null; address: string; url: string; notes: string; included: boolean; links: ResearchLink[]; images: CandidateImage[]; mainImageId: string | null; restaurantTypes: RestaurantType[]; }
+/**
+ * A hotel, activity or restaurant idea. `description` says what it is in a few words, such as "Boutique hotel", shown
+ * below its name on its cards, or is empty without one (TRA-138). `restaurantTypes` is empty for hotels and activities,
+ * and for a restaurant without any.
+ */
+export interface Candidate { id: string; destinationId: string; category: Category; position: number; mustDo: boolean; name: string; description: string; priceCents: number | null; address: string; url: string; notes: string; included: boolean; links: ResearchLink[]; images: CandidateImage[]; mainImageId: string | null; restaurantTypes: RestaurantType[]; }
 export interface MassTime { id: string; day: string; time: string; }
 export interface Church { id: string; destinationId: string; name: string; address: string; denomination: string; url: string; massTimes: MassTime[]; images: CandidateImage[]; mainImageId: string | null; }
 /** `tags` is one spelling of each tag on the trips the account can open, in alphabetical order, for a trip's page to reuse and the trip list to filter by. Destinations pages leave it empty. */
@@ -126,7 +130,8 @@ export type Mutation =
  | { type: "leg.save"; id: string; method: string; price: string; miscAmount?: string; departure: string; arrival: string; url: string; notes: string; itinerary?: ItineraryStop[]; links?: ResearchLink[] }
  | { type: "leg.clear"; id: string }
  // A restaurant's `restaurantTypes` replace its saved ones, and left out keep them. Hotels and activities have none.
- | { type: "candidate.save"; id: string; create?: true; destinationId: string; category: Category; name: string; price: string; address: string; url: string; notes: string; included: boolean; mustDo?: boolean; restaurantTypes?: RestaurantType[]; links?: ResearchLink[]; gallery?: GalleryUpdate }
+ // `description` says what the idea is, below its name on its cards (TRA-138). Left out, as a page opened before it does, it keeps the saved one.
+ | { type: "candidate.save"; id: string; create?: true; destinationId: string; category: Category; name: string; description?: string; price: string; address: string; url: string; notes: string; included: boolean; mustDo?: boolean; restaurantTypes?: RestaurantType[]; links?: ResearchLink[]; gallery?: GalleryUpdate }
  | { type: "candidate.move"; id: string; direction: "up" | "down" }
  | { type: "candidate.mustDo"; id: string; mustDo: boolean }
  | { type: "candidate.delete"; id: string }

@@ -1,17 +1,25 @@
 import { tripVisits } from "./budget.ts";
 import { formatSavedDestinationLabel } from "./destination-label.ts";
 import type { PlaceLocation } from "./location-search.ts";
-import type { Snapshot } from "./types.ts";
+import type { Size } from "./photo-focus.ts";
+import type { DestinationImage, Snapshot } from "./types.ts";
 
 /** What a place on a trip's map is (TRA-44). Layovers and stops come from its connections' itineraries. */
 export type MapPlaceKind = "departure" | "return" | "destination" | "layover" | "stop";
 
 /**
+ * A destination's primary photo, which its marker's preview shows (TRA-143): the photo's ID and version, which its address
+ * names with the destination's ID, and its focal point.
+ */
+export interface MapPhoto extends DestinationImage { destinationId: string }
+
+/**
  * A place in a trip's journey. `place` is the saved text the map looks up, empty when none is saved, and `label` how the
  * trip page shows it. `target` is the ID of what it stands for on the trip page: a destination's card, the connection
  * leaving or reaching a trip endpoint, or an itinerary entry. `number` is a destination's place in the route, from 1.
+ * `photo` is a destination's primary photo, and null for other places and for a destination without photos.
  */
-export interface MapPlace { key: string; kind: MapPlaceKind; place: string; label: string; target: string | null; number: number | null; connection: string | null }
+export interface MapPlace { key: string; kind: MapPlaceKind; place: string; label: string; target: string | null; number: number | null; connection: string | null; photo: MapPhoto | null }
 
 /** A travel connection: its saved Transportation text and the keys of the places it passes, from where it leaves to where it arrives. */
 export interface MapLeg { id: string; method: string; from: string; to: string; places: string[] }
@@ -22,8 +30,11 @@ export interface Journey { places: MapPlace[]; legs: MapLeg[] }
 /** A latitude and longitude. Longitudes can pass ±180 so that lines take the shorter way across the 180th meridian. */
 export type Position = [number, number];
 
+/** A point on the map, in pixels from its top left corner. */
+export interface Point { x: number; y: number }
+
 /** A place the map shows. A departure and return at the same position show as one marker, `roundTrip`. */
-export interface MapMarker { key: string; kind: MapPlaceKind | "roundTrip"; position: Position; label: string; number: number | null; target: string | null; found: string }
+export interface MapMarker { key: string; kind: MapPlaceKind | "roundTrip"; position: Position; label: string; number: number | null; target: string | null; found: string; photo: MapPhoto | null }
 
 /** A connection's straight lines between the places it passes that the map shows, and where its transportation shows. */
 export interface MapLine { id: string; points: Position[]; badge: Position; method: string; from: string; to: string; target: string }
@@ -68,20 +79,21 @@ export function tripJourney(snapshot: Snapshot, tripId: string): Journey {
   const legs = route.slice(1).map((to, index) => snapshot.legs.find((leg) => leg.tripId === tripId && leg.fromId === route[index] && leg.toId === to));
   const keyOf = (id: string | null, end: "from" | "to") => id === null ? (end === "from" ? "departure" : "return") : "destination-" + id;
   const first = legs[0], last = legs.at(-1);
-  const places: MapPlace[] = [{ key: "departure", kind: "departure", place: trip.homeCity.trim(), label: trip.homeCity, target: first ? connectionTarget(first.id) : null, number: null, connection: null }];
+  const places: MapPlace[] = [{ key: "departure", kind: "departure", place: trip.homeCity.trim(), label: trip.homeCity, target: first ? connectionTarget(first.id) : null, number: null, connection: null, photo: null }];
   const mapLegs: MapLeg[] = [];
   route.slice(1).forEach((to, index) => {
     const leg = legs[index];
     const connection = endName(route[index], "from") + " → " + endName(to, "to");
-    const stops: MapPlace[] = leg ? leg.itinerary.map((stop) => ({ key: itineraryTarget(leg.id, stop.id), kind: stop.kind, place: stop.place.trim(), label: stop.place, target: itineraryTarget(leg.id, stop.id), number: null, connection })) : [];
+    const stops: MapPlace[] = leg ? leg.itinerary.map((stop) => ({ key: itineraryTarget(leg.id, stop.id), kind: stop.kind, place: stop.place.trim(), label: stop.place, target: itineraryTarget(leg.id, stop.id), number: null, connection, photo: null })) : [];
     places.push(...stops);
     if (to !== null) {
       const visit = visits[index].visit;
-      places.push({ key: keyOf(to, "to"), kind: "destination", place: visit.city.trim(), label: formatSavedDestinationLabel(visit), target: "destination-" + to, number: index + 1, connection: null });
+      const photo = visit.images.find((image) => image.id === visit.mainImageId);
+      places.push({ key: keyOf(to, "to"), kind: "destination", place: visit.city.trim(), label: formatSavedDestinationLabel(visit), target: "destination-" + to, number: index + 1, connection: null, photo: photo ? { destinationId: visit.id, ...photo } : null });
     }
     if (leg) mapLegs.push({ id: leg.id, method: leg.method, from: endName(route[index], "from"), to: endName(to, "to"), places: [keyOf(route[index], "from"), ...stops.map((stop) => stop.key), keyOf(to, "to")] });
   });
-  places.push({ key: "return", kind: "return", place: returnCity.trim(), label: returnCity, target: last ? connectionTarget(last.id) : null, number: null, connection: null });
+  places.push({ key: "return", kind: "return", place: returnCity.trim(), label: returnCity, target: last ? connectionTarget(last.id) : null, number: null, connection: null, photo: null });
   return { places, legs: mapLegs };
 }
 
@@ -147,7 +159,7 @@ export function mapLayout(journey: Journey, locations: Readonly<Record<string, P
   }
   const markers: MapMarker[] = journey.places.flatMap((place) => {
     const position = positions.get(place.key);
-    return position ? [{ key: place.key, kind: place.kind, position, label: place.label, number: place.number, target: place.target, found: found.get(place.key)! }] : [];
+    return position ? [{ key: place.key, kind: place.kind, position, label: place.label, number: place.number, target: place.target, found: found.get(place.key)!, photo: place.photo }] : [];
   });
   const departure = markers.find((marker) => marker.key === "departure");
   const arrival = markers.find((marker) => marker.key === "return");
@@ -173,4 +185,21 @@ export function mapLayout(journey: Journey, locations: Readonly<Record<string, P
     unmapped[unmapped.indexOf(missingDeparture)] = { ...missingDeparture, kind: "roundTrip" };
   }
   return { markers, lines, unmapped };
+}
+
+/** How far a destination marker's preview keeps from its marker, and from the map's edges, in pixels (TRA-143). */
+const PREVIEW_GAP = 6;
+const PREVIEW_MARGIN = 8;
+
+/**
+ * Where a destination marker's preview goes on a map of `map` size, as the point of its top left corner (TRA-143): centered
+ * on the marker at `point`, of `radius`, above it, or below it where there isn't room above, moved across as far as keeps
+ * it within the map. With room on neither side, it goes on the side with more, as close to the marker as the map allows.
+ */
+export function previewPosition(point: Point, preview: Size, map: Size, radius: number): Point {
+  const within = (start: number, length: number, limit: number) => Math.round(Math.max(PREVIEW_MARGIN, Math.min(start, limit - PREVIEW_MARGIN - length)));
+  const above = point.y - radius - PREVIEW_GAP - preview.height;
+  const below = point.y + radius + PREVIEW_GAP;
+  const y = above >= PREVIEW_MARGIN ? above : below + preview.height <= map.height - PREVIEW_MARGIN ? below : point.y > map.height / 2 ? above : below;
+  return { x: within(point.x - preview.width / 2, preview.width, map.width), y: within(y, preview.height, map.height) };
 }

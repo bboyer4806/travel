@@ -1,12 +1,14 @@
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 import test from "node:test";
-import { journeyAirportNames, journeyPlaceNames, mapLayout, placeRole, tripJourney } from "../src/lib/trip-map.ts";
-import { setup, tripInput } from "./budget-fixtures.mjs";
+import { journeyAirportNames, journeyPlaceNames, mapLayout, placeRole, previewPosition, tripJourney } from "../src/lib/trip-map.ts";
+import { prepared, setup, tripInput } from "./budget-fixtures.mjs";
 
 const legSave = (id, overrides = {}) => ({ type: "leg.save", id, method: "", price: "", departure: "", arrival: "", url: "", notes: "", ...overrides });
 const entry = (kind, place) => ({ id: randomUUID(), kind, place, arrival: "", departure: "", notes: "" });
 const found = (latitude, longitude, label = "Found place") => ({ status: "found", latitude, longitude, label });
+const webp = new Uint8Array(Buffer.from("UklGRiIAAABXRUJQVlA4IBYAAAAwAQCdASoBAAEADsD+JaQAA3AAAAAA", "base64"));
+const photo = () => ({ id: randomUUID(), ...prepared(new Uint8Array(webp)) });
 
 /** A trip from Wooster to Vienna, chosen from a suggestion, and Salzburg, typed, and back, with layovers and a stop. */
 function plannedTrip(t, trip = {}) {
@@ -59,14 +61,66 @@ test("a separate return city is its own endpoint, and a trip without destination
   const empty = setup(t, tripInput({ homeCity: "" }));
   const endpoints = tripJourney(empty.store.getSnapshot(), empty.tripId);
   assert.deepEqual(endpoints, { places: [
-    { key: "departure", kind: "departure", place: "", label: "", target: null, number: null, connection: null },
-    { key: "return", kind: "return", place: "", label: "", target: null, number: null, connection: null },
+    { key: "departure", kind: "departure", place: "", label: "", target: null, number: null, connection: null, photo: null },
+    { key: "return", kind: "return", place: "", label: "", target: null, number: null, connection: null, photo: null },
   ], legs: [] });
   assert.deepEqual(journeyPlaceNames(endpoints), []);
   // A blank departing city is named as on the trip page's connections.
   const visited = empty.store.applyMutation({ type: "stop.add", tripId: empty.tripId, city: "Lisbon" }).id;
   assert.ok(visited);
   assert.deepEqual(tripJourney(empty.store.getSnapshot(), empty.tripId).legs.map((item) => [item.from, item.to]), [["Departing city", "Lisbon"], ["Lisbon", "Return city"]]);
+});
+
+test("each destination on the journey and the map has its primary photo, with its focal point, and every other place none (TRA-143)", (t) => {
+  const { store, tripId } = plannedTrip(t);
+  // Porto, saved before it joined the trip, is visited on a stop with an ID of its own.
+  const porto = store.applyMutation({ type: "destination.create", city: "Porto" }).id;
+  const stop = store.applyMutation({ type: "stop.add", tripId, city: "Porto" }).id;
+  assert.notEqual(stop, porto);
+  const photos = [photo(), photo()];
+  store.applyMutation({ type: "destination.save", id: porto, gallery: { add: photos, remove: [], mainImageId: photos[1].id, focus: [{ id: photos[1].id, focusX: 20, focusY: 80 }] } });
+  const version = (id) => store.getSnapshot().destinations.find((item) => item.id === porto).images.find((image) => image.id === id).version;
+  /** The journey's places that have photos, with their photos. */
+  const withPhotos = () => tripJourney(store.getSnapshot(), tripId).places.filter((place) => place.photo !== null).map((place) => [place.key, place.photo]);
+  // The primary photo rather than the gallery's first, named by the destination's ID, which its address takes.
+  assert.deepEqual(withPhotos(), [["destination-" + stop, { destinationId: porto, id: photos[1].id, version: version(photos[1].id), focusX: 20, focusY: 80 }]]);
+  const snapshot = store.getSnapshot(), saved = structuredClone(snapshot);
+  const journey = tripJourney(snapshot, tripId);
+  assert.deepEqual([...new Set(journey.places.filter((place) => place.photo === null).map((place) => place.kind))].sort(), ["departure", "destination", "layover", "return", "stop"],
+    "the trip's ends, layovers, stops and destinations without photos have none");
+  const layout = mapLayout(journey, Object.fromEntries(journeyPlaceNames(journey).map((name, index) => [name, found(40 + index, 10 + index)])));
+  assert.deepEqual(layout.markers.filter((marker) => marker.photo !== null).map((marker) => [marker.key, marker.photo]), withPhotos());
+  assert.ok(layout.markers.length > 1 && layout.markers.every((marker) => marker.photo === null || marker.kind === "destination"));
+  assert.deepEqual(snapshot, saved, "the trip's data is only read");
+
+  // Choosing another primary photo, recentering it, or removing every photo changes the journey's.
+  store.applyMutation({ type: "destination.save", id: porto, gallery: { add: [], remove: [], mainImageId: photos[0].id } });
+  assert.deepEqual(withPhotos(), [["destination-" + stop, { destinationId: porto, id: photos[0].id, version: version(photos[0].id), focusX: 50, focusY: 50 }]]);
+  store.applyMutation({ type: "destination.save", id: porto, gallery: { add: [], remove: [], focus: [{ id: photos[0].id, focusX: 75, focusY: 25 }] } });
+  assert.deepEqual(withPhotos(), [["destination-" + stop, { destinationId: porto, id: photos[0].id, version: version(photos[0].id), focusX: 75, focusY: 25 }]]);
+  store.applyMutation({ type: "destination.save", id: porto, gallery: { add: [], remove: photos.map((item) => item.id), mainImageId: null, order: [] } });
+  assert.deepEqual(withPhotos(), []);
+});
+
+test("a destination's preview goes above its marker, below it where there's no room above, and always within the map (TRA-143)", () => {
+  const map = { width: 600, height: 378 }, preview = { width: 200, height: 132 }, radius = 15;
+  // Centered 6 pixels above the marker.
+  assert.deepEqual(previewPosition({ x: 300, y: 250 }, preview, map, radius), { x: 200, y: 97 });
+  assert.deepEqual(previewPosition({ x: 300, y: 161 }, preview, map, radius), { x: 200, y: 8 }, "just room above, 8 pixels from the top");
+  // Near the top, below the marker instead.
+  assert.deepEqual(previewPosition({ x: 300, y: 160 }, preview, map, radius), { x: 200, y: 181 });
+  assert.deepEqual(previewPosition({ x: 300, y: 20 }, preview, map, radius), { x: 200, y: 41 });
+  // Near the left or right edge, moved across to stay 8 pixels inside the map, in each corner too.
+  assert.deepEqual(previewPosition({ x: 20, y: 250 }, preview, map, radius), { x: 8, y: 97 });
+  assert.deepEqual(previewPosition({ x: 590, y: 250 }, preview, map, radius), { x: 392, y: 97 });
+  assert.deepEqual(previewPosition({ x: 10, y: 10 }, preview, map, radius), { x: 8, y: 31 });
+  assert.deepEqual(previewPosition({ x: 595, y: 370 }, preview, map, radius), { x: 392, y: 217 });
+  // On a phone's shorter map, a tall preview with room on neither side goes on the side with more, within the map.
+  const phone = { width: 343, height: 298 }, tall = { width: 160, height: 140 };
+  assert.deepEqual(previewPosition({ x: 171, y: 165 }, tall, phone, radius), { x: 91, y: 8 });
+  assert.deepEqual(previewPosition({ x: 171, y: 130 }, tall, phone, radius), { x: 91, y: 150 });
+  // A preview larger than the map keeps its top left corner in view.
+  assert.deepEqual(previewPosition({ x: 50, y: 50 }, { width: 400, height: 400 }, { width: 300, height: 300 }, radius), { x: 8, y: 8 });
 });
 
 test("a journey's departure, return and layovers may be airport codes, never its destinations or other stops (TRA-132)", (t) => {
@@ -77,11 +131,11 @@ test("a journey's departure, return and layovers may be airport codes, never its
 /** A journey from home to two destinations and back, with a layover on the way out, as `tripJourney` builds one. */
 const journey = {
   places: [
-    { key: "departure", kind: "departure", place: "Home", label: "Home", target: "connection-out", number: null, connection: null },
-    { key: "layover", kind: "layover", place: "Layover", label: "Layover", target: "itinerary-out-1", number: null, connection: "Home → First" },
-    { key: "first", kind: "destination", place: "First", label: "First", target: "destination-first", number: 1, connection: null },
-    { key: "second", kind: "destination", place: "Second", label: "Second", target: "destination-second", number: 2, connection: null },
-    { key: "return", kind: "return", place: "Home", label: "Home", target: "connection-back", number: null, connection: null },
+    { key: "departure", kind: "departure", place: "Home", label: "Home", target: "connection-out", number: null, connection: null, photo: null },
+    { key: "layover", kind: "layover", place: "Layover", label: "Layover", target: "itinerary-out-1", number: null, connection: "Home → First", photo: null },
+    { key: "first", kind: "destination", place: "First", label: "First", target: "destination-first", number: 1, connection: null, photo: null },
+    { key: "second", kind: "destination", place: "Second", label: "Second", target: "destination-second", number: 2, connection: null, photo: null },
+    { key: "return", kind: "return", place: "Home", label: "Home", target: "connection-back", number: null, connection: null, photo: null },
   ],
   legs: [
     { id: "out", method: "Flight", from: "Home", to: "First", places: ["departure", "layover", "first"] },
@@ -132,7 +186,7 @@ test("places the map can't find are listed with why, and lines never stand in fo
     { key: "first", kind: "destination", label: "First", number: 1, connection: null, reason: "unavailable" },
   ]);
   // A lookup that hasn't answered shows nothing yet.
-  assert.deepEqual(mapLayout(journey, { Home: found(40, -80) }), { markers: [{ key: "departure", kind: "roundTrip", position: [40, -80], label: "Home", number: null, target: "connection-out", found: "Found place" }], lines: [], unmapped: [] });
+  assert.deepEqual(mapLayout(journey, { Home: found(40, -80) }), { markers: [{ key: "departure", kind: "roundTrip", position: [40, -80], label: "Home", number: null, target: "connection-out", found: "Found place", photo: null }], lines: [], unmapped: [] });
   // Within a connection, its places the map shows are joined in order around one it doesn't.
   assert.deepEqual(mapLayout(journey, { Home: found(40, -80), Layover: { status: "missing" }, First: found(48, 16) }).lines.map((line) => line.points), [[[40, -80], [48, 16]]]);
 });

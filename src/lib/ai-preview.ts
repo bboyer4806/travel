@@ -1,6 +1,8 @@
 import { formatCurrency } from "./money.ts";
 import { RESTAURANT_TYPE_LABELS } from "./types.ts";
+import { monthlyClimateText } from "./typical-weather.ts";
 import type { Category, Mutation, RestaurantType } from "./types";
+import type { MonthlyClimate } from "./typical-weather";
 
 /**
  * What an AI proposal changes (TRA-115), worked out from Travel's own data before and after each change: the rows it
@@ -12,13 +14,13 @@ import type { Category, Mutation, RestaurantType } from "./types";
  * Travel's own data, in the order a preview lists it. Sessions and the AI integration's tables are never read for a
  * proposal, and every other table must be listed here: tests check each column has a preview label.
  */
-export const DATA_TABLES = ["trips", "trip_images", "trip_shares", "trip_tags", "trip_order", "trip_stops", "legs", "home_items", "destinations", "destination_entry_requirements", "destination_health_safety", "destination_images", "candidates", "candidate_images", "churches", "church_images", "accounts"] as const;
+export const DATA_TABLES = ["trips", "trip_images", "trip_shares", "trip_tags", "trip_order", "trip_stops", "legs", "home_items", "destinations", "destination_entry_requirements", "destination_health_safety", "destination_climate", "destination_images", "candidates", "candidate_images", "churches", "church_images", "accounts"] as const;
 export type DataTable = typeof DATA_TABLES[number];
 /** The photos of destinations, ideas and churches. The owner sees each photo a change adds, changes or deletes beside its record (TRA-122). */
 export const PHOTO_TABLES: readonly DataTable[] = ["destination_images", "candidate_images", "church_images"];
 /** Never read for a proposal: photo and thumbnail bytes (TRA-89), trips' headline image bytes (TRA-133), and the Google account each authorization is bound to. */
 export const UNREAD_COLUMNS: Record<DataTable, string[]> = {
-  trips: [], trip_images: ["data"], trip_shares: [], trip_tags: [], trip_order: [], trip_stops: [], legs: [], home_items: [], destinations: [], destination_entry_requirements: [], destination_health_safety: [],
+  trips: [], trip_images: ["data"], trip_shares: [], trip_tags: [], trip_order: [], trip_stops: [], legs: [], home_items: [], destinations: [], destination_entry_requirements: [], destination_health_safety: [], destination_climate: [],
   destination_images: ["data", "thumbnail"], candidates: [], candidate_images: ["data", "thumbnail"], churches: [], church_images: ["data", "thumbnail"], accounts: ["googleSubject"],
 };
 
@@ -35,7 +37,7 @@ export interface PreviewRecord { action: "Adds" | "Changes" | "Deletes"; record:
 /** One proposed change as the owner reviews it: what it does, and every record it adds, changes or deletes. */
 export interface PreviewChange { operation: string; records: PreviewRecord[] }
 
-type Format = "text" | "number" | "order" | "money" | "flag" | "json" | "account" | "restaurantTypes";
+type Format = "text" | "number" | "order" | "money" | "flag" | "json" | "account" | "restaurantTypes" | "climate";
 /**
  * Each column's label in a preview and how its values read, or null for one people never see: IDs, keys, timestamps,
  * photo versions, destination photos' focal points, which proposals never change (TRA-53), trips' headline image crops,
@@ -60,6 +62,7 @@ export const PREVIEW_COLUMNS: Record<DataTable, Record<string, [string, Format] 
   },
   destination_entry_requirements: { destinationId: null, requirementsJson: ["Entry requirements", "json"] },
   destination_health_safety: { destinationId: null, healthSafetyJson: ["Health and safety", "json"] },
+  destination_climate: { destinationId: null, climateJson: ["Monthly averages", "climate"] },
   destination_images: { id: null, destinationId: null, version: null, position: ["Order", "order"], isMain: ["Primary photo", "flag"], focusX: null, focusY: null },
   candidates: { id: null, destinationId: null, category: null, name: ["Name", "text"], priceCents: ["Price", "money"], address: ["Address", "text"], url: null, notes: ["Notes", "text"], included: ["Included", "flag"], linksJson: ["Research links", "json"], position: ["Order", "order"], mustDo: ["Must do", "flag"], restaurantTypesJson: ["Restaurant types", "restaurantTypes"] },
   candidate_images: { id: null, candidateId: null, version: null, position: ["Order", "order"], isMain: ["Main photo", "flag"] },
@@ -125,6 +128,7 @@ export function previewChange(change: Mutation, effects: Effect[], before: Table
       case "destinations": return destination(row.id);
       case "destination_entry_requirements": return `${destination(row.destinationId)}: entry requirements`;
       case "destination_health_safety": return `${destination(row.destinationId)}: health and safety`;
+      case "destination_climate": return `${destination(row.destinationId)}: monthly averages`;
       case "destination_images": return `${destination(row.destinationId)}: photo`;
       case "candidates": return idea(row.id);
       case "candidate_images": return `${idea(row.candidateId)}: photo`;
@@ -166,6 +170,8 @@ function display(format: Format, value: Value, email: (accountId: Value) => stri
     case "account": return email(value);
     // As the restaurant's tags name them, or none.
     case "restaurantTypes": return (JSON.parse(String(value)) as RestaurantType[]).map((type) => RESTAURANT_TYPE_LABELS[type]).join(", ") || null;
+    // Every month's averages by name, with their source and reference years (TRA-135).
+    case "climate": return monthlyClimateText(JSON.parse(String(value)) as MonthlyClimate);
   }
 }
 /** Saved JSON, such as research links or Mass times, as text: every value but IDs and empty ones. */
@@ -196,6 +202,7 @@ export function operationTitle(change: Mutation): string {
     case "destination.delete": return "Delete a destination";
     case "destination.entryRequirements": return change.requirements ? "Save a destination's entry requirements" : "Clear a destination's entry requirements";
     case "destination.healthSafety": return change.healthSafety ? "Save a destination's health and safety" : "Clear a destination's health and safety";
+    case "destination.climate": return change.climate ? "Save a destination's monthly averages" : "Clear a destination's monthly averages";
     case "destination.churchVisibility": return change.enabled ? "Show a destination's Church section" : "Hide a destination's Church section";
     case "church.save": return `${change.create ? "Add" : "Change"} the church “${change.name}”`;
     case "church.delete": return "Delete a church";

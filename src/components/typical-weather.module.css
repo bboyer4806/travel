@@ -10,9 +10,23 @@
 .details dt { color: var(--muted); margin-bottom: 4px; }
 .details dd { margin: 0; overflow-wrap: anywhere; white-space: pre-wrap; }
 .details a { text-decoration: underline; }
+/* TRA-135: the monthly averages, after the typical weather, with their own buttons. */
+.monthly { margin-top: 22px; padding-top: 18px; border-top: 1px solid var(--line); }
+.monthlyHeading { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px 12px; }
+.monthlyHeading h5 { margin: 0; font-size: 16px; }
+.actions { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; }
+.actions :global(.text-button) { display: inline-flex; align-items: center; gap: 5px; }
+.empty { margin: 12px 0 0; font-size: 13px; }
 .editor { min-width: 0; border: 0; padding: 0; margin: 0; }
 .editor legend { color: var(--green); font-size: 14px; font-weight: 600; }
 .editor :global(.form-grid) { padding: 12px 0 18px; }
+.months { width: 100%; margin: 0 0 12px; border-collapse: collapse; table-layout: fixed; font-size: 12px; }
+.months th { padding: 0 4px 6px; color: var(--muted); font-weight: 600; text-align: left; }
+.months thead th:first-child { width: 28%; }
+.months tbody th { padding: 4px; color: var(--ink); font-weight: 400; }
+.months td { padding: 4px; }
+.months input { display: block; width: 100%; min-width: 0; min-height: 40px; padding: 8px; border: 1px solid #ccd6c7; border-radius: 5px; background: #fffffc; color: var(--ink); font-size: 13px; }
 @media (max-width: 540px) {
   .panel { padding: 16px; }
+  .months input { font-size: 16px; }
 }

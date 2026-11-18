@@ -6,6 +6,7 @@ import ts from "typescript";
 import * as destinationLabel from "../src/lib/destination-label.ts";
 import * as destinationLibrary from "../src/lib/destination-library.ts";
 import * as dropdownPosition from "../src/lib/dropdown-position.ts";
+import { onlyRule } from "./css-rules.mjs";
 
 // Run the actual city field with a small hook harness. City suggestions come from `locations`, which aren't an array
 // when the lookup fails; nothing is fetched.
@@ -348,4 +349,21 @@ test("saved destinations still show when city suggestions are unavailable", asyn
   field.type("Oslo");
   await field.search();
   assert.deepEqual([field.options(), field.status()], [[], "City suggestions are unavailable. You can still enter your own location."]);
+});
+
+test("the In your library tag stays whole at the end of its row on every screen width, smaller than the name beside it, which wraps (TRA-141)", () => {
+  const expected = {
+    // A suggestion's row holds its name and the tag side by side, centred top to bottom,
+    ".location-option": { display: "flex", "align-items": "center" },
+    // its name and where it is wrap in the room the tag leaves, however long, as on a phone,
+    ".location-option>span": { "min-width": "0", "overflow-wrap": "anywhere" },
+    // and the tag never shrinks or wraps, at the row's end.
+    ".location-option .library-tag": { "flex-shrink": "0", "white-space": "nowrap", "margin-left": "auto" },
+  };
+  const rules = Object.fromEntries(Object.keys(expected).map((selector) => [selector, onlyRule("../src/app/globals.css", selector)]));
+  for (const [selector, declarations] of Object.entries(expected)) {
+    assert.deepEqual(Object.fromEntries(Object.keys(declarations).map((property) => [property, rules[selector][property]])), declarations, selector);
+  }
+  // Its text is smaller than its row's, which the name has, so it marks the name without overwhelming it.
+  assert.ok(parseFloat(rules[".location-option .library-tag"]["font-size"]) < parseFloat(rules[".location-option"]["font-size"]));
 });

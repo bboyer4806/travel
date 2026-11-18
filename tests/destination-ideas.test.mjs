@@ -13,6 +13,7 @@ import * as tripDates from "../src/lib/trip-dates.ts";
 import * as types from "../src/lib/types.ts";
 import * as uuid from "../src/lib/uuid.ts";
 import { addDestination, candidateInput, newItem, prepared, setup, stop, visit } from "./budget-fixtures.mjs";
+import { cssRules, onlyRule } from "./css-rules.mjs";
 
 // The actual components, rendered with each hook's initial state, as on a page's first render. No browser is involved.
 const element = (type, props) => ({ type, props });
@@ -276,13 +277,6 @@ test("activity photos fill frames of one shape, and an activity without photos k
   assert.deepEqual(hosts(card).filter((node) => node.type === "img").map((node) => node.props.src), [thumbnail(other), thumbnail(main)]);
 });
 
-/** Each rule in a CSS file: its selector and its declarations by property. A rule in a media query is listed as any other. */
-function cssRules(file) {
-  const css = readFileSync(new URL(file, import.meta.url), "utf8").replace(/\/\*[\s\S]*?\*\//g, "");
-  return [...css.matchAll(/([^{}]+)\{([^{}]*)\}/g)].map(([, selector, body]) => [selector.trim(), Object.fromEntries(body.split(";").filter((declaration) => declaration.trim())
-    .map((declaration) => [declaration.slice(0, declaration.indexOf(":")).trim(), declaration.slice(declaration.indexOf(":") + 1).trim()]))]);
-}
-
 test("hotel, activity and restaurant cards in a destination's carousels show photos at one size, with none, one or several (TRA-137)", (t) => {
   const { store, id } = seed(t);
   // With seed's hotels and activities, every category has ideas without photos, with one, and with several, whose main photo is the last.
@@ -355,8 +349,7 @@ test("what an idea is shows at most two lines on its cards at every screen width
   // A clamp of two lines, which ends the second in an ellipsis, and no rule for another screen width changes it.
   const clamp = { display: "-webkit-box", "-webkit-box-orient": "vertical", "-webkit-line-clamp": "2", overflow: "hidden", "overflow-wrap": "anywhere" };
   for (const [file, selector] of [["../src/components/destination-ideas.module.css", ".description"], ["../src/app/globals.css", ".idea-description"]]) {
-    const rules = cssRules(file).filter(([selectors]) => selectors.split(",").map((part) => part.trim()).some((part) => part === selector || part.endsWith(" " + selector)));
-    assert.equal(rules.length, 1, selector);
-    assert.deepEqual(Object.fromEntries(Object.keys(clamp).map((property) => [property, rules[0][1][property]])), clamp, selector);
+    const rule = onlyRule(file, selector);
+    assert.deepEqual(Object.fromEntries(Object.keys(clamp).map((property) => [property, rule[property]])), clamp, selector);
   }
 });

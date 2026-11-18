@@ -431,9 +431,9 @@ test("a map looks up a few names at a time and shares lookups already under way"
   assert.deepEqual(one.One, many.One);
 });
 
-// An airport suggested for its IATA code (TRA-132): its name and code, the city it serves, and where it is.
-const cle = airportByCode("CLE");
-const cleveland = { id: "CLE", name: "Cleveland Hopkins International Airport (CLE)", region: "Cleveland", country: "United States", countryCode: "US", label: "CLE", airport: { latitude: cle.latitude, longitude: cle.longitude } };
+// An airport suggested for its IATA code (TRA-132): its name and code, the city it serves, and that it is an airport.
+// Only the trip map's airport search, now removed, used its position (TRA-144).
+const cleveland = { id: "CLE", name: "Cleveland Hopkins International Airport (CLE)", region: "Cleveland", country: "United States", countryCode: "US", label: "CLE", airport: true };
 
 test("an airport's code, in any letter case, suggests the airport first, then the places Open-Meteo has for it (TRA-132)", async () => {
   const requests = [];

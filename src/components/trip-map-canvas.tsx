@@ -25,8 +25,6 @@ const zIndex: Record<MapMarker["kind"], number> = { roundTrip: 3000, departure: 
 // than layovers and stops, and a connection's transportation is as wide as its icons.
 const size: Record<MapMarker["kind"], number> = { roundTrip: 30, departure: 30, return: 30, destination: 30, layover: 22, stop: 22 };
 const badgeSize = (method: string): [number, number] => [12 + 17 * transportationIcons(method).length, 22];
-// How close the map shows an airport selected in its search, with its runways in view.
-const AIRPORT_ZOOM = 12;
 // How long a destination's preview stays once the pointer leaves its marker and the preview, so the pointer can cross
 // between the two (TRA-143).
 const PREVIEW_CLOSE_DELAY = 200;
@@ -39,21 +37,18 @@ const leave = (hover: Hover | null): Hover | null => hover && { key: hover.key, 
  * A trip's journey on an OpenStreetMap map (TRA-44): Leaflet places each marker, and React draws what is in it. The map
  * frames every place when it opens and whenever the places change, and leaves zoom and panning alone otherwise.
  * Selecting a marker, by pointer, touch, Enter or Space, goes to what it stands for on the trip page. Markers are drawn
- * before the page paints, so what React renders into them never shows without them. Each new `focus`, an airport
- * selected in the map's search (TRA-132), centers the map on it.
+ * before the page paints, so what React renders into them never shows without them.
  *
  * A destination's marker shows a preview of it (TRA-143), its name and primary photo, while a mouse or pen is over the
  * marker or the preview, and while the keyboard is on the marker. It closes a moment after the pointer leaves both, when
  * the keyboard moves on, or on Escape. Touch has no hover, so a tap goes to the destination as before, without one.
  */
-export default function TripMapCanvas({ layout, focus }: { layout: MapLayout; focus: Position | null }) {
+export default function TripMapCanvas({ layout }: { layout: MapLayout }) {
   const container = useRef<HTMLDivElement>(null);
   const map = useRef<L.Map | null>(null);
   const layers = useRef<L.LayerGroup | null>(null);
   // The positions the map last framed.
   const framed = useRef("");
-  // The focus the map last centered on. One selected before the map opened isn't, so reopening frames the trip.
-  const centered = useRef(focus);
   // An element for each marker's content, which Leaflet places on the map and React renders into.
   const elements = useMemo(() => new Map([...layout.markers.map((marker) => marker.key), ...layout.lines.map((line) => "line-" + line.id)].map((key) => {
     const element = document.createElement("span");
@@ -162,15 +157,6 @@ export default function TripMapCanvas({ layout, focus }: { layout: MapLayout; fo
     element.style.left = corner.x + "px";
     element.style.top = corner.y + "px";
   }, [previewed]);
-
-  useLayoutEffect(() => {
-    const instance = map.current;
-    if (!instance || !focus || focus === centered.current) return;
-    centered.current = focus;
-    // The copy of its longitude nearest the view, where the journey's markers are when it crosses the 180th meridian.
-    const longitude = focus[1] + 360 * Math.round((instance.getCenter().lng - focus[1]) / 360);
-    instance.setView([focus[0], longitude], AIRPORT_ZOOM, { animate: false });
-  }, [focus]);
 
   return <>
     <div ref={container} className={styles.map} />

@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useId, useRef, useState, type ChangeEvent, type PointerEvent } from "react";
-import { ArrowLeft, ArrowRight, Check, ChevronLeft, ChevronRight, Crop, ImagePlus, LocateFixed, RotateCcw, Trash2 } from "lucide-react";
+import { ArrowLeft, ArrowRight, Check, Crop, ImagePlus, LocateFixed, RotateCcw, Trash2 } from "lucide-react";
 import { formatMegabytes, IMAGE_UPLOAD_TYPES, MAX_DESTINATION_IMAGES, MAX_GALLERY_UPLOAD_BYTES, MAX_IMAGE_UPLOAD_BYTES } from "@/lib/image-limits";
 import { formatSavedDestinationLabel } from "@/lib/destination-label";
 import { createGalleryDraft, focusPhoto, galleryChanged, movePhoto, placePhoto, removePhoto, type DraftImage, type GalleryDraft } from "@/lib/gallery-draft";
@@ -9,6 +9,8 @@ import { CENTERED, draggedFocus, objectPosition, photoFocus, type Size } from "@
 import type { Destination, PhotoFocus } from "@/lib/types";
 import { randomUuid } from "@/lib/uuid";
 import { controlOrNeighbor, useFocusAfter } from "./focus-after";
+import { AddImageByUrl } from "./image-by-url";
+import { neighborPhoto, PhotoArrows } from "./photo-browsing";
 import { usePhotoDrag } from "./photo-drag";
 import styles from "./destination-gallery.module.css";
 
@@ -32,7 +34,7 @@ function GalleryView({ destination }: { destination: DestinationGalleryOwner }) 
   const selected = destination.images.find((image) => image.id === selectedId) ?? destination.images[0];
   const index = destination.images.findIndex((image) => image.id === selected.id);
   /** Shows the next (1) or previous (-1) photo in saved order, wrapping from the last photo to the first and the first to the last (TRA-123). */
-  const step = (offset: -1 | 1) => setSelectedId(destination.images[(index + offset + destination.images.length) % destination.images.length].id);
+  const step = (offset: -1 | 1) => setSelectedId(neighborPhoto(destination.images, index, offset).id);
   return <div className={styles.gallery} role="group" aria-label={`Photos of ${formatSavedDestinationLabel(destination)}`}>
     <div className={styles.hero}>
       {/* Stored photos are resized and optimized on upload. */}
@@ -40,10 +42,7 @@ function GalleryView({ destination }: { destination: DestinationGalleryOwner }) 
       <img className={styles.image} src={photoUrl(destination.id, selected)} alt={`${formatSavedDestinationLabel(destination)}, photo ${index + 1}`} loading="lazy" decoding="async" width={1600} height={700} style={{ objectPosition: objectPosition(selected) }} />
       {selected.id === destination.mainImageId && <span className={styles.mainBadge}>Primary photo</span>}
       {destination.images.length > 1 && <span className={styles.count}>{index + 1} / {destination.images.length}</span>}
-      {destination.images.length > 1 && <>
-        <button type="button" className={`${styles.arrow} ${styles.previous}`} aria-label={`Previous photo of ${formatSavedDestinationLabel(destination)}`} onClick={() => step(-1)}><ChevronLeft size={22} aria-hidden="true" /></button>
-        <button type="button" className={`${styles.arrow} ${styles.next}`} aria-label={`Next photo of ${formatSavedDestinationLabel(destination)}`} onClick={() => step(1)}><ChevronRight size={22} aria-hidden="true" /></button>
-      </>}
+      {destination.images.length > 1 && <PhotoArrows name={formatSavedDestinationLabel(destination)} onStep={step} />}
     </div>
     {destination.images.length > 1 && <div className={styles.thumbnails} role="group" aria-label="Choose a photo to view">
       {destination.images.map((image, photoIndex) => <button type="button" className={styles.thumbnail} key={image.id} aria-pressed={selected.id === image.id} aria-label={`View photo ${photoIndex + 1} of ${formatSavedDestinationLabel(destination)}${image.id === destination.mainImageId ? " (primary photo)" : ""}`} onClick={() => setSelectedId(image.id)}>
@@ -117,21 +116,30 @@ export function DestinationGalleryEditor({ destination, draft, onChange, disable
   const drag = usePhotoDrag(draft.images.map((image) => image.id), (photoId, index) => { setError(""); onChange(placePhoto(draft, photoId, index)); }, disabled);
   const cropIndex = crop ? draft.images.findIndex((image) => image.id === crop.id) : -1;
 
-  function choose(event: ChangeEvent<HTMLInputElement>) {
-    const files = Array.from(event.currentTarget.files ?? []);
-    event.currentTarget.value = "";
-    if (disabled || !files.length) return;
+  /**
+   * Adds new photos, files chosen from the device or an image added by URL (TRA-139), checked as uploads are on the
+   * server. A refused batch keeps the draft and says why, and returns false.
+   */
+  function add(files: File[]): boolean {
     let validationError = "";
     if (draft.images.length + files.length > MAX_DESTINATION_IMAGES) validationError = `Keep up to ${MAX_DESTINATION_IMAGES} photos. Remove a photo before adding more.`;
     else if (files.some((file) => !IMAGE_UPLOAD_TYPES.includes(file.type.toLowerCase()))) validationError = "Choose JPEG, PNG, or WebP photos.";
     else if (files.some((file) => file.size === 0)) validationError = "One of these files is empty. Choose another photo.";
     else if (files.some((file) => file.size > MAX_IMAGE_UPLOAD_BYTES)) validationError = `Choose photos up to ${formatMegabytes(MAX_IMAGE_UPLOAD_BYTES)} each.`;
     else if ([...draft.images.flatMap((image) => image.file ? [image.file] : []), ...files].reduce((total, file) => total + file.size, 0) > MAX_GALLERY_UPLOAD_BYTES) validationError = `Add up to ${formatMegabytes(MAX_GALLERY_UPLOAD_BYTES)} of new photos at a time. Save these photos before adding more.`;
-    if (validationError) { setError(`${validationError} Your previous selections have been kept.`); return; }
+    if (validationError) { setError(`${validationError} Your previous selections have been kept.`); return false; }
     setError("");
     const added = files.map((file) => ({ id: randomUuid(), file }));
     const images = [...draft.images, ...added];
     onChange({ ...draft, images, mainImageId: draft.mainImageId ?? images[0].id });
+    return true;
+  }
+
+  function choose(event: ChangeEvent<HTMLInputElement>) {
+    const files = Array.from(event.currentTarget.files ?? []);
+    event.currentTarget.value = "";
+    if (disabled || !files.length) return;
+    add(files);
   }
 
   /** Removes a photo and focuses the next photo's Remove, or Add photos after the last. */
@@ -232,6 +240,7 @@ export function DestinationGalleryEditor({ destination, draft, onChange, disable
     </div>}
     <div className={styles.actions}>
       <button type="button" ref={addButton} className="button secondary small" disabled={disabled || draft.images.length >= MAX_DESTINATION_IMAGES} onClick={() => input.current?.click()}><ImagePlus size={15} aria-hidden="true" />Add photos</button>
+      <AddImageByUrl label="Add image by URL" disabled={disabled || draft.images.length >= MAX_DESTINATION_IMAGES} onAdd={(file) => add([file])} />
       <span className={styles.photoCount}>{draft.images.length} / {MAX_DESTINATION_IMAGES} photos</span>
       {changed && <button type="button" className={styles.restore} disabled={disabled} onClick={undo}><RotateCcw size={14} aria-hidden="true" />Undo photo changes</button>}
     </div>

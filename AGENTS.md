@@ -41,7 +41,8 @@ not verify those.
 After building, CI runs `node scripts/review-errors-smoke.mjs` against disposable databases and
 fixture sessions to check production HTTP errors, recovery, cross-bundle save validation,
 connecting Claude through OAuth, MCP and the owner's Server Actions, proposing, showing,
-approving and rejecting photo changes, and serving trips' headline images only to accounts that can open them.
+approving and rejecting photo changes, serving trips' headline images only to accounts that can open them, and
+Add image by URL's refusals.
 Fix regressions caused by your change; report unrelated baseline failures and blocked checks.
 Repeat passing checks when subsequent changes affect their coverage or required gates demand it.
 
@@ -95,6 +96,11 @@ Repeat passing checks when subsequent changes affect their coverage or required 
   `aiChange` then takes each change's photos from those, never from what the assistant sent. A
   proposal's photos wait in `ai_proposal_photos`, never in `changesJson`, until it is decided or expires,
   and the owner sees them through `/api/ai-proposal-images`.
+- Add image by URL (TRA-139) is `src/components/image-by-url.tsx`, in the destination, idea, church and trip image
+  editors. `/api/image-url` downloads the image with `downloadImageByUrl` in `src/lib/image-url.ts`, through
+  `src/lib/image-download.ts` over HTTP or HTTPS (proposals' photos stay HTTPS only), checks it with `prepareImage` and
+  answers with it as its server sent it. The editor adds it as a chosen file, so saves upload it unchanged. Component
+  tests give editors a stand-in for it and test it in `tests/image-by-url.test.mjs`.
 - The trip map (TRA-44) is `src/components/trip-map.tsx`, with Leaflet in `trip-map-canvas.tsx`, loaded only in the
   browser. `tripJourney` and `mapLayout` in `src/lib/trip-map.ts` decide what it shows, and `/api/trip-map/[tripId]` looks
   the trip's saved names up with `locatePlaces` in `src/lib/location-search.ts`, within the city suggestions' Open-Meteo
@@ -111,6 +117,12 @@ Repeat passing checks when subsequent changes affect their coverage or required 
   offer the airport for a three-letter IATA code in any letter case, except in destination fields, and the trip map
   shows a departure, return or layover written as a code in capitals at the airport, from `journeyAirportNames`. The
   list stays on the server: client components import location search types only.
+- Monthly climate averages (TRA-135) are a destination's one row of `destination_climate`, apart from its typical weather
+  columns, changed only by `destination.climate` with a whole record or null, and checked by `normalizeMonthlyClimate` in
+  `src/lib/typical-weather.ts`: every month's high and low in °F and precipitation in inches, a source and reference
+  years, all required. Travel never looks them up, estimates them or fills in a month. `src/components/climate-chart.tsx`
+  charts them for every destination; in a trip it first chooses the month of the stay's `arrivalDate`, and choosing a
+  month changes only what it shows.
 - Application writes go through `mutatePlanner` in `src/app/actions.ts`, into `applyMutation`
   in `src/lib/store.ts`, or come from an approved AI proposal. A new operation adds a `Mutation`
   variant in `src/lib/types.ts`, a case in `validate` (or, for a change only proposals make, in

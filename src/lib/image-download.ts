@@ -1,6 +1,6 @@
 import { lookup as dnsLookup } from "node:dns";
-import { STATUS_CODES, type IncomingHttpHeaders } from "node:http";
-import { request } from "node:https";
+import { request as httpRequest, STATUS_CODES, type IncomingHttpHeaders } from "node:http";
+import { request as httpsRequest } from "node:https";
 import { BlockList, isIP, type LookupFunction } from "node:net";
 import type { Readable } from "node:stream";
 
@@ -8,11 +8,15 @@ import { formatMegabytes, IMAGE_UPLOAD_TYPES, MAX_IMAGE_UPLOAD_BYTES } from "./i
 import { ImageValidationError } from "./image-upload.ts";
 
 /**
- * Downloads the photos ChatGPT and Claude propose from the addresses they give (TRA-122): HTTPS only, from public
- * internet addresses only, checked for the address given, for every redirect, and again for the addresses a host name
- * resolves to as Travel connects, so a name can't point Travel at its own network. A download holds no more than an
- * upload may, and what it holds is checked by prepareImage as an upload is.
+ * Downloads photos from the web addresses Travel is given: the photos ChatGPT and Claude propose, over HTTPS only
+ * (TRA-122), and images added by URL in a photo editor, over HTTP or HTTPS (TRA-139). Only from public internet
+ * addresses, checked for the address given, for every redirect, and again for the addresses a host name resolves to as
+ * Travel connects, so a name can't point Travel at its own network. A download holds no more than an upload may, and
+ * what it holds is checked by prepareImage as an upload is.
  */
+
+/** The kinds of web address a download takes, such as `["https:"]`, for the address given and every redirect. */
+export type WebProtocols = readonly ("http:" | "https:")[];
 
 /** Redirects a download follows from the address it is given. */
 export const MAX_IMAGE_REDIRECTS = 3;
@@ -41,17 +45,18 @@ export function isPublicAddress(address: string): boolean {
 }
 
 /**
- * The address to download a photo from, read relative to `base` for a redirect: https://, without a user name or
- * password, and not an IP address off the public internet. A host name's addresses are checked as Travel connects.
+ * The address to download a photo from, read relative to `base` for a redirect: one of `protocols`, without a user name
+ * or password, and not an IP address off the public internet. A host name's addresses are checked as Travel connects.
  */
-export function downloadAddress(address: string, base?: URL): URL {
+export function downloadAddress(address: string, protocols: WebProtocols, base?: URL): URL {
+  const schemes = protocols.map((protocol) => `${protocol}//`).join(" or ");
   let url: URL;
   try {
     url = new URL(address, base);
   } catch {
-    throw new ImageValidationError("This isn't a web address. Give the photo's https:// address.");
+    throw new ImageValidationError(`This isn't a web address. Give the photo's ${schemes} address.`);
   }
-  if (url.protocol !== "https:") throw new ImageValidationError("Travel downloads photos only from https:// addresses.");
+  if (!protocols.some((protocol) => protocol === url.protocol)) throw new ImageValidationError(`Travel downloads photos only from ${schemes} addresses.`);
   if (url.username || url.password) throw new ImageValidationError("Give the photo's address without a user name or password.");
   const host = url.hostname.replace(/^\[(.*)\]$/, "$1");
   if (isIP(host) && !isPublicAddress(host)) throw new ImageValidationError(PRIVATE);
@@ -73,20 +78,22 @@ export type PhotoResponse = Readable & { statusCode?: number; headers: IncomingH
 /** Requests one address, without following a redirect, until `signal` aborts. */
 export type PhotoFetch = (url: URL, signal: AbortSignal) => Promise<PhotoResponse>;
 
-/** Travel's own request: straight to a public address, never through a proxy, on a connection of its own. */
+/** Travel's own request, over HTTP or HTTPS as its address says: straight to a public address, never through a proxy, on a connection of its own. */
 export const fetchPublic: PhotoFetch = (url, signal) => new Promise((resolve, reject) => {
-  request(url, { agent: false, lookup: publicLookup, signal, headers: { Accept: IMAGE_UPLOAD_TYPES.join(", "), "User-Agent": "TravelPlanner/1.0" } }, resolve)
+  const options = { agent: false, lookup: publicLookup, signal, headers: { Accept: IMAGE_UPLOAD_TYPES.join(", "), "User-Agent": "TravelPlanner/1.0" } };
+  (url.protocol === "http:" ? httpRequest(url, options, resolve) : httpsRequest(url, options, resolve))
     .on("error", reject)
     .end();
 });
 
 /**
- * Downloads a photo as the file an upload would be, for prepareImage to check. Follows up to MAX_IMAGE_REDIRECTS
- * redirects, each checked as the address given is, and refuses a photo larger than an upload may be or one its server
- * doesn't call a JPEG, PNG or WebP image. When `signal` aborts, it stops and throws the signal's reason.
+ * Downloads a photo from an address of one of `protocols` as the file an upload would be, for prepareImage to check.
+ * Follows up to MAX_IMAGE_REDIRECTS redirects, each checked as the address given is, and refuses a photo larger than an
+ * upload may be or one its server doesn't call a JPEG, PNG or WebP image. When `signal` aborts, it stops and throws the
+ * signal's reason.
  */
-export async function downloadImage(address: string, signal: AbortSignal, fetch: PhotoFetch = fetchPublic): Promise<File> {
-  let url = downloadAddress(address);
+export async function downloadImage(address: string, protocols: WebProtocols, signal: AbortSignal, fetch: PhotoFetch = fetchPublic): Promise<File> {
+  let url = downloadAddress(address, protocols);
   for (let redirects = 0; ; redirects += 1) {
     const response = await fetch(url, signal).catch((error: unknown) => { throw failure(error, signal); });
     // Each response stops when the signal aborts, however it was fetched, and once it is done with.
@@ -99,7 +106,7 @@ export async function downloadImage(address: string, signal: AbortSignal, fetch:
       const location = response.headers.location;
       if (!location) throw new ImageValidationError(`The photo's server answered ${status} without saying where the photo is.`);
       if (redirects === MAX_IMAGE_REDIRECTS) throw new ImageValidationError(`The photo's address redirects more than ${MAX_IMAGE_REDIRECTS} times.`);
-      url = downloadAddress(location, url);
+      url = downloadAddress(location, protocols, url);
     } catch (error) {
       throw failure(error, signal);
     } finally {

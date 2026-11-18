@@ -1,13 +1,14 @@
 import { FEEDBACK_FAILURE, FEEDBACK_RETRY, validateFeedback } from "./feedback.ts";
-import { createFeedbackGuard, sameOriginFeedback } from "./feedback-guard.ts";
+import { createFeedbackGuard } from "./feedback-guard.ts";
 import { FeedbackDeliveryError, sendJiraFeedback } from "./jira-feedback.ts";
+import { sameOriginRequest } from "./same-origin.ts";
 
 const json = (body: object, status = 200) => Response.json(body, { status, headers: { "Cache-Control": "no-store" } });
 
 /** The route checks sign-in first and passes the signed-in account, whose limits apply (TRA-92). */
 export function createFeedbackHandler({ guard = createFeedbackGuard(), send = sendJiraFeedback }: { guard?: ReturnType<typeof createFeedbackGuard>; send?: typeof sendJiraFeedback } = {}) {
   return async function POST(request: Request, accountId: string) {
-    if (!sameOriginFeedback(request)) return json({ error: FEEDBACK_RETRY }, 403);
+    if (!sameOriginRequest(request)) return json({ error: FEEDBACK_RETRY }, 403);
     if (!request.headers.get("content-type")?.startsWith("application/json")) return json({ error: FEEDBACK_FAILURE }, 415);
     // Bound actual bytes, not just a client-controlled Content-Length.
     const reader = request.body?.getReader();

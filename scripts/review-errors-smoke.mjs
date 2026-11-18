@@ -1,4 +1,4 @@
-// Production HTTP regressions for TRA-73, TRA-75, TRA-89, TRA-94, TRA-115, TRA-122 and TRA-133. Run after pnpm build with Node 24.
+// Production HTTP regressions for TRA-73, TRA-75, TRA-89, TRA-94, TRA-115, TRA-122, TRA-133 and TRA-139. Run after pnpm build with Node 24.
 // All writes and failure injection use a new, isolated database under test-results.
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
@@ -195,6 +195,17 @@ for (const [label, firstPath] of [
       assert.equal((await server.request(headlinePath, asFriend)).status, 404, "and ending the share ends it");
       assert.deepEqual(await server.mutation({ ...tripInput, id: tripId, image: null }), { ok: true, id: tripId });
       assert.equal((await server.request(headlinePath)).status, 200, "a save without the trip editor's form keeps the image");
+      // TRA-139: Add image by URL downloads only for a signed-in account's request from Travel's own page, and never from a
+      // private address, given by IP address or by name. No public image server is reachable here, so only refusals are checked.
+      const appOrigin = new URL((await server.request("/api/health")).url).origin;
+      const imageByUrl = (url, headers = {}) => server.request("/api/image-url", { method: "POST", headers: { "Content-Type": "application/json", Origin: appOrigin, ...headers }, body: JSON.stringify({ url }) });
+      const imageRefused = async (response, status, error) => assert.deepEqual([response.status, response.headers.get("content-type"), await response.json()], [status, "application/json", { error }]);
+      await imageRefused(await imageByUrl("https://images.example.com/a.jpg", { Cookie: "" }), 401, "Your session has ended. Sign in again to continue.");
+      await imageRefused(await imageByUrl("https://images.example.com/a.jpg", { Origin: "https://elsewhere.example" }), 403, "Refresh the page and try again.");
+      for (const url of ["http://127.0.0.1/smoke.jpg", "https://localhost/smoke.jpg", "http://169.254.169.254/latest/meta-data/"]) {
+        await imageRefused(await imageByUrl(url), 422, "Travel doesn't download photos from private, loopback or link-local addresses.");
+      }
+      await imageRefused(await imageByUrl("ftp://images.example.com/a.jpg"), 422, "Travel downloads photos only from http:// or https:// addresses.");
       // Keep accounts/authentication available while causing page data reads to fail.
       // This changes only this test's disposable fixture, never application code/data.
       const db = new DatabaseSync(database);

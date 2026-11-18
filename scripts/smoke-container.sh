@@ -48,6 +48,8 @@ const destinationId = '22222222-2222-4222-8222-222222222222';
 const imageVersion = '33333333-3333-4333-8333-333333333333';
 const requirements = { passportNationality: 'United States', travelPurpose: 'Tourism', travelerCircumstances: 'Whole party', visaRequirements: 'Review authorization rules', passportValidity: 'Review passport rules', requiredDocuments: 'Review health and entry documents', transitRequirements: 'Review transit rules separately', notes: 'Manually maintained', sources: [{ id: 'c1000000-0000-4000-8000-000000000001', url: 'https://example.gov/entry', description: 'Official source' }], lastCheckedDate: '2026-11-03' };
 const healthSafety = { advisoryLevel: 'Level 1: Exercise normal precautions', advisoryWarnings: 'Review the advisory before departure', healthPrecautions: 'Routine vaccines', localSafety: 'Watch for pickpockets', emergencyContacts: [{ id: 'f1000000-0000-4000-8000-000000000001', name: 'Emergency services', phone: '112', notes: 'Police, fire and ambulance' }], sources: [{ id: 'f2000000-0000-4000-8000-000000000001', url: 'https://example.gov/advisory', description: 'Official advisory' }], lastCheckedDate: '2026-11-10' };
+// TRA-135: monthly climate averages, apart from the typical weather.
+const climate = { months: [[37,27,1.5],[41,29,1.7],[50,35,2],[60,42,2],[69,51,2.8],[75,57,2.8],[79,61,2.9],[79,61,2.9],[69,53,2.4],[58,44,1.6],[46,36,1.8],[39,30,1.8]].map(([highF, lowF, precipitationIn]) => ({ highF, lowF, precipitationIn })), source: 'Test climate normals', firstYear: 1991, lastYear: 2020 };
 const candidates = [
   { id: '66666666-6666-4666-8666-666666666666', category: 'hotels', version: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb' },
   { id: '77777777-7777-4777-8777-777777777777', category: 'activities', version: 'cccccccc-cccc-4ccc-8ccc-cccccccccccc' },
@@ -98,6 +100,7 @@ for (const [index, data] of images.entries()) {
 }
 db.prepare('INSERT INTO destination_entry_requirements(destinationId,requirementsJson) VALUES(?,?)').run(destinationId, JSON.stringify(requirements));
 db.prepare('INSERT INTO destination_health_safety(destinationId,healthSafetyJson) VALUES(?,?)').run(destinationId, JSON.stringify(healthSafety));
+db.prepare('INSERT INTO destination_climate(destinationId,climateJson) VALUES(?,?)').run(destinationId, JSON.stringify(climate));
 for (const [index, candidate] of candidates.entries()) {
   db.prepare('INSERT INTO candidates(id,destinationId,category,name,position,mustDo) VALUES(?,?,?,?,?,?)').run(candidate.id, destinationId, candidate.category, 'Persistence test: ' + candidate.category, index + 2, candidate.category === 'hotels' ? 0 : 1);
   for (const [position, data] of images.entries()) {
@@ -136,6 +139,8 @@ const destinationId = '22222222-2222-4222-8222-222222222222';
 const imageVersion = '33333333-3333-4333-8333-333333333333';
 const requirements = { passportNationality: 'United States', travelPurpose: 'Tourism', travelerCircumstances: 'Whole party', visaRequirements: 'Review authorization rules', passportValidity: 'Review passport rules', requiredDocuments: 'Review health and entry documents', transitRequirements: 'Review transit rules separately', notes: 'Manually maintained', sources: [{ id: 'c1000000-0000-4000-8000-000000000001', url: 'https://example.gov/entry', description: 'Official source' }], lastCheckedDate: '2026-11-03' };
 const healthSafety = { advisoryLevel: 'Level 1: Exercise normal precautions', advisoryWarnings: 'Review the advisory before departure', healthPrecautions: 'Routine vaccines', localSafety: 'Watch for pickpockets', emergencyContacts: [{ id: 'f1000000-0000-4000-8000-000000000001', name: 'Emergency services', phone: '112', notes: 'Police, fire and ambulance' }], sources: [{ id: 'f2000000-0000-4000-8000-000000000001', url: 'https://example.gov/advisory', description: 'Official advisory' }], lastCheckedDate: '2026-11-10' };
+// TRA-135: monthly climate averages, apart from the typical weather.
+const climate = { months: [[37,27,1.5],[41,29,1.7],[50,35,2],[60,42,2],[69,51,2.8],[75,57,2.8],[79,61,2.9],[79,61,2.9],[69,53,2.4],[58,44,1.6],[46,36,1.8],[39,30,1.8]].map(([highF, lowF, precipitationIn]) => ({ highF, lowF, precipitationIn })), source: 'Test climate normals', firstYear: 1991, lastYear: 2020 };
 const candidates = [
   { id: '66666666-6666-4666-8666-666666666666', category: 'hotels', version: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb' },
   { id: '77777777-7777-4777-8777-777777777777', category: 'activities', version: 'cccccccc-cccc-4ccc-8ccc-cccccccccccc' },
@@ -189,6 +194,7 @@ try {
   }
   assert.deepEqual(JSON.parse(db.prepare('SELECT requirementsJson FROM destination_entry_requirements WHERE destinationId = ?').get(destinationId).requirementsJson), requirements);
   assert.deepEqual(JSON.parse(db.prepare('SELECT healthSafetyJson FROM destination_health_safety WHERE destinationId = ?').get(destinationId).healthSafetyJson), healthSafety);
+  assert.deepEqual(JSON.parse(db.prepare('SELECT climateJson FROM destination_climate WHERE destinationId = ?').get(destinationId).climateJson), climate);
   assert.equal(db.prepare('SELECT count(*) AS count FROM candidate_images').get().count, 6);
   for (const [index, candidate] of candidates.entries()) {
     const saved = db.prepare('SELECT destinationId,category,included,priceCents,position,mustDo FROM candidates WHERE id = ?').get(candidate.id);
@@ -404,6 +410,10 @@ async function assertRefused(label, headers) {
   }
   const feedback = await fetch(origin + "/api/feedback", { method: "POST", headers: { ...headers, "Content-Type": "application/json", Origin: origin }, body: JSON.stringify({ action: "open" }), signal: signal() });
   assert.equal(feedback.status, 401, `${label} feedback must be refused`);
+  // Add image by URL (TRA-139) downloads nothing for a request without a current session.
+  const imageByUrl = await fetch(origin + "/api/image-url", { method: "POST", headers: { ...headers, "Content-Type": "application/json", Origin: origin }, body: JSON.stringify({ url: "https://images.example.com/a.jpg" }), signal: signal() });
+  assert.equal(imageByUrl.status, 401, `${label} Add image by URL must be refused`);
+  assert.ok(!imageByUrl.headers.get("content-type")?.startsWith("image/"), `${label} Add image by URL must not return image bytes`);
   await assertMcpRefused(label, headers);
 }
 // The MCP endpoint takes only an AI connection's access token: no session, current or not, opens it (TRA-115).
@@ -467,6 +477,8 @@ try {
   assert.ok(ownerPage.includes(">Share<") && ownerPage.includes('aria-label="Delete trip"'), "The owner can share and delete the trip");
   assert.ok(ownerPage.includes(">Health and safety<"), "Each destination on the trip page has Health and safety");
   assert.ok((await (await get(destinationPages[0], owner)).text()).includes(">Health and safety<"), "A destination's page has Health and safety");
+  // TRA-135: Typical weather charts the saved monthly averages, naming each month's, and the trip's stay begins in May.
+  assert.ok(ownerPage.includes(">Monthly averages<") && ownerPage.includes("May: average high 69 °F, average low 51 °F, precipitation 2.8 in") && ownerPage.includes("Your stay begins this month."), "The trip page charts the monthly averages from the stay's month");
   assert.match(await (await get("/destinations", owner)).text(), /Vienna/, "The owner's destination appears in Destinations");
   const editorList = await (await get("/", editor)).text();
   assert.match(editorList, /Persistence test/, "A shared trip appears in its recipient's list");
@@ -531,6 +543,13 @@ try {
   assert.deepEqual(await mutation(healthSafetyEdit, outsider), notAvailable);
   assert.deepEqual(await mutation(healthSafetyEdit, editor), { ok: true, id: "22222222-2222-4222-8222-222222222222" });
   assert.deepEqual(JSON.parse(db.prepare("SELECT healthSafetyJson FROM destination_health_safety WHERE destinationId = ?").get("22222222-2222-4222-8222-222222222222").healthSafetyJson), healthSafety);
+  // So do its monthly climate averages (TRA-135), which a refused change leaves as they were.
+  const climateEdit = { type: "destination.climate", id: "22222222-2222-4222-8222-222222222222", climate: { months: Array.from({ length: 12 }, () => ({ highF: 70, lowF: 60, precipitationIn: 1 })), source: "Edited from a shared trip", firstYear: 2001, lastYear: 2020 } };
+  const savedClimate = () => JSON.parse(db.prepare("SELECT climateJson FROM destination_climate WHERE destinationId = ?").get("22222222-2222-4222-8222-222222222222").climateJson);
+  assert.deepEqual(await mutation(climateEdit, outsider), notAvailable);
+  assert.notDeepEqual(savedClimate(), climateEdit.climate);
+  assert.deepEqual(await mutation(climateEdit, editor), { ok: true, id: "22222222-2222-4222-8222-222222222222" });
+  assert.deepEqual(savedClimate(), climateEdit.climate);
   // A destination created outside a trip is its creator's: choosing a city never opens someone else's. Only the owner
   // deletes a destination, and only one no trip visits; its page offers Delete only then.
   const vienna = "22222222-2222-4222-8222-222222222222";

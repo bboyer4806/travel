@@ -111,6 +111,12 @@ The designated owner, `TRAVEL_OWNER_EMAIL`, can connect ChatGPT and Claude to Tr
 
 **Verify after deployment.** Confirm `/api/health` returns HTTP 200 and `/.well-known/oauth-authorization-server` names `https://travel.dev.boyersoftware.com` as its issuer. Signed in as the owner, open **AI assistants** and connect Claude, then ChatGPT, each from its own app; confirm each appears as its own connection. Ask each to list trips, including one the owner doesn't own, and to propose a small change to such a trip; open the link, check the preview, and reject it. Propose again and approve, and confirm the change. Ask one to add a photo from a public image address to a destination's gallery; confirm the proposal's page shows the photo, approve it, and confirm it is in the gallery. Ask for a photo from `https://127.0.0.1/photo.jpg` and confirm it is refused. Sign in as another account and confirm **AI assistants** isn't in the header, `/ai` shows "This page has moved on.", and the Connect page refuses. Revoke one connection and confirm that assistant can no longer read Travel while the other still can.
 
+## Images added by URL (TRA-139)
+
+**Add image by URL** in each photo editor makes Travel download the image at a web address someone signed in gives it, as it downloads ChatGPT's and Claude's photos: on the container's own outbound connection, never through a proxy, refusing private, loopback and link-local addresses for the address given, each redirect and each address a name resolves to. It takes `http://` addresses as well as `https://` ones, so the app must reach public websites on port 80 as well as 443. Nothing is stored until the editor saves, as for any upload, and there is no new setting or schema change. Refusals are answered to the editor, not logged.
+
+**Verify after deployment.** Signed in, open a destination's editor, choose **Add image by URL**, enter a public image's address, choose **Preview** and **Use this image**, save, and confirm the photo is in the gallery. Enter `http://127.0.0.1/photo.jpg` and confirm it is refused.
+
 ## Deployment safeguards (TRA-98)
 
 The deployment workflow (`.github/workflows/deploy.yml`) deploys only from `main`, connects only to the verified Dokku host, and sets the request-body limit that photo uploads need.
@@ -212,7 +218,7 @@ Prefer fixing forward. Rolling back an image does not reverse a database schema 
 
 ## Schema history
 
-The schema version is SQLite's `user_version`; the current schema is 35, `SCHEMA_VERSION` in `src/lib/store.ts`. At every start, `createStore` in `src/lib/store.ts` upgrades an older database in one transaction, through each version in turn. Each upgrade checks what already exists, so running it again on a database that already has its changes (a replay) keeps saved data. The notes below are in schema order. **Superseded** marks behavior that a later schema replaced; the current behavior is in [README.md](../README.md).
+The schema version is SQLite's `user_version`; the current schema is 36, `SCHEMA_VERSION` in `src/lib/store.ts`. At every start, `createStore` in `src/lib/store.ts` upgrades an older database in one transaction, through each version in turn. Each upgrade checks what already exists, so running it again on a database that already has its changes (a replay) keeps saved data. The notes below are in schema order. **Superseded** marks behavior that a later schema replaced; the current behavior is in [README.md](../README.md).
 
 ### Schema 1: first shared planner
 The first release creates the `trips`, `destinations`, `legs` and `candidates` tables, with prices in integer USD cents for the whole party. Anyone with the URL can view and edit every trip. The schema 1 build sets `user_version` to 1 at every start and does not refuse a newer database, so later upgrades check what already exists as well as the version: redeploying a newer build after a rollback to schema 1 cannot repeat an `ALTER TABLE` or replace saved links.
@@ -398,6 +404,11 @@ Restoring the pre-upgrade backup to run a schema 33 build again loses every head
 Trip taglines upgrade the database to schema 35 in the startup transaction, adding `tagline` to `trips`: the line a trip's page shows in capitals above its name, saved as typed, up to 120 characters, which the store checks. Every existing trip starts with an empty tagline, which shows the default AN ADVENTURE IN THE MAKING, so no page looks different until a tagline is entered. Nothing else changes. The column is in the same online backups, and a replay keeps saved taglines.
 
 Restoring the pre-upgrade backup to run a schema 34 build again shows AN ADVENTURE IN THE MAKING on every trip's page and loses every trip tagline.
+
+### Schema 36: monthly climate averages (TRA-135)
+Monthly climate averages upgrade the database to schema 36 in the startup transaction with a `destination_climate` table that follows `destination_health_safety`: at most one record per destination, keyed by its ID, holding every month's average daily high and low in °F and average total precipitation in inches, with their source and first and last reference years, as JSON. Existing destinations start without a record, and their typical weather, including any placeholder recorded in it, is unchanged, as is everything else. Deleting a destination deletes its record; removing a destination from a trip or deleting a trip keeps it. The table is in the same online backups, and a replay keeps saved records.
+
+Restoring the pre-upgrade backup to run a schema 35 build again loses every monthly climate record, and that build shows no monthly averages.
 
 ## Feedback and release notes
 Configure server-only JIRA_URL (HTTPS Jira base URL), JIRA_EMAIL, and JIRA_API_TOKEN with permission to create Tasks in TRA. Use the host's secret configuration; never put credentials in source, image layers, client variables, or logs. Preserve the browser Host and Origin headers through the proxy; the feedback endpoint compares them and ignores forwarded-host claims. Its limits count per signed-in account. A failed send logs one line saying why, such as a missing setting's name, an invalid JIRA_URL, or Jira's HTTP status (401 for wrong credentials, 403 for missing permission), never the settings' values.

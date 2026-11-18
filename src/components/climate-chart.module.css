@@ -1,0 +1,68 @@
+/* TRA-135: a destination's monthly climate averages. Highs are the app's orange and lows a blue, a pair that stays apart for colorblind readers; text keeps the text colors. */
+/* Its labels follow its own width, which differs between a trip's cards and a destination's page. */
+.chart { --high: var(--orange); --low: #2563a8; --plot-height: 200px; --label-row: 34px; container-type: inline-size; margin-top: 12px; }
+.legend { display: flex; flex-wrap: wrap; gap: 4px 18px; margin: 0 0 12px; padding: 0; list-style: none; font-size: 12px; color: var(--ink); }
+.legend li { display: inline-flex; align-items: center; gap: 7px; }
+.highKey, .lowKey { display: inline-block; flex: none; width: 16px; height: 2px; border-radius: 1px; }
+.highKey { background: var(--high); }
+.lowKey { background: var(--low); }
+.stayKey { display: inline-block; flex: none; width: 6px; height: 6px; border-radius: 50%; background: var(--ink); }
+
+.plot { display: grid; grid-template-columns: 34px minmax(0, 1fr); }
+.axis { position: relative; height: var(--plot-height); color: var(--muted); font-size: 11px; font-variant-numeric: tabular-nums; }
+.axis span { position: absolute; right: 8px; line-height: 1; transform: translateY(-50%); }
+/* A finger dragged sideways chooses months, and one dragged up or down scrolls the page. */
+.area { position: relative; height: calc(var(--plot-height) + var(--label-row)); touch-action: pan-y pinch-zoom; user-select: none; }
+/* The chosen month's column, behind the lines. */
+.band { position: absolute; top: 0; width: calc(100% / 12); height: var(--plot-height); border-radius: 6px; background: var(--wash); transform: translateX(-50%); }
+/* The lines stretch to fit the plot; their strokes keep their width. */
+.lines { position: absolute; top: 0; left: 0; width: 100%; height: var(--plot-height); overflow: visible; }
+.lines line, .lines polyline { fill: none; vector-effect: non-scaling-stroke; }
+.grid { stroke: var(--line); stroke-width: 1; }
+.crosshair { stroke: var(--muted); stroke-width: 1; }
+.high, .low { stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+.high { stroke: var(--high); }
+.low { stroke: var(--low); }
+.points { position: absolute; top: 0; left: 0; width: 100%; height: var(--plot-height); pointer-events: none; }
+.highPoint, .lowPoint { position: absolute; width: 8px; height: 8px; border-radius: 50%; box-shadow: 0 0 0 2px var(--white); transform: translate(-50%, -50%); }
+.highPoint { background: var(--high); }
+.lowPoint { background: var(--low); }
+.shownPoint { width: 12px; height: 12px; }
+
+/* Twelve full-height columns over the plot, each a month's radio button, with its name below the plot. */
+.months { position: absolute; inset: 0; display: grid; grid-template-columns: repeat(12, minmax(0, 1fr)); }
+.month { position: relative; display: flex; align-items: flex-end; justify-content: center; min-width: 0; padding-bottom: 4px; border-radius: 6px; cursor: pointer; }
+.month:has(input:focus-visible) { outline: 2px solid var(--orange); outline-offset: -2px; }
+.monthName { display: flex; flex-direction: column; align-items: center; gap: 3px; min-height: 24px; color: var(--muted); font-size: 12px; line-height: 1.2; }
+.month:has(input:checked) .monthName { color: var(--ink); font-weight: 600; }
+.stayMonth::after { content: ""; width: 6px; height: 6px; border-radius: 50%; background: var(--ink); }
+.initial { display: none; }
+
+.readout { min-height: 70px; margin-top: 10px; padding: 10px 14px; border-radius: 8px; background: var(--wash); }
+.prompt { margin: 0; color: var(--muted); font-size: 13px; }
+.readoutMonth { display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 12px; margin: 0 0 4px; color: var(--ink); font-size: 13px; font-weight: 600; }
+.stayNote { display: inline-flex; align-items: center; gap: 6px; color: var(--muted); font-size: 12px; font-weight: 400; }
+.stayNote::before { content: ""; width: 6px; height: 6px; border-radius: 50%; background: var(--ink); }
+.values { display: flex; flex-wrap: wrap; gap: 6px 28px; margin: 0; }
+/* Each value above its name. */
+.values div { display: flex; flex-direction: column-reverse; }
+.values dt { display: inline-flex; align-items: center; gap: 6px; color: var(--muted); font-size: 12px; }
+.values dd { margin: 0; color: var(--ink); font-size: 17px; font-weight: 600; }
+.source { margin: 10px 0 0; color: var(--muted); font-size: 12px; overflow-wrap: anywhere; }
+.source a { text-decoration: underline; }
+
+.table { margin-top: 10px; font-size: 13px; }
+.table summary { width: fit-content; color: var(--green); font-weight: 600; cursor: pointer; }
+.table table { width: 100%; margin-top: 8px; border-collapse: collapse; font-variant-numeric: tabular-nums; }
+.table th, .table td { padding: 6px 8px; border-bottom: 1px solid var(--line); text-align: right; font-weight: 400; }
+.table thead th { color: var(--muted); font-size: 12px; }
+.table th:first-child { text-align: left; }
+
+/* Too narrow for three letters a month: each month's initial, as climate charts often show them, and a shorter plot. */
+@container (max-width: 400px) {
+  .plot { --plot-height: 170px; grid-template-columns: 30px minmax(0, 1fr); }
+  .abbreviation { display: none; }
+  .initial { display: inline; }
+  .values { gap: 6px 20px; }
+  .table th, .table td { padding: 6px 4px; }
+}

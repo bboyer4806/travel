@@ -12,7 +12,8 @@ import { entryRequirementsFromForm } from "@/lib/entry-requirements";
 import { HealthSafetyPanel, HealthSafetyEditor } from "@/components/health-safety";
 import { healthSafetyFromForm, type EmergencyContact } from "@/lib/health-safety";
 import { ChurchOptions, ChurchEditor, ChurchDetails } from "@/components/churches";
-import { TypicalWeatherPanel, TypicalWeatherEditor } from "@/components/typical-weather";
+import { MonthlyClimateEditor, TypicalWeatherPanel, TypicalWeatherEditor } from "@/components/typical-weather";
+import { monthlyClimateFromForm } from "@/lib/typical-weather";
 import { DestinationCardPhoto, DestinationGallery, DestinationGalleryEditor } from "@/components/destination-gallery";
 import CandidateList from "@/components/candidate-list";
 import { DestinationIdeas, IdeaDetails, priceNotes, selectionLabels } from "@/components/destination-ideas";
@@ -62,6 +63,8 @@ type Editor =
   // One trip's nights at a destination.
   | { kind: "stayNights"; stop: TripStop }
   | { kind: "weather"; item: Destination }
+  // A destination's monthly climate averages (TRA-135), apart from its typical weather.
+  | { kind: "climate"; item: Destination }
   | { kind: "entryRequirements"; item: Destination }
   | { kind: "healthSafety"; item: Destination }
   | { kind: "activitiesBudget"; item: Destination }
@@ -125,6 +128,11 @@ function Dialog({ title, view, confirm, children, busy, onClose, onClosed }: { t
 }
 
 function count(value: number, one: string, many: string) { return value + " " + (value === 1 ? one : many); }
+
+/** What clearing a destination's monthly climate averages removes, and keeps (TRA-135). */
+function climateClearing(label: string): string {
+  return "This removes the monthly averages, with their source and reference years, for " + label + ", in every trip that visits it. Its other typical weather stays.";
+}
 
 /** Deleting a shared trip removes it for everyone it was shared with, so its confirmation says so. */
 function sharedDeleteNote(access: TripAccess): string {
@@ -330,6 +338,7 @@ export default function PlannerApp({ initialData, initialBudgets, access = {}, d
           weatherPeriod: text("weatherPeriod"), weatherRainfall: text("weatherRainfall"), weatherSource: text("weatherSource") }, "Typical weather saved.");
         break;
       }
+      case "climate": void perform({ type: "destination.climate", id: editor.item.id, climate: monthlyClimateFromForm(fields) }, "Monthly averages saved."); break;
       case "destination": {
         const imageForm = galleryForm(destinationGallery, editor.item);
         const shared = { city: text("city"), cityFromSuggestion, tagline: text("tagline"), notes: text("notes"), miscDailyAmount: text("miscDailyAmount"), hotelNightlyAmount: text("hotelNightlyAmount"), activitiesBudgetMode: text("activitiesBudgetMode") as ActivitiesBudgetMode, activitiesGeneralAmount: text("activitiesGeneralAmount"), foodBudgetMode: text("foodBudgetMode") as FoodBudgetMode, foodDailyAmount: text("foodDailyAmount"), shoppingAmount: text("shoppingAmount") };
@@ -391,6 +400,7 @@ export default function PlannerApp({ initialData, initialBudgets, access = {}, d
     : editor?.kind === "entryRequirements" ? "Edit entry requirements"
     : editor?.kind === "healthSafety" ? "Edit health and safety"
     : editor?.kind === "weather" ? "Edit typical weather"
+    : editor?.kind === "climate" ? (editor.item.climate ? "Edit monthly averages" : "Add monthly averages")
     : editor?.kind === "destination" ? "Edit destination: " + formatSavedDestinationLabel(editor.item)
     : editor?.kind === "addStop" ? "Add a destination"
     : editor?.kind === "newDestination" ? "New destination"
@@ -474,7 +484,7 @@ export default function PlannerApp({ initialData, initialBudgets, access = {}, d
     return <>
       <Link href="/destinations" className="breadcrumb"><ArrowLeft size={16} />All destinations</Link>
       <section className="trip-heading"><div><p className="eyebrow">{(place.tagline || DEFAULT_TAGLINE).toUpperCase()}</p><h1>{label}</h1><div className="trip-meta">{label !== place.city && <span><MapPin size={17} />{place.city}</span>}<span><Plane size={17} />{stays.length ? "In " + count(new Set(stays.map((visit) => visit.trip.id)).size, "trip", "trips") : "Not in a trip"}</span>{placeAccess?.role === "editor" && <span><Share2 size={17} />{"Shared by " + memberLabel(placeAccess.owner)}</span>}</div>{place.notes && <p className="trip-notes">{place.notes}</p>}</div>
-        <div className="heading-actions"><button className="button secondary" onClick={() => open({ kind: "destination", item: place })}><Pencil size={15} />Edit destination</button>{placeAccess?.role === "owner" && stays.length === 0 && <button className="icon-button" aria-label="Delete destination" onClick={() => confirmDelete({ type: "destination.delete", id: place.id }, "Delete this destination?", "“" + label + "” and everything saved for it will be removed: its hotels, activities, restaurants, churches, photos, notes, budget amounts, entry requirements, health and safety, and typical weather.", "/destinations")}><Trash2 size={18} /></button>}</div>
+        <div className="heading-actions"><button className="button secondary" onClick={() => open({ kind: "destination", item: place })}><Pencil size={15} />Edit destination</button>{placeAccess?.role === "owner" && stays.length === 0 && <button className="icon-button" aria-label="Delete destination" onClick={() => confirmDelete({ type: "destination.delete", id: place.id }, "Delete this destination?", "“" + label + "” and everything saved for it will be removed: its hotels, activities, restaurants, churches, photos, notes, budget amounts, entry requirements, health and safety, and typical weather with its monthly averages.", "/destinations")}><Trash2 size={18} /></button>}</div>
       </section>
       <div className="trip-layout"><div className="trip-main">
         <article className="destination-card" id={"destination-" + place.id}><DestinationGallery destination={place} />
@@ -483,7 +493,7 @@ export default function PlannerApp({ initialData, initialBudgets, access = {}, d
           {renderIdeaSections(place)}
           <EntryRequirementsPanel requirements={place.entryRequirements} disabled={busy} onEdit={() => open({ kind: "entryRequirements", item: place })} onClear={() => confirmDelete({ type: "destination.entryRequirements", id: place.id, requirements: null }, "Clear entry requirements?", "This removes the recorded requirements, sources, and last checked date for " + label + ", in every trip that visits it.")} />
           <HealthSafetyPanel healthSafety={place.healthSafety} disabled={busy} onEdit={() => open({ kind: "healthSafety", item: place })} onClear={() => confirmDelete({ type: "destination.healthSafety", id: place.id, healthSafety: null }, "Clear health and safety?", "This removes the recorded advisories, precautions, safety guidance, emergency contacts, sources, and last checked date for " + label + ", in every trip that visits it.")} />
-          <TypicalWeatherPanel weather={place} disabled={busy} onEdit={() => open({ kind: "weather", item: place })} />
+          <TypicalWeatherPanel weather={place} disabled={busy} onEdit={() => open({ kind: "weather", item: place })} onEditClimate={() => open({ kind: "climate", item: place })} onClearClimate={() => confirmDelete({ type: "destination.climate", id: place.id, climate: null }, "Clear monthly averages?", climateClearing(label))} />
           {renderChurch(place)}
         </article>
       </div>
@@ -562,7 +572,7 @@ export default function PlannerApp({ initialData, initialBudgets, access = {}, d
                 {renderIdeaSections(visit, visitStop)}
                 <EntryRequirementsPanel requirements={visit.entryRequirements} stay={visitStop} disabled={busy} onEdit={() => open({ kind: "entryRequirements", item: visit })} onClear={() => confirmDelete({ type: "destination.entryRequirements", id: visit.id, requirements: null }, "Clear entry requirements?", "This removes the recorded requirements, sources, and last checked date for " + label + ", in every trip that visits it.")} />
                 <HealthSafetyPanel healthSafety={visit.healthSafety} disabled={busy} onEdit={() => open({ kind: "healthSafety", item: visit })} onClear={() => confirmDelete({ type: "destination.healthSafety", id: visit.id, healthSafety: null }, "Clear health and safety?", "This removes the recorded advisories, precautions, safety guidance, emergency contacts, sources, and last checked date for " + label + ", in every trip that visits it.")} />
-                <TypicalWeatherPanel weather={visit} disabled={busy} onEdit={() => open({ kind: "weather", item: visit })} />
+                <TypicalWeatherPanel weather={visit} stay={visitStop} disabled={busy} onEdit={() => open({ kind: "weather", item: visit })} onEditClimate={() => open({ kind: "climate", item: visit })} onClearClimate={() => confirmDelete({ type: "destination.climate", id: visit.id, climate: null }, "Clear monthly averages?", climateClearing(label))} />
                 {renderChurch(visit, visitStop)}
               </article>; })}</div>}
             {visits.length > 1 && <p className="helper">Use the arrows to change your route. Affected travel connections will need new details.</p>}
@@ -643,6 +653,7 @@ export default function PlannerApp({ initialData, initialBudgets, access = {}, d
       {editor.kind === "entryRequirements" && <EntryRequirementsEditor requirements={editor.item.entryRequirements} sources={researchLinks} onSourcesChange={setResearchLinks} disabled={busy} />}
       {editor.kind === "healthSafety" && <HealthSafetyEditor healthSafety={editor.item.healthSafety} contacts={emergencyContacts} onContactsChange={setEmergencyContacts} sources={researchLinks} onSourcesChange={setResearchLinks} disabled={busy} />}
       {editor.kind === "weather" && <TypicalWeatherEditor weather={editor.item} disabled={busy} />}
+      {editor.kind === "climate" && <MonthlyClimateEditor climate={editor.item.climate} disabled={busy} />}
       {editor.kind === "shoppingBudget" && <ShoppingBudgetEditor destination={editor.item} disabled={busy} />}
       {editor.kind === "accommodationBudget" && <AccommodationBudgetEditor destination={editor.item} selectedHotel={selectedHotel(editor.item.id)} stay={trip && editor.stop ? { trip, stops, stop: editor.stop } : undefined} disabled={busy} />}
       {editor.kind === "miscellaneousBudget" && <MiscellaneousBudgetEditor destination={editor.item} nights={editor.nights} disabled={busy} />}

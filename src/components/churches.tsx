@@ -28,7 +28,7 @@ export function ChurchOptions({ items, headingLevel, busy, onAdd, onEdit, onDele
     <button type="button" className="button secondary" onClick={onAdd} disabled={busy}><Plus size={16} />Add church</button>
   </div>;
   return <div className="ideas-grid">{items.map((item) => <article className="idea-card" key={item.id}>
-    <CandidateGallery candidate={item} imageKind="church" />
+    <CandidateGallery candidate={item} imageKind="church" browse />
     <div className="idea-top"><span className="selection-tag">Church option</span><div className="idea-tools">
       <button type="button" className="icon-button" aria-label={`Edit ${item.name}`} onClick={() => onEdit(item)} disabled={busy}><Pencil size={16} /></button>
       <button type="button" className="icon-button" aria-label={`Delete ${item.name}`} onClick={() => onDelete(item)} disabled={busy}><Trash2 size={16} /></button>
@@ -53,7 +53,7 @@ export function ChurchDetails({ item }: { item: Church }) {
     <div><dt>Denomination</dt><dd>{item.denomination || "Not added"}</dd></div>
     <div><dt>Website</dt><dd>{item.url ? <a className={styles.website} href={item.url} target="_blank" rel="noopener noreferrer"><ExternalLink size={14} aria-hidden="true" />Church website<span className="sr-only"> for {item.name} (opens in a new tab)</span></a> : "Not added"}</dd></div>
     <div><dt>Mass times</dt><dd>{item.massTimes.length ? <dl className={styles.detailTimes}>{item.massTimes.map((entry) => <div key={entry.id}><dt>{entry.day}</dt><dd>{entry.time}</dd></div>)}</dl> : "Mass times unknown"}</dd></div>
-    <div><dt>Church photos</dt><dd>{item.images.length ? <CandidateGallery candidate={item} imageKind="church" /> : "Not added"}</dd></div>
+    <div><dt>Church photos</dt><dd>{item.images.length ? <CandidateGallery candidate={item} imageKind="church" browse /> : "Not added"}</dd></div>
   </dl>;
 }
 

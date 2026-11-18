@@ -112,6 +112,7 @@ function harness(kind, item, { mouse = true, disabled = false } = {}) {
     return modules[name];
   };
   modules["./focus-after"] = load("../src/components/focus-after.ts", require);
+  modules["./photo-browsing"] = load("../src/components/photo-browsing.tsx", require);
   modules["./photo-drag"] = load("../src/components/photo-drag.ts", require, { window });
   const Editor = load(`../src/components/${editor.file}`, require)[editor.name];
   const props = { [editor.owner]: item, subject: editor.subject, imageKind: editor.imageKind, disabled };

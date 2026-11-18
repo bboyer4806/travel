@@ -2,6 +2,21 @@ export interface Release { version: string; date: string; changes: readonly stri
 
 // Add only verified, deployed changes and their actual release dates at release close.
 export const releases: readonly Release[] = [{
+  version: "1.14",
+  date: "2026-11-18",
+  changes: [
+    "See a destination's typical weather month by month: Monthly averages, in its Typical weather section, charts each month's average high and low in °F, with its precipitation and the averages' source and reference years. Point at, tap, or use the arrow keys to choose a month and read its averages. On a trip's page, the month a dated stay begins is chosen and marked Your stay begins. Record them with Add monthly averages, or ChatGPT and Claude can propose them; Travel never fills in a month itself.",
+    "Add a destination you've already researched to a trip: Add destination lists matching saved destinations first, marked In your library, even when you type the name another way, such as Reykjavik for Reykjavík, Iceland. Choosing one adds it with everything saved for it, instead of an empty copy.",
+    "Add a photo from its web address with Add image by URL, beside Add photos in every photo editor and beside Add image for a trip's headline image. Preview shows the image before Use this image adds it, and Travel keeps its own copy, so the photo stays if the original goes away.",
+    "Say what each hotel, activity, or restaurant is, such as Boutique hotel or Traditional Italian restaurant, in What it is, below Name in its editor. It shows under its name on its cards, in up to two lines, and in its details. ChatGPT and Claude can propose it too.",
+    "Point at a destination's numbered marker on a trip's map, or reach it with the keyboard, to see its name and primary photo beside it. Clicking or tapping a marker still takes you to its card.",
+    "Step through a church's photos with the arrows on its main photo, as on a destination's, or swipe on a phone or tablet, in the Church section and in a church's details from the destination map.",
+    "Hotel and restaurant photos now show at one size in a destination's carousels, as activity photos already did, so one tall photo no longer stretches a whole row of cards.",
+    "City suggestions, such as in Add destination, are no longer cut off by the editor they open in. They open below the field, or above it when there's more room there, stay within the screen when a phone's keyboard is open, and scroll when the list is long.",
+    "Between the places shows the matching transportation icon for more ways of writing it, such as Flights, Trains, Buses, Plane, Drive, Ride share, and Walk, on connections you've already saved too.",
+    "The trip map is simpler: the airport search above it and the instructions below its heading are gone. Departures, returns, and layovers saved as airport codes still show at their airports.",
+  ],
+}, {
   version: "1.13",
   date: "2026-11-16",
   changes: [

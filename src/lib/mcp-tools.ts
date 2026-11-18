@@ -3,6 +3,7 @@ import { EMERGENCY_CONTACT_MAX_LENGTH, HEALTH_SAFETY_FIELDS, MAX_EMERGENCY_CONTA
 import { AI_PHOTO_DOWNLOAD_SECONDS, formatMegabytes, MAX_AI_PROPOSAL_PHOTOS, MAX_CANDIDATE_IMAGES, MAX_DESTINATION_IMAGES, MAX_GALLERY_UPLOAD_BYTES, MAX_IMAGE_UPLOAD_BYTES } from "./image-limits.ts";
 import { MAX_NIGHTS } from "./trip-dates.ts";
 import { MAX_TAG_LENGTH } from "./trip-tags.ts";
+import { CLIMATE_LIMITS } from "./typical-weather.ts";
 import { RESTAURANT_TYPES } from "./types.ts";
 
 /**
@@ -117,6 +118,29 @@ const CHANGES = [
       description: "The whole record, or null to clear it.",
     },
   }, ["id", "healthSafety"]),
+  change("destination.climate", "Replaces a destination's monthly climate averages, which its Typical weather chart shows, or clears them with null. Its other typical weather stays. Give historical averages from one named source, such as a weather service's climate normals: never estimates, forecasts or values made up for a missing month.", {
+    id: id("The destination's id."),
+    climate: {
+      type: ["object", "null"], additionalProperties: false, required: ["months", "source", "firstYear", "lastYear"],
+      properties: {
+        months: {
+          type: "array", minItems: 12, maxItems: 12, description: "January to December, in order, with every value given.",
+          items: {
+            type: "object", additionalProperties: false, required: ["highF", "lowF", "precipitationIn"],
+            properties: {
+              highF: { type: "number", minimum: CLIMATE_LIMITS.minF, maximum: CLIMATE_LIMITS.maxF, description: "The month's average daily high in °F, at least lowF." },
+              lowF: { type: "number", minimum: CLIMATE_LIMITS.minF, maximum: CLIMATE_LIMITS.maxF, description: "The month's average daily low in °F." },
+              precipitationIn: { type: "number", minimum: 0, maximum: CLIMATE_LIMITS.maxPrecipitationIn, description: "The month's average total precipitation in inches." },
+            },
+          },
+        },
+        source: text("Where the averages are from: the source's name or its https:// address.", CLIMATE_LIMITS.sourceLength),
+        firstYear: { type: "integer", minimum: CLIMATE_LIMITS.minYear, maximum: CLIMATE_LIMITS.maxYear, description: "The first year the averages cover, such as 1991." },
+        lastYear: { type: "integer", minimum: CLIMATE_LIMITS.minYear, maximum: CLIMATE_LIMITS.maxYear, description: "The last year the averages cover, such as 2020, no earlier than firstYear." },
+      },
+      description: "The whole record, or null to clear it.",
+    },
+  }, ["id", "climate"]),
   change("destination.churchVisibility", "Shows or hides a destination's Church section.", { id: id("The destination's id."), enabled: flag("Whether it shows.") }, ["id", "enabled"]),
   change("church.save", "Adds a church to a destination, or changes a saved one. Each field is saved as given.", {
     id: id("The church's id, or a new UUID with create."), create, destinationId: id("Its destination's id."), name: text("Its name.", 160), address: text("Its address. Empty for none.", 500),
@@ -181,7 +205,7 @@ export const TOOLS = [
   },
   {
     name: "get_destination", title: "Get a destination", annotations: readOnly, inputSchema: input({ destination_id: id("The destination's id.") }),
-    description: "One destination with everything on its page: its tagline, notes, budget amounts and methods, typical weather, entry requirements, health and safety, photos, hotels, activities, restaurants, churches, and each trip's stay there. Amounts are whole USD cents for the whole party.",
+    description: "One destination with everything on its page: its tagline, notes, budget amounts and methods, typical weather with its monthly climate averages, entry requirements, health and safety, photos, hotels, activities, restaurants, churches, and each trip's stay there. Amounts are whole USD cents for the whole party.",
   },
   {
     name: "list_accounts", title: "List accounts", annotations: readOnly, inputSchema: noInput,

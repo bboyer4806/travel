@@ -20,8 +20,8 @@ function load(file, require) {
   return exports;
 }
 
-/** Whether `target` is `node` or inside it. */
-const contains = (node, target) => node === target || (!!node && typeof node === "object" && [node.props.children].flat(Infinity).some((child) => contains(child, target)));
+/** Whether `target` is `node` or inside it, including what the components inside it rendered. */
+const contains = (node, target) => node === target || (!!node && typeof node === "object" && [typeof node.type === "function" ? node.rendered : node.props.children].flat(Infinity).some((child) => contains(child, target)));
 /** A host element's text. */
 const text = (node) => node === null || node === undefined || typeof node === "boolean" ? "" : typeof node !== "object" ? String(node) : Array.isArray(node) ? node.map(text).join("") : text(node.props.children);
 
@@ -39,6 +39,8 @@ function harness(destination) {
     },
     "react/jsx-runtime": { jsx: element, jsxs: element, Fragment: "fragment" },
     "lucide-react": new Proxy({}, { get: (_, name) => "icon:" + String(name) }),
+    // Add image by URL (TRA-139), tested in image-by-url.test.mjs, stands in as an element showing what the editor gives it.
+    "./image-by-url": { AddImageByUrl: (props) => ({ type: "AddImageByUrl", props }) },
     "@/lib/gallery-draft": galleryDraft, "@/lib/destination-label": destinationLabel, "@/lib/image-limits": imageLimits, "@/lib/photo-focus": photoFocus, "@/lib/uuid": uuid,
   };
   const require = (name) => {
@@ -48,13 +50,17 @@ function harness(destination) {
     return modules[name];
   };
   modules["./focus-after"] = load("../src/components/focus-after.ts", require);
+  modules["./photo-browsing"] = load("../src/components/photo-browsing.tsx", require);
   modules["./photo-drag"] = load("../src/components/photo-drag.ts", require);
   const { DestinationGallery } = load("../src/components/destination-gallery.tsx", require);
-  /** The host elements an element renders to, rendering each component once, in order, so its hooks keep their places. */
+  /**
+   * The host elements an element renders to, rendering each component once, in order, so its hooks keep their places.
+   * Each component's element keeps what it rendered.
+   */
   const hosts = (node) => {
     if (!node || typeof node !== "object") return [];
     if (Array.isArray(node)) return node.flatMap(hosts);
-    if (typeof node.type === "function") return hosts(node.type(node.props));
+    if (typeof node.type === "function") return hosts(node.rendered = node.type(node.props));
     return [node, ...hosts(node.props.children)];
   };
   const render = () => { cursor = 0; nodes = hosts({ type: DestinationGallery, props: { destination } }); };

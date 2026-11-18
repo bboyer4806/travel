@@ -61,7 +61,7 @@ const IDEA_PAGES: Record<IdeaPage, PageHelp> = {
   church: {
     title: "Church",
     points: [
-      "Churches you might attend at this destination, with their Mass times.",
+      "Churches you might attend at this destination, with their Mass times. A church's arrows, or a swipe across its photo, show its other photos.",
       "Add church saves one, with its address, website, Mass times and photos. The pencil edits a church and the trash can deletes it.",
       "Mass times are only what you enter. Confirm them with the church before you go.",
       "In a trip, Church lists the Sundays of the stay, and a stay without a Sunday doesn't show it.",
@@ -93,7 +93,7 @@ const HELP: { [Route in SignedInRoute]: Route extends `${string}/[category]` ? R
       "Plan one trip: its route on the map, each stay with a map of its places, travel, arrangements at home and cost. Point or tab to a destination for its photo.",
       "Edit trip changes its name, tagline, dates, travelers, departing and return cities, and headline image. Tags under its details group it in All trips.",
       "Add destination adds a city as the last stop. On each card, the arrows change the route, the pencil edits it and the trash can removes it from this trip.",
-      "Each stay's nights set its dates from the trip's start date. A destination's ideas, research and budget amounts are shared by every trip that visits it.",
+      "Each stay's nights set its dates, and Typical weather's chart opens on the month it begins. A destination's ideas, research and budget are shared by its trips.",
       "Between the places has the travel between stops: Edit adds a connection's transportation, price and layovers. At home keeps arrangements such as pet care.",
       "The trip estimate adds up every cost in USD for the whole party. Only the trip's owner can share or delete it.",
     ],
@@ -113,7 +113,7 @@ const HELP: { [Route in SignedInRoute]: Route extends `${string}/[category]` ? R
     title: "Destination",
     points: [
       "One city's research, shared by every trip that visits it: photos, notes, budget, ideas, entry requirements, health and safety, weather and churches.",
-      "Edit destination changes its city, tagline, budget amounts, photos and notes.",
+      "Edit destination changes its city, tagline, budget amounts, photos and notes. In Typical weather, select a month on the chart for its averages.",
       "Its map shows its hotels, activities, restaurants and churches, and the checkboxes choose which. Select a marker, then View details.",
       "Hotels, Activities and Restaurants show its ideas. Select one for its details, or Manage to reorder, choose and delete them.",
       "Select a heading, such as Map, Budget or Entry requirements, to show or hide it. The buttons beside it add or edit what's there.",

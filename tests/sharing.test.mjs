@@ -16,6 +16,8 @@ const NOT_AVAILABLE = { name: "ValidationError", message: "This item no longer e
 const webp = new Uint8Array([82, 73, 70, 70, 4, 0, 0, 0, 87, 69, 66, 80]);
 const photo = () => ({ id: randomUUID(), ...prepared(webp) });
 const google = (subject, email, name = null) => ({ subject, email, emailVerified: true, name });
+/** Monthly climate averages (TRA-135). */
+const climate = () => ({ months: Array.from({ length: 12 }, (_, index) => ({ highF: 60 + index, lowF: 50 + index, precipitationIn: 1 })), source: "Test normals", firstYear: 1991, lastYear: 2020 });
 const requirements = () => ({ passportNationality: "United States", travelPurpose: "Tourism", travelerCircumstances: "Two adults", visaRequirements: "None for short stays", passportValidity: "Three months", requiredDocuments: "Return ticket", transitRequirements: "None", notes: "Checked", sources: [{ id: randomUUID(), url: "https://example.gov/entry", description: "Entry guidance" }], lastCheckedDate: "2026-11-03" });
 const healthSafety = () => ({ advisoryLevel: "Level 1", advisoryWarnings: "", healthPrecautions: "Routine vaccines", localSafety: "Watch for pickpockets", emergencyContacts: [{ id: randomUUID(), name: "Emergency services", phone: "112", notes: "" }], sources: [{ id: randomUUID(), url: "https://example.gov/advisory", description: "Travel advisory" }], lastCheckedDate: "2026-11-10" });
 
@@ -44,6 +46,7 @@ function plannedTrip(store, accountId, name = "Portugal", [firstCity, secondCity
   const homeItem = change({ type: "homeItem.save", ...newItem(), tripId, name: "House sitting", price: "100", notes: "", completed: false });
   change({ type: "destination.entryRequirements", id: lisbon, requirements: requirements() });
   change({ type: "destination.healthSafety", id: lisbon, healthSafety: healthSafety() });
+  change({ type: "destination.climate", id: lisbon, climate: climate() });
   const snapshot = store.getTripSnapshot(accountId, tripId).data;
   const legs = snapshot.legs.map((leg) => leg.id);
   change({ type: "leg.save", id: legs[0], method: "Flight", price: "900", departure: "", arrival: "", url: "", notes: "" });
@@ -221,6 +224,8 @@ test("an account a trip isn't shared with can neither read nor change any part o
     { type: "destination.entryRequirements", id: lisbon, requirements: null },
     { type: "destination.healthSafety", id: lisbon, healthSafety: null },
     { type: "destination.healthSafety", id: lisbon, healthSafety: healthSafety() },
+    { type: "destination.climate", id: lisbon, climate: null },
+    { type: "destination.climate", id: lisbon, climate: climate() },
     { type: "church.save", ...newItem(), destinationId: lisbon, name: "Mine", address: "", denomination: "", url: "", massTimes: [] },
     { type: "church.save", id: church, destinationId: lisbon, name: "Mine", address: "", denomination: "", url: "", massTimes: [] },
     { type: "church.delete", id: church, destinationId: lisbon },

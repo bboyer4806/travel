@@ -14,6 +14,8 @@ export const MAX_GALLERY_UPLOAD_BYTES = 15 * 1024 * 1024;
 export const MAX_AI_PROPOSAL_PHOTOS = 10;
 /** How long the photos of one ChatGPT or Claude proposal may take to download, together (TRA-122). */
 export const AI_PHOTO_DOWNLOAD_SECONDS = 15;
+/** How long an image added by URL in a photo editor may take to download (TRA-139). */
+export const IMAGE_URL_DOWNLOAD_SECONDS = 15;
 
 /** A byte limit as messages state it, such as "5 MB". */
 export function formatMegabytes(bytes: number): string {

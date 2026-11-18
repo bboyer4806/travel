@@ -1,0 +1,21 @@
+/* TRA-139: Add image by URL's field opens on a line of its own below its photo editor's buttons, at every width. */
+.panel { flex: 1 1 100%; display: grid; gap: 8px; min-width: 0; padding: 12px; border: 1px solid var(--line); border-radius: 8px; background: var(--white); }
+.label { font-size: 12px; font-weight: 600; }
+.entry { display: flex; gap: 8px; min-width: 0; }
+.address { flex: 1 1 auto; min-width: 0; min-height: 37px; padding: 8px 12px; border: 1px solid #ccd6c7; border-radius: 5px; background: #fffffc; color: var(--ink); font-size: 13px; }
+.address::placeholder { color: #6d736b; }
+.hint,
+.status,
+.error { margin: 0; font-size: 11px; line-height: 1.55; }
+.hint,
+.status { color: var(--muted); }
+.error { color: #a33d2d; }
+/* The whole image, whatever its shape, in a frame no taller than a phone's screen allows. */
+.preview { display: grid; place-items: center; min-height: 120px; max-height: 260px; overflow: hidden; border: 1px solid var(--line); border-radius: 8px; background: var(--wash); }
+.image { display: block; max-width: 100%; max-height: 258px; object-fit: contain; }
+.actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px; }
+
+@media (max-width: 540px) {
+  /* 16px text keeps phones from zooming in when the field is selected, as the editors' other fields do. */
+  .address { font-size: 16px; }
+}

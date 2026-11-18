@@ -8,6 +8,9 @@ import { MAX_IMAGE_UPLOAD_BYTES } from "../src/lib/image-limits.ts";
 import { ImageValidationError } from "../src/lib/image-upload.ts";
 
 const PRIVATE = /^Travel doesn't download photos from private, loopback or link-local addresses\.$/;
+/** ChatGPT's and Claude's photos come only over HTTPS (TRA-122); images added by URL over HTTP too (TRA-139). */
+const HTTPS = ["https:"];
+const WEB = ["http:", "https:"];
 const refusal = (message) => (error) => error instanceof ImageValidationError && message.test(error.message);
 
 /** A response as Travel's own request returns it, its body read from `body`. */
@@ -27,7 +30,7 @@ function fake(routes) {
 }
 const jpeg = (...chunks) => () => respond(200, { "content-type": "image/jpeg" }, chunks.map((chunk) => Buffer.from(chunk)));
 const redirect = (status, location) => () => respond(status, location === undefined ? {} : { location });
-const download = (address, fetch, signal = AbortSignal.timeout(5000)) => downloadImage(address, signal, fetch);
+const download = (address, fetch, signal = AbortSignal.timeout(5000)) => downloadImage(address, HTTPS, signal, fetch);
 
 test("only public internet addresses count as public", () => {
   for (const address of ["8.8.8.8", "1.1.1.1", "11.0.0.1", "100.128.0.1", "169.255.0.1", "172.32.0.1", "192.169.0.1", "2606:4700:4700::1111", "2a00:1450:4001:80b::200e"]) {
@@ -44,9 +47,9 @@ test("only public internet addresses count as public", () => {
 });
 
 test("a photo's address is https://, without credentials, and never a private IP address, however it is written", () => {
-  assert.equal(downloadAddress("https://images.example.com/a.jpg").href, "https://images.example.com/a.jpg");
-  assert.equal(downloadAddress("https://8.8.8.8/a.jpg").hostname, "8.8.8.8");
-  assert.equal(downloadAddress("/b.png", new URL("https://images.example.com/photos/a.jpg")).href, "https://images.example.com/b.png", "a redirect is read relative to the address it came from");
+  assert.equal(downloadAddress("https://images.example.com/a.jpg", HTTPS).href, "https://images.example.com/a.jpg");
+  assert.equal(downloadAddress("https://8.8.8.8/a.jpg", HTTPS).hostname, "8.8.8.8");
+  assert.equal(downloadAddress("/b.png", HTTPS, new URL("https://images.example.com/photos/a.jpg")).href, "https://images.example.com/b.png", "a redirect is read relative to the address it came from");
   const refusals = [
     ["not an address", /^This isn't a web address/],
     ...["http://images.example.com/a.jpg", "ftp://images.example.com/a.jpg", "data:image/png;base64,AAAA", "file:///etc/passwd"].map((address) => [address, /^Travel downloads photos only from https:\/\/ addresses\.$/]),
@@ -54,7 +57,19 @@ test("a photo's address is https://, without credentials, and never a private IP
     ...["https://127.0.0.1/a.jpg", "https://2130706433/a.jpg", "https://0x7f.1/a.jpg", "https://127.1/a.jpg", "https://017700000001/a.jpg", "https://[::1]/a.jpg", "https://[::ffff:127.0.0.1]/a.jpg",
       "https://169.254.169.254/latest/meta-data/", "https://10.0.0.1/a.jpg", "https://192.168.1.10:8443/a.jpg", "https://[fe80::1]/a.jpg", "https://[fd00::1]/a.jpg", "https://0.0.0.0/a.jpg"].map((address) => [address, PRIVATE]),
   ];
-  for (const [address, message] of refusals) assert.throws(() => downloadAddress(address), refusal(message), address);
+  for (const [address, message] of refusals) assert.throws(() => downloadAddress(address, HTTPS), refusal(message), address);
+});
+
+test("an image added by URL may also come from an http:// address, by the same rules otherwise (TRA-139)", () => {
+  for (const address of ["http://images.example.com/a.jpg", "https://images.example.com/a.jpg", "http://8.8.8.8:8080/a.png"]) assert.equal(downloadAddress(address, WEB).href, address);
+  assert.equal(downloadAddress("http://cdn.example.net/b.png", WEB, new URL("https://images.example.com/a.jpg")).href, "http://cdn.example.net/b.png", "a redirect may go from HTTPS to HTTP");
+  const refusals = [
+    ["images.example.com/a.jpg", /^This isn't a web address\. Give the photo's http:\/\/ or https:\/\/ address\.$/],
+    ...["ftp://images.example.com/a.jpg", "data:image/png;base64,AAAA", "file:///etc/passwd", "javascript:alert(1)", "ws://images.example.com/a.jpg"].map((address) => [address, /^Travel downloads photos only from http:\/\/ or https:\/\/ addresses\.$/]),
+    ["http://user:secret@images.example.com/a.jpg", /without a user name or password/],
+    ...["http://127.0.0.1/a.jpg", "http://2130706433/a.jpg", "http://[::1]/a.jpg", "http://169.254.169.254/latest/meta-data/", "http://10.0.0.1/a.jpg", "http://192.168.1.10:8080/a.jpg", "http://[fd00::1]/a.jpg", "http://0.0.0.0/a.jpg"].map((address) => [address, PRIVATE]),
+  ];
+  for (const [address, message] of refusals) assert.throws(() => downloadAddress(address, WEB), refusal(message), address);
 });
 
 test("looking up a host name refuses one with any address off the public internet", async () => {
@@ -74,7 +89,11 @@ test("Travel's own requests never connect to a private address, given by IP addr
   t.after(() => server.close());
   const { port } = server.address();
   for (const address of [`https://127.0.0.1:${port}/a.jpg`, `https://localhost:${port}/a.jpg`]) {
-    await assert.rejects(downloadImage(address, AbortSignal.timeout(5000)), refusal(PRIVATE), address);
+    await assert.rejects(downloadImage(address, HTTPS, AbortSignal.timeout(5000)), refusal(PRIVATE), address);
+  }
+  // Over HTTP too, which an image added by URL may use (TRA-139): a name is looked up as Travel connects, as over HTTPS.
+  for (const address of [`http://127.0.0.1:${port}/a.jpg`, `http://localhost:${port}/a.jpg`]) {
+    await assert.rejects(downloadImage(address, WEB, AbortSignal.timeout(5000)), refusal(PRIVATE), address);
   }
   assert.equal(connections, 0, "nothing connected to the private server");
 });
@@ -101,6 +120,12 @@ test("a download follows a few redirects, each checked as the address given is, 
     await assert.rejects(download("https://images.example.com/a", hop.fetch), refusal(message), location);
     assert.deepEqual(hop.requested, ["https://images.example.com/a"], location);
   }
+  // An image added by URL follows a redirect to an http:// address, still never to a private one (TRA-139).
+  const downgrade = fake({ "https://images.example.com/a": redirect(302, "http://cdn.example.net/a.jpg"), "http://cdn.example.net/a.jpg": jpeg("ab") });
+  assert.equal(await (await downloadImage("https://images.example.com/a", WEB, AbortSignal.timeout(5000), downgrade.fetch)).text(), "ab");
+  const inward = fake({ "http://images.example.com/a": redirect(301, "http://127.0.0.1/a.jpg") });
+  await assert.rejects(downloadImage("http://images.example.com/a", WEB, AbortSignal.timeout(5000), inward.fetch), refusal(PRIVATE));
+  assert.deepEqual(inward.requested, ["http://images.example.com/a"]);
   const nowhere = fake({ "https://images.example.com/a": redirect(303) });
   await assert.rejects(download("https://images.example.com/a", nowhere.fetch), refusal(/^The photo's server answered 303 without saying where the photo is\.$/));
 });

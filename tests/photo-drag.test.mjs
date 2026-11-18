@@ -103,6 +103,8 @@ function harness(kind, item, { mouse = true, disabled = false } = {}) {
     },
     "react/jsx-runtime": { jsx: element, jsxs: element, Fragment: "fragment" },
     "lucide-react": new Proxy({}, { get: (_, name) => "icon:" + String(name) }),
+    // Add image by URL (TRA-139), tested in image-by-url.test.mjs, stands in as an element showing what the editor gives it.
+    "./image-by-url": { AddImageByUrl: (props) => ({ type: "AddImageByUrl", props }) },
     "@/lib/destination-label": destinationLabel, "@/lib/gallery-draft": galleryDraft, "@/lib/image-limits": imageLimits, "@/lib/photo-focus": photoFocus, "@/lib/uuid": uuid,
   };
   const require = (name) => {
@@ -112,6 +114,7 @@ function harness(kind, item, { mouse = true, disabled = false } = {}) {
     return modules[name];
   };
   modules["./focus-after"] = load("../src/components/focus-after.ts", require);
+  modules["./photo-browsing"] = load("../src/components/photo-browsing.tsx", require);
   modules["./photo-drag"] = load("../src/components/photo-drag.ts", require, { window });
   const Editor = load(`../src/components/${editor.file}`, require)[editor.name];
   const props = { [editor.owner]: item, subject: editor.subject, imageKind: editor.imageKind, disabled };
@@ -149,6 +152,11 @@ function harness(kind, item, { mouse = true, disabled = false } = {}) {
     end(id) { picture(cards().find((node) => node.key === id)).props.onDragEnd(dragEvent()); render(); },
     choose(files) { nodes.find((node) => node.type === "input" && node.props.type === "file").props.onChange({ currentTarget: { files, value: "" } }); render(); },
     click(label) { button(label).props.onClick({ currentTarget: {} }); render(); },
+    error: () => text(byClass("error")[0]),
+    /** Add image by URL as the editor offers it (TRA-139): its label and whether it is unavailable. */
+    byUrl: () => { const { label, disabled } = nodes.find((node) => node.type === "AddImageByUrl").props; return { label, disabled }; },
+    /** Uses an image previewed in Add image by URL, returning whether the editor took it. */
+    addByUrl(file) { const taken = nodes.find((node) => node.type === "AddImageByUrl").props.onAdd(file); render(); return taken; },
   };
 }
 
@@ -276,4 +284,46 @@ test("a destination's Move left and Move right still arrange photos alongside dr
   editor.click("Move photo 3 left");
   assert.deepEqual(editor.order(), [a, b, c]);
   assert.equal(editor.form(), undefined);
+});
+
+for (const kind of Object.keys(editors)) {
+  test(`a ${kind}'s photo editor offers Add image by URL, whose image it adds as it adds a chosen file (TRA-139)`, () => {
+    const item = saved(kind, 2, 2);
+    const [a, b] = item.images.map((image) => image.id);
+    const editor = harness(kind, item);
+    assert.deepEqual(editor.byUrl(), { label: "Add image by URL", disabled: false });
+    // A refused image keeps the draft and says why, as a refused file does.
+    assert.equal(editor.addByUrl(new File(["gif"], "a.gif", { type: "image/gif" })), false);
+    assert.deepEqual([editor.error(), editor.changes.length], ["Choose JPEG, PNG, or WebP photos. Your previous selections have been kept.", 0]);
+    const added = new File(["downloaded"], "Tour Eiffel.jpg", { type: "image/jpeg" });
+    assert.equal(editor.addByUrl(added), true);
+    const photo = editor.draft().images.at(-1);
+    assert.deepEqual([editor.order(), photo.file, editor.draft().mainImageId, editor.error()], [[a, b, photo.id], added, b, ""], `it goes last, keeping the ${editors[kind].main} photo`);
+    assert.equal(editor.status(), `Photo changes will be applied when you save this ${kind}.`);
+    const sent = JSON.parse(editor.form().get("gallery"));
+    assert.deepEqual([sent.addIds, editor.form().get(`image:${photo.id}`)], [[photo.id], added], "saving uploads it with the editor's other new photos");
+    // It is dragged, chosen as the main photo and removed as every new photo is.
+    editor.start(3);
+    editor.over(1);
+    editor.drop(1);
+    assert.deepEqual(editor.order(), [photo.id, a, b]);
+    editor.click(`Remove photo 1 (${added.name})`);
+    assert.deepEqual(editor.order(), [a, b]);
+    assert.equal(editor.form(), undefined, "removing it leaves nothing to save");
+  });
+}
+
+test("a full gallery offers Add image by URL only once a photo is removed, and refuses more photos than a save takes (TRA-139)", () => {
+  const editor = harness("hotel", saved("hotel", imageLimits.MAX_CANDIDATE_IMAGES));
+  assert.deepEqual(editor.byUrl(), { label: "Add image by URL", disabled: true });
+  assert.equal(editor.addByUrl(new File(["x"], "x.png", { type: "image/png" })), false);
+  assert.equal(editor.error(), "Keep up to 10 photos. Remove a photo before adding more. Your previous selections have been kept.");
+  editor.click("Remove photo 10");
+  assert.deepEqual(editor.byUrl(), { label: "Add image by URL", disabled: false });
+  // New photos, chosen or added by URL, share one save's limit.
+  const roomy = harness("destination", saved("destination", 1));
+  roomy.choose([new File([new Uint8Array(imageLimits.MAX_IMAGE_UPLOAD_BYTES)], "big.jpg", { type: "image/jpeg" }), new File([new Uint8Array(imageLimits.MAX_IMAGE_UPLOAD_BYTES)], "bigger.jpg", { type: "image/jpeg" })]);
+  assert.equal(roomy.addByUrl(new File([new Uint8Array(imageLimits.MAX_IMAGE_UPLOAD_BYTES)], "third.jpg", { type: "image/jpeg" })), true, "15 MB of new photos fit");
+  assert.equal(roomy.addByUrl(new File(["1"], "fourth.jpg", { type: "image/jpeg" })), false);
+  assert.equal(roomy.error(), "Add up to 15 MB of new photos at a time. Save these photos before adding more. Your previous selections have been kept.");
 });

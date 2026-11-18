@@ -17,8 +17,11 @@ type DestinationGalleryOwner = Pick<Destination, "id" | "city" | "cityFromSugges
 function photoUrl(destinationId: string, image: { id: string; version?: string }) {
   return `/api/destination-images/${destinationId}/${image.id}?v=${image.version}`;
 }
-/** A photo's thumbnail (TRA-89), which the gallery's thumbnails and the editor's previews show in place of the photo. */
-function thumbnailUrl(destinationId: string, image: { id: string; version?: string }) {
+/**
+ * A photo's thumbnail (TRA-89), which the gallery's thumbnails, the editor's previews and the trip map's destination
+ * previews (TRA-143) show in place of the photo.
+ */
+export function thumbnailUrl(destinationId: string, image: { id: string; version?: string }) {
   return `/api/destination-images/${destinationId}/${image.id}/thumbnail?v=${image.version}`;
 }
 

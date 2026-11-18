@@ -32,6 +32,11 @@
 .badge { display: inline-flex; align-items: center; height: 22px; padding: 0 7px; border: 1px solid #c3cfbb; border-radius: 11px; background: var(--white); color: #4f6f55; box-shadow: 0 1px 4px #15281d30; }
 .badgeIcons { display: flex; align-items: center; gap: 4px; }
 .anchor:focus-visible .content > * { outline: 3px solid var(--ink); outline-offset: 2px; }
+/* A destination marker's preview (TRA-143): its name below its primary photo, the same size for every destination, beside
+   the marker within the map. It covers the map's places and lines, and its zoom buttons and credit stay above it. */
+.preview { position: absolute; z-index: 500; width: 200px; overflow: hidden; border-radius: 8px; background: var(--white); box-shadow: 0 4px 14px #15281d40; }
+.previewPhoto { display: block; width: 100%; aspect-ratio: 2 / 1; object-fit: cover; background: var(--wash); }
+.previewName { display: block; padding: 7px 10px 8px; color: var(--ink); font: 700 13px/1.3 Arial, Helvetica, sans-serif; overflow-wrap: anywhere; }
 
 .legend { list-style: none; display: flex; flex-wrap: wrap; gap: 8px 18px; margin: 12px 0 0; padding: 0; color: var(--muted); font-size: 11px; }
 .legend li { display: inline-flex; align-items: center; gap: 8px; }
@@ -52,4 +57,5 @@
 
 @media (max-width: 540px) {
   .frame { height: 300px; }
+  .preview { width: 160px; }
 }

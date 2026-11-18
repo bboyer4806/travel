@@ -79,6 +79,7 @@ function harness(ideas, width) {
     return modules[name];
   };
   modules["./focus-after"] = load("../src/components/focus-after.ts", require);
+  modules["./photo-browsing"] = load("../src/components/photo-browsing.tsx", require);
   modules["./photo-drag"] = load("../src/components/photo-drag.ts", require);
   modules["./candidate-gallery"] = load("../src/components/candidate-gallery.tsx", require);
   modules["./research-links"] = load("../src/components/research-links.tsx", require);

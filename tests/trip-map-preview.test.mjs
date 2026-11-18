@@ -146,7 +146,7 @@ function mapCanvas() {
     clearTimeout: (id) => timers.delete(id),
   });
   // Renders again, as React does after each change of state.
-  const update = () => { tree = render(loaded.default, { layout, focus: null }); };
+  const update = () => { tree = render(loaded.default, { layout }); };
   const markerFor = (label) => markers.find((item) => item.element.attributes["aria-label"] === label);
   const previewNode = () => nodes(tree).find((node) => node.props?.className === "preview");
   update();

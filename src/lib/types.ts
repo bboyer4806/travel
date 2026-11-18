@@ -2,6 +2,7 @@ import type { AiPlatform } from "./ai-auth";
 import type { PreviewChange } from "./ai-preview";
 import type { EntryRequirements } from "./entry-requirements";
 import type { HealthSafety } from "./health-safety";
+import type { MonthlyClimate } from "./typical-weather";
 export type FoodBudgetMode = "itemized" | "daily";
 export type ActivitiesBudgetMode = "itemized" | "general";
 export type Category = "hotels" | "activities" | "restaurants";
@@ -9,7 +10,8 @@ export type Category = "hotels" | "activities" | "restaurants";
 export const RESTAURANT_TYPES = ["breakfast", "lunch", "dinner", "snack", "drinks"] as const;
 export type RestaurantType = typeof RESTAURANT_TYPES[number];
 export const RESTAURANT_TYPE_LABELS: Record<RestaurantType, string> = { breakfast: "Breakfast", lunch: "Lunch", dinner: "Dinner", snack: "Snack", drinks: "Drinks" };
-export interface TypicalWeather { weatherHighF: number | null; weatherLowF: number | null; weatherRainfall: string; weatherPeriod: string; weatherSource: string; }
+/** A destination's seasonal typical weather (TRA-13), and its monthly climate averages, or null without them (TRA-135). */
+export interface TypicalWeather { weatherHighF: number | null; weatherLowF: number | null; weatherRainfall: string; weatherPeriod: string; weatherSource: string; climate: MonthlyClimate | null; }
 /**
  * A trip, with its tags in alphabetical order, and its headline image, or null without one (TRA-133).
  * `tagline` is the line its page shows above its name, saved as typed, or empty for the default heading (TRA-134).
@@ -109,6 +111,8 @@ export type Mutation =
  | { type: "destination.delete"; id: string }
  | { type: "destination.entryRequirements"; id: string; requirements: EntryRequirements | null }
  | { type: "destination.healthSafety"; id: string; healthSafety: HealthSafety | null }
+ // Replaces a destination's monthly climate averages, or clears them with null (TRA-135). Its seasonal typical weather stays.
+ | { type: "destination.climate"; id: string; climate: MonthlyClimate | null }
  | { type: "destination.churchVisibility"; id: string; enabled: boolean }
  | { type: "church.save"; id: string; create?: true; destinationId: string; name: string; address: string; denomination: string; url: string; massTimes: MassTime[]; gallery?: GalleryUpdate }
  | { type: "church.delete"; id: string; destinationId: string }

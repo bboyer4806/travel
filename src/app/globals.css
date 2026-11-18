@@ -1035,6 +1035,18 @@ button svg,a svg {
   font-size:28px;
   overflow-wrap:anywhere
 }
+/* What an idea is, directly below its name (TRA-138): at most two lines, ending in an ellipsis when it is longer. */
+.idea-description {
+  display:-webkit-box;
+  -webkit-box-orient:vertical;
+  -webkit-line-clamp:2;
+  overflow:hidden;
+  margin-top:6px;
+  font-size:14px;
+  line-height:1.5;
+  color:var(--muted);
+  overflow-wrap:anywhere
+}
 /* A restaurant's types, below its name (TRA-36). */
 .idea-types {
   margin-top:10px

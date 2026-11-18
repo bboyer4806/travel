@@ -147,12 +147,13 @@ test("cards show details, and each section edits its budget, adds an idea and li
 
 test("an idea's details show what its editor saves, read only", (t) => {
   const { store, id } = seed(t);
-  const saved = store.applyMutation(candidateInput(id, "activities", { name: "Walking tour", price: "45.50", address: "Stephansplatz", notes: "Morning\nBring water", links: [{ id: randomUUID(), url: "https://example.com/tour", description: "Booking" }], included: true, mustDo: true })).id;
+  const saved = store.applyMutation(candidateInput(id, "activities", { name: "Walking tour", description: "Guided walk through the old town", price: "45.50", address: "Stephansplatz", notes: "Morning\nBring water", links: [{ id: randomUUID(), url: "https://example.com/tour", description: "Booking" }], included: true, mustDo: true })).id;
   const details = (itemId) => {
     const rendered = hosts({ type: IdeaDetails, props: { item: store.getSnapshot().candidates.find((item) => item.id === itemId) } });
     return rendered.filter((node) => node.type === "div").map((row) => [text(row.props.children[0]), text(row.props.children[1])]);
   };
   assert.deepEqual(details(saved), [
+    ["What it is", "Guided walk through the old town"],
     ["Estimated price (USD)", "$45.50Total for the whole party for this activity."],
     ["Address or neighborhood", "Stephansplatz"],
     ["Activity photos", "Not added"],
@@ -163,6 +164,7 @@ test("an idea's details show what its editor saves, read only", (t) => {
   ]);
   const hotel = store.applyMutation(candidateInput(id, "hotels", { name: "Plain hotel", price: "", included: false })).id;
   assert.deepEqual(details(hotel), [
+    ["What it is", "Not added"],
     ["Estimated price (USD)", "Not estimatedTotal for all rooms and the entire stay."],
     ["Address or neighborhood", "Not added"],
     ["Hotel photos", "Not added"],
@@ -190,8 +192,9 @@ test("a restaurant's types show as labeled tags on its cards and in its details,
   // Only a restaurant with types has a tag list, so no empty one shows anywhere.
   assert.deepEqual([overview, list("restaurants"), list("hotels"), list("activities")].map((nodes) => byClass(nodes, "tags").length), [1, 1, 0, 0]);
   const details = (itemId) => hosts({ type: IdeaDetails, props: { item: ideas.find((item) => item.id === itemId) } }).filter((node) => node.type === "div").map((row) => [text(row.props.children[0]), text(row.props.children[1])]);
-  assert.deepEqual(details(both).slice(0, 2), [["Restaurant types", "LunchDrinks"], ["Estimated price (USD)", "$30Total for one meal for the whole party."]]);
-  assert.deepEqual(details(plain).map(([name]) => name), ["Estimated price (USD)", "Address or neighborhood", "Restaurant photos", "Website and research links", "Notes", "Must do", "Include in itemized restaurant costs"], "no empty row or placeholder");
+  // Below what it is (TRA-138), in its editor's order.
+  assert.deepEqual(details(both).slice(0, 3), [["What it is", "Not added"], ["Restaurant types", "LunchDrinks"], ["Estimated price (USD)", "$30Total for one meal for the whole party."]]);
+  assert.deepEqual(details(plain).map(([name]) => name), ["What it is", "Estimated price (USD)", "Address or neighborhood", "Restaurant photos", "Website and research links", "Notes", "Must do", "Include in itemized restaurant costs"], "no empty row or placeholder");
 });
 
 test("a restaurant's editor has an independent checkbox for each type, checked as saved (TRA-36)", () => {
@@ -306,4 +309,52 @@ test("hotel, activity and restaurant cards in a destination's carousels show pho
   assert.deepEqual(Object.keys(rules), [".photo", ".photo img"]);
   assert.deepEqual([rules[".photo"]["aspect-ratio"], rules[".photo"].position], ["4 / 3", "relative"]);
   assert.deepEqual([rules[".photo img"].position, rules[".photo img"].inset, rules[".photo img"]["object-fit"]], ["absolute", "0", "cover"]);
+});
+
+test("every hotel, activity and restaurant card shows what it is directly below its name, and nothing there without it (TRA-138)", (t) => {
+  const { store, id } = seed(t);
+  // seed's ideas have none. Give one in each category a short one, a restaurant with types a long one, and leave another restaurant without.
+  const long = "Family-run restaurant serving schnitzel larger than the plate since 1905, with a second dining room around the corner";
+  for (const [category, name, overrides] of [["hotels", "Hotel Sacher", { description: "Grand hotel" }], ["activities", "St. Stephen's", { description: "Historic cathedral" }],
+    ["restaurants", "Figlmüller", { description: long, restaurantTypes: ["lunch", "dinner"] }], ["restaurants", "Cafe", {}]]) store.applyMutation(candidateInput(id, category, { name, price: "", included: false, ...overrides }));
+  const snapshot = store.getSnapshot();
+  const ideas = snapshot.candidates.filter((item) => item.destinationId === id);
+  /** The element and text of the line with `lineClass` on a card, or null without one, checking it is the element directly below its name. */
+  const lineBelow = (card, isName, lineClass) => {
+    const nodes = hosts(card);
+    const lines = byClass(nodes, lineClass);
+    assert.ok(lines.length <= 1 && (lines.length === 0 || lines[0] === nodes[nodes.findIndex(isName) + 1]), "one line, directly below the name");
+    return lines.length ? [lines[0].type, text(lines[0])] : null;
+  };
+  // Every category's cards, in the same way: as written, whole, for the style to show at most two lines of it.
+  const expected = (element) => ({
+    "Chosen hotel": null, "First hotel": null, "Third hotel": null, "Hotel Sacher": [element, "Grand hotel"],
+    Palace: null, Museum: null, Opera: null, "St. Stephen's": [element, "Historic cathedral"],
+    Figlmüller: [element, long], Cafe: null,
+  });
+  // A destination's carousels, whose cards are buttons, so the line is a span.
+  const carousel = hosts({ type: DestinationIdeas, props: { ideas, city: "Vienna", pages: "/destinations/vienna", busy: false, onView() {}, onAdd() {}, onBudgetEdit() {} } });
+  const isName = (node) => byClass([node], "name").length > 0;
+  assert.deepEqual(Object.fromEntries(byClass(carousel, "card").map((card) => [text(byClass(hosts(card), "name")[0]), lineBelow(card, isName, "description")])), expected("span"));
+  // Then a restaurant's types and its price, below it.
+  const figlmuller = byClass(carousel, "card").find((card) => text(byClass(hosts(card), "name")[0]) === "Figlmüller");
+  assert.deepEqual(hosts(figlmuller).map((node) => node.props.className).filter(Boolean), ["card", "photo", "name", "description", "tags types", "tag", "tag", "price unknown"]);
+  // The Hotels, Activities and Restaurants pages, where each card's name is its heading.
+  const page = (category) => hosts({ type: CandidateList, props: { items: ideas.filter((item) => item.category === category), category, destination: snapshot.destinations.find((item) => item.id === id), busy: false, onEdit() {}, onDelete() {}, onMutate() {} } });
+  assert.deepEqual(Object.fromEntries(["hotels", "activities", "restaurants"].flatMap((category) => page(category).filter((node) => node.type === "article")
+    .map((card) => [card.props["aria-label"], lineBelow(card, (node) => node.type === "h2", "idea-description")]))), expected("p"));
+  // Then a restaurant's types, as in the carousel.
+  const card = hosts(page("restaurants").find((node) => node.type === "article" && node.props["aria-label"] === "Figlmüller"));
+  const heading = card.findIndex((node) => node.type === "h2");
+  assert.deepEqual(card.slice(heading, heading + 3).map((node) => [node.type, node.props.className]), [["h2", undefined], ["p", "idea-description"], ["span", "tags idea-types"]]);
+});
+
+test("what an idea is shows at most two lines on its cards at every screen width, ending in an ellipsis when it is longer (TRA-138)", () => {
+  // A clamp of two lines, which ends the second in an ellipsis, and no rule for another screen width changes it.
+  const clamp = { display: "-webkit-box", "-webkit-box-orient": "vertical", "-webkit-line-clamp": "2", overflow: "hidden", "overflow-wrap": "anywhere" };
+  for (const [file, selector] of [["../src/components/destination-ideas.module.css", ".description"], ["../src/app/globals.css", ".idea-description"]]) {
+    const rules = cssRules(file).filter(([selectors]) => selectors.split(",").map((part) => part.trim()).some((part) => part === selector || part.endsWith(" " + selector)));
+    assert.equal(rules.length, 1, selector);
+    assert.deepEqual(Object.fromEntries(Object.keys(clamp).map((property) => [property, rules[0][1][property]])), clamp, selector);
+  }
 });

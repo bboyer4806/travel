@@ -162,7 +162,9 @@ const CHANGES = [
   change("leg.clear", "Clears everything saved for the travel between two stays.", { id: id("The travel's id.") }, ["id"]),
   change("candidate.save", "Adds a hotel, activity or restaurant idea to a destination, or changes a saved one. Each field is saved as given. Including a hotel chooses it, leaving out the others.", {
     id: id("The idea's id, or a new UUID with create."), create, destinationId: id("Its destination's id."), category: { type: "string", enum: ["hotels", "activities", "restaurants"] },
-    name: text("Its name.", 160), price: amount("Its cost for the whole party: a hotel's for the whole stay."), address: text("Its address. Empty for none.", 500),
+    name: text("Its name.", 160),
+    description: text("What it is, in a few words, such as \"Boutique hotel\", \"Historic cathedral\" or \"Traditional Italian restaurant\", shown below its name on its cards. Empty for none. Left out keeps the saved one.", 120),
+    price: amount("Its cost for the whole party: a hotel's for the whole stay."), address: text("Its address. Empty for none.", 500),
     url: text("A website, https:// or http://. Empty for none.", 2048), notes: text("Notes. Empty for none.", 8000), included: flag("Whether it is in the budget: for a hotel, whether it is the chosen one."),
     mustDo: flag("Must do, for activities and restaurants only. Left out keeps it."),
     restaurantTypes: {

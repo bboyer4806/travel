@@ -1,7 +1,10 @@
-import { downloadAddress, downloadImage, fetchPublic, type PhotoFetch } from "./image-download.ts";
+import { downloadAddress, downloadImage, fetchPublic, type PhotoFetch, type WebProtocols } from "./image-download.ts";
 import { AI_PHOTO_DOWNLOAD_SECONDS, formatMegabytes, MAX_AI_PROPOSAL_PHOTOS, MAX_GALLERY_UPLOAD_BYTES } from "./image-limits.ts";
 import { ImageValidationError, prepareImage } from "./image-upload.ts";
 import type { AiPhotoToAdd, PreparedImage } from "./types";
+
+/** ChatGPT and Claude add photos only from https:// addresses (TRA-122). */
+const HTTPS: WebProtocols = ["https:"];
 
 /**
  * Downloads the photos a ChatGPT or Claude proposal adds, all at once, and prepares each as an upload is (TRA-122),
@@ -14,7 +17,7 @@ export async function prepareAiPhotos(photos: AiPhotoToAdd[], fetch: PhotoFetch 
   // Every address is checked before anything is downloaded.
   for (const photo of photos) {
     try {
-      downloadAddress(photo.url);
+      downloadAddress(photo.url, HTTPS);
     } catch (error) {
       throw named(photo, error);
     }
@@ -24,7 +27,7 @@ export async function prepareAiPhotos(photos: AiPhotoToAdd[], fetch: PhotoFetch 
   const signal = AbortSignal.any([deadline, refused.signal]);
   let files: File[];
   try {
-    files = await Promise.all(photos.map((photo) => downloadImage(photo.url, signal, fetch).catch((error: unknown) => {
+    files = await Promise.all(photos.map((photo) => downloadImage(photo.url, HTTPS, signal, fetch).catch((error: unknown) => {
       throw deadline.aborted ? refusal(photo, `The photo didn't download within ${timeoutMs / 1000} seconds.`) : named(photo, error);
     })));
   } finally {

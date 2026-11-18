@@ -7,6 +7,7 @@ import { cropStyle, draggedFocus, MAX_PHOTO_ZOOM, UNCROPPED, type Size } from "@
 import { createTripImageDraft, tripImageChanged, type TripImageDraft } from "@/lib/trip-image-draft";
 import type { PhotoCrop, Trip, TripImageCrops } from "@/lib/types";
 import { useFocusAfter } from "./focus-after";
+import { AddImageByUrl } from "./image-by-url";
 import styles from "./trip-image.module.css";
 
 /** Where a trip's headline image shows (TRA-133): across the top of its card on All trips, or as the banner on its page. */
@@ -110,9 +111,9 @@ function CropPreview({ id, frame, label, source, crop, disabled, onCrop }: { id:
 }
 
 /**
- * The trip editor's headline image (TRA-133): Add image chooses one from the device, and its card and banner previews
- * each crop it their own way. Replace image, Remove image and Undo image changes change the draft, which saving the trip
- * saves and Cancel discards.
+ * The trip editor's headline image (TRA-133): Add image chooses one from the device, or Add image by URL from the web
+ * (TRA-139), and its card and banner previews each crop it their own way. Replace image, Remove image and Undo image
+ * changes change the draft, which saving the trip saves and Cancel discards.
  */
 export function TripImageEditor({ trip, draft, onChange, disabled }: { trip?: TripWithImage; draft: TripImageDraft; onChange: (draft: TripImageDraft) => void; disabled: boolean }) {
   const id = useId();
@@ -125,20 +126,27 @@ export function TripImageEditor({ trip, draft, onChange, disabled }: { trip?: Tr
   // A saved image's draft exists only for a trip that has one.
   const source = draft === null ? null : "file" in draft ? draft.file : trip && imageUrl(trip.id, draft.version);
 
-  /** A new image, checked as uploads are on the server, replaces the draft's and starts uncropped. A refused file keeps the draft. */
-  function choose(event: ChangeEvent<HTMLInputElement>) {
-    const file = event.currentTarget.files?.[0];
-    event.currentTarget.value = "";
-    if (disabled || !file) return;
+  /**
+   * A new image, a file chosen from the device or an image added by URL (TRA-139), checked as uploads are on the server,
+   * replaces the draft's and starts uncropped. A refused image keeps the draft and says why, and returns false.
+   */
+  function addImage(file: File): boolean {
     const refused = !IMAGE_UPLOAD_TYPES.includes(file.type.toLowerCase()) ? "Choose a JPEG, PNG, or WebP image."
       : file.size === 0 ? "That image is empty. Choose another image."
       : file.size > MAX_IMAGE_UPLOAD_BYTES ? `Choose an image up to ${formatMegabytes(MAX_IMAGE_UPLOAD_BYTES)}.` : "";
     if (refused) {
       setError(draft ? `${refused} Your previous image has been kept.` : refused);
-      return;
+      return false;
     }
     setError("");
     onChange({ file, card: UNCROPPED, banner: UNCROPPED });
+    return true;
+  }
+  function choose(event: ChangeEvent<HTMLInputElement>) {
+    const file = event.currentTarget.files?.[0];
+    event.currentTarget.value = "";
+    if (disabled || !file) return;
+    addImage(file);
   }
   /** Remove image and Undo image changes go away with the changes they make, so Add image or Replace image takes focus. */
   function change(next: TripImageDraft) {
@@ -157,6 +165,7 @@ export function TripImageEditor({ trip, draft, onChange, disabled }: { trip?: Tr
     </div>}
     <div className={styles.actions}>
       <button type="button" ref={chooseButton} className="button secondary small" disabled={disabled} onClick={() => input.current?.click()}><ImagePlus size={15} aria-hidden="true" />{draft ? "Replace image" : "Add image"}</button>
+      <AddImageByUrl label={draft ? "Replace image by URL" : "Add image by URL"} disabled={disabled} onAdd={addImage} />
       {draft && <button type="button" className={styles.remove} disabled={disabled} onClick={() => change(null)}><Trash2 size={14} aria-hidden="true" />Remove image</button>}
       {changed && saved && <button type="button" className={styles.restore} disabled={disabled} onClick={() => change(createTripImageDraft(saved))}><RotateCcw size={14} aria-hidden="true" />Undo image changes</button>}
     </div>

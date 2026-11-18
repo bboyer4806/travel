@@ -117,6 +117,8 @@ function harness(trip) {
     },
     "react/jsx-runtime": { jsx: element, jsxs: element, Fragment: "fragment" },
     "lucide-react": new Proxy({}, { get: (_, name) => "icon:" + String(name) }),
+    // Add image by URL (TRA-139), tested in image-by-url.test.mjs, stands in as an element showing what the editor gives it.
+    "./image-by-url": { AddImageByUrl: (props) => ({ type: "AddImageByUrl", props }) },
     "@/lib/image-limits": imageLimits, "@/lib/photo-focus": photoFocus, "@/lib/trip-image-draft": tripImageDraft,
   };
   const require = (name) => {
@@ -193,6 +195,10 @@ function harness(trip) {
     },
     fileInput: () => domElements.get("input"),
     setDisabled(value) { disabled = value; render(); },
+    /** Add image by URL as the editor offers it (TRA-139): its label and whether it is unavailable. */
+    byUrl: () => { const { label, disabled } = nodes.find((node) => node.type === "AddImageByUrl").props; return { label, disabled }; },
+    /** Uses an image previewed in Add image by URL, returning whether the editor took it. */
+    addByUrl(image) { const taken = nodes.find((node) => node.type === "AddImageByUrl").props.onAdd(image); render(); return taken; },
   };
 }
 
@@ -303,4 +309,28 @@ test("while the trip saves, the image's controls are disabled and dragging moves
   editor.setDisabled(false);
   editor.drag("card", 0, -10);
   assert.notDeepEqual(editor.draft().card, trip.image.card, "after a failed save, the crop can be adjusted again");
+});
+
+test("Add image by URL adds or replaces the headline image as a chosen file does, uncropped (TRA-139)", () => {
+  const editor = harness({ id: randomUUID(), image: null });
+  assert.deepEqual(editor.byUrl(), { label: "Add image by URL", disabled: false });
+  assert.equal(editor.addByUrl(file("page.html", "text/html")), false);
+  assert.deepEqual([editor.error(), editor.draft()], ["Choose a JPEG, PNG, or WebP image.", null], "a refused image says why, as a refused file does");
+  const downloaded = file("Tour Eiffel.jpg");
+  assert.equal(editor.addByUrl(downloaded), true);
+  assert.deepEqual([editor.draft(), editor.error(), editor.titles()], [{ file: downloaded, card: UNCROPPED, banner: UNCROPPED }, "", ["Trip card", "Trip page banner"]], "it shows in both previews, to crop as any new image");
+  assert.equal(editor.form().get("image"), downloaded, "saving uploads it, for the server to prepare");
+  assert.deepEqual(editor.byUrl(), { label: "Replace image by URL", disabled: false });
+
+  const trip = { id: randomUUID(), image: saved() };
+  const replacing = harness(trip);
+  assert.deepEqual(replacing.byUrl(), { label: "Replace image by URL", disabled: false });
+  assert.equal(replacing.addByUrl(file("huge.png", "image/png", imageLimits.MAX_IMAGE_UPLOAD_BYTES + 1)), false);
+  assert.deepEqual([replacing.error(), replacing.draft()], ["Choose an image up to 5 MB. Your previous image has been kept.", trip.image]);
+  assert.equal(replacing.addByUrl(file("other.webp", "image/webp")), true);
+  assert.deepEqual([replacing.draft().card, replacing.draft().banner, replacing.image("card").src], [UNCROPPED, UNCROPPED, "blob:other.webp"]);
+  replacing.click("Undo image changes");
+  assert.deepEqual(replacing.draft(), trip.image, "Undo image changes brings the saved image back");
+  replacing.setDisabled(true);
+  assert.deepEqual(replacing.byUrl(), { label: "Replace image by URL", disabled: true }, "it waits while the trip saves");
 });

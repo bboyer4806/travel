@@ -1,15 +1,17 @@
 /** The icon for each recognized kind of transportation. "route" stands for blank or unrecognized text. */
 export type TransportationIcon = "airplane" | "train" | "car" | "bus" | "boat" | "walking" | "bicycle" | "route";
 
-// The approved terms for each icon (TRA-112), matched as complete words or phrases in any capitalization.
+// The approved terms for each icon (TRA-112), with the other word forms of TRA-117: plane, fly, railway, drive, ride share
+// and walk, and the plural of each term for a vehicle or a ride. Each matches as a complete word or phrase in any
+// capitalization.
 const TERMS: ReadonlyArray<readonly [Exclude<TransportationIcon, "route">, readonly string[]]> = [
-  ["airplane", ["flight", "airplane", "flying", "air", "jet"]],
-  ["train", ["train", "rail", "subway", "tram"]],
-  ["car", ["car", "driving", "rental car", "taxi", "rideshare", "road", "uber", "lyft"]],
-  ["bus", ["bus", "coach", "shuttle"]],
-  ["boat", ["boat", "ferry", "cruise", "ship", "sea", "water"]],
-  ["walking", ["walking", "on foot"]],
-  ["bicycle", ["bike", "bicycle", "cycling"]],
+  ["airplane", ["flight", "flights", "airplane", "airplanes", "plane", "planes", "flying", "fly", "air", "jet", "jets"]],
+  ["train", ["train", "trains", "rail", "railway", "subway", "subways", "tram", "trams"]],
+  ["car", ["car", "cars", "driving", "drive", "rental car", "rental cars", "taxi", "taxis", "rideshare", "rideshares", "ride share", "ride shares", "road", "uber", "ubers", "lyft", "lyfts"]],
+  ["bus", ["bus", "buses", "coach", "coaches", "shuttle", "shuttles"]],
+  ["boat", ["boat", "boats", "ferry", "ferries", "cruise", "cruises", "ship", "ships", "sea", "water"]],
+  ["walking", ["walking", "walk", "on foot"]],
+  ["bicycle", ["bike", "bikes", "bicycle", "bicycles", "cycling"]],
 ];
 
 /** Lowercase words: runs of letters, marks and digits. Spaces, hyphens and punctuation separate them. */

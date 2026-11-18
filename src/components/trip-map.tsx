@@ -69,7 +69,6 @@ export default function TripMap({ tripId, journey }: { tripId: string; journey: 
       <h2 id={headingId}><button type="button" className={styles.toggle} aria-expanded={expanded} aria-controls={contentId} onClick={() => setExpanded((open) => !open)}>The map<ChevronDown size={22} aria-hidden="true" /></button></h2></div></div>
     <div id={contentId} hidden={!expanded}>
       {expanded && <>
-        <p className={styles.help}>Your departure, destinations, stops along the way and return, joined by straight lines in travel order. Select a place or a connection’s transportation to find it below.</p>
         <div className={styles.frame}>
           {layout.markers.length > 0 ? <TripMapCanvas layout={layout} />
             : <p className={styles.message}>{loading ? "Finding this trip’s places…" : names.length === 0 ? "Add a departing city or a destination to see this trip on the map." : "None of this trip’s places can be shown on the map yet."}</p>}

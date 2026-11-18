@@ -1,10 +1,8 @@
 .section { margin-bottom: 43px; }
-.section :global(.section-heading) { margin-bottom: 12px; }
 .toggle { display: inline-flex; align-items: center; gap: 10px; padding: 0; border: 0; background: none; color: inherit; font: inherit; letter-spacing: inherit; text-align: left; }
 .toggle:hover { color: var(--orange); }
 .toggle svg { flex-shrink: 0; transition: transform .16s; }
 .toggle[aria-expanded="true"] svg { transform: rotate(180deg); }
-.help { font-size: 12px; color: var(--muted); margin: 0 0 14px; max-width: 640px; }
 /* Leaflet's panes and controls stack within the frame, below the page's messages and dialogs. */
 .frame { position: relative; height: 380px; border: 1px solid var(--line); border-radius: 10px; overflow: hidden; background: var(--wash); isolation: isolate; }
 .map { position: absolute; inset: 0; }

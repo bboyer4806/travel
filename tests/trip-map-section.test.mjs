@@ -9,9 +9,9 @@ import { createLocationSearch } from "../src/lib/location-search.ts";
 import * as tripMap from "../src/lib/trip-map.ts";
 import { setup, tripInput } from "./budget-fixtures.mjs";
 
-// TRA-144: the trip map without its airport search, from the real map components with a small hook harness. The
-// section asks the real trip map route, with a stand-in for Open-Meteo, and the map itself draws with a stand-in for
-// Leaflet. No browser or server is involved.
+// TRA-144 and TRA-145: the trip map without its airport search or instructions, from the real map components with a
+// small hook harness. The section asks the real trip map route, with a stand-in for Open-Meteo, and the map itself
+// draws with a stand-in for Leaflet. No browser or server is involved.
 const compile = (path, jsx) => ts.transpileModule(readFileSync(new URL(path, import.meta.url), "utf8"), {
   compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022, ...(jsx ? { jsx: ts.JsxEmit.ReactJSX } : {}) },
 }).outputText;
@@ -31,6 +31,7 @@ function load(path, modules, globals = {}) {
 const jsx = (type, props, key) => ({ type, props, key });
 const runtime = { jsx, jsxs: jsx, Fragment: "fragment" };
 const nodes = (node) => !node || typeof node !== "object" ? [] : [node, ...[node.props?.children].flat(Infinity).flatMap(nodes)];
+const texts = (node) => typeof node === "string" ? [node] : !node || typeof node !== "object" ? [] : [node.props?.children].flat(Infinity).flatMap(texts);
 // A CSS module's class names are their own names, and an icon is its name.
 const styles = new Proxy({}, { get: (_target, name) => name });
 const icons = new Proxy({}, { get: (_target, name) => name });
@@ -152,14 +153,14 @@ async function openTripMap(t) {
     tree = show();
   }
   assert.equal(status(tree), "", "the trip's places are found");
-  return { tree, tripId, journey, lookups, requests, answers };
+  return { tree, show, tripId, journey, lookups, requests, answers };
 }
 
-test("the trip map has no airport search: the map follows its help, and only the trip's own places are looked up (TRA-144)", async (t) => {
+test("the trip map has no airport search, and only the trip's own places are looked up (TRA-144)", async (t) => {
   const { tree, tripId, requests } = await openTripMap(t);
-  // What the open section shows, in order, with nothing between its help and the map, nor anything to type in or choose.
+  // What the open section shows, in order, with nothing above the map, nor anything to type in or choose.
   const content = [...nodes(tree).find((node) => node.type === "fragment").props.children].filter(Boolean);
-  assert.deepEqual(content.map((node) => node.type === "MapLegend" ? node.type : node.props.className), ["help", "frame", "MapLegend", "status", "credit"]);
+  assert.deepEqual(content.map((node) => node.type === "MapLegend" ? node.type : node.props.className), ["frame", "MapLegend", "status", "credit"]);
   assert.deepEqual(nodes(tree).filter((node) => ["input", "label", "button"].includes(node.type)).map((node) => node.props.className), ["toggle"], "only the heading's toggle");
   // The section asks only for the trip's places, never for an airport by its code.
   assert.deepEqual(requests, ["/api/trip-map/" + tripId]);
@@ -199,6 +200,34 @@ test("a saved airport code such as ORD is still shown at its airport, with every
   assert.equal(nodes(tree).some((node) => node.props?.className === "unmapped"), false, "nothing is listed under Not on the map");
   // Airport codes need no lookup: only the names are looked up.
   assert.deepEqual(lookups.sort(), ["Melk", "Salzburg", "Vienna"]);
+});
+
+test("the map follows its heading directly, with no instructions, at the page's section spacing (TRA-145)", async (t) => {
+  const { tree } = await openTripMap(t);
+  const [heading, content] = tree.props.children;
+  // Above the map are only the section's label and its heading.
+  assert.deepEqual(texts(heading), ["THE WHOLE JOURNEY", "The map"]);
+  assert.equal(content.props.children.props.children[0].props.className, "frame");
+  // Without the instructions' styles, nothing changes the heading's spacing, so the map sits below it as each other
+  // section's content sits below its heading.
+  assert.doesNotMatch(readFileSync(new URL("../src/components/trip-map.module.css", import.meta.url), "utf8"), /\.help\b|section-heading/);
+});
+
+test("the map's heading still closes and reopens it (TRA-145)", async (t) => {
+  const { tree, show } = await openTripMap(t);
+  const toggle = (tree) => nodes(tree).find((node) => node.props?.className === "toggle");
+  const content = (tree) => nodes(tree).find((node) => node.props?.id === toggle(tree).props["aria-controls"]);
+  assert.equal(toggle(tree).props["aria-expanded"], true);
+  toggle(tree).props.onClick();
+  const closed = show();
+  assert.equal(toggle(closed).props["aria-expanded"], false);
+  assert.equal(content(closed).props.hidden, true);
+  assert.equal(content(closed).props.children, false, "nothing shows while it is closed");
+  toggle(closed).props.onClick();
+  const reopened = show();
+  assert.equal(toggle(reopened).props["aria-expanded"], true);
+  assert.equal(content(reopened).props.hidden, false);
+  assert.equal(nodes(content(reopened)).find((node) => node.type === "TripMapCanvas").props.layout.markers.length, 6, "with every place");
 });
 
 /** The map itself, with a stand-in for Leaflet that records each time something frames or centers the map. */

@@ -4,9 +4,11 @@ import test from "node:test";
 import { runInNewContext } from "node:vm";
 import ts from "typescript";
 import * as destinationLabel from "../src/lib/destination-label.ts";
+import * as destinationLibrary from "../src/lib/destination-library.ts";
 import * as dropdownPosition from "../src/lib/dropdown-position.ts";
 
-// Run the actual city field with a small hook harness. City suggestions come from `locations`; nothing is fetched.
+// Run the actual city field with a small hook harness. City suggestions come from `locations`, which aren't an array
+// when the lookup fails; nothing is fetched.
 const compiled = ts.transpileModule(readFileSync(new URL("../src/components/location-field.tsx", import.meta.url), "utf8"), {
   compilerOptions: { module: ts.ModuleKind.CommonJS, jsx: ts.JsxEmit.ReactJSX, target: ts.ScriptTarget.ES2022 },
 }).outputText;
@@ -70,6 +72,7 @@ function harness(props, locations = [], screen = fakeScreen()) {
       if (name === "react/jsx-runtime") return { jsx, jsxs: jsx };
       if (name === "lucide-react") return { MapPin: "map-pin", Plane: "plane" };
       if (name === "@/lib/destination-label") return destinationLabel;
+      if (name === "@/lib/destination-library") return destinationLibrary;
       if (name === "@/lib/dropdown-position") return dropdownPosition;
       throw new Error("Unexpected component import: " + name);
     },
@@ -119,11 +122,13 @@ function harness(props, locations = [], screen = fakeScreen()) {
       for (let i = 0; i < 20; i++) await Promise.resolve();
       render();
     },
-    /** Each suggestion's icon, name and where it is. */
+    /** Each suggestion's icon, name, where it is, and the tag marking a saved destination (TRA-142). */
     options: () => nodes(tree).filter((node) => node.props?.role === "option").map((node) => {
-      const [icon, text] = node.props.children;
-      return [icon.type, ...text.props.children.map((line) => line.props.children)];
+      const [icon, text, tag] = node.props.children;
+      return [icon.type, ...text.props.children.map((line) => line.props.children), ...(tag ? [tag.props.children] : [])];
     }),
+    /** What the field tells screen readers about its suggestions. */
+    status: () => find((node) => node.props?.role === "status").props.children,
     /** Waits out the search delay, then chooses the suggestion at `index`. */
     async choose(index) {
       await this.search();
@@ -273,4 +278,74 @@ test("arrow keys move through the suggestions, scrolling only their list, Enter 
   const escape = field.press("Escape");
   assert.deepEqual([escape.prevented, escape.stopped, field.placed(), field.shown()], [true, true, undefined, "Spri"]);
   assert.equal(field.press("Escape").stopped, undefined, "a second Escape reaches the editor, which closes");
+});
+
+// TRA-142: the saved destinations a trip's Add destination offers, as its page gives them, and Open-Meteo's suggestions.
+const reykjavik = { id: "11111111-1111-4111-8111-111111111111", city: "Reykjavík, Iceland", cityFromSuggestion: false };
+const nuuk = { id: "22222222-2222-4222-8222-222222222222", city: "Nuuk, Greenland", cityFromSuggestion: false };
+const nuukByCode = { id: "33333333-3333-4333-8333-333333333333", city: "Nuuk, Sermersooq, GL", cityFromSuggestion: false };
+const vienna = { id: "44444444-4444-4444-8444-444444444444", city: "Vienna, State of Vienna, Austria", cityFromSuggestion: true };
+const library = [nuuk, nuukByCode, reykjavik, vienna];
+const reykjavikSuggestion = { id: "3413829", name: "Reykjavík", region: "Capital Region", country: "Iceland", countryCode: "IS", label: "Reykjavík, Capital Region, Iceland" };
+const reykjahlid = { id: "2627788", name: "Reykjahlíð", region: "Northeast", country: "Iceland", countryCode: "IS", label: "Reykjahlíð, Northeast, Iceland" };
+const nuukSuggestion = { id: "3421319", name: "Nuuk", region: "Sermersooq", country: "Greenland", countryCode: "GL", label: "Nuuk, Sermersooq, Greenland" };
+const addDestinationField = (locations) => harness({ name: "city", label: "City or destination", compactDestination: true, library }, locations);
+const SAVED_REYKJAVIK = ["map-pin", "Reykjavík", "Iceland", "In your library"];
+
+test("Add destination offers saved destinations first, marked In your library, in place of the suggestions that are them (TRA-142)", async () => {
+  const field = addDestinationField([reykjavikSuggestion, reykjahlid]);
+  field.type("Reykjavik");
+  assert.deepEqual(field.options(), [SAVED_REYKJAVIK], "a saved destination needs no lookup, so it shows while suggestions load");
+  assert.equal(field.status(), "1 suggestion, 1 in your library. Use the arrow keys to choose, then press Enter.");
+  await field.search();
+  assert.deepEqual(field.options(), [SAVED_REYKJAVIK, ["map-pin", "Reykjahlíð", "Northeast, Iceland"]], "the suggestion that is the saved Reykjavík shows once, as saved");
+  assert.equal(field.status(), "2 suggestions, 1 in your library. Use the arrow keys to choose, then press Enter.");
+});
+
+test("each saved destination a suggestion is shows once, and a city chosen from a suggestion shows as it does everywhere", async () => {
+  // Two saved Nuuks, from before Add destination recognized them, are both the suggestion, and neither is merged away.
+  const field = addDestinationField([nuukSuggestion]);
+  field.type("nuuk");
+  await field.search();
+  assert.deepEqual(field.options(), [["map-pin", "Nuuk", "Greenland", "In your library"], ["map-pin", "Nuuk", "Sermersooq, GL", "In your library"]]);
+  const viennaField = addDestinationField([]);
+  viennaField.type("Vie");
+  await viennaField.search();
+  assert.deepEqual(viennaField.options(), [["map-pin", "Vienna", "Austria", "In your library"]]);
+});
+
+test("choosing a saved destination shows its city as saved and sends its ID instead of a city, until the text changes", async () => {
+  const field = addDestinationField([wooster]);
+  field.type("Vienna");
+  await field.choose(0);
+  assert.deepEqual([field.shown(), field.sent()], ["Vienna, Austria", { destinationId: vienna.id }]);
+  field.type("Vienna, Austria!");
+  assert.deepEqual(field.sent(), { city: "Vienna, Austria!" }, "edited text is a city, sent as entered");
+  field.type("Vienna, Austria");
+  assert.deepEqual(field.sent(), { destinationId: vienna.id }, "the saved destination's city typed again is the saved destination");
+  field.type("Wooster");
+  await field.choose(0);
+  assert.deepEqual(field.sent(), { city: "Wooster, Ohio, United States", cityFromSuggestion: "true" }, "a new city is still a suggestion's");
+});
+
+test("the arrow keys reach saved destinations first and Enter chooses one", async () => {
+  const field = addDestinationField([reykjavikSuggestion, reykjahlid]);
+  field.type("Reyk");
+  await field.search();
+  field.press("ArrowDown");
+  assert.equal(field.active(), "city-option-0");
+  field.press("ArrowDown");
+  field.press("ArrowUp");
+  assert.equal(field.press("Enter").prevented, true);
+  assert.deepEqual([field.shown(), field.sent(), field.placed()], ["Reykjavík, Iceland", { destinationId: reykjavik.id }, undefined]);
+});
+
+test("saved destinations still show when city suggestions are unavailable", async () => {
+  const field = addDestinationField(null);
+  field.type("Nuuk");
+  await field.search();
+  assert.deepEqual(field.options().map((option) => option.at(-1)), ["In your library", "In your library"]);
+  field.type("Oslo");
+  await field.search();
+  assert.deepEqual([field.options(), field.status()], [[], "City suggestions are unavailable. You can still enter your own location."]);
 });

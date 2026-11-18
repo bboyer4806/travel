@@ -24,7 +24,7 @@ import type { EntryRequirements } from "./entry-requirements.ts";
 import type { HealthSafety } from "./health-safety.ts";
 import type { MonthlyClimate } from "./typical-weather.ts";
 import type { AiConnection, AiPhotoToAdd, AiProposal, DestinationFields, GalleryUpdate, PhotoCrop, PreparedImage, StoredThumbnail, TripImage, TripImageUpdate } from "./types";
-import type { AuthorizedAccount, DestinationAccess, GoogleIdentity, TripAccess, TripMember, TripStop } from "./types";
+import type { AuthorizedAccount, DestinationAccess, GoogleIdentity, LibraryDestination, TripAccess, TripMember, TripStop } from "./types";
 import type { FoodBudgetMode, ActivitiesBudgetMode, Candidate, CandidateImage, Category, Church, MassTime, Destination, DestinationImage, HomeItem, StoredImage, ItineraryStop, Mutation, ResearchLink, RestaurantType, Snapshot, TravelLeg, Trip } from "./types";
 
 type StoredDestination = Omit<Destination, "churchEnabled" | "cityFromSuggestion" | "images" | "entryRequirements" | "healthSafety" | "climate" | "mainImageId" | "imageVersion"> & { churchEnabled: number; cityFromSuggestion: number; ownerId: string; cityKey: string };
@@ -466,6 +466,8 @@ function validate(input: unknown): Mutation {
       return { type: value.type, id: idField(value), destinationId: idField(value, "destinationId") };
     case "stop.add":
       return { type: value.type, tripId: idField(value, "tripId"), city: textField(value, "city", 120, true), cityFromSuggestion: cityFromSuggestionField(value) };
+    case "stop.visit":
+      return { type: value.type, tripId: idField(value, "tripId"), destinationId: idField(value, "destinationId") };
     case "stop.move":
       if (value.direction !== "up" && value.direction !== "down") throw new ValidationError("Choose a valid direction for this destination.");
       return { type: value.type, id: idField(value), direction: value.direction };
@@ -1442,10 +1444,10 @@ export function createStore(databasePath: string, ownerEmail: string) {
     };
   }
   /**
-   * One trip's page, or with `stopId` one of its destinations' idea pages, and what the account may do there.
-   * Undefined when the account can't open the trip.
+   * One trip's page, or with `stopId` one of its destinations' idea pages, what the account may do there, and the saved
+   * destinations its Add destination offers. Undefined when the account can't open the trip.
    */
-  function getTripSnapshot(accountId: string, tripId: string, stopId?: string): { data: Snapshot; access: TripAccess } | undefined {
+  function getTripSnapshot(accountId: string, tripId: string, stopId?: string): { data: Snapshot; access: TripAccess; library: LibraryDestination[] } | undefined {
     const access = tripAccess(accountId, tripId);
     if (!access) return undefined;
     const stops = readStops([tripId]);
@@ -1456,7 +1458,17 @@ export function createStore(databasePath: string, ownerEmail: string) {
     return {
       data: { trips: readTrips([tripId]), stops, destinations: readDestinations(destinationIds), legs: readLegs([tripId]), candidates: readCandidates(destinationIds), churches: readChurches(destinationIds), homeItems: readHomeItems([tripId]), tags: tagNames(visibleTripIds) },
       access,
+      library: tripLibrary(accountId, tripId),
     };
+  }
+  /**
+   * The saved destinations a trip's Add destination offers (TRA-142): its owner's, since a trip visits only those, that
+   * the account can open, in alphabetical order.
+   */
+  function tripLibrary(accountId: string, tripId: string): LibraryDestination[] {
+    return db.prepare(`SELECT id, city, cityFromSuggestion FROM destinations WHERE ownerId = (SELECT ownerId FROM trips WHERE id = ?) AND id IN (${VISIBLE_DESTINATIONS})
+      ORDER BY city COLLATE NOCASE, id`).all(tripId, accountId, accountId, accountId)
+      .map((row) => ({ id: row.id as string, city: row.city as string, cityFromSuggestion: row.cityFromSuggestion === 1 }));
   }
   /** Every destination the account owns or that a trip it can open visits, and the trips it can open that visit them. */
   function getDestinationsOverview(accountId: string): { data: Snapshot; access: Record<string, DestinationAccess> } {
@@ -1810,11 +1822,24 @@ export function createStore(databasePath: string, ownerEmail: string) {
   function addStop(tripId: string, place: { city: string; cityFromSuggestion?: true }, make: Make): string {
     const trip = existing<Trip & { ownerId: string }>("trips", tripId);
     const id = make.id();
-    const destinationId = destinationFor(trip.ownerId, place, id);
-    const visiting = db.prepare("SELECT id FROM trip_stops WHERE tripId = ? AND destinationId = ? ORDER BY position, id").get(trip.id, destinationId);
+    return stopAt(trip.id, destinationFor(trip.ownerId, place, id), id, make);
+  }
+  /**
+   * Adds one of the trip owner's saved destinations to a trip as its last stop, with everything saved for it, without
+   * stay notes or nights (TRA-142). A destination the trip already visits returns that stop instead of adding another.
+   */
+  function visitDestination(tripId: string, destinationId: string, make: Make): string {
+    const trip = existing<Trip & { ownerId: string }>("trips", tripId);
+    const destination = existing<StoredDestination>("destinations", destinationId);
+    if (destination.ownerId !== trip.ownerId) throw new ValidationError("A trip can only visit its owner's destinations.");
+    return stopAt(trip.id, destination.id, make.id(), make);
+  }
+  /** A trip's stop at one of its owner's destinations: its first stay there, or a new last stop with this ID. */
+  function stopAt(tripId: string, destinationId: string, id: string, make: Make): string {
+    const visiting = db.prepare("SELECT id FROM trip_stops WHERE tripId = ? AND destinationId = ? ORDER BY position, id").get(tripId, destinationId);
     if (visiting) return visiting.id as string;
-    db.prepare("INSERT INTO trip_stops(id,tripId,destinationId,position,stay,nights) VALUES(?,?,?,?,'',NULL)").run(id, trip.id, destinationId, orderedStops(trip.id).length);
-    reconcileRoute(trip.id, make);
+    db.prepare("INSERT INTO trip_stops(id,tripId,destinationId,position,stay,nights) VALUES(?,?,?,?,'',NULL)").run(id, tripId, destinationId, orderedStops(tripId).length);
+    reconcileRoute(tripId, make);
     return id;
   }
   /** Changes a destination everywhere it is used, and with a stop, that trip's stay notes and nights too. */
@@ -1992,6 +2017,8 @@ export function createStore(databasePath: string, ownerEmail: string) {
       }
       case "stop.add":
         return addStop(input.tripId, input, make);
+      case "stop.visit":
+        return visitDestination(input.tripId, input.destinationId, make);
       case "stop.remove": {
         // Only this trip's stay goes. The destination and everything saved with it stay, for other trips and Destinations.
         const stop = existing<TripStop>("trip_stops", input.id);
@@ -2097,7 +2124,8 @@ export function createStore(databasePath: string, ownerEmail: string) {
   function mutationScope(input: Mutation): { trip: string | undefined } | { destination: string | undefined } {
     switch (input.type) {
       case "trip.save": case "trip.delete": return { trip: tripOf("trips", input.id) };
-      case "trip.share": case "trip.unshare": case "trip.tag": case "trip.untag": case "stop.add": return { trip: tripOf("trips", input.tripId) };
+      // Adding a saved destination to a trip is a change to the trip. `authorize` also checks the account can open the destination.
+      case "trip.share": case "trip.unshare": case "trip.tag": case "trip.untag": case "stop.add": case "stop.visit": return { trip: tripOf("trips", input.tripId) };
       // An account's own trip order names every trip it can open, not one, so nothing places it; authorize lets each
       // account arrange its own, and mutate checks the trips it names (TRA-16).
       case "trip.order": return { trip: undefined };
@@ -2130,6 +2158,8 @@ export function createStore(databasePath: string, ownerEmail: string) {
     const scope = mutationScope(input);
     const role = "trip" in scope ? tripRole(accountId, scope.trip) : destinationRole(accountId, scope.destination);
     if (!role) throw new ValidationError(NOT_AVAILABLE);
+    // A saved destination joins a trip only when the account can open it, as Add destination offers it (TRA-142).
+    if (input.type === "stop.visit" && !destinationRole(accountId, input.destinationId)) throw new ValidationError(NOT_AVAILABLE);
     const ownerOnly = OWNER_ONLY[input.type];
     if (ownerOnly && role !== "owner") throw new ValidationError(ownerOnly);
   }
@@ -2162,7 +2192,7 @@ export function createStore(databasePath: string, ownerEmail: string) {
         const stop = db.prepare("SELECT tripId, nights FROM trip_stops WHERE id = ?").get(valid.stopId);
         if (stop && stop.nights !== valid.nights) scheduleTrip = stop.tripId as string;
       }
-    } else if (valid.type === "stop.add") {
+    } else if (valid.type === "stop.add" || valid.type === "stop.visit") {
       scheduleTrip = valid.tripId;
     } else if (valid.type === "stop.remove" || valid.type === "stop.move") {
       scheduleTrip = existing<TripStop>("trip_stops", valid.id).tripId;

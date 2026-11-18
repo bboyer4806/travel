@@ -46,7 +46,7 @@ import { calculateBudget, calculateDestinationBudget, tripVisits } from "@/lib/b
 import { formatCurrency, MAX_AMOUNT_DOLLARS, minorAmountValue } from "@/lib/money";
 import { ShoppingBudgetEditor, FoodBudgetEditor, FoodSummary, ActivitiesBudgetEditor, ActivitiesSummary, AccommodationBudgetEditor, AccommodationSummary, CurrencyTotals, DestinationBudget, DestinationBudgetEditor, MiscellaneousBudgetEditor, StayNightsEditor } from "@/components/destination-budget";
 import { RESTAURANT_TYPES } from "@/lib/types";
-import type { FoodBudgetMode, ActivitiesBudgetMode, Budget, Candidate, Church, MassTime, Category, Destination, DestinationAccess, DestinationVisit, HomeItem, ItineraryStop, Mutation, ResearchLink, Snapshot, TravelLeg, Trip, TripAccess, TripStop } from "@/lib/types";
+import type { FoodBudgetMode, ActivitiesBudgetMode, Budget, Candidate, Church, MassTime, Category, Destination, DestinationAccess, DestinationVisit, HomeItem, ItineraryStop, LibraryDestination, Mutation, ResearchLink, Snapshot, TravelLeg, Trip, TripAccess, TripStop } from "@/lib/types";
 
 type Editor =
   | { kind: "trip"; item?: Trip }
@@ -144,8 +144,9 @@ function sharedDeleteNote(access: TripAccess): string {
 /**
  * Every planner page: the trip list (no IDs), a trip (`tripId`) and its idea pages (with `stopId`), and Destinations:
  * the list (`destinationList`), one destination (`destinationId`) and its idea pages. Idea pages name a `category`, or `church`.
+ * A trip's page has the saved destinations its Add destination offers (`library`, TRA-142).
  */
-export default function PlannerApp({ initialData, initialBudgets, access = {}, destinationAccess = {}, tripId, stopId, destinationId, category, church = false, destinationList = false }: { initialData: Snapshot; initialBudgets?: Record<string, Budget>; access?: Record<string, TripAccess>; destinationAccess?: Record<string, DestinationAccess>; tripId?: string; stopId?: string; destinationId?: string; category?: Category; church?: boolean; destinationList?: boolean }) {
+export default function PlannerApp({ initialData, initialBudgets, access = {}, destinationAccess = {}, library = [], tripId, stopId, destinationId, category, church = false, destinationList = false }: { initialData: Snapshot; initialBudgets?: Record<string, Budget>; access?: Record<string, TripAccess>; destinationAccess?: Record<string, DestinationAccess>; library?: LibraryDestination[]; tripId?: string; stopId?: string; destinationId?: string; category?: Category; church?: boolean; destinationList?: boolean }) {
   const router = useRouter();
   const [data, setData] = useState(initialData);
   const [lastInitial, setLastInitial] = useState(initialData);
@@ -269,8 +270,8 @@ export default function PlannerApp({ initialData, initialBudgets, access = {}, d
       const finish = () => { setEditor(details); setDestinationGallery(createGalleryDraft()); setCandidateGallery(createGalleryDraft()); setTripImage(null); };
       if (details) startReturning(finish); else finish();
       setMessage(success);
-      if (mutation.type === "stop.add" && result.id) {
-        // The trip's stop for the city: the one added, or the one it already had, which opens instead.
+      if ((mutation.type === "stop.add" || mutation.type === "stop.visit") && result.id) {
+        // The trip's stop for the city or saved destination: the one added, or the one it already had, which opens instead.
         const visiting = stops.find((item) => item.id === result.id);
         if (visiting) setMessage("“" + formatSavedDestinationLabel(placeOf(visiting.destinationId)) + "” is already in this trip.");
         shownStop.current = result.id;
@@ -349,7 +350,12 @@ export default function PlannerApp({ initialData, initialBudgets, access = {}, d
         else void perform({ type: "destination.save", id: editor.item.id, ...shared }, "Destination saved in every trip that visits it.", undefined, imageForm);
         break;
       }
-      case "addStop": if (trip) void perform({ type: "stop.add", tripId: trip.id, city: text("city"), cityFromSuggestion }, "Destination added. Review any new travel connections."); break;
+      case "addStop": {
+        // A saved destination chosen from the list is added by its ID (TRA-142); any other city by its name.
+        const destinationId = text("destinationId");
+        if (trip) void perform(destinationId ? { type: "stop.visit", tripId: trip.id, destinationId } : { type: "stop.add", tripId: trip.id, city: text("city"), cityFromSuggestion }, "Destination added. Review any new travel connections.");
+        break;
+      }
       case "newDestination": void perform({ type: "destination.create", city: text("city"), cityFromSuggestion }); break;
       case "shoppingBudget": {
         const item = editor.item;
@@ -648,8 +654,8 @@ export default function PlannerApp({ initialData, initialBudgets, access = {}, d
         <DestinationGalleryEditor destination={editor.item} draft={destinationGallery} onChange={setDestinationGallery} disabled={busy} />
         <Notes value={editor.item.notes} />
       </>}
-      {/* A trip visits its owner's destinations, so a city the owner has comes with everything saved for it. */}
-      {editor.kind === "addStop" && <LocationField compactDestination label="City or destination" name="city" required disabled={busy} placeholder="Start typing a city, e.g. Vienna" helpText="Choose a suggestion or enter any destination." hint={"If " + (tripAccess?.role === "editor" ? memberLabel(tripAccess.owner) + " already has" : "you already have") + " this destination, it’s added with everything saved for it. A city already in this trip opens instead."} />}
+      {/* A trip visits its owner's destinations, so the saved ones it offers, those the account can open, come with everything saved for them (TRA-142). */}
+      {editor.kind === "addStop" && <LocationField compactDestination library={library} label="City or destination" name="city" required disabled={busy} placeholder="Start typing a city, e.g. Vienna" helpText="Choose a suggestion or enter any destination." hint={"A destination marked In your library is " + (tripAccess?.role === "editor" ? memberLabel(tripAccess.owner) + "’s, added" : "added") + " with everything saved for it. One already in this trip opens instead."} />}
       {editor.kind === "newDestination" && <LocationField compactDestination label="City or destination" name="city" required disabled={busy} placeholder="Start typing a city, e.g. Vienna" helpText="Choose a suggestion or enter any destination." hint="If you already have this destination, its page opens instead." />}
       {editor.kind === "church" && <ChurchEditor item={editor.item} massTimes={massTimes} onTimesChange={setMassTimes} gallery={candidateGallery} onGalleryChange={setCandidateGallery} busy={busy} />}
       {editor.kind === "entryRequirements" && <EntryRequirementsEditor requirements={editor.item.entryRequirements} sources={researchLinks} onSourcesChange={setResearchLinks} disabled={busy} />}

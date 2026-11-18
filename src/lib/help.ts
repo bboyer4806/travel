@@ -92,7 +92,7 @@ const HELP: { [Route in SignedInRoute]: Route extends `${string}/[category]` ? R
     points: [
       "Plan one trip: its route on the map, each stay with a map of its places, travel, arrangements at home and cost. Point or tab to a destination for its photo.",
       "Edit trip changes its name, tagline, dates, travelers, departing and return cities, and headline image. Tags under its details group it in All trips.",
-      "Add destination adds a city as the last stop. On each card, the arrows change the route, the pencil edits it and the trash can removes it from this trip.",
+      "Add destination adds a city last, one In your library with its research. Card arrows move it, the pencil edits it, the trash can removes it from this trip.",
       "Each stay's nights set its dates, and Typical weather's chart opens on the month it begins. A destination's ideas, research and budget are shared by its trips.",
       "Between the places has the travel between stops: Edit adds a connection's transportation, price and layovers. At home keeps arrangements such as pet care.",
       "The trip estimate adds up every cost in USD for the whole party. Only the trip's owner can share or delete it.",

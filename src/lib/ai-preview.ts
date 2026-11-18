@@ -207,6 +207,7 @@ export function operationTitle(change: Mutation): string {
     case "church.save": return `${change.create ? "Add" : "Change"} the church “${change.name}”`;
     case "church.delete": return "Delete a church";
     case "stop.add": return `Add ${change.city} to a trip`;
+    case "stop.visit": return "Add a saved destination to a trip";
     case "stop.move": return `Move a stay ${change.direction === "up" ? "earlier" : "later"} in its trip`;
     case "stop.remove": return "Remove a stay from its trip";
     case "leg.save": return "Change travel between stops";

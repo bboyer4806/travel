@@ -573,6 +573,14 @@ try {
   assert.deepEqual(await mutation(addStop("Vienna")), viennaStop, "A city the trip visits opens its stop");
   assert.deepEqual(db.prepare("SELECT id FROM destinations WHERE city = 'Vienna'").all().map((row) => row.id), [vienna], "Adding a city copies no destination");
   assert.match(await (await get("/trips/" + saved.id, editor)).text(), /Edited from Destinations/, "The trip shows its new stop with the destination's saved notes");
+  // Adding a saved destination by its ID (TRA-142) has the same limits, and adds only the trip owner's destinations the
+  // account can open: one the trip visits opens its stop, and another account's is never offered or added.
+  const visit = (destinationId) => ({ type: "stop.visit", tripId: saved.id, destinationId });
+  assert.deepEqual(await mutation(visit(vienna), outsider), notAvailable);
+  assert.deepEqual(await mutation(visit(vienna), editor), viennaStop, "A saved destination the trip visits opens its stop");
+  const outsiderCity = await mutation({ type: "destination.create", city: "Smokeville, Outsiderland" }, outsider);
+  assert.deepEqual(await mutation(visit(outsiderCity.id)), notAvailable, "Another account's destination is never added");
+  assert.ok(!(await (await get("/trips/" + saved.id, owner)).text()).includes("Smokeville"), "A trip's page never offers another account's destination");
   assert.deepEqual(await mutation({ type: "trip.unshare", tripId: saved.id, email: "editor@example.test" }), { ok: true, id: saved.id });
   assert.deepEqual(await mutation(edit("Editor, after removal"), editor), notAvailable, "Removing access ends it at once");
   const revoked = await (await get("/trips/" + saved.id, editor)).text();

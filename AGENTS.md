@@ -73,7 +73,10 @@ Repeat passing checks when subsequent changes affect their coverage or required 
   added to a trip belongs to the trip's owner, and one created in Destinations (TRA-106) to its creator;
   an account opens one it owns or that a trip it can open visits. Adding a city to a trip (`stop.add`,
   TRA-107) visits the trip owner's destination for it, or adds one, as a stop without nights, and
-  returns the trip's existing stop there instead of adding another. Removing a stop or deleting a trip
+  returns the trip's existing stop there instead of adding another. Add destination also lists the trip owner's
+  destinations the account can open (`library` from `getTripSnapshot`, TRA-142), matched to what is typed and to city
+  suggestions only by `searchLibrary` in `src/lib/destination-library.ts`, and `stop.visit` adds the one chosen by its ID,
+  refusing one the account can't open or that isn't the trip owner's. Removing a stop or deleting a trip
   never deletes a destination or what is saved with it. Only its owner deletes a destination, and only
   while no trip visits it.
 - A destination's city shows exactly as saved unless `destinations.cityFromSuggestion` records it as

@@ -24,6 +24,11 @@ export interface HomeItem { id: string; tripId: string; name: string; notes: str
  * `tagline` is the line its page shows above its name, saved as typed, or empty for the default heading (TRA-125).
  */
 export interface Destination extends TypicalWeather, DestinationPhotos { entryRequirements: EntryRequirements | null; healthSafety: HealthSafety | null; churchEnabled: boolean; id: string; city: string; cityFromSuggestion: boolean; tagline: string; miscDailyMinor: number | null; miscCurrency: string | null; hotelNightlyMinor: number | null; hotelCurrency: string | null; activitiesBudgetMode: ActivitiesBudgetMode; activitiesGeneralMinor: number | null; activitiesCurrency: string | null; foodBudgetMode: FoodBudgetMode; foodDailyMinor: number | null; foodCurrency: string | null; shoppingMinor: number | null; shoppingCurrency: string | null; notes: string; imageVersion: string | null; }
+/**
+ * A saved destination Add destination's search offers (TRA-142): one of the trip owner's destinations that the signed-in
+ * account can open, as its city shows and its ID, which adding it to the trip sends.
+ */
+export type LibraryDestination = Pick<Destination, "id" | "city" | "cityFromSuggestion">;
 /** One trip's stay at a destination: its place in the route, stay notes, nights and calculated dates. */
 export interface TripStop { id: string; tripId: string; destinationId: string; position: number; stay: string; nights: number | null; arrivalDate: string | null; departureDate: string | null; legacyArrivalDate: string | null; legacyDepartureDate: string | null; }
 /** A destination with the nights of one stay there, which its duration-based amounts use. Outside a trip they are unknown. */
@@ -123,6 +128,9 @@ export type Mutation =
  // Adds a city to a trip as its last stop, without stay notes or nights: the trip owner's saved destination for the
  // city, or a new one. A city the trip already visits opens that stop instead of adding another.
  | { type: "stop.add"; tripId: string; city: string; cityFromSuggestion?: true }
+ // Adds one of the trip owner's saved destinations to a trip as its last stop, with everything saved for it, without stay
+ // notes or nights (TRA-142). A destination the trip already visits opens that stop instead of adding another.
+ | { type: "stop.visit"; tripId: string; destinationId: string }
  | { type: "stop.move"; id: string; direction: "up" | "down" }
  // Removes a destination from one trip. The destination and everything saved with it stay.
  | { type: "stop.remove"; id: string }

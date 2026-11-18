@@ -1,4 +1,4 @@
-import { comparable } from "./location-search.ts";
+import { comparable } from "./destination-label.ts";
 
 /**
  * Where a saved hotel, activity, restaurant or church is on its destination's map (TRA-130): the one place found for it,

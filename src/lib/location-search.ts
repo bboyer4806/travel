@@ -1,5 +1,5 @@
 import { airportByCode, airportName, type Airport } from "./airports.ts";
-import { countryName, recognizedCountry, usStateName } from "./destination-label.ts";
+import { comparable, countryName, describes } from "./destination-label.ts";
 
 /**
  * A city, or an airport suggested for its IATA code (TRA-132), and the `label` choosing it saves. An airport's name
@@ -65,11 +65,6 @@ function text(value: unknown): string {
   if (typeof value !== "string") return "";
   const normalized = value.trim().replace(/\s+/g, " ");
   return normalized.length <= MAX_QUERY_LENGTH && !/\p{Cc}/u.test(normalized) ? normalized : "";
-}
-
-/** Text compared without letter case, accents or punctuation, so "Zurich" is "Zürich" and "Saint-Malo" is "Saint Malo". */
-export function comparable(value: string): string {
-  return value.normalize("NFD").replace(/\p{M}/gu, "").toLowerCase().replace(/[^\p{L}\p{N}]+/gu, " ").trim();
 }
 
 /** Open-Meteo's results, or an error when it answered with anything else. */
@@ -155,15 +150,6 @@ function placeQuery(place: string): { name: string; qualifiers: string[] } | nul
   if (/\p{Cc}/u.test(place)) return null;
   const [name = "", ...qualifiers] = place.replace(/\([^()]*\)/g, " ").split(",").map((part) => part.trim().replace(/\s+/g, " "));
   return name.length < 2 || name.length > MAX_QUERY_LENGTH ? null : { name, qualifiers: qualifiers.filter(Boolean) };
-}
-
-/** Whether a region or country written after a place's name, such as "Ohio", "OH", "Austria", "AT" or "UK", is one of a candidate's. */
-function describes(qualifier: string, candidate: PlaceCandidate): boolean {
-  const wanted = comparable(qualifier);
-  if (candidate.areas.some((area) => comparable(area) === wanted)) return true;
-  if (candidate.countryCode !== undefined && recognizedCountry(qualifier) === candidate.countryCode) return true;
-  const state = candidate.countryCode === "US" ? usStateName(qualifier) : undefined;
-  return state !== undefined && comparable(state) === comparable(candidate.region);
 }
 
 export function createLocationSearch({

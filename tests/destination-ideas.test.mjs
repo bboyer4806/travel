@@ -37,8 +37,10 @@ function load(file, modules = {}) {
   });
   return exports;
 }
+// Add image by URL (TRA-139), tested in image-by-url.test.mjs, stands in as an element showing what the editor gives it.
+const imageByUrl = { AddImageByUrl: (props) => ({ type: "AddImageByUrl", props }) };
 const ideaModules = {
-  "./candidate-gallery": load("../src/components/candidate-gallery.tsx", { "./focus-after": load("../src/components/focus-after.ts"), "./photo-browsing": load("../src/components/photo-browsing.tsx"), "./photo-drag": load("../src/components/photo-drag.ts") }),
+  "./candidate-gallery": load("../src/components/candidate-gallery.tsx", { "./focus-after": load("../src/components/focus-after.ts"), "./image-by-url": imageByUrl, "./photo-browsing": load("../src/components/photo-browsing.tsx"), "./photo-drag": load("../src/components/photo-drag.ts") }),
   "./research-links": load("../src/components/research-links.tsx"),
   "./restaurant-types": load("../src/components/restaurant-types.tsx"),
 };

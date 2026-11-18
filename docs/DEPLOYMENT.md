@@ -111,6 +111,12 @@ The designated owner, `TRAVEL_OWNER_EMAIL`, can connect ChatGPT and Claude to Tr
 
 **Verify after deployment.** Confirm `/api/health` returns HTTP 200 and `/.well-known/oauth-authorization-server` names `https://travel.dev.boyersoftware.com` as its issuer. Signed in as the owner, open **AI assistants** and connect Claude, then ChatGPT, each from its own app; confirm each appears as its own connection. Ask each to list trips, including one the owner doesn't own, and to propose a small change to such a trip; open the link, check the preview, and reject it. Propose again and approve, and confirm the change. Ask one to add a photo from a public image address to a destination's gallery; confirm the proposal's page shows the photo, approve it, and confirm it is in the gallery. Ask for a photo from `https://127.0.0.1/photo.jpg` and confirm it is refused. Sign in as another account and confirm **AI assistants** isn't in the header, `/ai` shows "This page has moved on.", and the Connect page refuses. Revoke one connection and confirm that assistant can no longer read Travel while the other still can.
 
+## Images added by URL (TRA-139)
+
+**Add image by URL** in each photo editor makes Travel download the image at a web address someone signed in gives it, as it downloads ChatGPT's and Claude's photos: on the container's own outbound connection, never through a proxy, refusing private, loopback and link-local addresses for the address given, each redirect and each address a name resolves to. It takes `http://` addresses as well as `https://` ones, so the app must reach public websites on port 80 as well as 443. Nothing is stored until the editor saves, as for any upload, and there is no new setting or schema change. Refusals are answered to the editor, not logged.
+
+**Verify after deployment.** Signed in, open a destination's editor, choose **Add image by URL**, enter a public image's address, choose **Preview** and **Use this image**, save, and confirm the photo is in the gallery. Enter `http://127.0.0.1/photo.jpg` and confirm it is refused.
+
 ## Deployment safeguards (TRA-98)
 
 The deployment workflow (`.github/workflows/deploy.yml`) deploys only from `main`, connects only to the verified Dokku host, and sets the request-body limit that photo uploads need.

@@ -7,6 +7,7 @@ import { formatMegabytes, IMAGE_UPLOAD_TYPES, MAX_CANDIDATE_IMAGES, MAX_GALLERY_
 import type { Candidate } from "@/lib/types";
 import { randomUuid } from "@/lib/uuid";
 import { useFocusAfter } from "./focus-after";
+import { AddImageByUrl } from "./image-by-url";
 import { neighborPhoto, PhotoArrows, usePhotoSwipe } from "./photo-browsing";
 import { usePhotoDrag } from "./photo-drag";
 import styles from "./candidate-gallery.module.css";
@@ -99,21 +100,30 @@ export function CandidateGalleryEditor({ candidate, subject, draft, onChange, di
   const changed = galleryChanged(draft, candidate);
   const drag = usePhotoDrag(draft.images.map((image) => image.id), (photoId, index) => { setError(""); onChange(placePhoto(draft, photoId, index)); }, disabled);
 
-  function choose(event: ChangeEvent<HTMLInputElement>) {
-    const files = Array.from(event.currentTarget.files ?? []);
-    event.currentTarget.value = "";
-    if (disabled || !files.length) return;
+  /**
+   * Adds new photos, files chosen from the device or an image added by URL (TRA-139), checked as uploads are on the
+   * server. A refused batch keeps the draft and says why, and returns false.
+   */
+  function add(files: File[]): boolean {
     let validationError = "";
     if (draft.images.length + files.length > MAX_CANDIDATE_IMAGES) validationError = `Keep up to ${MAX_CANDIDATE_IMAGES} photos. Remove a photo before adding more.`;
     else if (files.some((file) => !IMAGE_UPLOAD_TYPES.includes(file.type.toLowerCase()))) validationError = "Choose JPEG, PNG, or WebP photos.";
     else if (files.some((file) => file.size === 0)) validationError = "One of these files is empty. Choose another photo.";
     else if (files.some((file) => file.size > MAX_IMAGE_UPLOAD_BYTES)) validationError = `Choose photos up to ${formatMegabytes(MAX_IMAGE_UPLOAD_BYTES)} each.`;
     else if ([...draft.images.flatMap((image) => image.file ? [image.file] : []), ...files].reduce((total, file) => total + file.size, 0) > MAX_GALLERY_UPLOAD_BYTES) validationError = `Add up to ${formatMegabytes(MAX_GALLERY_UPLOAD_BYTES)} of new photos at a time. Save these photos before adding more.`;
-    if (validationError) { setError(`${validationError} Your previous selections have been kept.`); return; }
+    if (validationError) { setError(`${validationError} Your previous selections have been kept.`); return false; }
     setError("");
     const added = files.map((file) => ({ id: randomUuid(), file }));
     const images = [...draft.images, ...added];
     onChange({ ...draft, images, mainImageId: draft.mainImageId ?? images[0].id });
+    return true;
+  }
+
+  function choose(event: ChangeEvent<HTMLInputElement>) {
+    const files = Array.from(event.currentTarget.files ?? []);
+    event.currentTarget.value = "";
+    if (disabled || !files.length) return;
+    add(files);
   }
 
   /** Removes a photo and focuses the next photo's Remove, or Add photos after the last. */
@@ -154,6 +164,7 @@ export function CandidateGalleryEditor({ candidate, subject, draft, onChange, di
     </div>}
     <div className={styles.actions}>
       <button type="button" ref={addButton} className="button secondary small" disabled={disabled || draft.images.length >= MAX_CANDIDATE_IMAGES} onClick={() => input.current?.click()}><ImagePlus size={15} aria-hidden="true" />Add photos</button>
+      <AddImageByUrl label="Add image by URL" disabled={disabled || draft.images.length >= MAX_CANDIDATE_IMAGES} onAdd={(file) => add([file])} />
       <span className={styles.photoCount}>{draft.images.length} / {MAX_CANDIDATE_IMAGES} photos</span>
       {changed && <button type="button" className={styles.restore} disabled={disabled} onClick={undo}><RotateCcw size={14} aria-hidden="true" />Undo photo changes</button>}
     </div>

@@ -2,12 +2,14 @@
 
 import "leaflet/dist/leaflet.css";
 import L from "leaflet";
-import { useLayoutEffect, useMemo, useRef } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
+import { thumbnailUrl } from "@/components/destination-gallery";
 import { transportationLabel } from "@/components/transportation-icons";
 import { MarkerSymbol, TransportationBadge } from "@/components/trip-map-symbols";
+import { objectPosition } from "@/lib/photo-focus";
 import { transportationIcons } from "@/lib/transportation-methods";
-import { placeRole, type MapLayout, type MapMarker, type Position } from "@/lib/trip-map";
+import { placeRole, previewPosition, type MapLayout, type MapMarker, type Position } from "@/lib/trip-map";
 import styles from "./trip-map.module.css";
 
 /** Scrolls to what a marker stands for on the trip page and focuses it, so the keyboard carries on from there. */
@@ -25,6 +27,13 @@ const size: Record<MapMarker["kind"], number> = { roundTrip: 30, departure: 30, 
 const badgeSize = (method: string): [number, number] => [12 + 17 * transportationIcons(method).length, 22];
 // How close the map shows an airport selected in its search, with its runways in view.
 const AIRPORT_ZOOM = 12;
+// How long a destination's preview stays once the pointer leaves its marker and the preview, so the pointer can cross
+// between the two (TRA-143).
+const PREVIEW_CLOSE_DELAY = 200;
+
+/** The destination marker whose preview the pointer is over, on the marker or the preview, and whether it has left both. */
+interface Hover { key: string; leaving: boolean }
+const leave = (hover: Hover | null): Hover | null => hover && { key: hover.key, leaving: true };
 
 /**
  * A trip's journey on an OpenStreetMap map (TRA-44): Leaflet places each marker, and React draws what is in it. The map
@@ -32,6 +41,10 @@ const AIRPORT_ZOOM = 12;
  * Selecting a marker, by pointer, touch, Enter or Space, goes to what it stands for on the trip page. Markers are drawn
  * before the page paints, so what React renders into them never shows without them. Each new `focus`, an airport
  * selected in the map's search (TRA-132), centers the map on it.
+ *
+ * A destination's marker shows a preview of it (TRA-143), its name and primary photo, while a mouse or pen is over the
+ * marker or the preview, and while the keyboard is on the marker. It closes a moment after the pointer leaves both, when
+ * the keyboard moves on, or on Escape. Touch has no hover, so a tap goes to the destination as before, without one.
  */
 export default function TripMapCanvas({ layout, focus }: { layout: MapLayout; focus: Position | null }) {
   const container = useRef<HTMLDivElement>(null);
@@ -47,6 +60,15 @@ export default function TripMapCanvas({ layout, focus }: { layout: MapLayout; fo
     element.className = styles.content;
     return [key, element];
   })), [layout]);
+  const [hovered, setHovered] = useState<Hover | null>(null);
+  // The destination marker the keyboard is on.
+  const [focused, setFocused] = useState<string | null>(null);
+  // Whether the map is moving, as when Leaflet brings a marker the keyboard reaches into view. The preview waits until it
+  // stops, then shows beside its marker where the marker ends up.
+  const [moving, setMoving] = useState(false);
+  const preview = useRef<HTMLDivElement>(null);
+  const shown = hovered?.key ?? focused;
+  const previewed = moving ? undefined : layout.markers.find((marker) => marker.key === shown);
 
   useLayoutEffect(() => {
     const instance = L.map(container.current!, { scrollWheelZoom: false });
@@ -54,6 +76,8 @@ export default function TripMapCanvas({ layout, focus }: { layout: MapLayout; fo
     // The mouse wheel zooms only once the map is selected, so scrolling the page past it scrolls the page.
     instance.on("focus", () => instance.scrollWheelZoom.enable());
     instance.on("blur", () => instance.scrollWheelZoom.disable());
+    instance.on("movestart zoomstart", () => setMoving(true));
+    instance.on("moveend", () => setMoving(false));
     layers.current = L.layerGroup().addTo(instance);
     map.current = instance;
     return () => {
@@ -88,17 +112,56 @@ export default function TripMapCanvas({ layout, focus }: { layout: MapLayout; fo
         originalEvent.preventDefault();
         showOnPage(target);
       });
+      return element;
     };
     // The keyboard reaches places in travel order, then each connection's transportation.
     for (const marker of layout.markers) {
       const label = placeRole(marker.kind, marker.number) + ": " + marker.label;
-      place(marker.key, marker.position, [size[marker.kind], size[marker.kind]], label, label + "\nShown at " + marker.found, marker.target, zIndex[marker.kind]);
+      const element = place(marker.key, marker.position, [size[marker.kind], size[marker.kind]], label, label + "\nShown at " + marker.found, marker.target, zIndex[marker.kind]);
+      // Only a destination's marker has a preview. The marker's label already names the destination for screen readers,
+      // so the preview, which repeats it, is hidden from them.
+      if (!element || marker.kind !== "destination") continue;
+      element.addEventListener("pointerenter", (event) => { if (event.pointerType !== "touch") setHovered({ key: marker.key, leaving: false }); });
+      // React tells the preview the pointer has reached it before the marker hears it has left, so leaving the marker
+      // straight for the preview leaves it open.
+      element.addEventListener("pointerleave", (event) => { if (!preview.current?.contains(event.relatedTarget as Node | null)) setHovered(leave); });
+      // Only the keyboard's focus shows it: a click or tap focuses the marker too, on its way to the destination.
+      element.addEventListener("focus", () => { if (element.matches(":focus-visible")) setFocused(marker.key); });
+      element.addEventListener("blur", () => setFocused(null));
     }
     for (const line of layout.lines) {
       const label = transportationLabel(line.method) + " from " + line.from + " to " + line.to;
       place("line-" + line.id, line.badge, badgeSize(line.method), label, label, line.target, 0);
     }
   }, [layout, elements]);
+
+  useEffect(() => {
+    if (!hovered?.leaving) return;
+    const timer = setTimeout(() => setHovered(null), PREVIEW_CLOSE_DELAY);
+    return () => clearTimeout(timer);
+  }, [hovered]);
+
+  // Escape closes the preview without moving the pointer or the keyboard. It shows again once either comes back.
+  useEffect(() => {
+    if (shown === null) return;
+    const dismiss = (event: KeyboardEvent) => {
+      if (event.key !== "Escape") return;
+      setHovered(null);
+      setFocused(null);
+    };
+    document.addEventListener("keydown", dismiss);
+    return () => document.removeEventListener("keydown", dismiss);
+  }, [shown]);
+
+  // The preview goes beside its marker wherever the map has room for all of it, once its size is known and before it shows.
+  useLayoutEffect(() => {
+    const instance = map.current, element = preview.current;
+    if (!instance || !element || !previewed) return;
+    const area = instance.getSize();
+    const corner = previewPosition(instance.latLngToContainerPoint(previewed.position), { width: element.offsetWidth, height: element.offsetHeight }, { width: area.x, height: area.y }, size[previewed.kind] / 2);
+    element.style.left = corner.x + "px";
+    element.style.top = corner.y + "px";
+  }, [previewed]);
 
   useLayoutEffect(() => {
     const instance = map.current;
@@ -113,5 +176,11 @@ export default function TripMapCanvas({ layout, focus }: { layout: MapLayout; fo
     <div ref={container} className={styles.map} />
     {layout.markers.map((marker) => createPortal(<MarkerSymbol kind={marker.kind} number={marker.number} />, elements.get(marker.key)!, marker.key))}
     {layout.lines.map((line) => createPortal(<TransportationBadge method={line.method} />, elements.get("line-" + line.id)!, "line-" + line.id))}
+    {previewed && <div key={previewed.key} ref={preview} className={styles.preview} aria-hidden="true" onPointerEnter={() => setHovered({ key: previewed.key, leaving: false })} onPointerLeave={() => setHovered(leave)}>
+      {/* Stored photos are resized and optimized on upload, and the thumbnail covers the preview's frame. */}
+      {/* eslint-disable-next-line @next/next/no-img-element */}
+      {previewed.photo && <img className={styles.previewPhoto} src={thumbnailUrl(previewed.photo.destinationId, previewed.photo)} alt="" decoding="async" style={{ objectPosition: objectPosition(previewed.photo) }} />}
+      <strong className={styles.previewName}>{previewed.label}</strong>
+    </div>}
   </>;
 }

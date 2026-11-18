@@ -2,9 +2,10 @@ import assert from "node:assert/strict";
 import { createServer } from "node:http";
 import test from "node:test";
 import { feedbackIssue, validateFeedback, FEEDBACK_FAILURE, FEEDBACK_RETRY } from "../src/lib/feedback.ts";
-import { createFeedbackGuard, sameOriginFeedback } from "../src/lib/feedback-guard.ts";
+import { createFeedbackGuard } from "../src/lib/feedback-guard.ts";
 import { createFeedbackHandler } from "../src/lib/feedback-handler.ts";
 import { FeedbackDeliveryError, sendJiraFeedback } from "../src/lib/jira-feedback.ts";
+import { sameOriginRequest } from "../src/lib/same-origin.ts";
 
 const feedback = (message="A useful improvement")=>({message,page:"/trips/demo?tab=budget",browser:"Test browser",viewport:"390 × 844"});
 const env={NODE_ENV:"test",JIRA_URL:"http://127.0.0.1:3010",JIRA_EMAIL:"stand-in@example.test",JIRA_API_TOKEN:"test-token"};
@@ -33,9 +34,9 @@ function feedbackEndpoint(fetch,settings=env){
 }
 test("origin checks work behind Dokku without trusting forwarded headers",()=>{
   const request=(headers)=>new Request("http://0.0.0.0:80/api/feedback",{headers:{host:"travel.example",origin:"https://travel.example",...headers}});
-  assert.equal(sameOriginFeedback(request({})),true);
-  assert.equal(sameOriginFeedback(request({origin:"https://evil.example","x-forwarded-host":"evil.example"})),false);
-  assert.equal(sameOriginFeedback(request({"sec-fetch-site":"cross-site"})),false);
+  assert.equal(sameOriginRequest(request({})),true);
+  assert.equal(sameOriginRequest(request({origin:"https://evil.example","x-forwarded-host":"evil.example"})),false);
+  assert.equal(sameOriginRequest(request({"sec-fetch-site":"cross-site"})),false);
 });
 test("feedback normalizes text and validates blank, length and Unicode title boundaries",()=>{
   for(const value of [null,{},feedback("  \r\n ")]) assert.throws(()=>validateFeedback(value),/Enter your feedback/);

@@ -43,6 +43,23 @@ export function usStateName(value: string): string | undefined {
   return code.length === 2 ? US_STATES[code] : undefined;
 }
 
+/** Text compared without letter case, accents or punctuation, so "Zurich" is "Zürich" and "Saint-Malo" is "Saint Malo". */
+export function comparable(value: string): string {
+  return value.normalize("NFD").replace(/\p{M}/gu, "").toLowerCase().replace(/[^\p{L}\p{N}]+/gu, " ").trim();
+}
+
+/** A place's region, the regions and country it is in by name, and its country's ISO code when known. */
+export type PlaceAreas = { region: string; areas: readonly string[]; countryCode?: string };
+
+/** Whether a region or country written after a place's name, such as "Ohio", "OH", "Austria", "AT" or "UK", is one of a place's. */
+export function describes(qualifier: string, place: PlaceAreas): boolean {
+  const wanted = comparable(qualifier);
+  if (place.areas.some((area) => comparable(area) === wanted)) return true;
+  if (place.countryCode !== undefined && recognizedCountry(qualifier) === place.countryCode) return true;
+  const state = place.countryCode === "US" ? usStateName(qualifier) : undefined;
+  return state !== undefined && comparable(state) === comparable(place.region);
+}
+
 /** Display only: keep the provider's complete location label as the saved identity. */
 export function formatDestinationLabel(location: { name: string; region: string; country: string; countryCode?: string }): string {
   const name = clean(location.name);

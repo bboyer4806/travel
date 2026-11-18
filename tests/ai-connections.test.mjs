@@ -210,7 +210,7 @@ test("Claude connects through Travel's OAuth endpoints, reads every trip and pro
   assert.deepEqual((await mcp({ jsonrpc: "2.0", id: 3, method: "ping" })).body, { jsonrpc: "2.0", id: 3, result: {} });
   const tools = (await mcp({ jsonrpc: "2.0", id: 4, method: "tools/list" })).body.result.tools;
   assert.deepEqual(tools.map((tool) => tool.name), ["list_trips", "get_trip", "list_destinations", "get_destination", "list_accounts", "get_photo", "propose_changes", "get_change_proposal"]);
-  assert.equal(tools.find((tool) => tool.name === "propose_changes").inputSchema.properties.changes.items.anyOf.length, 31, "every planner change can be proposed but trip order, which is each person's own (TRA-16)");
+  assert.equal(tools.find((tool) => tool.name === "propose_changes").inputSchema.properties.changes.items.anyOf.length, 32, "every planner change can be proposed but trip order, which is each person's own (TRA-16)");
 
   const call = async (name, args = {}) => (await mcp({ jsonrpc: "2.0", id: 5, method: "tools/call", params: { name, arguments: args } })).body.result;
   const data = async (name, args) => { const result = await call(name, args); assert.equal(result.isError, undefined, result.content[0].text); return JSON.parse(result.content[0].text); };

@@ -17,5 +17,5 @@ export default async function TripPage({ params }: { params: Promise<{ tripId: s
   // A trip that isn't this account's to open is not found, the same as one that doesn't exist.
   const trip = getTripSnapshot(account.id, tripId);
   if (!trip) notFound();
-  return <PlannerApp key={tripId} initialData={trip.data} access={{ [tripId]: trip.access }} tripId={tripId} />;
+  return <PlannerApp key={tripId} initialData={trip.data} access={{ [tripId]: trip.access }} library={trip.library} tripId={tripId} />;
 }

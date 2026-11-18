@@ -61,7 +61,7 @@ const IDEA_PAGES: Record<IdeaPage, PageHelp> = {
   church: {
     title: "Church",
     points: [
-      "Churches you might attend at this destination, with their Mass times.",
+      "Churches you might attend at this destination, with their Mass times. A church's arrows, or a swipe across its photo, show its other photos.",
       "Add church saves one, with its address, website, Mass times and photos. The pencil edits a church and the trash can deletes it.",
       "Mass times are only what you enter. Confirm them with the church before you go.",
       "In a trip, Church lists the Sundays of the stay, and a stay without a Sunday doesn't show it.",

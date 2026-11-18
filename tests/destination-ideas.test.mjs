@@ -38,7 +38,7 @@ function load(file, modules = {}) {
   return exports;
 }
 const ideaModules = {
-  "./candidate-gallery": load("../src/components/candidate-gallery.tsx", { "./focus-after": load("../src/components/focus-after.ts"), "./photo-drag": load("../src/components/photo-drag.ts") }),
+  "./candidate-gallery": load("../src/components/candidate-gallery.tsx", { "./focus-after": load("../src/components/focus-after.ts"), "./photo-browsing": load("../src/components/photo-browsing.tsx"), "./photo-drag": load("../src/components/photo-drag.ts") }),
   "./research-links": load("../src/components/research-links.tsx"),
   "./restaurant-types": load("../src/components/restaurant-types.tsx"),
 };

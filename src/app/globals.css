@@ -1825,6 +1825,19 @@ button svg,a svg {
 .location-option strong {
   font-weight:600
 }
+/* Marks a saved destination in Add destination's list (TRA-142), at the end of its row on every screen. */
+.location-option .library-tag {
+  flex-shrink:0;
+  margin-left:auto;
+  padding:2px 7px;
+  border:1px solid #c9d8bd;
+  border-radius:4px;
+  background:#f4f8ef;
+  color:#3d5e33;
+  font-size:11px;
+  font-weight:600;
+  white-space:nowrap
+}
 .location-message,.location-credit {
   margin:0;
   padding:10px 12px;

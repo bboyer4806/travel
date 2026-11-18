@@ -10,6 +10,7 @@ import { MAX_AMOUNT_CENTS, parseMinorAmount } from "./money.ts";
 import { formatMegabytes, MAX_CANDIDATE_IMAGES, MAX_DESTINATION_IMAGES, MAX_STORED_IMAGE_BYTES } from "./image-limits.ts";
 import { ENTRY_REQUIREMENT_FIELDS, normalizeEntryRequirements } from "./entry-requirements.ts";
 import { normalizeHealthSafety } from "./health-safety.ts";
+import { normalizeMonthlyClimate } from "./typical-weather.ts";
 import { MAX_PHOTO_ZOOM } from "./photo-focus.ts";
 import { SESSION_DAYS } from "./session-cookie.ts";
 import { alreadyTagged, cleanTagName, MAX_TAG_LENGTH, tagKey } from "./trip-tags.ts";
@@ -21,11 +22,12 @@ import type { AiPlatform } from "./ai-auth.ts";
 import type { Effect, PreviewChange, Row, Tables } from "./ai-preview.ts";
 import type { EntryRequirements } from "./entry-requirements.ts";
 import type { HealthSafety } from "./health-safety.ts";
+import type { MonthlyClimate } from "./typical-weather.ts";
 import type { AiConnection, AiPhotoToAdd, AiProposal, DestinationFields, GalleryUpdate, PhotoCrop, PreparedImage, StoredThumbnail, TripImage, TripImageUpdate } from "./types";
 import type { AuthorizedAccount, DestinationAccess, GoogleIdentity, TripAccess, TripMember, TripStop } from "./types";
 import type { FoodBudgetMode, ActivitiesBudgetMode, Candidate, CandidateImage, Category, Church, MassTime, Destination, DestinationImage, HomeItem, StoredImage, ItineraryStop, Mutation, ResearchLink, RestaurantType, Snapshot, TravelLeg, Trip } from "./types";
 
-type StoredDestination = Omit<Destination, "churchEnabled" | "cityFromSuggestion" | "images" | "entryRequirements" | "healthSafety" | "mainImageId" | "imageVersion"> & { churchEnabled: number; cityFromSuggestion: number; ownerId: string; cityKey: string };
+type StoredDestination = Omit<Destination, "churchEnabled" | "cityFromSuggestion" | "images" | "entryRequirements" | "healthSafety" | "climate" | "mainImageId" | "imageVersion"> & { churchEnabled: number; cityFromSuggestion: number; ownerId: string; cityKey: string };
 type StoredChurch = Omit<Church, "massTimes" | "images"> & { massTimesJson: string };
 type StoredHomeItem = Omit<HomeItem, "completed"> & { completed: number };
 type StoredLeg = Omit<TravelLeg, "itinerary" | "links"> & { itineraryJson: string; linksJson: string };
@@ -450,6 +452,12 @@ function validate(input: unknown): Mutation {
       catch (error) { throw new ValidationError(error instanceof Error ? error.message : "Enter valid health and safety information."); }
       return { type: value.type, id: idField(value), healthSafety };
     }
+    case "destination.climate": {
+      let climate: MonthlyClimate | null;
+      try { climate = normalizeMonthlyClimate(value.climate); }
+      catch (error) { throw new ValidationError(error instanceof Error ? error.message : "Enter valid monthly averages."); }
+      return { type: value.type, id: idField(value), climate };
+    }
     case "destination.churchVisibility":
       return { type: value.type, id: idField(value), enabled: booleanField(value, "enabled") };
     case "church.save":
@@ -598,7 +606,7 @@ const LIVE: Make = { id: () => randomUUID(), now: () => new Date().toISOString()
  * The schema this build upgrades every database to, as SQLite's user_version. A schema change adds the next
  * upgrade in createStore and raises this to match; earlier upgrades keep their own numbers.
  */
-export const SCHEMA_VERSION = 35;
+export const SCHEMA_VERSION = 36;
 
 /** A destination as schema 20 saved it, inside one trip, with that trip's owner and name. */
 type TripDestinationRow = Omit<StoredDestination, "cityKey"> & Omit<TripStop, "destinationId"> & { tripName: string };
@@ -1247,6 +1255,18 @@ export function createStore(databasePath: string, ownerEmail: string) {
       if (!hasColumn("trips", "tagline")) db.exec("ALTER TABLE trips ADD COLUMN tagline TEXT NOT NULL DEFAULT '';");
       db.exec("PRAGMA user_version = 35;");
     }
+    if (version < 36) {
+      // Each destination's monthly climate averages (TRA-135), apart from its seasonal typical weather: at most one record
+      // per destination, every month's averages with their source and reference years. Every saved destination starts
+      // without one, and its typical weather is unchanged. A replay keeps saved records.
+      db.exec(`
+        CREATE TABLE IF NOT EXISTS destination_climate (
+          destinationId TEXT PRIMARY KEY REFERENCES destinations(id) ON DELETE CASCADE,
+          climateJson TEXT NOT NULL
+        ) STRICT;
+        PRAGMA user_version = 36;
+      `);
+    }
     if (version < SCHEMA_VERSION && db.prepare("PRAGMA foreign_key_check").get()) {
       throw new Error("This upgrade would leave saved items without the trip or destination they belong to. Nothing was changed; review the database against a backup before upgrading.");
     }
@@ -1338,17 +1358,19 @@ export function createStore(databasePath: string, ownerEmail: string) {
   }
   function readDestinations(ids: readonly string[] | null): Destination[] {
     const [where, args] = among("destinations.id", ids);
-    // Entry requirements and health and safety research each have at most one record per destination.
+    // Entry requirements, health and safety research and monthly climate averages each have at most one record per destination.
     const [researchWhere, researchArgs] = among("destinationId", ids);
     const requirements = new Map(db.prepare("SELECT destinationId, requirementsJson FROM destination_entry_requirements" + researchWhere).all(...researchArgs)
       .map((row) => [row.destinationId as string, JSON.parse(row.requirementsJson as string) as EntryRequirements]));
     const healthSafety = new Map(db.prepare("SELECT destinationId, healthSafetyJson FROM destination_health_safety" + researchWhere).all(...researchArgs)
       .map((row) => [row.destinationId as string, JSON.parse(row.healthSafetyJson as string) as HealthSafety]));
+    const climates = new Map(db.prepare("SELECT destinationId, climateJson FROM destination_climate" + researchWhere).all(...researchArgs)
+      .map((row) => [row.destinationId as string, JSON.parse(row.climateJson as string) as MonthlyClimate]));
     const photos = photosOf<DestinationImage>("destination_images", "destinationId", ids, "id, version, focusX, focusY");
     return db.prepare(`SELECT ${DESTINATION_COLUMNS}, destination_images.version AS imageVersion, destination_images.id AS mainImageId FROM destinations
       LEFT JOIN destination_images ON destination_images.destinationId = destinations.id AND destination_images.isMain = 1${where} ORDER BY destinations.city COLLATE NOCASE, destinations.id`).all(...args).map((row) => {
-      const destination = row as unknown as Omit<Destination, "churchEnabled" | "cityFromSuggestion" | "images" | "entryRequirements" | "healthSafety"> & { churchEnabled: number; cityFromSuggestion: number };
-      return { ...destination, entryRequirements: requirements.get(destination.id) ?? null, healthSafety: healthSafety.get(destination.id) ?? null, churchEnabled: destination.churchEnabled === 1, cityFromSuggestion: destination.cityFromSuggestion === 1, images: photos.get(destination.id) ?? [] };
+      const destination = row as unknown as Omit<Destination, "churchEnabled" | "cityFromSuggestion" | "images" | "entryRequirements" | "healthSafety" | "climate"> & { churchEnabled: number; cityFromSuggestion: number };
+      return { ...destination, entryRequirements: requirements.get(destination.id) ?? null, healthSafety: healthSafety.get(destination.id) ?? null, climate: climates.get(destination.id) ?? null, churchEnabled: destination.churchEnabled === 1, cityFromSuggestion: destination.cityFromSuggestion === 1, images: photos.get(destination.id) ?? [] };
     });
   }
   function readCandidates(destinationIds: readonly string[] | null): Candidate[] {
@@ -1904,7 +1926,7 @@ export function createStore(databasePath: string, ownerEmail: string) {
         if (db.prepare("SELECT 1 FROM trip_stops WHERE destinationId = ?").get(input.id)) {
           throw new ValidationError(`“${before.city}” is in a trip, so it can't be deleted. Remove it from every trip that visits it first.`);
         }
-        // Its ideas, churches, photos, entry requirements and health and safety research go with it.
+        // Its ideas, churches, photos, entry requirements, health and safety research and monthly climate averages go with it.
         db.prepare("DELETE FROM destinations WHERE id = ?").run(input.id);
         return;
       }
@@ -1925,6 +1947,17 @@ export function createStore(databasePath: string, ownerEmail: string) {
         } else {
           db.prepare("INSERT INTO destination_health_safety(destinationId, healthSafetyJson) VALUES(?,?) ON CONFLICT(destinationId) DO UPDATE SET healthSafetyJson = excluded.healthSafetyJson")
             .run(input.id, JSON.stringify(input.healthSafety));
+        }
+        return input.id;
+      }
+      case "destination.climate": {
+        // Only the monthly averages change: the destination's seasonal typical weather and everything else stay.
+        existing<StoredDestination>("destinations", input.id);
+        if (input.climate === null) {
+          db.prepare("DELETE FROM destination_climate WHERE destinationId = ?").run(input.id);
+        } else {
+          db.prepare("INSERT INTO destination_climate(destinationId, climateJson) VALUES(?,?) ON CONFLICT(destinationId) DO UPDATE SET climateJson = excluded.climateJson")
+            .run(input.id, JSON.stringify(input.climate));
         }
         return input.id;
       }
@@ -2069,7 +2102,7 @@ export function createStore(databasePath: string, ownerEmail: string) {
       // Changing a trip's stay there along with it is a change to that trip.
       case "destination.save":
         return input.stopId === undefined ? { destination: destinationOf("destinations", input.id) } : { trip: tripOf("trip_stops", input.stopId) };
-      case "destination.churchVisibility": case "destination.entryRequirements": case "destination.healthSafety": case "destination.delete": return { destination: destinationOf("destinations", input.id) };
+      case "destination.churchVisibility": case "destination.entryRequirements": case "destination.healthSafety": case "destination.climate": case "destination.delete": return { destination: destinationOf("destinations", input.id) };
       // Creating a destination outside a trip changes no saved trip or destination, so nothing places it; authorize
       // lets an account create its own, as it does a new trip.
       case "destination.create": return { destination: undefined };

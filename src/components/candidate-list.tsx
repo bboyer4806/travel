@@ -35,6 +35,7 @@ export default function CandidateList({ items, category, destination, busy, onEd
           </div>
         </div>
         <h2>{item.name}</h2>
+        {item.description && <p className="idea-description">{item.description}</p>}
         <RestaurantTypeTags types={item.restaurantTypes} className="idea-types" />
         {category !== "hotels" && <button className={item.mustDo ? "button selected-button small must-do" : "button secondary small must-do"}
           disabled={busy} aria-pressed={item.mustDo}

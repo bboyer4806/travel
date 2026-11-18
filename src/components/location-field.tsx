@@ -1,11 +1,15 @@
 "use client";
 
-import { useEffect, useId, useRef, useState, type KeyboardEvent } from "react";
+import { useEffect, useId, useLayoutEffect, useRef, useState, type KeyboardEvent } from "react";
 import { MapPin, Plane } from "lucide-react";
 import { formatDestinationLabel } from "@/lib/destination-label";
+import { dropdownPosition } from "@/lib/dropdown-position";
 import type { LocationSuggestion } from "@/lib/location-search";
 
 type SearchResult = { query: string; locations: LocationSuggestion[]; failed?: boolean };
+
+/** How tall the suggestions are at most: 220 pixels of them inside a 1-pixel border, as before TRA-140. */
+const TALLEST = 222;
 
 type Props = {
   name: string;
@@ -22,6 +26,7 @@ type Props = {
 export default function LocationField({ name, label, defaultValue = "", hint, disabled, required, compactDestination = false, placeholder = "Start typing a city, e.g. Wooster, OH", helpText = "Choose a suggestion or keep your own city or airport." }: Props) {
   const id = useId();
   const input = useRef<HTMLInputElement>(null);
+  const panel = useRef<HTMLDivElement>(null);
   const list = useRef<HTMLUListElement>(null);
   // A saved city opens exactly as saved, so editing it never starts from a shorter label (TRA-76).
   const [value, setValue] = useState(defaultValue);
@@ -71,8 +76,41 @@ export default function LocationField({ name, label, defaultValue = "", hint, di
     };
   }, [query, searching]);
 
+  // The suggestions float over the editor instead of inside its scrolling fields, which cut them off (TRA-140). They open
+  // below the field, or above it when they don't fit below and there is more room above, and never past the part of the
+  // window people can see, which an on-screen keyboard shortens. Scrolling anything that holds the field, such as the
+  // editor's fields, closes them, as a select's list closes.
+  useLayoutEffect(() => {
+    if (!searching) return;
+    const field = input.current!, box = panel.current!, viewport = window.visualViewport!;
+    function place() {
+      const rect = field.getBoundingClientRect();
+      const { above, edge, maxHeight } = dropdownPosition(rect, { top: viewport.offsetTop, bottom: viewport.offsetTop + viewport.height }, TALLEST);
+      Object.assign(box.style, { top: edge + "px", left: rect.left + "px", width: rect.width + "px", maxHeight: maxHeight + "px", transform: above ? "translateY(-100%)" : "" });
+    }
+    function scrolled({ target }: Event) {
+      if (target instanceof Element && target !== field && target.contains(field)) { setOpen(false); setActive(-1); }
+      else place();
+    }
+    place();
+    window.addEventListener("resize", place);
+    window.addEventListener("scroll", scrolled, true);
+    viewport.addEventListener("resize", place);
+    viewport.addEventListener("scroll", place);
+    return () => {
+      window.removeEventListener("resize", place);
+      window.removeEventListener("scroll", scrolled, true);
+      viewport.removeEventListener("resize", place);
+      viewport.removeEventListener("scroll", place);
+    };
+  }, [searching]);
+
   useEffect(() => {
-    if (active >= 0) list.current?.children[active]?.scrollIntoView({ block: "nearest" });
+    // Only the list scrolls to show the active suggestion, since scrolling anything that holds the field would close it.
+    const shown = list.current, option = shown?.children[active];
+    if (!shown || !option) return;
+    const view = shown.getBoundingClientRect(), item = option.getBoundingClientRect();
+    shown.scrollTop += Math.max(0, item.bottom - view.bottom) - Math.max(0, view.top - item.top);
   }, [active]);
 
   function choose(location: LocationSuggestion) {
@@ -110,7 +148,6 @@ export default function LocationField({ name, label, defaultValue = "", hint, di
     if (!event.currentTarget.contains(event.relatedTarget)) { setOpen(false); setActive(-1); }
   }}>
     <label htmlFor={id}>{label}</label>
-    <div className="location-input">
     {compactDestination && <input type="hidden" name={name} value={suggestion?.full ?? value} disabled={disabled} />}
     {suggestion && <input type="hidden" name={name + "FromSuggestion"} value="true" disabled={disabled} />}
     <input ref={input} id={id} name={compactDestination ? undefined : name} value={value} disabled={disabled} required={required} maxLength={120}
@@ -122,7 +159,7 @@ export default function LocationField({ name, label, defaultValue = "", hint, di
       onChange={(event) => { setValue(event.target.value); setOpen(true); setActive(-1); }}
       onCompositionStart={() => setComposing(true)} onCompositionEnd={() => setComposing(false)}
       onKeyDown={onKeyDown} />
-    {searching && <div className="location-panel">
+    {searching && <div ref={panel} className="location-panel">
       {expanded && <ul ref={list} id={`${id}-suggestions`} className="location-suggestions" role="listbox" aria-label={compactDestination ? "City suggestions" : "City and airport suggestions"}>
         {locations.map((location, index) => <li key={location.id} role="presentation">
           <button type="button" id={`${id}-option-${index}`} role="option" aria-selected={active === index}
@@ -134,7 +171,6 @@ export default function LocationField({ name, label, defaultValue = "", hint, di
       </ul>}
       {!expanded && <p className="location-message" aria-hidden="true">{status}</p>}
     </div>}
-    </div>
     <span className="sr-only" role="status" aria-live="polite">{status}</span>
     <small id={`${id}-help`}>{helpText}</small>
     <p className="location-credit">Locations by <a href="https://open-meteo.com/" target="_blank" rel="noreferrer">Open-Meteo</a> / <a href="https://www.geonames.org/" target="_blank" rel="noreferrer">GeoNames</a>{!compactDestination && <>, airports by <a href="https://ourairports.com/" target="_blank" rel="noreferrer">OurAirports</a></>}</p>

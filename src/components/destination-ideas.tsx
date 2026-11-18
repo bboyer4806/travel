@@ -111,6 +111,7 @@ function Carousel({ category, ideas, onView }: { category: Category; ideas: Cand
             {photo ? <img src={photoUrl(item.id, photo, "candidate")} alt="" loading="lazy" decoding="async" width={400} height={300} /> : <Icon size={30} strokeWidth={1.3} aria-hidden="true" />}
           </span>
           <span className={styles.name}>{item.name}</span>
+          {item.description && <span className={styles.description}>{item.description}</span>}
           <RestaurantTypeTags types={item.restaurantTypes} className={styles.types} />
           <span className={item.priceCents === null ? styles.price + " " + styles.unknown : styles.price}>{price(item)}</span>
           {item.included && <span className={"selection-tag chosen " + styles.chosen}><Check size={12} aria-hidden="true" />{chosen[category]}</span>}
@@ -125,6 +126,7 @@ function Carousel({ category, ideas, onView }: { category: Category; ideas: Cand
 export function IdeaDetails({ item }: { item: Candidate }) {
   const category = item.category;
   return <dl className={styles.details}>
+    <div><dt>What it is</dt><dd>{item.description || "Not added"}</dd></div>
     {item.restaurantTypes.length > 0 && <div><dt>Restaurant types</dt><dd><RestaurantTypeTags types={item.restaurantTypes} /></dd></div>}
     <div><dt>Estimated price (USD)</dt><dd>{price(item)}<small>{priceNotes[category]}</small></dd></div>
     <div><dt>Address or neighborhood</dt><dd>{item.address || "Not added"}</dd></div>

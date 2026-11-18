@@ -226,7 +226,6 @@ test("schema 36 starts every destination without averages, keeping typical weath
     db = new DatabaseSync(path);
     try {
       assert.equal(db.prepare("PRAGMA user_version").get().user_version, SCHEMA_VERSION);
-      assert.equal(SCHEMA_VERSION, 36);
       assert.deepEqual(db.prepare("PRAGMA table_info(destination_climate)").all().map(({ name, type, notnull, pk }) => ({ name, type, notnull, pk })), [
         { name: "destinationId", type: "TEXT", notnull: 1, pk: 1 }, { name: "climateJson", type: "TEXT", notnull: 1, pk: 0 },
       ]);

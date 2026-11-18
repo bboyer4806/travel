@@ -218,7 +218,7 @@ Prefer fixing forward. Rolling back an image does not reverse a database schema 
 
 ## Schema history
 
-The schema version is SQLite's `user_version`; the current schema is 36, `SCHEMA_VERSION` in `src/lib/store.ts`. At every start, `createStore` in `src/lib/store.ts` upgrades an older database in one transaction, through each version in turn. Each upgrade checks what already exists, so running it again on a database that already has its changes (a replay) keeps saved data. The notes below are in schema order. **Superseded** marks behavior that a later schema replaced; the current behavior is in [README.md](../README.md).
+The schema version is SQLite's `user_version`; the current schema is 37, `SCHEMA_VERSION` in `src/lib/store.ts`. At every start, `createStore` in `src/lib/store.ts` upgrades an older database in one transaction, through each version in turn. Each upgrade checks what already exists, so running it again on a database that already has its changes (a replay) keeps saved data. The notes below are in schema order. **Superseded** marks behavior that a later schema replaced; the current behavior is in [README.md](../README.md).
 
 ### Schema 1: first shared planner
 The first release creates the `trips`, `destinations`, `legs` and `candidates` tables, with prices in integer USD cents for the whole party. Anyone with the URL can view and edit every trip. The schema 1 build sets `user_version` to 1 at every start and does not refuse a newer database, so later upgrades check what already exists as well as the version: redeploying a newer build after a rollback to schema 1 cannot repeat an `ALTER TABLE` or replace saved links.
@@ -409,6 +409,11 @@ Restoring the pre-upgrade backup to run a schema 34 build again shows AN ADVENTU
 Monthly climate averages upgrade the database to schema 36 in the startup transaction with a `destination_climate` table that follows `destination_health_safety`: at most one record per destination, keyed by its ID, holding every month's average daily high and low in °F and average total precipitation in inches, with their source and first and last reference years, as JSON. Existing destinations start without a record, and their typical weather, including any placeholder recorded in it, is unchanged, as is everything else. Deleting a destination deletes its record; removing a destination from a trip or deleting a trip keeps it. The table is in the same online backups, and a replay keeps saved records.
 
 Restoring the pre-upgrade backup to run a schema 35 build again loses every monthly climate record, and that build shows no monthly averages.
+
+### Schema 37: what each idea is (TRA-138)
+What each idea is upgrades the database to schema 37 in the startup transaction, adding `description` to `candidates`: what a hotel, activity or restaurant idea is, in a few words, shown below its name on its cards, saved as typed, up to 120 characters, which the store checks. Every existing idea starts with an empty one, which shows nothing, so no card looks different until one is entered. Nothing else changes. The column is in the same online backups, and a replay keeps saved descriptions.
+
+Restoring the pre-upgrade backup to run a schema 36 build again loses what every idea is, and that build shows nothing below idea names.
 
 ## Feedback and release notes
 Configure server-only JIRA_URL (HTTPS Jira base URL), JIRA_EMAIL, and JIRA_API_TOKEN with permission to create Tasks in TRA. Use the host's secret configuration; never put credentials in source, image layers, client variables, or logs. Preserve the browser Host and Origin headers through the proxy; the feedback endpoint compares them and ignores forwarded-host claims. Its limits count per signed-in account. A failed send logs one line saying why, such as a missing setting's name, an invalid JIRA_URL, or Jira's HTTP status (401 for wrong credentials, 403 for missing permission), never the settings' values.

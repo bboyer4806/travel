@@ -4,15 +4,52 @@ import test from "node:test";
 import { runInNewContext } from "node:vm";
 import ts from "typescript";
 import * as destinationLabel from "../src/lib/destination-label.ts";
+import * as dropdownPosition from "../src/lib/dropdown-position.ts";
 
 // Run the actual city field with a small hook harness. City suggestions come from `locations`; nothing is fetched.
 const compiled = ts.transpileModule(readFileSync(new URL("../src/components/location-field.tsx", import.meta.url), "utf8"), {
   compilerOptions: { module: ts.ModuleKind.CommonJS, jsx: ts.JsxEmit.ReactJSX, target: ts.ScriptTarget.ES2022 },
 }).outputText;
 
-function harness(props, locations = []) {
-  const hooks = [], effects = [], timers = new Set();
+/** An element as the city field measures it: its box in the window, its style, and the elements inside it. */
+class FakeElement {
+  constructor(box = {}, inside = []) { Object.assign(this, { box, inside, style: {}, scrollTop: 0, children: [] }); }
+  getBoundingClientRect() { return this.box; }
+  contains(node) { return node === this || this.inside.some((child) => child.contains(node)); }
+  focus() {}
+}
+
+/** Something the field listens to, which records its listeners and calls them. */
+function listened(target) {
+  return Object.assign(target, {
+    listeners: [],
+    addEventListener(type, listener, capture = false) { this.listeners.push({ type, listener, capture }); },
+    removeEventListener(type, listener, capture = false) {
+      this.listeners = this.listeners.filter((one) => !(one.type === type && one.listener === listener && one.capture === capture));
+    },
+    dispatch(type, event = {}) { for (const one of [...this.listeners]) if (one.type === type) one.listener(event); },
+  });
+}
+
+/**
+ * The window around a city field (TRA-140), as Chromium measured Add destination's at 1920 × 911: the field, the editor's
+ * scrolling fields around it, and the window with its visual viewport, the part of it people can see.
+ */
+function fakeScreen() {
+  const field = new FakeElement({ top: 376, bottom: 419, left: 708, width: 504 });
+  return { field, fields: new FakeElement({}, [field]), window: listened({ visualViewport: listened({ offsetTop: 0, height: 911 }) }) };
+}
+
+function harness(props, locations = [], screen = fakeScreen()) {
+  const hooks = [], effects = [], timers = new Set(), attached = new Set();
   let cursor = 0, tree, pending = [];
+  // Effects run after each render whose dependencies changed, as React runs them.
+  function useEffect(effect, deps) {
+    const index = cursor++;
+    const previous = effects[index];
+    if (previous && deps.every((dep, i) => Object.is(dep, previous.deps[i]))) return;
+    pending.push(() => { previous?.cleanup?.(); effects[index] = { deps, cleanup: effect() }; });
+  }
   const react = {
     useId: () => "city",
     useRef: (initial) => hooks[cursor++] ??= { current: initial },
@@ -21,13 +58,8 @@ function harness(props, locations = []) {
       if (!(index in hooks)) hooks[index] = typeof initial === "function" ? initial() : initial;
       return [hooks[index], (value) => { hooks[index] = value; }];
     },
-    // Effects run after each render whose dependencies changed, as React runs them.
-    useEffect(effect, deps) {
-      const index = cursor++;
-      const previous = effects[index];
-      if (previous && deps.every((dep, i) => Object.is(dep, previous.deps[i]))) return;
-      pending.push(() => { previous?.cleanup?.(); effects[index] = { deps, cleanup: effect() }; });
-    },
+    useEffect,
+    useLayoutEffect: useEffect,
   };
   const jsx = (type, props) => ({ type, props });
   const loaded = { exports: {} };
@@ -38,17 +70,38 @@ function harness(props, locations = []) {
       if (name === "react/jsx-runtime") return { jsx, jsxs: jsx };
       if (name === "lucide-react") return { MapPin: "map-pin", Plane: "plane" };
       if (name === "@/lib/destination-label") return destinationLabel;
+      if (name === "@/lib/dropdown-position") return dropdownPosition;
       throw new Error("Unexpected component import: " + name);
     },
     fetch: async () => ({ ok: true, json: async () => ({ locations }) }),
     AbortController,
     setTimeout: (callback) => { const timer = { callback }; timers.add(timer); return timer; },
     clearTimeout: (timer) => { timers.delete(timer); },
+    window: screen.window,
+    Element: FakeElement,
   });
+  // React gives refs their elements before effects run: the combobox's input is the field, and the suggestions' box and
+  // list are new each time they appear. Each suggestion is 50 pixels tall in a list 220 pixels tall with 3 pixels of
+  // padding. A ref whose element left the page is cleared.
+  function attach() {
+    const present = new Set();
+    for (const node of nodes(tree)) {
+      const ref = node.props?.ref;
+      if (!ref) continue;
+      present.add(ref);
+      attached.add(ref);
+      ref.current ??= node.props.role === "combobox" ? screen.field : new FakeElement(node.type === "ul" ? { top: 0, bottom: 220 } : {});
+      if (node.type === "ul") ref.current.children = [node.props.children].flat().map((_, index) => ({
+        getBoundingClientRect: () => ({ top: 3 + 50 * index - ref.current.scrollTop, bottom: 53 + 50 * index - ref.current.scrollTop }),
+      }));
+    }
+    for (const ref of attached) if (!present.has(ref)) ref.current = null;
+  }
   function render() {
     cursor = 0;
     pending = [];
     tree = loaded.exports.default(props);
+    attach();
     for (const run of pending) run();
   }
   const nodes = (node) => !node || typeof node !== "object" ? [] : [node, ...[node.props?.children].flat(Infinity).flatMap(nodes)];
@@ -77,10 +130,28 @@ function harness(props, locations = []) {
       find((node) => node.props?.id === `city-option-${index}`).props.onClick();
       render();
     },
+    /** Presses a key in the field and shows what it did, returning the key's event. */
+    press(key) {
+      const event = { key, nativeEvent: { isComposing: false }, preventDefault() { this.prevented = true; }, stopPropagation() { this.stopped = true; } };
+      field().props.onKeyDown(event);
+      render();
+      return event;
+    },
+    /** The suggestion the arrow keys reached, as the field tells screen readers. */
+    active: () => field().props["aria-activedescendant"],
+    /** The suggestions' list. */
+    list: () => find((node) => node.type === "ul").props.ref.current,
+    /** Where the field put its suggestions, or undefined while they are closed. */
+    placed() {
+      const style = find((node) => node.props?.className === "location-panel")?.props.ref.current.style;
+      return style && { ...style };
+    },
+    /** Shows the field again after something outside it changed it, as React does. */
+    render,
   };
 }
 
-const destinationField = (defaultValue, locations) => harness({ name: "city", label: "City or destination", defaultValue, compactDestination: true }, locations);
+const destinationField = (defaultValue, locations, screen) => harness({ name: "city", label: "City or destination", defaultValue, compactDestination: true }, locations, screen);
 const wooster = { id: "1", name: "Wooster", region: "Ohio", country: "United States", countryCode: "US", label: "Wooster, Ohio, United States" };
 
 test("a destination's city editor opens on its city exactly as saved and sends it unchanged (TRA-76)", () => {
@@ -136,4 +207,70 @@ test("a destination's city field suggests no airports, since a destination is a 
   assert.deepEqual(field.options(), [["map-pin", "Wooster", "Ohio, United States"]]);
   await field.choose(0);
   assert.deepEqual(field.sent(), { city: "Wooster, Ohio, United States", cityFromSuggestion: "true" });
+});
+
+// TRA-140: eight suggestions, more than fit in the list at once.
+const springs = ["Springfield", "Spring", "Springdale", "Springville", "Spring Hill", "Spring Valley", "Springboro", "Spring Lake"]
+  .map((name, index) => ({ id: String(index + 1), name, region: "Ohio", country: "United States", countryCode: "US", label: name + ", Ohio, United States" }));
+/** Below the field at 1920 × 911, as wide as it and as tall as before TRA-140. */
+const BELOW = { top: "423px", left: "708px", width: "504px", maxHeight: "222px", transform: "" };
+
+test("Add destination's suggestions float over the editor below the city, as wide as it and 222 pixels tall at most (TRA-140)", async () => {
+  const field = destinationField("", springs);
+  field.type("Spr");
+  assert.deepEqual(field.placed(), BELOW, "while finding cities");
+  await field.search();
+  assert.equal(field.options().length, 8);
+  assert.deepEqual(field.placed(), BELOW);
+});
+
+test("when an on-screen keyboard leaves too little room below the city, its suggestions move above it, and back", async () => {
+  const screen = fakeScreen();
+  const field = destinationField("", springs, screen);
+  field.type("Spr");
+  await field.search();
+  Object.assign(screen.window.visualViewport, { height: 420 });
+  screen.window.visualViewport.dispatch("resize");
+  assert.deepEqual(field.placed(), { ...BELOW, top: "372px", transform: "translateY(-100%)" }, "their bottom 4 pixels above the city");
+  Object.assign(screen.window.visualViewport, { height: 911 });
+  screen.window.visualViewport.dispatch("resize");
+  assert.deepEqual(field.placed(), BELOW);
+});
+
+test("scrolling the editor's fields closes the suggestions, as a select's list closes, and scrolling anything else places them again", async () => {
+  const screen = fakeScreen();
+  const field = destinationField("", springs, screen);
+  field.type("Spr");
+  await field.search();
+  // The page behind the editor scrolled and the editor moved up, then the list and the field's own text scrolled.
+  screen.field.box = { top: 300, bottom: 343, left: 708, width: 504 };
+  for (const target of [{}, field.list(), screen.field]) screen.window.dispatch("scroll", { target });
+  field.render();
+  assert.deepEqual(field.placed(), { ...BELOW, top: "347px" });
+  assert.equal(field.options().length, 8);
+  screen.window.dispatch("scroll", { target: screen.fields });
+  field.render();
+  assert.equal(field.placed(), undefined);
+  assert.deepEqual(field.options(), []);
+  assert.deepEqual([screen.window.listeners, screen.window.visualViewport.listeners], [[], []], "nothing still listens once they close");
+  assert.equal(field.shown(), "Spr", "the city is unchanged");
+});
+
+test("arrow keys move through the suggestions, scrolling only their list, Enter chooses one and Escape closes them, not the editor", async () => {
+  const field = destinationField("", springs);
+  field.type("Spr");
+  await field.search();
+  for (let i = 0; i < 5; i++) field.press("ArrowDown");
+  assert.deepEqual([field.active(), field.list().scrollTop], ["city-option-4", 33], "the fifth suggestion's bottom shows at the list's bottom");
+  for (let i = 0; i < 4; i++) field.press("ArrowUp");
+  assert.deepEqual([field.active(), field.list().scrollTop], ["city-option-0", 3], "the first suggestion's top shows at the list's top");
+  field.press("ArrowUp");
+  assert.deepEqual([field.active(), field.list().scrollTop], ["city-option-7", 183], "Up from the first goes to the last");
+  assert.equal(field.press("Enter").prevented, true);
+  assert.deepEqual([field.shown(), field.sent(), field.placed()], ["Spring Lake, Ohio", { city: "Spring Lake, Ohio, United States", cityFromSuggestion: "true" }, undefined]);
+  field.type("Spri");
+  await field.search();
+  const escape = field.press("Escape");
+  assert.deepEqual([escape.prevented, escape.stopped, field.placed(), field.shown()], [true, true, undefined, "Spri"]);
+  assert.equal(field.press("Escape").stopped, undefined, "a second Escape reaches the editor, which closes");
 });

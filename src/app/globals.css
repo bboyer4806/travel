@@ -1035,6 +1035,18 @@ button svg,a svg {
   font-size:28px;
   overflow-wrap:anywhere
 }
+/* What an idea is, directly below its name (TRA-138): at most two lines, ending in an ellipsis when it is longer. */
+.idea-description {
+  display:-webkit-box;
+  -webkit-box-orient:vertical;
+  -webkit-line-clamp:2;
+  overflow:hidden;
+  margin-top:6px;
+  font-size:14px;
+  line-height:1.5;
+  color:var(--muted);
+  overflow-wrap:anywhere
+}
 /* A restaurant's types, below its name (TRA-36). */
 .idea-types {
   margin-top:10px
@@ -1759,15 +1771,14 @@ button svg,a svg {
 
 }
 
-.location-input {
-  position:relative
-}
+/* City suggestions float over the editor, outside its scrolling fields, which cut them off (TRA-140). The field places
+   them below or above itself and sets their width and how tall they may be, so their list scrolls when shortened. They
+   show above the editor's Send feedback button (z-index 30). */
 .location-panel {
-  position:absolute;
-  top:calc(100% + 4px);
-  left:0;
-  right:0;
-  z-index:2;
+  position:fixed;
+  z-index:31;
+  display:flex;
+  flex-direction:column;
   box-shadow:0 5px 18px #172c351a;
   border:1px solid var(--line);
   border-radius:6px;
@@ -1779,7 +1790,6 @@ button svg,a svg {
   list-style:none;
   padding:3px;
   margin:0;
-  max-height:220px;
   overflow-y:auto;
   overscroll-behavior:contain
 }

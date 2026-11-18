@@ -72,6 +72,8 @@ function harness(destination) {
     },
     "react/jsx-runtime": { jsx: element, jsxs: element, Fragment: "fragment" },
     "lucide-react": new Proxy({}, { get: (_, name) => "icon:" + String(name) }),
+    // Add image by URL (TRA-139), tested in image-by-url.test.mjs, stands in as an element showing what the editor gives it.
+    "./image-by-url": { AddImageByUrl: (props) => ({ type: "AddImageByUrl", props }) },
     "@/lib/destination-label": destinationLabel, "@/lib/gallery-draft": galleryDraft, "@/lib/image-limits": imageLimits, "@/lib/photo-focus": photoFocus, "@/lib/uuid": uuid,
   };
   const require = (name) => {

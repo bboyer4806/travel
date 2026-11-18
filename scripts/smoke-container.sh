@@ -404,6 +404,10 @@ async function assertRefused(label, headers) {
   }
   const feedback = await fetch(origin + "/api/feedback", { method: "POST", headers: { ...headers, "Content-Type": "application/json", Origin: origin }, body: JSON.stringify({ action: "open" }), signal: signal() });
   assert.equal(feedback.status, 401, `${label} feedback must be refused`);
+  // Add image by URL (TRA-139) downloads nothing for a request without a current session.
+  const imageByUrl = await fetch(origin + "/api/image-url", { method: "POST", headers: { ...headers, "Content-Type": "application/json", Origin: origin }, body: JSON.stringify({ url: "https://images.example.com/a.jpg" }), signal: signal() });
+  assert.equal(imageByUrl.status, 401, `${label} Add image by URL must be refused`);
+  assert.ok(!imageByUrl.headers.get("content-type")?.startsWith("image/"), `${label} Add image by URL must not return image bytes`);
   await assertMcpRefused(label, headers);
 }
 // The MCP endpoint takes only an AI connection's access token: no session, current or not, opens it (TRA-115).

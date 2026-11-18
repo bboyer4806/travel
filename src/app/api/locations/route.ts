@@ -1,6 +1,6 @@
 import { randomBytes } from "node:crypto";
 import { currentAccount, signedOutResponse } from "@/auth";
-import { airportSuggestions, LocationSearchError, searchLocations } from "@/lib/location-search";
+import { LocationSearchError, searchLocations } from "@/lib/location-search";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -16,9 +16,7 @@ export async function GET(request: Request) {
     "Set-Cookie": `${cookieName}=${clientId}; Path=/api/locations; HttpOnly; SameSite=Strict; Max-Age=86400${url.protocol === "https:" ? "; Secure" : ""}`,
   };
   try {
-    // `code` finds only the airport with that IATA code, without Open-Meteo, for the trip map's search (TRA-132).
-    const code = url.searchParams.get("code");
-    const locations = code === null ? await searchLocations(url.searchParams.get("q"), clientId) : airportSuggestions(code);
+    const locations = await searchLocations(url.searchParams.get("q"), clientId);
     return Response.json({ locations }, { headers: { "Cache-Control": "private, max-age=300", ...headers } });
   } catch (error) {
     const known = error instanceof LocationSearchError;

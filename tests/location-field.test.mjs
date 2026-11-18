@@ -184,7 +184,7 @@ test("departing and return city fields send a chosen suggestion's full label, wi
 });
 
 // An airport suggested for its code (TRA-132), as the location search sends it.
-const clevelandAirport = { id: "CLE", name: "Cleveland Hopkins International Airport (CLE)", region: "Cleveland", country: "United States", countryCode: "US", label: "CLE", airport: { latitude: 41.4117, longitude: -81.8498 } };
+const clevelandAirport = { id: "CLE", name: "Cleveland Hopkins International Airport (CLE)", region: "Cleveland", country: "United States", countryCode: "US", label: "CLE", airport: true };
 
 test("departing and return city fields suggest an airport for its code, and choosing it saves the code (TRA-132)", async () => {
   for (const name of ["homeCity", "returnCity"]) {

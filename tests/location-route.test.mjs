@@ -3,7 +3,7 @@ import { readFileSync } from "node:fs";
 import { randomBytes } from "node:crypto";
 import test from "node:test";
 import ts from "typescript";
-import { airportSuggestions, createLocationSearch, LocationSearchError } from "../src/lib/location-search.ts";
+import { createLocationSearch, LocationSearchError } from "../src/lib/location-search.ts";
 
 // Exercise the actual handler with isolated auth/upstream dependencies, without a Next server.
 const compiled = ts.transpileModule(readFileSync(new URL("../src/app/api/locations/route.ts", import.meta.url), "utf8"), {
@@ -13,7 +13,7 @@ function route(searchLocations, authenticated = true) {
   const exports = {};
   const imports = {
     "node:crypto": { randomBytes },
-    "@/lib/location-search": { searchLocations, airportSuggestions, LocationSearchError },
+    "@/lib/location-search": { searchLocations, LocationSearchError },
     "@/auth": {
       currentAccount: async () => authenticated ? { id: "test-account" } : null,
       signedOutResponse: () => Response.json({ error: "Please sign in." }, { status: 401 }),
@@ -29,12 +29,6 @@ function request(query, cookie, origin = "http://localhost:3000") {
   const url = new URL("/api/locations", origin);
   url.searchParams.set("q", query);
   return new Request(url, { headers: cookie ? { Cookie: cookie } : {} });
-}
-/** The trip map's airport search (TRA-132), by an airport's code. */
-function codeRequest(code) {
-  const url = new URL("/api/locations", "http://localhost:3000");
-  url.searchParams.set("code", code);
-  return new Request(url);
 }
 
 test("location API issues a scoped client cookie and enforces its upstream budget", async () => {
@@ -87,22 +81,20 @@ test("location API preserves authentication and invalid-query responses", async 
   assert.equal(calls, 0);
 });
 
-test("location API finds an airport by its code without Open-Meteo, and suggests it first for a search (TRA-132)", async () => {
+test("location API has no airport lookup by code for the trip map, and a city search still suggests the airport first (TRA-144)", async () => {
   let calls = 0;
-  const { searchLocations: search } = createLocationSearch({ fetcher: async () => { calls++; return Response.json({ results: [{ id: 1, name: "Hnd", country: "Somewhere" }] }); } });
+  const { searchLocations: search } = createLocationSearch({ fetcher: async () => { calls++; return Response.json({ results: [{ id: 1, name: "Ord", country: "Somewhere" }] }); } });
   const GET = route(search);
-  const haneda = airportSuggestions("HND");
-  assert.equal(haneda.length, 1);
-  for (const code of ["HND", "hnd"]) {
-    const response = await GET(codeRequest(code));
-    assert.equal(response.status, 200);
-    assert.equal(response.headers.get("cache-control"), "private, max-age=300");
-    assert.deepEqual(await response.json(), { locations: haneda });
-  }
-  for (const code of ["ZZZ", "RJTT", "Tokyo"]) assert.deepEqual(await (await GET(codeRequest(code))).json(), { locations: [] }, code);
+  // The trip map's airport search, removed, asked for `code` alone. That is now a search for nothing, which finds nothing.
+  const byCode = new URL("/api/locations", "http://localhost:3000");
+  byCode.searchParams.set("code", "ORD");
+  const answer = await GET(new Request(byCode));
+  assert.equal(answer.status, 200);
+  assert.deepEqual(await answer.json(), { locations: [] });
   assert.equal(calls, 0);
-  const searched = await (await GET(request("hnd"))).json();
-  assert.deepEqual(searched.locations.map(({ id }) => id), ["HND", "1"]);
+  // Departing and return city suggestions still offer the airport for a code in any letter case, then Open-Meteo's places.
+  const searched = await (await GET(request("ord"))).json();
+  assert.deepEqual(searched.locations.map(({ id }) => id), ["ORD", "1"]);
+  assert.deepEqual(searched.locations[0], { id: "ORD", name: "Chicago O'Hare International Airport (ORD)", region: "Chicago", country: "United States", countryCode: "US", label: "ORD", airport: true });
   assert.equal(calls, 1);
-  assert.equal((await route(search, false)(codeRequest("HND"))).status, 401, "signed out finds nothing");
 });

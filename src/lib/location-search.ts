@@ -3,7 +3,7 @@ import { countryName, recognizedCountry, usStateName } from "./destination-label
 
 /**
  * A city, or an airport suggested for its IATA code (TRA-132), and the `label` choosing it saves. An airport's name
- * includes its code, its region is the city it serves, its label is its code, and it has a position for the map.
+ * includes its code, its region is the city it serves, its label is its code, and `airport` marks it as one.
  */
 export type LocationSuggestion = {
   id: string;
@@ -12,7 +12,7 @@ export type LocationSuggestion = {
   country: string;
   countryCode?: string;
   label: string;
-  airport?: { latitude: number; longitude: number };
+  airport?: true;
 };
 
 /**
@@ -101,8 +101,8 @@ function suggestionOf(result: Record<string, unknown>): LocationSuggestion | nul
 
 /** An airport suggested for its IATA code (TRA-132). Choosing it saves the code, which the trip map finds. */
 function airportSuggestion(airport: Airport): LocationSuggestion {
-  const { code, city, countryCode, latitude, longitude } = airport;
-  return { id: code, name: airportName(airport), region: city, country: countryName(countryCode), countryCode, label: code, airport: { latitude, longitude } };
+  const { code, city, countryCode } = airport;
+  return { id: code, name: airportName(airport), region: city, country: countryName(countryCode), countryCode, label: code, airport: true };
 }
 
 /**

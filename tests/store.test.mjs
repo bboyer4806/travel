@@ -29,6 +29,8 @@ function saveResearch(store, destinationId) {
   store.applyMutation({ type: "church.save", ...newItem(), destinationId, name: "A cathedral", address: "", denomination: "Catholic", url: "", massTimes: [{ id: randomUUID(), day: "Sunday", time: "9:00" }], gallery: photo() });
   store.applyMutation({ type: "destination.entryRequirements", id: destinationId, requirements: { passportNationality: "United States", travelPurpose: "Tourism", travelerCircumstances: "", visaRequirements: "None for short stays", passportValidity: "", requiredDocuments: "", transitRequirements: "", notes: "", sources: [], lastCheckedDate: "2026-11-12" } });
   store.applyMutation({ type: "destination.healthSafety", id: destinationId, healthSafety: { advisoryLevel: "Level 1", advisoryWarnings: "", healthPrecautions: "", localSafety: "", emergencyContacts: [{ id: randomUUID(), name: "Emergency services", phone: "110", notes: "" }], sources: [], lastCheckedDate: "2026-11-12" } });
+  // Monthly climate averages (TRA-135).
+  store.applyMutation({ type: "destination.climate", id: destinationId, climate: { months: Array.from({ length: 12 }, (_, index) => ({ highF: 50 + index, lowF: 40 + index, precipitationIn: 2 })), source: "Test normals", firstYear: 1991, lastYear: 2020 } });
 }
 
 test("complete create, edit, clear, and delete flows preserve the trip relationships", (t) => {
@@ -367,7 +369,7 @@ test("only a destination no trip visits can be deleted, and everything saved for
   const kyoto = store.applyMutation({ type: "destination.create", city: "Kyoto" }).id;
   saveResearch(store, tokyo);
   saveResearch(store, kyoto);
-  const tables = ["destinations", "candidates", "candidate_images", "churches", "church_images", "destination_images", "destination_entry_requirements", "destination_health_safety", "trip_stops", "legs"];
+  const tables = ["destinations", "candidates", "candidate_images", "churches", "church_images", "destination_images", "destination_entry_requirements", "destination_health_safety", "destination_climate", "trip_stops", "legs"];
   const counts = () => Object.fromEntries(tables.map((table) => [table, db.prepare(`SELECT count(*) AS count FROM ${table}`).get().count]));
 
   // A destination a trip visits keeps everything, for that trip.
@@ -379,7 +381,7 @@ test("only a destination no trip visits can be deleted, and everything saved for
   const rows = counts();
   store.applyMutation({ type: "destination.delete", id: kyoto });
   assert.deepEqual(store.getSnapshot(), { ...before, destinations: before.destinations.filter((item) => item.id !== kyoto), candidates: before.candidates.filter((item) => item.destinationId !== kyoto), churches: before.churches.filter((item) => item.destinationId !== kyoto) });
-  assert.deepEqual(counts(), { ...rows, destinations: rows.destinations - 1, candidates: rows.candidates - 3, candidate_images: rows.candidate_images - 1, churches: rows.churches - 1, church_images: rows.church_images - 1, destination_images: rows.destination_images - 1, destination_entry_requirements: rows.destination_entry_requirements - 1, destination_health_safety: rows.destination_health_safety - 1 });
+  assert.deepEqual(counts(), { ...rows, destinations: rows.destinations - 1, candidates: rows.candidates - 3, candidate_images: rows.candidate_images - 1, churches: rows.churches - 1, church_images: rows.church_images - 1, destination_images: rows.destination_images - 1, destination_entry_requirements: rows.destination_entry_requirements - 1, destination_health_safety: rows.destination_health_safety - 1, destination_climate: rows.destination_climate - 1 });
   assert.equal(store.getDestinationSnapshot(kyoto), undefined);
   assert.throws(() => store.applyMutation({ type: "destination.delete", id: kyoto }), NOT_AVAILABLE);
 

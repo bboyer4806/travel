@@ -117,6 +117,12 @@ Repeat passing checks when subsequent changes affect their coverage or required 
   offer the airport for a three-letter IATA code in any letter case, except in destination fields, and the trip map
   shows a departure, return or layover written as a code in capitals at the airport, from `journeyAirportNames`. The
   list stays on the server: client components import location search types only.
+- Monthly climate averages (TRA-135) are a destination's one row of `destination_climate`, apart from its typical weather
+  columns, changed only by `destination.climate` with a whole record or null, and checked by `normalizeMonthlyClimate` in
+  `src/lib/typical-weather.ts`: every month's high and low in °F and precipitation in inches, a source and reference
+  years, all required. Travel never looks them up, estimates them or fills in a month. `src/components/climate-chart.tsx`
+  charts them for every destination; in a trip it first chooses the month of the stay's `arrivalDate`, and choosing a
+  month changes only what it shows.
 - Application writes go through `mutatePlanner` in `src/app/actions.ts`, into `applyMutation`
   in `src/lib/store.ts`, or come from an approved AI proposal. A new operation adds a `Mutation`
   variant in `src/lib/types.ts`, a case in `validate` (or, for a change only proposals make, in

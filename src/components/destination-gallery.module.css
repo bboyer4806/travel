@@ -34,35 +34,6 @@
 .mainBadge { left: 9px; }
 .count { right: 9px; }
 
-/* TRA-123: Previous and Next sit midway down the main photo's left and right edges, clear of the badges along its bottom, as 44 × 44 touch targets. */
-.arrow {
-  position: absolute;
-  top: 50%;
-  display: grid;
-  place-items: center;
-  width: 44px;
-  height: 44px;
-  margin-top: -22px;
-  padding: 0;
-  border: 1px solid #d4dbcd;
-  border-radius: 50%;
-  background: var(--white);
-  color: var(--green);
-  box-shadow: 0 4px 12px #233d351f;
-  transition: opacity .16s, background .16s;
-}
-/* The focus ring sits on a white band, so it shows over any photo. */
-.arrow:focus-visible { outline-offset: 2px; box-shadow: 0 0 0 2px var(--white), 0 4px 12px #233d351f; }
-.previous { left: 9px; }
-.next { right: 9px; }
-/* Where the main pointer can hover, the arrows show while it is over the photo or either arrow has keyboard focus. Touchscreens always show them. */
-@media (hover: hover) {
-  .arrow { opacity: 0; }
-  .arrow:hover { background: #eef1e8; }
-  .hero:hover .arrow,
-  .hero:has(.arrow:focus-visible) .arrow { opacity: 1; }
-}
-
 .thumbnails {
   display: flex;
   gap: 8px;

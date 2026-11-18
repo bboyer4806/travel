@@ -40,7 +40,7 @@ function load(file, modules = {}) {
 // Add image by URL (TRA-139), tested in image-by-url.test.mjs, stands in as an element showing what the editor gives it.
 const imageByUrl = { AddImageByUrl: (props) => ({ type: "AddImageByUrl", props }) };
 const ideaModules = {
-  "./candidate-gallery": load("../src/components/candidate-gallery.tsx", { "./focus-after": load("../src/components/focus-after.ts"), "./image-by-url": imageByUrl, "./photo-drag": load("../src/components/photo-drag.ts") }),
+  "./candidate-gallery": load("../src/components/candidate-gallery.tsx", { "./focus-after": load("../src/components/focus-after.ts"), "./image-by-url": imageByUrl, "./photo-browsing": load("../src/components/photo-browsing.tsx"), "./photo-drag": load("../src/components/photo-drag.ts") }),
   "./research-links": load("../src/components/research-links.tsx"),
   "./restaurant-types": load("../src/components/restaurant-types.tsx"),
 };
@@ -254,14 +254,7 @@ test("activity photos fill frames of one shape, and an activity without photos k
   const tower = ideas.find((item) => item.name === "Tower");
   const photo = (image) => `/api/candidate-images/${tower.id}/${image}?v=${tower.images.find((saved) => saved.id === image).version}`;
   const thumbnail = (image) => `/api/candidate-images/${tower.id}/${image}/thumbnail?v=${tower.images.find((saved) => saved.id === image).version}`;
-  // The destination's carousels: only the activities' frame their photos as one shape, so hotels and restaurants are unchanged.
-  const overview = hosts({ type: DestinationIdeas, props: { ideas, city: "Vienna", pages: "/destinations/vienna", busy: false, onView() {}, onAdd() {}, onBudgetEdit() {} } });
-  assert.deepEqual(byClass(overview, "carousel").map((carousel) => carousel.props.className), ["carousel", "carousel activities", "carousel"]);
-  // Every activity card has its photo frame, showing its main photo or, without one, the activity icon.
-  assert.deepEqual(byClass(hosts(byClass(overview, "activities")[0]), "card").map((card) => {
-    const [frame, content] = hosts(byClass(hosts(card), "photo")[0]);
-    return [text(byClass(hosts(card), "name")[0]), frame.type, content.type === "img" ? content.props.src : content.type];
-  }), [["Palace", "span", "icon:Binoculars"], ["Museum", "span", "icon:Binoculars"], ["Opera", "span", "icon:Binoculars"], ["Tower", "span", photo(main)]]);
+  // The destination's carousels frame every category's photos alike since TRA-137, tested below.
   // The full pages: each activity's card starts with a main photo frame, its gallery's or an empty one of the same size.
   // Hotels and restaurants without photos still show none.
   const frames = (category) => hosts({ type: CandidateList, props: { items: ideas.filter((item) => item.category === category), category, destination: snapshot.destinations.find((item) => item.id === id), busy: false, onEdit() {}, onDelete() {}, onMutate() {} } })
@@ -278,4 +271,41 @@ test("activity photos fill frames of one shape, and an activity without photos k
   // The gallery still opens on the main photo, with every photo's thumbnail in its saved order, as a small image (TRA-89).
   const card = byClass(hosts({ type: CandidateList, props: { items: [tower], category: "activities", destination: snapshot.destinations.find((item) => item.id === id), busy: false, onEdit() {}, onDelete() {}, onMutate() {} } }), "thumbnails");
   assert.deepEqual(hosts(card).filter((node) => node.type === "img").map((node) => node.props.src), [thumbnail(other), thumbnail(main)]);
+});
+
+/** Each rule in a CSS file: its selector and its declarations by property. A rule in a media query is listed as any other. */
+function cssRules(file) {
+  const css = readFileSync(new URL(file, import.meta.url), "utf8").replace(/\/\*[\s\S]*?\*\//g, "");
+  return [...css.matchAll(/([^{}]+)\{([^{}]*)\}/g)].map(([, selector, body]) => [selector.trim(), Object.fromEntries(body.split(";").filter((declaration) => declaration.trim())
+    .map((declaration) => [declaration.slice(0, declaration.indexOf(":")).trim(), declaration.slice(declaration.indexOf(":") + 1).trim()]))]);
+}
+
+test("hotel, activity and restaurant cards in a destination's carousels show photos at one size, with none, one or several (TRA-137)", (t) => {
+  const { store, id } = seed(t);
+  // With seed's hotels and activities, every category has ideas without photos, with one, and with several, whose main photo is the last.
+  const photos = (count) => { const add = Array.from({ length: count }, () => ({ id: randomUUID(), ...prepared(webp) })); return { gallery: { add, remove: [], mainImageId: add.at(-1).id } }; };
+  for (const [category, name, overrides] of [["activities", "Tower", photos(1)], ["activities", "Prater", photos(3)], ["restaurants", "Cafe", {}],
+    ["restaurants", "Bistro", { restaurantTypes: ["dinner"], ...photos(1) }], ["restaurants", "Heuriger", photos(3)]]) store.applyMutation(candidateInput(id, category, { name, included: false, ...overrides }));
+  const ideas = store.getSnapshot().candidates.filter((item) => item.destinationId === id);
+  // A card's main photo, at the size every card's photo has.
+  const shown = (name) => { const item = ideas.find((idea) => idea.name === name); const image = item.images.find((photo) => photo.id === item.mainImageId); return [`/api/candidate-images/${item.id}/${image.id}?v=${image.version}`, 400, 300]; };
+  const sections = hosts({ type: DestinationIdeas, props: { ideas, city: "Vienna", pages: "/destinations/vienna", busy: false, onView() {}, onAdd() {}, onBudgetEdit() {} } }).filter((node) => node.type === "section");
+  // No category's carousel is set apart, and every card's frame shows its main photo or, without one, its category's icon.
+  assert.deepEqual(Object.fromEntries(sections.map((section) => {
+    const [carousel] = byClass(hosts(section), "carousel");
+    return [section.props["aria-label"], [carousel.props.className, ...byClass(hosts(carousel), "card").map((card) => {
+      const [frame, content] = hosts(byClass(hosts(card), "photo")[0]);
+      return [text(byClass(hosts(card), "name")[0]), frame.props.className, content.type === "img" ? [content.props.src, content.props.width, content.props.height] : content.type];
+    })]];
+  })), {
+    Hotels: ["carousel", ["Chosen hotel", "photo", "icon:BedDouble"], ["First hotel", "photo", shown("First hotel")], ["Third hotel", "photo", shown("Third hotel")]],
+    Activities: ["carousel", ["Palace", "photo", "icon:Binoculars"], ["Museum", "photo", "icon:Binoculars"], ["Opera", "photo", "icon:Binoculars"], ["Tower", "photo", shown("Tower")], ["Prater", "photo", shown("Prater")]],
+    Restaurants: ["carousel", ["Cafe", "photo", "icon:Utensils"], ["Bistro", "photo", shown("Bistro")], ["Heuriger", "photo", shown("Heuriger")]],
+  });
+  // Every card's frame and photo are styled alike: a 4:3 frame that its photo covers, cropped rather than stretched. The photo
+  // is out of the frame's layout, so a portrait, square or tall photo can't make its frame, or every card in its row, taller.
+  const rules = Object.fromEntries(cssRules("../src/components/destination-ideas.module.css").filter(([selector]) => /\.photo\b/.test(selector)));
+  assert.deepEqual(Object.keys(rules), [".photo", ".photo img"]);
+  assert.deepEqual([rules[".photo"]["aspect-ratio"], rules[".photo"].position], ["4 / 3", "relative"]);
+  assert.deepEqual([rules[".photo img"].position, rules[".photo img"].inset, rules[".photo img"]["object-fit"]], ["absolute", "0", "cover"]);
 });

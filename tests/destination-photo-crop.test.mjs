@@ -83,6 +83,7 @@ function harness(destination) {
     return modules[name];
   };
   modules["./focus-after"] = load("../src/components/focus-after.ts", require);
+  modules["./photo-browsing"] = load("../src/components/photo-browsing.tsx", require);
   // A mouse or trackpad, so photos can also be dragged into order.
   const window = { matchMedia: () => ({ matches: true, addEventListener() {}, removeEventListener() {} }) };
   modules["./photo-drag"] = load("../src/components/photo-drag.ts", require, { window });

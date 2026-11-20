@@ -22,6 +22,8 @@ import { createGalleryDraft, galleryForm, type GalleryDraft } from "@/lib/galler
 import { TripImageEditor, TripImageView } from "@/components/trip-image";
 import { createTripImageDraft, tripImageForm, type TripImageDraft } from "@/lib/trip-image-draft";
 import { RestaurantTypesField } from "@/components/restaurant-types";
+import { PlaceLocationFields } from "@/components/place-location";
+import { coordinatesFromForm } from "@/lib/coordinates";
 import TripRouteFields from "@/components/trip-route-fields";
 import { ConnectionItinerary, ConnectionItineraryEditor } from "@/components/connection-itinerary";
 import { ResearchLinks, ResearchLinksEditor } from "@/components/research-links";
@@ -390,14 +392,14 @@ export default function PlannerApp({ initialData, initialBudgets, access = {}, d
       }
       case "leg": void perform({ type: "leg.save", id: editor.item.id, method: text("method"), price: text("price"), miscAmount: text("miscAmount"), departure: text("departure"), arrival: text("arrival"), url: researchLinks[0]?.url ?? "", links: researchLinks, notes: text("notes"), itinerary }); break;
       case "church": {
-        void perform({ type: "church.save", ...itemToSave(editor.item), destinationId: editor.destinationId, name: text("name"), address: text("address"), denomination: text("denomination"), url: text("url"), massTimes }, "Church saved.", undefined, galleryForm(candidateGallery, editor.item));
+        void perform({ type: "church.save", ...itemToSave(editor.item), destinationId: editor.destinationId, name: text("name"), address: text("address"), denomination: text("denomination"), url: text("url"), massTimes, coordinates: coordinatesFromForm(fields, editor.item?.coordinates ?? null) }, "Church saved.", undefined, galleryForm(candidateGallery, editor.item));
         break;
       }
       case "candidate": {
         const imageForm = galleryForm(candidateGallery, editor.item);
         // A restaurant's editor sends every type checked, so unchecking them all clears them. Other ideas have none.
         const checkedTypes = fields.getAll("restaurantTypes");
-        void perform({ type: "candidate.save", ...itemToSave(editor.item), destinationId: editor.destinationId, category: editor.category, name: text("name"), description: text("description"), price: text("price"), address: text("address"), url: researchLinks[0]?.url ?? "", links: researchLinks, notes: text("notes"), included: fields.has("included"), mustDo: fields.has("mustDo"),
+        void perform({ type: "candidate.save", ...itemToSave(editor.item), destinationId: editor.destinationId, category: editor.category, name: text("name"), description: text("description"), price: text("price"), address: text("address"), url: researchLinks[0]?.url ?? "", links: researchLinks, notes: text("notes"), included: fields.has("included"), mustDo: fields.has("mustDo"), coordinates: coordinatesFromForm(fields, editor.item?.coordinates ?? null),
           ...(editor.category === "restaurants" && { restaurantTypes: RESTAURANT_TYPES.filter((type) => checkedTypes.includes(type)) }) }, "Changes saved.", undefined, imageForm);
         break;
       }
@@ -691,7 +693,7 @@ export default function PlannerApp({ initialData, initialBudgets, access = {}, d
         <Field label="What it is" hint={"Shown below the " + singular[editor.category] + "’s name on its cards. Leave it blank for none."} wide><input name="description" defaultValue={editor.item?.description} maxLength={120} placeholder={ideaExamples[editor.category]} /></Field>
         {editor.category === "restaurants" && <RestaurantTypesField types={editor.item?.restaurantTypes ?? []} disabled={busy} />}
         <Field label="Estimated price (USD)" wide hint={priceNotes[editor.category] + " Leave blank if unknown."}><input name="price" type="number" min="0" max={MAX_AMOUNT_DOLLARS} step="0.01" defaultValue={minorAmountValue(editor.item?.priceCents, "USD")} placeholder="Not estimated" /></Field>
-        <Field label="Address or neighborhood" wide><input name="address" defaultValue={editor.item?.address} maxLength={500} placeholder="Optional" /></Field>
+        <PlaceLocationFields key={editor.item?.id ?? newId} label="Address or neighborhood" placeholder="Optional" address={editor.item?.address ?? ""} coordinates={editor.item?.coordinates ?? null} disabled={busy} />
         <CandidateGalleryEditor candidate={editor.item} subject={singular[editor.category]} draft={candidateGallery} onChange={setCandidateGallery} disabled={busy} />
         <ResearchLinksEditor links={researchLinks} onChange={setResearchLinks} disabled={busy} /><Notes value={editor.item?.notes} />
         {editor.category !== "hotels" && <label className="checkbox-field wide"><input name="mustDo" type="checkbox" defaultChecked={editor.item?.mustDo ?? false} disabled={busy} /><span>Must do<small>A planning priority. Budget inclusion and list order stay separate.</small></span></label>}

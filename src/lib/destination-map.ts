@@ -1,3 +1,4 @@
+import type { Coordinates, SavedCoordinates } from "./coordinates";
 import type { PlaceAnswer } from "./place-search";
 import type { Snapshot } from "./types";
 
@@ -8,8 +9,11 @@ export const MAP_CATEGORY_LABELS: Record<MapCategory, string> = { hotels: "Hotel
 /** What one place of each category is called, as its marker's popup names it. */
 export const MAP_PLACE_LABELS: Record<MapCategory, string> = { hotels: "Hotel", activities: "Activity", restaurants: "Restaurant", churches: "Church" };
 
-/** A hotel, activity, restaurant or church saved for a destination, by its saved ID, with the text it is looked up by. */
-export interface SavedPlace { id: string; category: MapCategory; name: string; address: string }
+/**
+ * A hotel, activity, restaurant or church saved for a destination, by its saved ID, with the text it is looked up by and
+ * any coordinates saved for it (TRA-150).
+ */
+export interface SavedPlace { id: string; category: MapCategory; name: string; address: string; coordinates: SavedCoordinates | null }
 
 /**
  * Every hotel, activity, restaurant and church saved for a destination, selected for the budget or not, each once: its
@@ -18,9 +22,17 @@ export interface SavedPlace { id: string; category: MapCategory; name: string; a
 export function destinationPlaces(snapshot: Pick<Snapshot, "candidates" | "churches">, destinationId: string): SavedPlace[] {
   const ideas = MAP_CATEGORIES.flatMap((category) => snapshot.candidates.filter((item) => item.destinationId === destinationId && item.category === category).sort((a, b) => a.position - b.position));
   return [
-    ...ideas.map(({ id, category, name, address }) => ({ id, category, name, address })),
-    ...snapshot.churches.filter((item) => item.destinationId === destinationId).map(({ id, name, address }) => ({ id, category: "churches" as const, name, address })),
+    ...ideas.map(({ id, category, name, address, coordinates }) => ({ id, category, name, address, coordinates })),
+    ...snapshot.churches.filter((item) => item.destinationId === destinationId).map(({ id, name, address, coordinates }) => ({ id, category: "churches" as const, name, address, coordinates })),
   ];
+}
+
+/**
+ * Where the map shows a place without looking it up (TRA-150): its saved coordinates, however far they are from its
+ * destination, unless they wait to be reviewed since its address changed. A place without them is looked up.
+ */
+export function mapCoordinates(place: SavedPlace): Coordinates | null {
+  return place.coordinates && !place.coordinates.review ? place.coordinates : null;
 }
 
 /** The saved text a place is looked up by, with its destination's city. A place whose key changes is looked up again. */
@@ -30,7 +42,8 @@ export function placeKey(city: string, place: SavedPlace): string {
 
 /**
  * What `/api/destination-map/[destinationId]` answers: whether the destination itself was found, as the trip map finds it,
- * and each saved place's answer by its saved ID, with the key of the text it was looked up by.
+ * and the answer for each saved place looked up, by its saved ID, with the key of the text it was looked up by. A place
+ * the map shows at its saved coordinates isn't looked up (TRA-150).
  */
 export interface DestinationMapAnswer {
   area: "found" | "missing" | "unavailable";
@@ -40,8 +53,11 @@ export interface DestinationMapAnswer {
 /** A latitude and longitude. */
 export type Position = [number, number];
 
-/** A place a marker shows, with the address OpenStreetMap has for where it was found. */
-export type MappedPlace = SavedPlace & { found: string };
+/**
+ * A place a marker shows: `found` is the address OpenStreetMap has where it was found, or null for a place shown at its
+ * saved coordinates (TRA-150), which are `approximate` when they mark only roughly where it is, never at an address.
+ */
+export type MappedPlace = SavedPlace & { found: string | null; approximate: boolean };
 
 /** One marker: a position, and every place found there, as when a hotel and its restaurant share a building. */
 export interface DestinationMarker { key: string; position: Position; places: MappedPlace[] }
@@ -54,26 +70,30 @@ export interface DestinationMapLayout { markers: DestinationMarker[]; unmapped: 
 
 /**
  * What a destination's map shows of the places in the `shown` categories, for the answers so far: one marker for each
- * position where places were found, and each place it can't show, grouped by category. A place without an answer yet,
- * or still pending, is in neither.
+ * position where places are, and each place it can't show, grouped by category. A place is where its saved coordinates
+ * put it (TRA-150), whatever its answer says, or else where it was found. A place without coordinates and without an
+ * answer yet, or still pending, is in neither.
  */
 export function destinationMapLayout(places: readonly SavedPlace[], answers: Readonly<Record<string, PlaceAnswer | undefined>>, shown: readonly MapCategory[]): DestinationMapLayout {
   const selected = places.filter((place) => shown.includes(place.category));
   const markers: DestinationMarker[] = [];
   for (const place of selected) {
+    const coordinates = mapCoordinates(place);
     const answer = answers[place.id];
-    if (answer?.status !== "found") continue;
-    const key = answer.latitude + "," + answer.longitude;
-    const mapped = { ...place, found: answer.label };
+    const spot = coordinates ? { latitude: coordinates.latitude, longitude: coordinates.longitude, found: null, approximate: coordinates.accuracy === "approximate" }
+      : answer?.status === "found" ? { latitude: answer.latitude, longitude: answer.longitude, found: answer.label, approximate: false } : undefined;
+    if (!spot) continue;
+    const key = spot.latitude + "," + spot.longitude;
+    const mapped = { ...place, found: spot.found, approximate: spot.approximate };
     const marker = markers.find((item) => item.key === key);
     if (marker) marker.places.push(mapped);
-    else markers.push({ key, position: [answer.latitude, answer.longitude], places: [mapped] });
+    else markers.push({ key, position: [spot.latitude, spot.longitude], places: [mapped] });
   }
   const unmapped = MAP_CATEGORIES.filter((category) => shown.includes(category)).map((category) => ({
     category,
     places: selected.flatMap((place): UnmappedPlace[] => {
       const status = answers[place.id]?.status;
-      return place.category === category && (status === "missing" || status === "ambiguous" || status === "unavailable") ? [{ ...place, reason: status }] : [];
+      return place.category === category && !mapCoordinates(place) && (status === "missing" || status === "ambiguous" || status === "unavailable") ? [{ ...place, reason: status }] : [];
     }),
   })).filter((group) => group.places.length > 0);
   return { markers, unmapped };

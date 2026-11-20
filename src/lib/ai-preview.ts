@@ -1,6 +1,8 @@
+import { ACCURACY_LABELS } from "./coordinates.ts";
 import { formatCurrency } from "./money.ts";
 import { RESTAURANT_TYPE_LABELS } from "./types.ts";
 import { monthlyClimateText } from "./typical-weather.ts";
+import type { CoordinatesAccuracy } from "./coordinates";
 import type { Category, Mutation, RestaurantType } from "./types";
 import type { MonthlyClimate } from "./typical-weather";
 
@@ -37,7 +39,11 @@ export interface PreviewRecord { action: "Adds" | "Changes" | "Deletes"; record:
 /** One proposed change as the owner reviews it: what it does, and every record it adds, changes or deletes. */
 export interface PreviewChange { operation: string; records: PreviewRecord[] }
 
-type Format = "text" | "number" | "order" | "money" | "flag" | "json" | "account" | "restaurantTypes" | "climate";
+type Format = "text" | "number" | "order" | "money" | "flag" | "json" | "account" | "restaurantTypes" | "climate" | "accuracy" | "review";
+/** An idea's and a church's coordinates (TRA-150), which the owner sees before approving, and whether they wait to be reviewed. */
+const COORDINATE_COLUMNS: Record<string, [string, Format]> = {
+  latitude: ["Latitude", "number"], longitude: ["Longitude", "number"], coordinatesAccuracy: ["Coordinates accuracy", "accuracy"], coordinatesReview: ["Coordinates to review", "review"],
+};
 /**
  * Each column's label in a preview and how its values read, or null for one people never see: IDs, keys, timestamps,
  * photo versions, destination photos' focal points, which proposals never change (TRA-53), trips' headline image crops,
@@ -64,9 +70,9 @@ export const PREVIEW_COLUMNS: Record<DataTable, Record<string, [string, Format] 
   destination_health_safety: { destinationId: null, healthSafetyJson: ["Health and safety", "json"] },
   destination_climate: { destinationId: null, climateJson: ["Monthly averages", "climate"] },
   destination_images: { id: null, destinationId: null, version: null, position: ["Order", "order"], isMain: ["Primary photo", "flag"], focusX: null, focusY: null },
-  candidates: { id: null, destinationId: null, category: null, name: ["Name", "text"], description: ["What it is", "text"], priceCents: ["Price", "money"], address: ["Address", "text"], url: null, notes: ["Notes", "text"], included: ["Included", "flag"], linksJson: ["Research links", "json"], position: ["Order", "order"], mustDo: ["Must do", "flag"], restaurantTypesJson: ["Restaurant types", "restaurantTypes"] },
+  candidates: { id: null, destinationId: null, category: null, name: ["Name", "text"], description: ["What it is", "text"], priceCents: ["Price", "money"], address: ["Address", "text"], url: null, notes: ["Notes", "text"], included: ["Included", "flag"], linksJson: ["Research links", "json"], position: ["Order", "order"], mustDo: ["Must do", "flag"], restaurantTypesJson: ["Restaurant types", "restaurantTypes"], ...COORDINATE_COLUMNS },
   candidate_images: { id: null, candidateId: null, version: null, position: ["Order", "order"], isMain: ["Main photo", "flag"] },
-  churches: { id: null, destinationId: null, name: ["Name", "text"], address: ["Address", "text"], denomination: ["Denomination", "text"], url: ["Website", "text"], massTimesJson: ["Mass times", "json"] },
+  churches: { id: null, destinationId: null, name: ["Name", "text"], address: ["Address", "text"], denomination: ["Denomination", "text"], url: ["Website", "text"], massTimesJson: ["Mass times", "json"], ...COORDINATE_COLUMNS },
   church_images: { id: null, churchId: null, version: null, position: ["Order", "order"], isMain: ["Main photo", "flag"] },
   accounts: { id: null, email: ["Email", "text"], name: ["Name", "text"], authorizedAt: null },
 };
@@ -172,6 +178,10 @@ function display(format: Format, value: Value, email: (accountId: Value) => stri
     case "restaurantTypes": return (JSON.parse(String(value)) as RestaurantType[]).map((type) => RESTAURANT_TYPE_LABELS[type]).join(", ") || null;
     // Every month's averages by name, with their source and reference years (TRA-135).
     case "climate": return monthlyClimateText(JSON.parse(String(value)) as MonthlyClimate);
+    // Exact or Approximate (TRA-150).
+    case "accuracy": return ACCURACY_LABELS[value as CoordinatesAccuracy];
+    // Only coordinates waiting to be reviewed say so, so a place without any shows nothing (TRA-150).
+    case "review": return value === 1 ? "Yes" : null;
   }
 }
 /** Saved JSON, such as research links or Mass times, as text: every value but IDs and empty ones. */
@@ -220,5 +230,7 @@ export function operationTitle(change: Mutation): string {
     case "destination.photos": return "Change a destination's photos";
     case "candidate.photos": return "Change an idea's photos";
     case "church.photos": return "Change a church's photos";
+    case "candidate.coordinates": return change.coordinates ? `Set an idea's ${change.coordinates.accuracy} coordinates` : "Remove an idea's coordinates";
+    case "church.coordinates": return change.coordinates ? `Set a church's ${change.coordinates.accuracy} coordinates` : "Remove a church's coordinates";
   }
 }

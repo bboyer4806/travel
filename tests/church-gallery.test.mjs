@@ -4,6 +4,7 @@ import { readFileSync } from "node:fs";
 import test from "node:test";
 import { runInNewContext } from "node:vm";
 import ts from "typescript";
+import * as coordinates from "../src/lib/coordinates.ts";
 import * as galleryDraft from "../src/lib/gallery-draft.ts";
 import * as imageLimits from "../src/lib/image-limits.ts";
 import * as uuid from "../src/lib/uuid.ts";
@@ -51,7 +52,7 @@ function harness(view) {
     "lucide-react": new Proxy({}, { get: (_, name) => "icon:" + String(name) }),
     // Add image by URL (TRA-139), tested in image-by-url.test.mjs, stands in as an element showing what the editor gives it.
     "./image-by-url": { AddImageByUrl: (props) => ({ type: "AddImageByUrl", props }) },
-    "@/lib/gallery-draft": galleryDraft, "@/lib/image-limits": imageLimits, "@/lib/uuid": uuid,
+    "@/lib/coordinates": coordinates, "@/lib/gallery-draft": galleryDraft, "@/lib/image-limits": imageLimits, "@/lib/uuid": uuid,
   };
   const require = (name) => {
     // A CSS module's class names are their own names.
@@ -63,6 +64,7 @@ function harness(view) {
   modules["./photo-browsing"] = load("../src/components/photo-browsing.tsx", require);
   modules["./photo-drag"] = load("../src/components/photo-drag.ts", require);
   modules["./candidate-gallery"] = load("../src/components/candidate-gallery.tsx", require);
+  modules["./place-location"] = load("../src/components/place-location.tsx", require);
   const components = { ...load("../src/components/churches.tsx", require), CandidateGallery: modules["./candidate-gallery"].CandidateGallery };
   /** The host elements an element renders to, rendering each component once, in order, so its hooks keep their places. Each component's element keeps what it rendered. */
   const hosts = (node) => {

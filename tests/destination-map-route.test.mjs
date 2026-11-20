@@ -126,3 +126,25 @@ test("a destination's own map in Destinations needs no trip, and a destination t
   const failing = route({ account: owner, store, fetcher: async () => { throw new Error("Offline"); } });
   assert.deepEqual(await (await failing(vienna)).json(), { area: "unavailable", places: { [museum]: { key: destinationMap.placeKey("Vienna", { name: "Albertina", address: "" }), status: "unavailable" } } });
 });
+
+test("a place with saved coordinates is never looked up, while one whose coordinates wait for review is (TRA-150)", async (t) => {
+  const store = createStore(":memory:", "owner@example.com");
+  t.after(() => store.close());
+  const owner = store.authorizeAccount("owner@example.com");
+  const vienna = store.applyMutation(owner.id, { type: "destination.create", city: "Vienna" }).id;
+  const add = (input) => store.applyMutation(owner.id, input).id;
+  add(candidateInput(vienna, "activities", { name: "Melk Abbey", address: "Abt-Berthold-Dietmayr-Straße 1, Melk", coordinates: { latitude: 48.22842, longitude: 15.33437, accuracy: "exact" } }));
+  add(candidateInput(vienna, "hotels", { name: "Leopoldstadt apartment", address: "Address withheld", coordinates: { latitude: 48.2167, longitude: 16.3958, accuracy: "approximate" } }));
+  const museum = add(candidateInput(vienna, "activities", { name: "Albertina" }));
+  const church = add(churchInput(vienna, { name: "St. Stephen's Cathedral", address: "Stephansplatz 3", coordinates: { latitude: 48.20857, longitude: 16.37307, accuracy: "exact" } }));
+  // The church's new address leaves its coordinates waiting for review, so it is looked up by that address.
+  store.applyMutation(owner.id, churchInput(vienna, { id: church, name: "St. Stephen's Cathedral", address: "Stephansplatz 3, Wien" }));
+  const { fetcher, requests } = providers({
+    "Albertina": [poi("Albertina", 48.20462, 16.36818)],
+    "Stephansplatz 3, Wien": [poi("St. Stephen's Cathedral", 48.20857, 16.37307, { category: "amenity" })],
+  });
+  const answer = await (await route({ account: owner, store, fetcher })(vienna)).json();
+  assert.deepEqual(Object.keys(answer.places).sort(), [museum, church].sort(), "no answer for a place the map shows at its coordinates");
+  assert.equal(answer.places[church].status, "found");
+  assert.deepEqual(requests, ["city: Vienna", "place: Albertina", "place: Stephansplatz 3, Wien"], "Nominatim is never asked about Melk Abbey or the rental");
+});

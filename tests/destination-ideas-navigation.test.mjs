@@ -4,6 +4,7 @@ import { readFileSync } from "node:fs";
 import test from "node:test";
 import { runInNewContext } from "node:vm";
 import ts from "typescript";
+import * as coordinates from "../src/lib/coordinates.ts";
 import * as galleryDraft from "../src/lib/gallery-draft.ts";
 import * as imageLimits from "../src/lib/image-limits.ts";
 import * as money from "../src/lib/money.ts";
@@ -72,7 +73,7 @@ function harness(ideas, width) {
     "next/link": { default: "a" }, "lucide-react": new Proxy({}, { get: (_, name) => "icon:" + String(name) }),
     // Add image by URL (TRA-139), tested in image-by-url.test.mjs, stands in as an element showing what the editor gives it.
     "./image-by-url": { AddImageByUrl: (props) => ({ type: "AddImageByUrl", props }) },
-    "@/lib/gallery-draft": galleryDraft, "@/lib/image-limits": imageLimits, "@/lib/money": money, "@/lib/types": types, "@/lib/uuid": uuid,
+    "@/lib/coordinates": coordinates, "@/lib/gallery-draft": galleryDraft, "@/lib/image-limits": imageLimits, "@/lib/money": money, "@/lib/types": types, "@/lib/uuid": uuid,
   };
   const require = (name) => {
     // A CSS module's class names are their own names.
@@ -86,6 +87,7 @@ function harness(ideas, width) {
   modules["./candidate-gallery"] = load("../src/components/candidate-gallery.tsx", require);
   modules["./research-links"] = load("../src/components/research-links.tsx", require);
   modules["./restaurant-types"] = load("../src/components/restaurant-types.tsx", require);
+  modules["./place-location"] = load("../src/components/place-location.tsx", require);
   class ResizeObserver {
     constructor(callback) { this.callback = callback; }
     observe() { observers.add(this); }

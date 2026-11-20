@@ -1,4 +1,5 @@
 import type { AiPlatform } from "./ai-auth";
+import type { Coordinates, SavedCoordinates } from "./coordinates";
 import type { PreviewChange } from "./ai-preview";
 import type { EntryRequirements } from "./entry-requirements";
 import type { HealthSafety } from "./health-safety";
@@ -77,11 +78,12 @@ export interface GalleryUpdate { add: ({ id: string } & PreparedImage)[]; remove
 /**
  * A hotel, activity or restaurant idea. `description` says what it is in a few words, such as "Boutique hotel", shown
  * below its name on its cards, or is empty without one (TRA-138). `restaurantTypes` is empty for hotels and activities,
- * and for a restaurant without any.
+ * and for a restaurant without any. `coordinates` place it on its destination's map without a lookup, or are null (TRA-150).
  */
-export interface Candidate { id: string; destinationId: string; category: Category; position: number; mustDo: boolean; name: string; description: string; priceCents: number | null; address: string; url: string; notes: string; included: boolean; links: ResearchLink[]; images: CandidateImage[]; mainImageId: string | null; restaurantTypes: RestaurantType[]; }
+export interface Candidate { id: string; destinationId: string; category: Category; position: number; mustDo: boolean; name: string; description: string; priceCents: number | null; address: string; url: string; notes: string; included: boolean; links: ResearchLink[]; images: CandidateImage[]; mainImageId: string | null; restaurantTypes: RestaurantType[]; coordinates: SavedCoordinates | null; }
 export interface MassTime { id: string; day: string; time: string; }
-export interface Church { id: string; destinationId: string; name: string; address: string; denomination: string; url: string; massTimes: MassTime[]; images: CandidateImage[]; mainImageId: string | null; }
+/** A church. `coordinates` place it on its destination's map without a lookup, or are null (TRA-150). */
+export interface Church { id: string; destinationId: string; name: string; address: string; denomination: string; url: string; massTimes: MassTime[]; images: CandidateImage[]; mainImageId: string | null; coordinates: SavedCoordinates | null; }
 /** `tags` is one spelling of each tag on the trips the account can open, in alphabetical order, for a trip's page to reuse and the trip list to filter by. Destinations pages leave it empty. */
 export interface Snapshot { churches: Church[]; trips: Trip[]; homeItems: HomeItem[]; stops: TripStop[]; destinations: Destination[]; legs: TravelLeg[]; candidates: Candidate[]; tags: string[]; }
 /**
@@ -123,7 +125,10 @@ export type Mutation =
  // Replaces a destination's monthly climate averages, or clears them with null (TRA-135). Its seasonal typical weather stays.
  | { type: "destination.climate"; id: string; climate: MonthlyClimate | null }
  | { type: "destination.churchVisibility"; id: string; enabled: boolean }
- | { type: "church.save"; id: string; create?: true; destinationId: string; name: string; address: string; denomination: string; url: string; massTimes: MassTime[]; gallery?: GalleryUpdate }
+ // An idea's or church's `coordinates` place it on its destination's map, or null removes them (TRA-150). Left out, they
+ // are kept, and once a save changes the address they wait to be reviewed, so the map stops using them until they are
+ // saved again or removed.
+ | { type: "church.save"; id: string; create?: true; destinationId: string; name: string; address: string; denomination: string; url: string; massTimes: MassTime[]; coordinates?: Coordinates | null; gallery?: GalleryUpdate }
  | { type: "church.delete"; id: string; destinationId: string }
  // Adds a city to a trip as its last stop, without stay notes or nights: the trip owner's saved destination for the
  // city, or a new one. A city the trip already visits opens that stop instead of adding another.
@@ -139,7 +144,7 @@ export type Mutation =
  | { type: "leg.clear"; id: string }
  // A restaurant's `restaurantTypes` replace its saved ones, and left out keep them. Hotels and activities have none.
  // `description` says what the idea is, below its name on its cards (TRA-138). Left out, as a page opened before it does, it keeps the saved one.
- | { type: "candidate.save"; id: string; create?: true; destinationId: string; category: Category; name: string; description?: string; price: string; address: string; url: string; notes: string; included: boolean; mustDo?: boolean; restaurantTypes?: RestaurantType[]; links?: ResearchLink[]; gallery?: GalleryUpdate }
+ | { type: "candidate.save"; id: string; create?: true; destinationId: string; category: Category; name: string; description?: string; price: string; address: string; url: string; notes: string; included: boolean; mustDo?: boolean; restaurantTypes?: RestaurantType[]; links?: ResearchLink[]; coordinates?: Coordinates | null; gallery?: GalleryUpdate }
  | { type: "candidate.move"; id: string; direction: "up" | "down" }
  | { type: "candidate.mustDo"; id: string; mustDo: boolean }
  | { type: "candidate.delete"; id: string }
@@ -148,7 +153,11 @@ export type Mutation =
  // for a ChatGPT or Claude proposal (TRA-122). Only those proposals make them; people change photos with each item's save.
  | { type: "destination.photos"; id: string; gallery: GalleryUpdate }
  | { type: "candidate.photos"; id: string; gallery: GalleryUpdate }
- | { type: "church.photos"; id: string; gallery: GalleryUpdate };
+ | { type: "church.photos"; id: string; gallery: GalleryUpdate }
+ // Set or remove an idea's or church's coordinates, and nothing else, for a ChatGPT or Claude proposal (TRA-150). Only
+ // those proposals make them; people change coordinates with each item's save.
+ | { type: "candidate.coordinates"; id: string; coordinates: Coordinates | null }
+ | { type: "church.coordinates"; id: string; coordinates: Coordinates | null };
 export type ActionResult = { ok: true; id?: string } | { ok: false; error: string };
 /** An email authorized to use Travel. Its Google subject is bound privately at the first sign-in. */
 export interface AuthorizedAccount { id: string; email: string; name: string | null; }

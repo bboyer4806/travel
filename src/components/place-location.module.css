@@ -1,0 +1,21 @@
+/* TRA-150: a hotel's, activity's, restaurant's or church's coordinates in its editor, below its address. */
+.coordinates { min-width: 0; margin: 0; padding: 16px; border: 1px solid var(--line); border-radius: 10px; }
+.coordinates > legend { padding: 0 6px; font-size: 14px; font-weight: 600; }
+.coordinates > :global(.helper) { margin: 0 0 14px; }
+/* Latitude beside longitude, one above the other on phones. */
+.degrees { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+.accuracy { min-width: 0; margin: 16px 0 0; padding: 0; border: 0; }
+.accuracy legend { padding: 0; font-size: 12px; font-weight: 600; }
+.choices { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 7px; }
+.choice { display: flex; align-items: flex-start; gap: 10px; min-height: 44px; padding: 10px 12px; border: 1px solid #ccd6c7; border-radius: 5px; background: #fffffc; font-size: 13px; cursor: pointer; }
+.choice:has(input:checked) { border-color: #7e9c72; background: var(--wash); }
+.choice:has(input:disabled) { cursor: default; opacity: .6; }
+.choice input { flex-shrink: 0; width: 17px; height: 17px; margin: 1px 0 0; accent-color: var(--green); }
+.choice small { display: block; margin-top: 3px; color: var(--muted); font-size: 10px; line-height: 1.5; }
+/* Saved coordinates waiting to be checked for a new address. */
+.review { margin-top: 16px; padding: 12px; border-radius: 6px; background: #fff4e5; }
+.review p { margin: 0 0 10px; color: var(--ink); font-size: 12px; }
+
+@media (max-width: 540px) {
+  .degrees, .choices { grid-template-columns: 1fr; }
+}

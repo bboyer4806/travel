@@ -69,7 +69,7 @@ test("church details, multiple Mass times, gallery, manual hiding and optional u
     assert.equal(church(store, id).denomination, "Catholic");
     assert.equal(church(store, id).url, "https://example.com/mass");
     assert.deepEqual(church(store, id).massTimes, times);
-    assert.deepEqual(church(store, unknownId), { id: unknownId, destinationId, name: "Nearby chapel", address: "", denomination: "", url: "", massTimes: [], mainImageId: null, images: [] });
+    assert.deepEqual(church(store, unknownId), { id: unknownId, destinationId, name: "Nearby chapel", address: "", denomination: "", url: "", massTimes: [], mainImageId: null, images: [], coordinates: null });
     const images = church(store, id).images;
     const storedPhoto = store.getChurchPhoto(id, second.id);
     store.applyMutation(churchInput(destinationId, { id, name: "Edited church", massTimes: times.slice(1) }));

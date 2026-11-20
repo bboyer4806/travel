@@ -65,8 +65,8 @@ function legacyDatabase(path, version) {
     stops: db.prepare("SELECT * FROM destinations").all().map((row) => ({ id: row.id, tripId: row.tripId, destinationId: row.id, position: row.position, stay: row.stay, nights: null, arrivalDate: null, departureDate: null, legacyArrivalDate: null, legacyDepartureDate: null })),
     // Connections from before miscellaneous spending in transit upgrade without an estimate (TRA-26).
     legs: db.prepare("SELECT * FROM legs ORDER BY fromId IS NOT NULL").all().map((row) => ({ ...row, itinerary: [], miscCents: null })),
-    // Ideas from before descriptions upgrade without one (TRA-138).
-    candidates: db.prepare("SELECT * FROM candidates").all().map((row) => ({ ...row, description: "", included: row.included === 1, mainImageId: null, images: [] })),
+    // Ideas from before descriptions upgrade without one (TRA-138), and without coordinates (TRA-150).
+    candidates: db.prepare("SELECT * FROM candidates").all().map((row) => ({ ...row, description: "", included: row.included === 1, mainImageId: null, images: [], coordinates: null })),
   };
   if (version === 2) {
     const itinerary = [stopInput()];

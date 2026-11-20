@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { destinationMapLayout, destinationPlaces, MAP_CATEGORIES, placeKey } from "../src/lib/destination-map.ts";
+import { destinationMapLayout, destinationPlaces, MAP_CATEGORIES, mapCoordinates, placeKey } from "../src/lib/destination-map.ts";
 import { candidateInput, newItem, setup } from "./budget-fixtures.mjs";
 
 const churchInput = (destinationId, overrides = {}) => ({ type: "church.save", destinationId, name: "St. Mary's", address: "", denomination: "", url: "", massTimes: [], ...overrides, ...newItem(overrides) });
@@ -31,11 +31,11 @@ test("a destination's map has every hotel, activity, restaurant and church saved
   const { store, tripId, destinationId, ids } = vienna(t);
   const places = destinationPlaces(store.getTripSnapshot(tripId).data, destinationId);
   assert.deepEqual(places, [
-    { id: ids.hotel, category: "hotels", name: "Hotel Sacher", address: "Philharmonikerstraße 4" },
-    { id: ids.museum, category: "activities", name: "Albertina", address: "" },
-    { id: ids.palace, category: "activities", name: "Schönbrunn Palace", address: "" },
-    { id: ids.cafe, category: "restaurants", name: "Café Central", address: "Herrengasse 14" },
-    { id: ids.church, category: "churches", name: "St. Stephen's Cathedral", address: "Stephansplatz 3" },
+    { id: ids.hotel, category: "hotels", name: "Hotel Sacher", address: "Philharmonikerstraße 4", coordinates: null },
+    { id: ids.museum, category: "activities", name: "Albertina", address: "", coordinates: null },
+    { id: ids.palace, category: "activities", name: "Schönbrunn Palace", address: "", coordinates: null },
+    { id: ids.cafe, category: "restaurants", name: "Café Central", address: "Herrengasse 14", coordinates: null },
+    { id: ids.church, category: "churches", name: "St. Stephen's Cathedral", address: "Stephansplatz 3", coordinates: null },
   ]);
   // The destination's own page, outside the trip, and its stop's idea page in the trip have the same places.
   assert.deepEqual(destinationPlaces(store.getDestinationSnapshot(destinationId).data, destinationId), places);
@@ -69,14 +69,14 @@ test("adding, editing and removing saved places changes the map's places, each o
 
 test("every combination of categories filters the markers and the places not on the map alike", () => {
   const places = [
-    { id: "h1", category: "hotels", name: "Hotel Sacher", address: "Philharmonikerstraße 4" },
-    { id: "h2", category: "hotels", name: "Hotel Nowhere", address: "" },
-    { id: "a1", category: "activities", name: "Albertina", address: "" },
-    { id: "a2", category: "activities", name: "Prater", address: "" },
-    { id: "r1", category: "restaurants", name: "Figlmüller", address: "" },
-    { id: "r2", category: "restaurants", name: "Café Central", address: "Herrengasse 14" },
-    { id: "c1", category: "churches", name: "St. Stephen's Cathedral", address: "Stephansplatz 3" },
-    { id: "c2", category: "churches", name: "St. Peter's", address: "" },
+    { id: "h1", category: "hotels", name: "Hotel Sacher", address: "Philharmonikerstraße 4", coordinates: null },
+    { id: "h2", category: "hotels", name: "Hotel Nowhere", address: "", coordinates: null },
+    { id: "a1", category: "activities", name: "Albertina", address: "", coordinates: null },
+    { id: "a2", category: "activities", name: "Prater", address: "", coordinates: null },
+    { id: "r1", category: "restaurants", name: "Figlmüller", address: "", coordinates: null },
+    { id: "r2", category: "restaurants", name: "Café Central", address: "Herrengasse 14", coordinates: null },
+    { id: "c1", category: "churches", name: "St. Stephen's Cathedral", address: "Stephansplatz 3", coordinates: null },
+    { id: "c2", category: "churches", name: "St. Peter's", address: "", coordinates: null },
   ];
   const answers = {
     h1: found(48.20406, 16.36949), h2: { status: "missing" }, a1: found(48.20462, 16.36818), a2: { status: "unavailable" },
@@ -95,20 +95,86 @@ test("every combination of categories filters the markers and the places not on 
   }
   const all = destinationMapLayout(places, answers, MAP_CATEGORIES);
   assert.deepEqual(all.unmapped.flatMap((group) => group.places.map(({ id, reason }) => [id, reason])), [["h2", "missing"], ["a2", "unavailable"], ["r1", "ambiguous"], ["c2", "missing"]]);
-  assert.deepEqual(all.markers[0], { key: "48.20406,16.36949", position: [48.20406, 16.36949], places: [{ ...places[0], found: "Found" }] });
+  assert.deepEqual(all.markers[0], { key: "48.20406,16.36949", position: [48.20406, 16.36949], places: [{ ...places[0], found: "Found", approximate: false }] });
 });
 
 test("places found at one position share a marker, and places still being looked up are on neither the map nor the list", () => {
   const places = [
-    { id: "hotel", category: "hotels", name: "Hotel Sacher", address: "Philharmonikerstraße 4" },
-    { id: "cafe", category: "restaurants", name: "Café Sacher", address: "Philharmonikerstraße 4" },
-    { id: "museum", category: "activities", name: "Albertina", address: "" },
-    { id: "palace", category: "activities", name: "Schönbrunn Palace", address: "" },
+    { id: "hotel", category: "hotels", name: "Hotel Sacher", address: "Philharmonikerstraße 4", coordinates: null },
+    { id: "cafe", category: "restaurants", name: "Café Sacher", address: "Philharmonikerstraße 4", coordinates: null },
+    { id: "museum", category: "activities", name: "Albertina", address: "", coordinates: null },
+    { id: "palace", category: "activities", name: "Schönbrunn Palace", address: "", coordinates: null },
   ];
   const sacher = found(48.20406, 16.36949, "Hotel Sacher, 4, Philharmonikerstraße");
   const layout = destinationMapLayout(places, { hotel: sacher, cafe: sacher, museum: { status: "pending" } }, MAP_CATEGORIES);
-  assert.deepEqual(layout.markers, [{ key: "48.20406,16.36949", position: [48.20406, 16.36949], places: [{ ...places[0], found: sacher.label }, { ...places[1], found: sacher.label }] }]);
+  assert.deepEqual(layout.markers, [{ key: "48.20406,16.36949", position: [48.20406, 16.36949], places: [{ ...places[0], found: sacher.label, approximate: false }, { ...places[1], found: sacher.label, approximate: false }] }]);
   assert.deepEqual(layout.unmapped, []);
   // With restaurants unchecked, the marker shows the hotel alone.
   assert.deepEqual(destinationMapLayout(places, { hotel: sacher, cafe: sacher }, ["hotels"]).markers[0].places.map((place) => place.id), ["hotel"]);
+});
+
+// TRA-150: places with saved coordinates are on the map at once, wherever they are, and aren't looked up.
+const SACHER = { latitude: 48.20406, longitude: 16.36949, accuracy: "exact" };
+const RENTAL = { latitude: 48.2167, longitude: 16.3958, accuracy: "approximate" };
+const MELK = { latitude: 48.22842, longitude: 15.33437, accuracy: "exact" };
+const coordinated = (coordinates, review = false) => ({ ...coordinates, review });
+
+test("saved coordinates place a place without a lookup, however far from its destination, ahead of any answer, and approximate ones say so", () => {
+  const places = [
+    { id: "hotel", category: "hotels", name: "Hotel Sacher", address: "Philharmonikerstraße 4", coordinates: coordinated(SACHER) },
+    { id: "rental", category: "hotels", name: "Leopoldstadt apartment", address: "Address withheld", coordinates: coordinated(RENTAL) },
+    { id: "abbey", category: "activities", name: "Melk Abbey", address: "", coordinates: coordinated(MELK) },
+    { id: "museum", category: "activities", name: "Albertina", address: "", coordinates: null },
+    { id: "cafe", category: "restaurants", name: "Café Central", address: "Herrengasse 14", coordinates: null },
+    { id: "moved", category: "restaurants", name: "Figlmüller", address: "Bäckerstraße 6", coordinates: coordinated({ latitude: 48.20918, longitude: 16.37466, accuracy: "exact" }, true) },
+    { id: "church", category: "churches", name: "St. Stephen's Cathedral", address: "Stephansplatz 3", coordinates: coordinated({ latitude: 48.20857, longitude: 16.37307, accuracy: "exact" }) },
+  ];
+  // A lookup may still answer for a place with coordinates, as from a page opened before they were saved: they come first.
+  const answers = { hotel: found(48.2, 16.37, "Elsewhere"), museum: { status: "missing" }, cafe: found(48.21036, 16.36564, "Café Central, 14, Herrengasse"), moved: { status: "ambiguous" }, rental: { status: "pending" } };
+  const layout = destinationMapLayout(places, answers, MAP_CATEGORIES);
+  assert.deepEqual(layout.markers.map((marker) => [marker.position, marker.places.map(({ id, found: shown, approximate }) => [id, shown, approximate])]), [
+    [[48.20406, 16.36949], [["hotel", null, false]]],
+    [[48.2167, 16.3958], [["rental", null, true]]],
+    [[48.22842, 15.33437], [["abbey", null, false]]],
+    [[48.21036, 16.36564], [["cafe", "Café Central, 14, Herrengasse", false]]],
+    [[48.20857, 16.37307], [["church", null, false]]],
+  ], "Melk Abbey, 80 km away, is where its coordinates are, not moved to Vienna");
+  // Coordinates waiting for review aren't used, so that place is looked up like any other, and listed when it isn't found.
+  assert.deepEqual(layout.unmapped.map((group) => [group.category, group.places.map(({ id, reason }) => [id, reason])]), [["activities", [["museum", "missing"]]], ["restaurants", [["moved", "ambiguous"]]]]);
+  const ids = [...layout.markers.flatMap((marker) => marker.places), ...layout.unmapped.flatMap((group) => group.places)].map((place) => place.id);
+  assert.deepEqual(ids.toSorted(), places.map((place) => place.id).toSorted(), "every place once, on one marker or in the list");
+  // Found where its coordinates were confirmed, the place that moved shows there once more.
+  assert.deepEqual(destinationMapLayout(places, { ...answers, moved: found(48.20831, 16.37734, "Figlmüller, 6, Bäckerstraße") }, ["restaurants"]).markers.map((marker) => marker.places.map((place) => [place.id, place.found])), [[["cafe", "Café Central, 14, Herrengasse"]], [["moved", "Figlmüller, 6, Bäckerstraße"]]]);
+  // The categories filter places with coordinates as they do every other.
+  for (const shown of combinations) {
+    const marked = destinationMapLayout(places, answers, shown).markers.flatMap((marker) => marker.places.map((place) => place.id));
+    assert.deepEqual(marked, places.filter((place) => shown.includes(place.category) && (mapCoordinates(place) || answers[place.id]?.status === "found")).map((place) => place.id), "markers for " + shown);
+  }
+});
+
+test("places at the same coordinates share one marker, whether saved or found there", () => {
+  const places = [
+    { id: "hotel", category: "hotels", name: "Hotel Sacher", address: "", coordinates: coordinated(SACHER) },
+    { id: "cafe", category: "restaurants", name: "Café Sacher", address: "", coordinates: null },
+    { id: "rental", category: "hotels", name: "Rental", address: "", coordinates: coordinated(RENTAL) },
+    { id: "room", category: "hotels", name: "Room", address: "", coordinates: coordinated(RENTAL) },
+  ];
+  const layout = destinationMapLayout(places, { cafe: found(SACHER.latitude, SACHER.longitude, "Hotel Sacher, 4, Philharmonikerstraße") }, MAP_CATEGORIES);
+  assert.deepEqual(layout.markers.map((marker) => [marker.key, marker.places.map((place) => [place.id, place.approximate])]), [
+    ["48.20406,16.36949", [["hotel", false], ["cafe", false]]],
+    ["48.2167,16.3958", [["rental", true], ["room", true]]],
+  ]);
+});
+
+test("a destination's places carry their saved coordinates, and only usable ones place them", (t) => {
+  const { store, destinationId, ids } = vienna(t);
+  store.applyMutation(candidateInput(destinationId, "hotels", { id: ids.hotel, name: "Hotel Sacher", address: "Philharmonikerstraße 4", included: false, coordinates: SACHER }));
+  store.applyMutation(churchInput(destinationId, { id: ids.church, name: "St. Stephen's Cathedral", address: "Stephansplatz 3", coordinates: RENTAL }));
+  const places = () => Object.fromEntries(destinationPlaces(store.getDestinationSnapshot(destinationId).data, destinationId).map((place) => [place.id, place]));
+  assert.deepEqual([places()[ids.hotel].coordinates, places()[ids.church].coordinates, places()[ids.museum].coordinates], [coordinated(SACHER), coordinated(RENTAL), null]);
+  assert.deepEqual([mapCoordinates(places()[ids.hotel]), mapCoordinates(places()[ids.museum])], [coordinated(SACHER), null]);
+  // A new address leaves the church's coordinates for review, so the map looks it up again by its new address.
+  store.applyMutation(churchInput(destinationId, { id: ids.church, name: "St. Stephen's Cathedral", address: "Stephansplatz 1" }));
+  assert.equal(places()[ids.church].coordinates.review, true);
+  assert.equal(mapCoordinates(places()[ids.church]), null);
 });

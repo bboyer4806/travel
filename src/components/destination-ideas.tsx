@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useEffect, useId, useRef, useState } from "react";
 import { BedDouble, Binoculars, Check, ChevronDown, ChevronLeft, ChevronRight, Pencil, Plus, Utensils } from "lucide-react";
 import { CandidateGallery, photoUrl } from "./candidate-gallery";
+import { CoordinatesDetail } from "./place-location";
 import { ResearchLinks } from "./research-links";
 import { RestaurantTypeTags } from "./restaurant-types";
 import { formatCurrency } from "@/lib/money";
@@ -130,6 +131,7 @@ export function IdeaDetails({ item }: { item: Candidate }) {
     {item.restaurantTypes.length > 0 && <div><dt>Restaurant types</dt><dd><RestaurantTypeTags types={item.restaurantTypes} /></dd></div>}
     <div><dt>Estimated price (USD)</dt><dd>{price(item)}<small>{priceNotes[category]}</small></dd></div>
     <div><dt>Address or neighborhood</dt><dd>{item.address || "Not added"}</dd></div>
+    <div><dt>Coordinates</dt><dd><CoordinatesDetail coordinates={item.coordinates} /></dd></div>
     <div><dt>{subjects[category]} photos</dt><dd>{item.images.length ? <CandidateGallery candidate={item} /> : "Not added"}</dd></div>
     <div><dt>Website and research links</dt><dd>{item.links.length ? <ResearchLinks links={item.links} /> : "Not added"}</dd></div>
     <div><dt>Notes</dt><dd className="preserve-lines">{item.notes || "Not added"}</dd></div>

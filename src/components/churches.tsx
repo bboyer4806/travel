@@ -5,6 +5,7 @@ import { Church as ChurchIcon, ExternalLink, MapPin, Pencil, Plus, Trash2 } from
 import type { GalleryDraft } from "@/lib/gallery-draft";
 import { CandidateGallery, CandidateGalleryEditor } from "./candidate-gallery";
 import { useFocusAfter } from "./focus-after";
+import { CoordinatesDetail, PlaceLocationFields } from "./place-location";
 import type { Church, MassTime } from "@/lib/types";
 import { randomUuid } from "@/lib/uuid";
 import styles from "./churches.module.css";
@@ -50,6 +51,7 @@ export function ChurchOptions({ items, headingLevel, busy, onAdd, onEdit, onDele
 export function ChurchDetails({ item }: { item: Church }) {
   return <dl className={ideaStyles.details}>
     <div><dt>Location or address</dt><dd>{item.address || "Not added"}</dd></div>
+    <div><dt>Coordinates</dt><dd><CoordinatesDetail coordinates={item.coordinates} /></dd></div>
     <div><dt>Denomination</dt><dd>{item.denomination || "Not added"}</dd></div>
     <div><dt>Website</dt><dd>{item.url ? <a className={styles.website} href={item.url} target="_blank" rel="noopener noreferrer"><ExternalLink size={14} aria-hidden="true" />Church website<span className="sr-only"> for {item.name} (opens in a new tab)</span></a> : "Not added"}</dd></div>
     <div><dt>Mass times</dt><dd>{item.massTimes.length ? <dl className={styles.detailTimes}>{item.massTimes.map((entry) => <div key={entry.id}><dt>{entry.day}</dt><dd>{entry.time}</dd></div>)}</dl> : "Mass times unknown"}</dd></div>
@@ -73,7 +75,7 @@ export function ChurchEditor({ item, massTimes, onTimesChange, gallery, onGaller
   }
   return <>
     <label className="field wide"><span>Name</span><input name="name" defaultValue={item?.name} required maxLength={160} disabled={busy} placeholder="Church name" /></label>
-    <label className="field wide"><span>Location or address (optional)</span><input name="address" defaultValue={item?.address} maxLength={500} disabled={busy} placeholder="Street address or neighborhood" /></label>
+    <PlaceLocationFields key={item?.id} label="Location or address (optional)" placeholder="Street address or neighborhood" address={item?.address ?? ""} coordinates={item?.coordinates ?? null} disabled={busy} />
     <label className="field wide"><span>Denomination (optional)</span><input name="denomination" defaultValue={item?.denomination} maxLength={160} disabled={busy} placeholder="For example, Roman Catholic" /></label>
     <label className="field wide"><span>Website (optional)</span><input name="url" type="url" defaultValue={item?.url} maxLength={2048} disabled={busy} placeholder="https://" /></label>
     <fieldset className={`${styles.editor} wide`} disabled={busy}>

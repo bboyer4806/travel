@@ -543,13 +543,16 @@ try {
   assert.deepEqual(await mutation(healthSafetyEdit, outsider), notAvailable);
   assert.deepEqual(await mutation(healthSafetyEdit, editor), { ok: true, id: "22222222-2222-4222-8222-222222222222" });
   assert.deepEqual(JSON.parse(db.prepare("SELECT healthSafetyJson FROM destination_health_safety WHERE destinationId = ?").get("22222222-2222-4222-8222-222222222222").healthSafetyJson), healthSafety);
-  // So do its monthly climate averages (TRA-135), which a refused change leaves as they were.
-  const climateEdit = { type: "destination.climate", id: "22222222-2222-4222-8222-222222222222", climate: { months: Array.from({ length: 12 }, () => ({ highF: 70, lowF: 60, precipitationIn: 1 })), source: "Edited from a shared trip", firstYear: 2001, lastYear: 2020 } };
+  // So do its monthly climate averages (TRA-135), which a refused change leaves as they were. A save names each month
+  // (TRA-158), and the row keeps them in calendar order without their names, as before.
+  const climateMonths = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
+  const climateEdit = { type: "destination.climate", id: "22222222-2222-4222-8222-222222222222", climate: { months: climateMonths.map((month) => ({ month, highF: 70, lowF: 60, precipitationIn: 1 })), source: "Edited from a shared trip", firstYear: 2001, lastYear: 2020 } };
+  const climateRow = { ...climateEdit.climate, months: climateEdit.climate.months.map(({ highF, lowF, precipitationIn }) => ({ highF, lowF, precipitationIn })) };
   const savedClimate = () => JSON.parse(db.prepare("SELECT climateJson FROM destination_climate WHERE destinationId = ?").get("22222222-2222-4222-8222-222222222222").climateJson);
   assert.deepEqual(await mutation(climateEdit, outsider), notAvailable);
-  assert.notDeepEqual(savedClimate(), climateEdit.climate);
+  assert.notDeepEqual(savedClimate(), climateRow);
   assert.deepEqual(await mutation(climateEdit, editor), { ok: true, id: "22222222-2222-4222-8222-222222222222" });
-  assert.deepEqual(savedClimate(), climateEdit.climate);
+  assert.deepEqual(savedClimate(), climateRow);
   // A destination created outside a trip is its creator's: choosing a city never opens someone else's. Only the owner
   // deletes a destination, and only one no trip visits; its page offers Delete only then.
   const vienna = "22222222-2222-4222-8222-222222222222";

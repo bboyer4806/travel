@@ -11,6 +11,7 @@ import { calculateBudget, calculateDestinationBudget } from "../src/lib/budget.t
 import { TOOLS } from "../src/lib/mcp-tools.ts";
 import { formatCurrency } from "../src/lib/money.ts";
 import { PLANNER_UPDATED } from "../src/lib/planner-updated.ts";
+import { MONTHS } from "../src/lib/typical-weather.ts";
 
 const tripInput = (overrides = {}) => ({ type: "trip.save", name: "Japan in spring", dateLabel: "Spring 2027", homeCity: "New York", travelers: 2, notes: "An idea worth exploring.", ...overrides, ...newItem(overrides) });
 const addDestination = (store, tripId, { city = "Tokyo", ...overrides } = {}) => addCity((input) => store.applyMutation(input).id, tripId, city, { stay: "4 nights", notes: "", ...overrides });
@@ -29,8 +30,8 @@ function saveResearch(store, destinationId) {
   store.applyMutation({ type: "church.save", ...newItem(), destinationId, name: "A cathedral", address: "", denomination: "Catholic", url: "", massTimes: [{ id: randomUUID(), day: "Sunday", time: "9:00" }], gallery: photo() });
   store.applyMutation({ type: "destination.entryRequirements", id: destinationId, requirements: { passportNationality: "United States", travelPurpose: "Tourism", travelerCircumstances: "", visaRequirements: "None for short stays", passportValidity: "", requiredDocuments: "", transitRequirements: "", notes: "", sources: [], lastCheckedDate: "2026-11-12" } });
   store.applyMutation({ type: "destination.healthSafety", id: destinationId, healthSafety: { advisoryLevel: "Level 1", advisoryWarnings: "", healthPrecautions: "", localSafety: "", emergencyContacts: [{ id: randomUUID(), name: "Emergency services", phone: "110", notes: "" }], sources: [], lastCheckedDate: "2026-11-12" } });
-  // Monthly climate averages (TRA-135).
-  store.applyMutation({ type: "destination.climate", id: destinationId, climate: { months: Array.from({ length: 12 }, (_, index) => ({ highF: 50 + index, lowF: 40 + index, precipitationIn: 2 })), source: "Test normals", firstYear: 1991, lastYear: 2020 } });
+  // Monthly climate averages (TRA-135), each month by name (TRA-158).
+  store.applyMutation({ type: "destination.climate", id: destinationId, climate: { months: MONTHS.map((month, index) => ({ month, highF: 50 + index, lowF: 40 + index, precipitationIn: 2 })), source: "Test normals", firstYear: 1991, lastYear: 2020 } });
 }
 
 test("complete create, edit, clear, and delete flows preserve the trip relationships", (t) => {

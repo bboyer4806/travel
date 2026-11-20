@@ -8,6 +8,7 @@ import test from "node:test";
 import { calculateBudget } from "../src/lib/budget.ts";
 import { createStore, SCHEMA_VERSION, ValidationError } from "../src/lib/store.ts";
 import { UNCROPPED } from "../src/lib/photo-focus.ts";
+import { MONTHS } from "../src/lib/typical-weather.ts";
 import { UNDO_SCHEMA_20, UNDO_SCHEMA_21 } from "./owned-store.mjs";
 import { addCity, fileDatabase, newItem, prepared } from "./budget-fixtures.mjs";
 
@@ -16,8 +17,8 @@ const NOT_AVAILABLE = { name: "ValidationError", message: "This item no longer e
 const webp = new Uint8Array([82, 73, 70, 70, 4, 0, 0, 0, 87, 69, 66, 80]);
 const photo = () => ({ id: randomUUID(), ...prepared(webp) });
 const google = (subject, email, name = null) => ({ subject, email, emailVerified: true, name });
-/** Monthly climate averages (TRA-135). */
-const climate = () => ({ months: Array.from({ length: 12 }, (_, index) => ({ highF: 60 + index, lowF: 50 + index, precipitationIn: 1 })), source: "Test normals", firstYear: 1991, lastYear: 2020 });
+/** Monthly climate averages (TRA-135), each month by name (TRA-158). */
+const climate = () => ({ months: MONTHS.map((month, index) => ({ month, highF: 60 + index, lowF: 50 + index, precipitationIn: 1 })), source: "Test normals", firstYear: 1991, lastYear: 2020 });
 const requirements = () => ({ passportNationality: "United States", travelPurpose: "Tourism", travelerCircumstances: "Two adults", visaRequirements: "None for short stays", passportValidity: "Three months", requiredDocuments: "Return ticket", transitRequirements: "None", notes: "Checked", sources: [{ id: randomUUID(), url: "https://example.gov/entry", description: "Entry guidance" }], lastCheckedDate: "2026-11-03" });
 const healthSafety = () => ({ advisoryLevel: "Level 1", advisoryWarnings: "", healthPrecautions: "Routine vaccines", localSafety: "Watch for pickpockets", emergencyContacts: [{ id: randomUUID(), name: "Emergency services", phone: "112", notes: "" }], sources: [{ id: randomUUID(), url: "https://example.gov/advisory", description: "Travel advisory" }], lastCheckedDate: "2026-11-10" });
 

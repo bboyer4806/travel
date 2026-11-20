@@ -1,6 +1,6 @@
 import { formatCurrency } from "./money.ts";
 import { RESTAURANT_TYPE_LABELS } from "./types.ts";
-import { monthlyClimateText } from "./typical-weather.ts";
+import { climateAveragesText, climateFromJson, formatReferenceYears, MONTHS } from "./typical-weather.ts";
 import type { Category, Mutation, RestaurantType } from "./types";
 import type { MonthlyClimate } from "./typical-weather";
 
@@ -37,6 +37,7 @@ export interface PreviewRecord { action: "Adds" | "Changes" | "Deletes"; record:
 /** One proposed change as the owner reviews it: what it does, and every record it adds, changes or deletes. */
 export interface PreviewChange { operation: string; records: PreviewRecord[] }
 
+/** How a column's values read. A record of monthly averages ("climate") reads as several fields, its source, reference years and every month (TRA-158). */
 type Format = "text" | "number" | "order" | "money" | "flag" | "json" | "account" | "restaurantTypes" | "climate";
 /**
  * Each column's label in a preview and how its values read, or null for one people never see: IDs, keys, timestamps,
@@ -142,24 +143,39 @@ export function previewChange(change: Mutation, effects: Effect[], before: Table
       if (!(column in PREVIEW_COLUMNS[effect.table])) throw new Error(`${effect.table}.${column} has no preview label.`);
       return PREVIEW_COLUMNS[effect.table][column] !== null;
     });
-    const read = (row: Row | null, column: string) => {
-      const [, format] = PREVIEW_COLUMNS[effect.table][column]!;
-      return row === null ? null : display(format, row[column], email);
-    };
     const row = find(effect.table, effect.key);
     const record = label(effect.table, row);
     const photo = PHOTO_TABLES.includes(effect.table) ? { photo: String(row.id) } : {};
-    const columns = shown((effect.after ?? effect.before)!);
-    const fields = columns.map((column) => ({ name: PREVIEW_COLUMNS[effect.table][column]![0], before: read(effect.before, column), after: read(effect.after, column) }))
-      .filter((field) => field.before !== field.after);
+    const fields = shown((effect.after ?? effect.before)!).flatMap((column): PreviewField[] => {
+      const [name, format] = PREVIEW_COLUMNS[effect.table][column]!;
+      const [before, after] = [effect.before?.[column] ?? null, effect.after?.[column] ?? null];
+      // Monthly averages show whole, so the owner sees every value a record gives beside the one it replaces (TRA-158).
+      if (format === "climate") return climateFields(before, after);
+      const field = { name, before: display(format, before, email), after: display(format, after, email) };
+      return field.before === field.after ? [] : [field];
+    });
     if (effect.before && effect.after) return fields.length ? [{ action: "Changes", record, fields, ...photo }] : [];
     return [{ action: effect.after ? "Adds" : "Deletes", record, fields, ...photo }];
   });
   return { operation: operationTitle(change), records };
 }
 
-/** A value as the owner reads it, or null for none. */
-function display(format: Format, value: Value, email: (accountId: Value) => string): string | null {
+/**
+ * A record of monthly averages before and after a change, as the owner compares them (TRA-158): its source, its
+ * reference years and each month's averages, January to December, every one shown, whether or not it changes.
+ */
+function climateFields(before: Value, after: Value): PreviewField[] {
+  const [saved, proposed] = [before, after].map((json) => json === null ? null : climateFromJson(String(json)));
+  const field = (name: string, read: (climate: MonthlyClimate) => string): PreviewField => ({ name, before: saved && read(saved), after: proposed && read(proposed) });
+  return [
+    field("Source", (climate) => climate.source),
+    field("Reference years", formatReferenceYears),
+    ...MONTHS.map((month, index) => field(month, (climate) => climateAveragesText(climate.months[index]))),
+  ];
+}
+
+/** A value as the owner reads it, or null for none. Monthly averages read as several fields, with `climateFields`. */
+function display(format: Exclude<Format, "climate">, value: Value, email: (accountId: Value) => string): string | null {
   if (value === null || value === "") return null;
   switch (format) {
     case "text": case "number": return String(value);
@@ -170,8 +186,6 @@ function display(format: Format, value: Value, email: (accountId: Value) => stri
     case "account": return email(value);
     // As the restaurant's tags name them, or none.
     case "restaurantTypes": return (JSON.parse(String(value)) as RestaurantType[]).map((type) => RESTAURANT_TYPE_LABELS[type]).join(", ") || null;
-    // Every month's averages by name, with their source and reference years (TRA-135).
-    case "climate": return monthlyClimateText(JSON.parse(String(value)) as MonthlyClimate);
   }
 }
 /** Saved JSON, such as research links or Mass times, as text: every value but IDs and empty ones. */

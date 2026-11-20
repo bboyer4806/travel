@@ -122,10 +122,14 @@ Repeat passing checks when subsequent changes affect their coverage or required 
   list stays on the server: client components import location search types only.
 - Monthly climate averages (TRA-135) are a destination's one row of `destination_climate`, apart from its typical weather
   columns, changed only by `destination.climate` with a whole record or null, and checked by `normalizeMonthlyClimate` in
-  `src/lib/typical-weather.ts`: every month's high and low in °F and precipitation in inches, a source and reference
-  years, all required. Travel never looks them up, estimates them or fills in a month. `src/components/climate-chart.tsx`
-  charts them for every destination; in a trip it first chooses the month of the stay's `arrivalDate`, and choosing a
-  month changes only what it shows.
+  `src/lib/typical-weather.ts`: every month once, named in full (TRA-158), with its high and low in °F and precipitation
+  in inches, a source and reference years, all required, and no other field, since the fields' names carry the units.
+  The row keeps the months in calendar order without their names, written by `climateJson` and read, named again, by
+  `climateFromJson`. A save whose months have no names comes from a page opened before TRA-158 and is refused with
+  `PLANNER_UPDATED`; `aiChange` refuses an assistant's first, with `NAME_EACH_MONTH`. A proposal's page shows a record as
+  its source, years and every month, each beside the saved one. Travel never looks them up, estimates them or fills in a
+  month. `src/components/climate-chart.tsx` charts them for every destination; in a trip it first chooses the month of the
+  stay's `arrivalDate`, and choosing a month changes only what it shows.
 - Application writes go through `mutatePlanner` in `src/app/actions.ts`, into `applyMutation`
   in `src/lib/store.ts`, or come from an approved AI proposal. A new operation adds a `Mutation`
   variant in `src/lib/types.ts`, a case in `validate` (or, for a change only proposals make, in

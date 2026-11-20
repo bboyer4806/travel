@@ -4,6 +4,7 @@ import test from "node:test";
 import { runInNewContext } from "node:vm";
 import ts from "typescript";
 import * as typicalWeather from "../src/lib/typical-weather.ts";
+import { aiSetup } from "./ai-fixtures.mjs";
 
 // TRA-135: the monthly Typical weather chart, its section and its editor, run with a small hook harness: no browser or
 // server is involved. Where the chart's labels and columns sit is the CSS module's, checked at the end.
@@ -166,6 +167,19 @@ test("a mouse shows the month under it until it leaves, dragging chooses months,
   view.move(6.5, "mouse");
   view.choose(5);
   assert.deepEqual([view.chosen(), view.readout().slice(0, 4), view.crosshair()], [5, "June", undefined]);
+});
+
+test("averages approved from ChatGPT or Claude chart as soon as they are approved, without entering them again (TRA-158)", (t) => {
+  const { store, owner, propose, decide } = aiSetup(t);
+  const id = store.applyMutation(owner, { type: "destination.create", city: "Vienna" }).id;
+  const proposed = { ...climate(), months: climate().months.map((month, index) => ({ month: MONTHS[index], ...month })) };
+  assert.equal(decide(propose([{ type: "destination.climate", id, climate: proposed }]), true).status, "applied");
+  // The chart reads the destination as its page loads it.
+  const view = chart({ climate: store.getDestinationSnapshot(owner, id).data.destinations[0].climate, startMonth: null });
+  assert.deepEqual(view.rows(), [["Month", "Average high", "Average low", "Precipitation"], ...climate().months.map((month, index) => [MONTHS[index], `${month.highF} °F`, `${month.lowF} °F`, `${month.precipitationIn} in`])]);
+  assert.equal(text(view.source()), "Historical averages for 1991–2020 from Test climate normals. These are typical conditions from past years, not a forecast.");
+  view.choose(6);
+  assert.equal(view.readout(), "July" + values(6));
 });
 
 /** The Typical weather section, whose monthly chart is only checked by its props here. */

@@ -3,6 +3,7 @@ import { randomUUID } from "node:crypto";
 import test from "node:test";
 import { searchLibrary } from "../src/lib/destination-library.ts";
 import { createStore } from "../src/lib/store.ts";
+import { MONTHS } from "../src/lib/typical-weather.ts";
 import { aiSetup, OWNER } from "./ai-fixtures.mjs";
 import { candidateInput, newItem, prepared } from "./budget-fixtures.mjs";
 import { OWNER_EMAIL } from "./owned-store.mjs";
@@ -118,7 +119,7 @@ test("a trip's Add destination offers its owner's saved destinations that the ac
 test("adding a saved destination visits it by its ID, with everything saved for it, unchanged", (t) => {
   const { store, change, ids } = plans(t);
   const photo = () => ({ id: randomUUID(), ...prepared(new Uint8Array([82, 73, 70, 70, 4, 0, 0, 0, 87, 69, 66, 80])) });
-  const months = Array.from({ length: 12 }, (_, index) => ({ highF: 40 + index, lowF: 30 + index, precipitationIn: 1 + index / 10 }));
+  const months = MONTHS.map((month, index) => ({ month, highF: 40 + index, lowF: 30 + index, precipitationIn: 1 + index / 10 }));
   change({ type: "destination.save", id: ids.reykjavik, tagline: "Land of fire and ice", notes: "Blue Lagoon early", hotelNightlyAmount: "250", miscDailyAmount: "40", shoppingAmount: "100", activitiesBudgetMode: "general", activitiesGeneralAmount: "300", foodBudgetMode: "daily", foodDailyAmount: "120", weatherHighF: 55, weatherLowF: 45, weatherPeriod: "June", weatherRainfall: "Showers", weatherSource: "Met Office", gallery: { add: [photo(), photo()], remove: [] } });
   change({ type: "destination.entryRequirements", id: ids.reykjavik, requirements: { passportNationality: "United States", travelPurpose: "Tourism", travelerCircumstances: "", visaRequirements: "None for 90 days", passportValidity: "", requiredDocuments: "", transitRequirements: "", notes: "", sources: [], lastCheckedDate: "2026-11-01" } });
   change({ type: "destination.healthSafety", id: ids.reykjavik, healthSafety: { advisoryLevel: "Level 1", advisoryWarnings: "", healthPrecautions: "", localSafety: "Weather changes fast", emergencyContacts: [{ id: randomUUID(), name: "Emergency", phone: "112", notes: "" }], sources: [], lastCheckedDate: null } });

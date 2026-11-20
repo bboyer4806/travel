@@ -10,7 +10,7 @@ import { MAX_AMOUNT_CENTS, parseMinorAmount } from "./money.ts";
 import { formatMegabytes, MAX_CANDIDATE_IMAGES, MAX_DESTINATION_IMAGES, MAX_STORED_IMAGE_BYTES } from "./image-limits.ts";
 import { ENTRY_REQUIREMENT_FIELDS, normalizeEntryRequirements } from "./entry-requirements.ts";
 import { normalizeHealthSafety } from "./health-safety.ts";
-import { normalizeMonthlyClimate } from "./typical-weather.ts";
+import { climateFromJson, climateJson, NAME_EACH_MONTH, normalizeMonthlyClimate } from "./typical-weather.ts";
 import { normalizeCoordinates } from "./coordinates.ts";
 import { MAX_PHOTO_ZOOM } from "./photo-focus.ts";
 import { SESSION_DAYS } from "./session-cookie.ts";
@@ -419,6 +419,11 @@ function massTimesField(input: Input): MassTime[] {
     return { id, day: textField(entry, "day", 120, true), time: textField(entry, "time", 120, true) };
   });
 }
+/** Whether monthly averages give a month without its name, as the editor of a page opened before months were named does (TRA-158). */
+function unnamedMonths(climate: unknown): boolean {
+  const months = climate && typeof climate === "object" ? (climate as Input).months : undefined;
+  return Array.isArray(months) && months.some((month) => month && typeof month === "object" && !Array.isArray(month) && !("month" in month));
+}
 function validate(input: unknown): Mutation {
   if (!input || typeof input !== "object" || Array.isArray(input)) throw new ValidationError("The submitted information is invalid.");
   const value = input as Input;
@@ -481,6 +486,7 @@ function validate(input: unknown): Mutation {
       return { type: value.type, id: idField(value), healthSafety };
     }
     case "destination.climate": {
+      if (unnamedMonths(value.climate)) throw new ValidationError(PLANNER_UPDATED);
       let climate: MonthlyClimate | null;
       try { climate = normalizeMonthlyClimate(value.climate); }
       catch (error) { throw new ValidationError(error instanceof Error ? error.message : "Enter valid monthly averages."); }
@@ -592,6 +598,8 @@ function aiChange(input: unknown, photos: ReadonlyMap<string, PreparedImage>): M
   if (value.type === "trip.save" && "image" in value) throw new ValidationError("A trip's headline image can only be chosen in Travel.");
   if ("image" in value || "gallery" in value) throw new ValidationError("Change photos with destination.photos, candidate.photos or church.photos.");
   if (value.type === "destination.save" && (value.create !== undefined || value.tripId !== undefined)) throw new ValidationError("Add a destination to a trip with stop.add, or outside any trip with destination.create.");
+  // Assistants name each month (TRA-158). Only a person's page opened before months were named leaves their names out.
+  if (value.type === "destination.climate" && unnamedMonths(value.climate)) throw new ValidationError(NAME_EACH_MONTH);
   if (["trip.save", "homeItem.save", "destination.save", "church.save", "candidate.save"].includes(value.type as string) && value.id === undefined) {
     throw new ValidationError("Give the id of the item to change, or a new UUID with create: true to add a trip, idea, church or At home item.");
   }
@@ -1420,7 +1428,7 @@ export function createStore(databasePath: string, ownerEmail: string) {
     const healthSafety = new Map(db.prepare("SELECT destinationId, healthSafetyJson FROM destination_health_safety" + researchWhere).all(...researchArgs)
       .map((row) => [row.destinationId as string, JSON.parse(row.healthSafetyJson as string) as HealthSafety]));
     const climates = new Map(db.prepare("SELECT destinationId, climateJson FROM destination_climate" + researchWhere).all(...researchArgs)
-      .map((row) => [row.destinationId as string, JSON.parse(row.climateJson as string) as MonthlyClimate]));
+      .map((row) => [row.destinationId as string, climateFromJson(row.climateJson as string)]));
     const photos = photosOf<DestinationImage>("destination_images", "destinationId", ids, "id, version, focusX, focusY");
     return db.prepare(`SELECT ${DESTINATION_COLUMNS}, destination_images.version AS imageVersion, destination_images.id AS mainImageId FROM destinations
       LEFT JOIN destination_images ON destination_images.destinationId = destinations.id AND destination_images.isMain = 1${where} ORDER BY destinations.city COLLATE NOCASE, destinations.id`).all(...args).map((row) => {
@@ -2042,7 +2050,7 @@ export function createStore(databasePath: string, ownerEmail: string) {
           db.prepare("DELETE FROM destination_climate WHERE destinationId = ?").run(input.id);
         } else {
           db.prepare("INSERT INTO destination_climate(destinationId, climateJson) VALUES(?,?) ON CONFLICT(destinationId) DO UPDATE SET climateJson = excluded.climateJson")
-            .run(input.id, JSON.stringify(input.climate));
+            .run(input.id, climateJson(input.climate));
         }
         return input.id;
       }

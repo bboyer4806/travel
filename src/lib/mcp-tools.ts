@@ -4,7 +4,7 @@ import { EMERGENCY_CONTACT_MAX_LENGTH, HEALTH_SAFETY_FIELDS, MAX_EMERGENCY_CONTA
 import { AI_PHOTO_DOWNLOAD_SECONDS, formatMegabytes, MAX_AI_PROPOSAL_PHOTOS, MAX_CANDIDATE_IMAGES, MAX_DESTINATION_IMAGES, MAX_GALLERY_UPLOAD_BYTES, MAX_IMAGE_UPLOAD_BYTES } from "./image-limits.ts";
 import { MAX_NIGHTS } from "./trip-dates.ts";
 import { MAX_TAG_LENGTH } from "./trip-tags.ts";
-import { CLIMATE_LIMITS } from "./typical-weather.ts";
+import { CLIMATE_LIMITS, MONTHS } from "./typical-weather.ts";
 import { RESTAURANT_TYPES } from "./types.ts";
 
 /**
@@ -92,7 +92,7 @@ const CHANGES = [
   }, ["id", "tripId", "name", "price", "notes", "completed"]),
   change("homeItem.delete", "Deletes an At home item.", { id: id("The item's id."), tripId: id("Its trip's id.") }, ["id", "tripId"]),
   change("homeItem.complete", "Marks an At home item done, or not done.", { id: id("The item's id."), tripId: id("Its trip's id."), completed: flag("Whether it is done.") }, ["id", "tripId", "completed"]),
-  change("destination.save", "Changes the fields given of a destination, in every trip that visits it. With stopId, also changes that trip's stay there: its stay notes and nights. Anything left out stays as it is. A new city clears the travel to and from it in every trip.", {
+  change("destination.save", "Changes the fields given of a destination, in every trip that visits it. With stopId, also changes that trip's stay there: its stay notes and nights. Anything left out stays as it is. A new city clears the travel to and from it in every trip. Its weather fields summarize one time of year; averages for every month go in destination.climate.", {
     id: id("The destination's id."), stopId: id("A trip's stay at this destination, for stay and nights."), city: text("The city.", 120),
     tagline: text("A short line shown in capitals above the destination's name on its page, saved as written. Empty for Travel's default heading.", 120), notes: text("Notes. Empty for none.", 8000),
     miscDailyAmount: amount("Daily miscellaneous spending for the whole party."), hotelNightlyAmount: amount("The nightly hotel estimate, used until a hotel is chosen."),
@@ -136,10 +136,12 @@ const CHANGES = [
       type: ["object", "null"], additionalProperties: false, required: ["months", "source", "firstYear", "lastYear"],
       properties: {
         months: {
-          type: "array", minItems: 12, maxItems: 12, description: "January to December, in order, with every value given.",
+          type: "array", minItems: 12, maxItems: 12,
+          description: "All 12 months, January to December, each once, named by its month, in any order, with every value given in °F and inches. They replace every saved month.",
           items: {
-            type: "object", additionalProperties: false, required: ["highF", "lowF", "precipitationIn"],
+            type: "object", additionalProperties: false, required: ["month", "highF", "lowF", "precipitationIn"],
             properties: {
+              month: { type: "string", enum: MONTHS, description: "The month these are the averages of, written in full." },
               highF: { type: "number", minimum: CLIMATE_LIMITS.minF, maximum: CLIMATE_LIMITS.maxF, description: "The month's average daily high in °F, at least lowF." },
               lowF: { type: "number", minimum: CLIMATE_LIMITS.minF, maximum: CLIMATE_LIMITS.maxF, description: "The month's average daily low in °F." },
               precipitationIn: { type: "number", minimum: 0, maximum: CLIMATE_LIMITS.maxPrecipitationIn, description: "The month's average total precipitation in inches." },

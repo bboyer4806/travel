@@ -4,7 +4,7 @@ import dynamic from "next/dynamic";
 import { useEffect, useId, useMemo, useState } from "react";
 import { ChevronDown } from "lucide-react";
 import { formatSavedDestinationLabel } from "@/lib/destination-label";
-import { destinationMapLayout, MAP_CATEGORIES, MAP_CATEGORY_LABELS, placeKey, type DestinationMapAnswer, type DestinationMapLayout, type MapCategory, type SavedPlace, type UnmappedPlace } from "@/lib/destination-map";
+import { destinationMapLayout, MAP_CATEGORIES, MAP_CATEGORY_LABELS, mapCoordinates, placeKey, type DestinationMapAnswer, type DestinationMapLayout, type MapCategory, type SavedPlace, type UnmappedPlace } from "@/lib/destination-map";
 import type { PlaceAnswer } from "@/lib/place-search";
 import type { Destination } from "@/lib/types";
 import { PlaceSymbol } from "./destination-map-symbols";
@@ -13,8 +13,8 @@ import styles from "./destination-map.module.css";
 // Leaflet needs a browser, so the map itself loads only there.
 const DestinationMapCanvas = dynamic(() => import("./destination-map-canvas"), { ssr: false, loading: () => <p className={styles.message}>Loading the map…</p> });
 
-/** Why Not on the map lists a place. */
-function reason(place: UnmappedPlace): string {
+/** Why its lookup didn't place a place. */
+function lookupReason(place: UnmappedPlace): string {
   switch (place.reason) {
     case "missing": return place.address.trim() ? "No place nearby has its address or name." : "No place nearby has this name.";
     case "ambiguous": return "More than one place nearby matches.";
@@ -23,18 +23,29 @@ function reason(place: UnmappedPlace): string {
 }
 
 /**
+ * Why Not on the map lists a place: that its saved coordinates wait to be reviewed (TRA-150), and its lookup's answer,
+ * which the paragraph above says for every place when the destination itself can't be found.
+ */
+function reason(place: UnmappedPlace, areaMissing: boolean): string {
+  return [place.coordinates?.review ? "Its address changed after its coordinates were saved, so they wait to be checked in its editor." : "", areaMissing ? "" : lookupReason(place)].filter(Boolean).join(" ");
+}
+
+/**
  * A destination's Map section (TRA-130), open until it is closed: its saved hotels, activities, restaurants and churches,
  * selected or not, on a map, with the places it can't show listed below it by category. Checkboxes choose the categories
- * both show. Places are looked up by their saved addresses and names whenever those or the destination's city change,
- * so the map follows every saved change; places already found stay while new ones are looked up. Places waiting their
- * turn are asked for again until every one is answered. View details opens a place's details.
+ * both show. A place with saved coordinates shows there at once, marked when they are approximate, and isn't looked up
+ * (TRA-150). Other places are looked up by their saved addresses and names whenever those or the destination's city
+ * change, so the map follows every saved change; places already found stay while new ones are looked up. Places waiting
+ * their turn are asked for again until every one is answered. View details opens a place's details.
  */
 export default function DestinationMap({ destination, places, onView }: { destination: Pick<Destination, "id" | "city" | "cityFromSuggestion">; places: SavedPlace[]; onView: (place: SavedPlace) => void }) {
   const [expanded, setExpanded] = useState(true);
   const contentId = useId();
   const [shown, setShown] = useState<readonly MapCategory[]>(MAP_CATEGORIES);
   const city = formatSavedDestinationLabel(destination);
-  const keysJson = JSON.stringify(places.map((place) => [place.id, placeKey(destination.city, place)]));
+  // Only places without coordinates to show are looked up.
+  const lookups = places.filter((place) => !mapCoordinates(place));
+  const keysJson = JSON.stringify(lookups.map((place) => [place.id, placeKey(destination.city, place)]));
   // Try again, and each request for places still waiting their turn.
   const [attempt, setAttempt] = useState(0);
   const requestKey = JSON.stringify([destination.id, keysJson, attempt]);
@@ -71,9 +82,9 @@ export default function DestinationMap({ destination, places, onView }: { destin
       });
     return () => controller.abort();
   }, [destination.id, keysJson, requestKey]);
-  const loading = places.length > 0 && answered !== requestKey;
+  const loading = lookups.length > 0 && answered !== requestKey;
   // Once answered, a place the answer left out, or answered for other text, as when someone changed it meanwhile, couldn't be looked up.
-  const answers = Object.fromEntries(places.map((place): [string, PlaceAnswer | undefined] => {
+  const answers = Object.fromEntries(lookups.map((place): [string, PlaceAnswer | undefined] => {
     const answer = known[place.id];
     return [place.id, answer?.key === placeKey(destination.city, place) ? answer : loading ? undefined : { status: "unavailable" }];
   }));
@@ -81,6 +92,7 @@ export default function DestinationMap({ destination, places, onView }: { destin
   // The same layout keeps its identity across renders, so the map redraws only when what it shows changes.
   const layout = useMemo(() => JSON.parse(layoutJson) as DestinationMapLayout, [layoutJson]);
   const unavailable = layout.unmapped.some((group) => group.places.some((place) => place.reason === "unavailable"));
+  const approximate = layout.markers.some((marker) => marker.places.some((place) => place.approximate));
   const selected = places.filter((place) => shown.includes(place.category));
   const toggle = (category: MapCategory) => setShown((current) => MAP_CATEGORIES.filter((item) => item === category ? !current.includes(item) : current.includes(item)));
   const empty = places.length === 0 ? "Save a hotel, activity, restaurant or church for " + city + " to see it on the map."
@@ -103,17 +115,18 @@ export default function DestinationMap({ destination, places, onView }: { destin
         <div className={styles.frame}>
           {layout.markers.length > 0 ? <DestinationMapCanvas markers={layout.markers} onView={onView} /> : <p className={styles.message}>{empty}</p>}
         </div>
+        {approximate && <p className={styles.note}><span className={styles.key} aria-hidden="true" />A dashed ring marks a place shown at approximate coordinates, not at a verified address.</p>}
         <p className={styles.status} role="status">{loading ? "Finding places on the map…" : ""}</p>
         {layout.unmapped.length > 0 && <div className={styles.unmapped}>
           <h5>Not on the map</h5>
-          <p>{area === "missing" ? "The map finds places around " + city + ", and can’t find " + city + " itself. A city chosen from the suggestions, or a name followed by its state or country, is easiest to find."
-            : "The map never guesses where a place is. It looks each place up by its address, or by its name when it has no address or no place has it, and shows it only when one place within 50 km of " + city + " matches. An address with its street and number is easiest to find."}</p>
+          <p>{area === "missing" ? "The map finds places around " + city + ", and can’t find " + city + " itself. A city chosen from the suggestions, or a name followed by its state or country, is easiest to find. A place with coordinates saved in its editor shows without it."
+            : "The map never guesses where a place is. It looks each place up by its address, or by its name when it has no address or no place has it, and shows it only when one place within 50 km of " + city + " matches. An address with its street and number is easiest to find, or save the place’s coordinates in its editor to show it there."}</p>
           {layout.unmapped.map((group) => <div key={group.category}>
             <h6>{MAP_CATEGORY_LABELS[group.category]}</h6>
-            <ul>{group.places.map((place) => <li key={place.id}>
-              <span className={styles.place}><strong>{place.name}</strong>{area !== "missing" && <span className={styles.reason}>{reason(place)}</span>}</span>
+            <ul>{group.places.map((place) => { const why = reason(place, area === "missing"); return <li key={place.id}>
+              <span className={styles.place}><strong>{place.name}</strong>{why && <span className={styles.reason}>{why}</span>}</span>
               <button type="button" className="text-button" onClick={() => onView(place)}>View details<span className="sr-only"> for {place.name}</span></button>
-            </li>)}</ul>
+            </li>; })}</ul>
           </div>)}
           {unavailable && !loading && <button type="button" className="text-button" onClick={() => setAttempt((value) => value + 1)}>Try again</button>}
         </div>}

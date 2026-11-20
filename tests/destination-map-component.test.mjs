@@ -352,3 +352,69 @@ test("the map frames its markers when their positions change, and leaves zoom an
   assert.deepEqual(map.calls.filter(([name]) => name === "fitBounds").at(-1), ["fitBounds", [[48.20462, 16.36818]], 16]);
   assert.equal(map.markers.length, 1, "markers from before are cleared");
 });
+
+// TRA-150: places with saved coordinates, exact or approximate.
+const coordinated = (latitude, longitude, accuracy = "exact", review = false) => ({ latitude, longitude, accuracy, review });
+const placed = [
+  { id: "h1", category: "hotels", name: "Hotel Sacher", address: "Philharmonikerstraße 4", coordinates: coordinated(48.20406, 16.36949) },
+  { id: "h2", category: "hotels", name: "Leopoldstadt apartment", address: "Address withheld", coordinates: coordinated(48.2167, 16.3958, "approximate") },
+  { id: "a1", category: "activities", name: "Albertina", address: "", coordinates: null },
+  { id: "a2", category: "activities", name: "Melk Abbey", address: "", coordinates: coordinated(48.22842, 15.33437) },
+  { id: "c1", category: "churches", name: "St. Stephen's Cathedral", address: "Stephansplatz 1", coordinates: coordinated(48.20857, 16.37307, "exact", true) },
+];
+
+test("places with saved coordinates show at once, only the others are looked up, and coordinates waiting for review say why a place isn't shown", async () => {
+  const map = destinationMapSection(() => ["found", { a1: found(48.2046, 16.3682), c1: { status: "missing" } }], placed);
+  // Before the answer, the places with coordinates are already on the map, and the rest are being found.
+  assert.deepEqual(map.markers(), [["h1"], ["h2"], ["a2"]]);
+  assert.equal(map.status(), "Finding places on the map…");
+  await map.update();
+  assert.equal(map.requests.length, 1);
+  assert.deepEqual(map.markers(), [["h1"], ["h2"], ["a1"], ["a2"]]);
+  assert.deepEqual(map.position(3), [48.22842, 15.33437], "Melk Abbey, beyond 50 km, where its coordinates are");
+  assert.deepEqual(map.unmapped(), ["Churches", "St. Stephen's CathedralIts address changed after its coordinates were saved, so they wait to be checked in its editor. No place nearby has its address or name.View details for St. Stephen's Cathedral"]);
+  // The approximate rental's dashed ring is explained below the map.
+  const notes = () => nodes(map.tree()).filter((node) => node.props?.className === "note").map(text);
+  assert.deepEqual(notes(), ["A dashed ring marks a place shown at approximate coordinates, not at a verified address."]);
+  // Their checkboxes filter them as they do every place.
+  map.checkbox("Hotels").props.onChange();
+  await map.update();
+  assert.deepEqual(map.markers(), [["a1"], ["a2"]]);
+  assert.deepEqual(notes(), [], "with no approximate place shown, nothing explains the ring");
+  assert.equal(map.requests.length, 1, "filtering looks nothing up");
+});
+
+test("a destination whose places all have coordinates asks for no lookup, and places them even where the destination can't be found", async () => {
+  const all = destinationMapSection(() => { throw new Error("Nothing to ask for"); }, placed.filter((place) => place.coordinates && !place.coordinates.review));
+  await all.update();
+  assert.deepEqual(all.requests, []);
+  assert.deepEqual(all.markers(), [["h1"], ["h2"], ["a2"]]);
+  assert.equal(all.status(), "");
+  assert.deepEqual(all.unmapped(), []);
+  // Where the destination itself can't be found, the others are listed without reasons of their own, but coordinates waiting for review still say so.
+  const nowhere = destinationMapSection(() => ["missing", { a1: { status: "missing" }, c1: { status: "missing" } }], placed);
+  await nowhere.update();
+  assert.deepEqual(nowhere.markers(), [["h1"], ["h2"], ["a2"]]);
+  assert.deepEqual(nowhere.unmapped(), ["Activities", "AlbertinaView details for Albertina", "Churches", "St. Stephen's CathedralIts address changed after its coordinates were saved, so they wait to be checked in its editor.View details for St. Stephen's Cathedral"]);
+});
+
+test("an approximate place's marker, tooltip and popup say it is approximate, and never name an address", () => {
+  const map = mapCanvas();
+  const rental = { key: "48.2167,16.3958", position: [48.2167, 16.3958], places: [{ ...placed[1], found: null, approximate: true }] };
+  const shared = { key: "48.20406,16.36949", position: [48.20406, 16.36949], places: [{ ...placed[0], found: null, approximate: false }, { id: "r1", category: "restaurants", name: "Café Sacher", address: "Philharmonikerstraße 4", coordinates: null, found: "Hotel Sacher, 4, Philharmonikerstraße", approximate: false }] };
+  const roughly = { key: "48.21,16.39", position: [48.21, 16.39], places: [{ ...placed[1], id: "h3", found: null, approximate: true }, { ...placed[1], id: "h4", name: "Second apartment", found: null, approximate: true }] };
+  const tree = map.render({ markers: [rental, shared, roughly], onView() {} });
+  assert.deepEqual(map.markers.map((marker) => marker.element["aria-label"]), [
+    "Hotel: Leopoldstadt apartment (approximate location)",
+    "Hotel: Hotel Sacher; Restaurant: Café Sacher",
+    "Hotel: Leopoldstadt apartment (approximate location); Hotel: Second apartment (approximate location)",
+  ]);
+  assert.equal(map.markers[0].options.title, "Hotel: Leopoldstadt apartment (approximate location)\nShown at its approximate coordinates");
+  assert.equal(map.markers[1].options.title, "Hotel: Hotel Sacher\nShown at its saved coordinates\nRestaurant: Café Sacher\nShown at Hotel Sacher, 4, Philharmonikerstraße");
+  // The symbol has its dashed ring only when every place on it is approximate.
+  const symbols = nodes(tree).filter((node) => node.type === "portal").slice(0, 3).map((portal) => [portal.props.children.type, portal.props.children.props.approximate]);
+  assert.deepEqual(symbols, [["symbol", true], ["group", false], ["group", true]]);
+  const popups = nodes(tree).filter((node) => node.type === "portal").slice(3);
+  assert.deepEqual(nodes(popups[0]).filter((node) => node.type === "li").map(text), ["Leopoldstadt apartmentHotel · Approximate locationView details for Leopoldstadt apartment"]);
+  assert.deepEqual(nodes(popups[1]).filter((node) => node.type === "li").map(text), ["Hotel SacherHotelView details for Hotel Sacher", "Café SacherRestaurantView details for Café Sacher"]);
+});

@@ -1,3 +1,4 @@
+import { COORDINATE_ACCURACIES } from "./coordinates.ts";
 import { ENTRY_REQUIREMENT_FIELDS } from "./entry-requirements.ts";
 import { EMERGENCY_CONTACT_MAX_LENGTH, HEALTH_SAFETY_FIELDS, MAX_EMERGENCY_CONTACTS } from "./health-safety.ts";
 import { AI_PHOTO_DOWNLOAD_SECONDS, formatMegabytes, MAX_AI_PROPOSAL_PHOTOS, MAX_CANDIDATE_IMAGES, MAX_DESTINATION_IMAGES, MAX_GALLERY_UPLOAD_BYTES, MAX_IMAGE_UPLOAD_BYTES } from "./image-limits.ts";
@@ -28,6 +29,17 @@ const link = (noun: string) => ({
 const links = { type: "array", maxItems: 20, items: link("link"), description: "Research links, replacing the saved ones. Left out keeps them, with url as the first one's address." };
 const sources = { type: "array", maxItems: 20, items: link("source"), description: "Where it was checked." };
 const lastChecked = { type: ["string", "null"], pattern: DATE, description: "When it was last checked, YYYY-MM-DD, or null." };
+
+/** A hotel's, activity's, restaurant's or church's coordinates for its destination's map (TRA-150), or null to remove them. */
+const coordinates = {
+  type: ["object", "null"], additionalProperties: false, required: ["latitude", "longitude", "accuracy"],
+  properties: {
+    latitude: { type: "number", minimum: -90, maximum: 90, description: "Degrees north, negative for south, such as 48.2485." },
+    longitude: { type: "number", minimum: -180, maximum: 180, description: "Degrees east, negative for west, such as 15.3343." },
+    accuracy: { type: "string", enum: COORDINATE_ACCURACIES, description: "exact when they mark the place itself; approximate when they only mark roughly where it is, as for a rental whose address is withheld. The map says a place is approximate, and never shows it as at an address." },
+  },
+  description: "Where the place is, or null to remove its coordinates. Its destination's map shows it there instead of looking it up by its address or name, however far it is from the destination. Give only coordinates from a source you can name, never guesses.",
+};
 
 function change(type: string, description: string, properties: Record<string, unknown>, required: string[]) {
   return { type: "object", title: type, description, additionalProperties: false, properties: { type: { type: "string", enum: [type] }, ...properties }, required: ["type", ...required] };
@@ -144,7 +156,7 @@ const CHANGES = [
     },
   }, ["id", "climate"]),
   change("destination.churchVisibility", "Shows or hides a destination's Church section.", { id: id("The destination's id."), enabled: flag("Whether it shows.") }, ["id", "enabled"]),
-  change("church.save", "Adds a church to a destination, or changes a saved one. Each field is saved as given.", {
+  change("church.save", "Adds a church to a destination, or changes a saved one. Each field is saved as given. Its coordinates change only with church.coordinates: a new address leaves any saved ones waiting to be reviewed, and its map doesn't use them until church.coordinates gives them again.", {
     id: id("The church's id, or a new UUID with create."), create, destinationId: id("Its destination's id."), name: text("Its name.", 160), address: text("Its address. Empty for none.", 500),
     denomination: text("Its denomination. Empty for none.", 160), url: text("Its website, https:// or http://. Empty for none.", 2048),
     massTimes: { type: "array", maxItems: 30, description: "Mass times, replacing the saved ones. Empty when unknown.", items: { type: "object", additionalProperties: false, required: ["id", "day", "time"], properties: { id: id("The Mass time's id: a new UUID for a new one."), day: text("A day, such as Sunday, or a date.", 120), time: text("The time.", 120) } } },
@@ -163,7 +175,7 @@ const CHANGES = [
     links,
   }, ["id", "method", "price", "departure", "arrival", "url", "notes"]),
   change("leg.clear", "Clears everything saved for the travel between two stays.", { id: id("The travel's id.") }, ["id"]),
-  change("candidate.save", "Adds a hotel, activity or restaurant idea to a destination, or changes a saved one. Each field is saved as given. Including a hotel chooses it, leaving out the others.", {
+  change("candidate.save", "Adds a hotel, activity or restaurant idea to a destination, or changes a saved one. Each field is saved as given. Including a hotel chooses it, leaving out the others. Its coordinates change only with candidate.coordinates: a new address leaves any saved ones waiting to be reviewed, and its map doesn't use them until candidate.coordinates gives them again.", {
     id: id("The idea's id, or a new UUID with create."), create, destinationId: id("Its destination's id."), category: { type: "string", enum: ["hotels", "activities", "restaurants"] },
     name: text("Its name.", 160),
     description: text("What it is, in a few words, such as \"Boutique hotel\", \"Historic cathedral\" or \"Traditional Italian restaurant\", shown below its name on its cards. Empty for none. Left out keeps the saved one.", 120),
@@ -189,6 +201,12 @@ const CHANGES = [
   change("church.photos", "Changes a church's photos and nothing else: adds photos from their addresses, removes saved ones and chooses the main photo. Its photos keep their saved order, with new photos last.", {
     id: id("The church's id."), gallery: gallery("church", MAX_CANDIDATE_IMAGES, "main", false),
   }, ["id", "gallery"]),
+  change("candidate.coordinates", "Sets or removes a hotel's, activity's or restaurant's coordinates for its destination's map, and nothing else. Coordinates given are no longer waiting to be reviewed. To place many ideas, give one change for each.", {
+    id: id("The idea's id."), coordinates,
+  }, ["id", "coordinates"]),
+  change("church.coordinates", "Sets or removes a church's coordinates for its destination's map, and nothing else. Coordinates given are no longer waiting to be reviewed.", {
+    id: id("The church's id."), coordinates,
+  }, ["id", "coordinates"]),
 ];
 
 const readOnly = { readOnlyHint: true, openWorldHint: false };
@@ -202,7 +220,7 @@ export const TOOLS = [
   },
   {
     name: "get_trip", title: "Get a trip", annotations: readOnly, inputSchema: input({ trip_id: id("The trip's id.") }),
-    description: "One trip with everything on its page: its tagline, stays, travel between them, At home items, the destinations it visits with their hotels, activities, restaurants, churches and research, and its estimated budget. Amounts are whole USD cents for the whole party; null is not estimated.",
+    description: "One trip with everything on its page: its tagline, stays, travel between them, At home items, the destinations it visits with their hotels, activities, restaurants, churches and research, and its estimated budget. Amounts are whole USD cents for the whole party; null is not estimated. Each idea's and church's coordinates are null, or place it on its destination's map, unless review is true: its address changed after they were saved, so the map doesn't use them.",
   },
   {
     name: "list_destinations", title: "List destinations", annotations: readOnly, inputSchema: noInput,
@@ -210,7 +228,7 @@ export const TOOLS = [
   },
   {
     name: "get_destination", title: "Get a destination", annotations: readOnly, inputSchema: input({ destination_id: id("The destination's id.") }),
-    description: "One destination with everything on its page: its tagline, notes, budget amounts and methods, typical weather with its monthly climate averages, entry requirements, health and safety, photos, hotels, activities, restaurants, churches, and each trip's stay there. Amounts are whole USD cents for the whole party.",
+    description: "One destination with everything on its page: its tagline, notes, budget amounts and methods, typical weather with its monthly climate averages, entry requirements, health and safety, photos, hotels, activities, restaurants, churches, and each trip's stay there. Amounts are whole USD cents for the whole party. Each idea's and church's coordinates are null, or place it on the destination's map, unless review is true: its address changed after they were saved, so the map doesn't use them. A place without usable coordinates is looked up by its address or name within 50 km of the destination.",
   },
   {
     name: "list_accounts", title: "List accounts", annotations: readOnly, inputSchema: noInput,
@@ -232,7 +250,7 @@ export const TOOLS = [
         changes: { type: "array", minItems: 1, maxItems: 50, items: { anyOf: CHANGES }, description: "The changes, at most 50, made in this order. A refusal names the change by its place in this list, from 1." },
       },
     },
-    description: `Proposes changes to Travel for its owner to approve. Nothing changes until they do. Changes may apply to any trip or destination, whoever owns it, including deleting trips and changing who they are shared with. Each change is checked by Travel's own rules as it is proposed, in order, and the reply lists every record each one adds, changes or deletes, before and after. Give the owner the reply's approve_at link: there they approve or reject every change at once, within 24 hours. Approving makes all of them exactly as shown, or none if Travel has changed since. Check what they decided with get_change_proposal. Records are named by the ids the read tools list. A change that adds a trip, idea, church or At home item gives it a new UUID as its id, with create: true, and later changes in the same proposal can name it by that id. Photos change only with destination.photos, candidate.photos and church.photos. Travel downloads each new photo from its address as it is proposed and checks it as it does an upload: at most ${MAX_AI_PROPOSAL_PHOTOS} new photos and ${formatMegabytes(MAX_GALLERY_UPLOAD_BYTES)} in one proposal, downloaded within ${AI_PHOTO_DOWNLOAD_SECONDS} seconds, from public https:// addresses only. If any can't be downloaded or used, nothing is proposed, and the reply names its change and address. The owner sees every photo added, removed or rearranged before approving.`,
+    description: `Proposes changes to Travel for its owner to approve. Nothing changes until they do. Changes may apply to any trip or destination, whoever owns it, including deleting trips and changing who they are shared with. Each change is checked by Travel's own rules as it is proposed, in order, and the reply lists every record each one adds, changes or deletes, before and after. Give the owner the reply's approve_at link: there they approve or reject every change at once, within 24 hours. Approving makes all of them exactly as shown, or none if Travel has changed since. Check what they decided with get_change_proposal. Records are named by the ids the read tools list. A change that adds a trip, idea, church or At home item gives it a new UUID as its id, with create: true, and later changes in the same proposal can name it by that id. Coordinates change only with candidate.coordinates and church.coordinates, and photos only with destination.photos, candidate.photos and church.photos. Travel downloads each new photo from its address as it is proposed and checks it as it does an upload: at most ${MAX_AI_PROPOSAL_PHOTOS} new photos and ${formatMegabytes(MAX_GALLERY_UPLOAD_BYTES)} in one proposal, downloaded within ${AI_PHOTO_DOWNLOAD_SECONDS} seconds, from public https:// addresses only. If any can't be downloaded or used, nothing is proposed, and the reply names its change and address. The owner sees every photo added, removed or rearranged before approving.`,
   },
   {
     name: "get_change_proposal", title: "Get a change proposal", annotations: readOnly, inputSchema: input({ proposal_id: id("The proposal_id propose_changes replied with.") }),

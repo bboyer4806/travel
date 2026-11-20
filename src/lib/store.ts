@@ -11,6 +11,7 @@ import { formatMegabytes, MAX_CANDIDATE_IMAGES, MAX_DESTINATION_IMAGES, MAX_STOR
 import { ENTRY_REQUIREMENT_FIELDS, normalizeEntryRequirements } from "./entry-requirements.ts";
 import { normalizeHealthSafety } from "./health-safety.ts";
 import { climateFromJson, climateJson, NAME_EACH_MONTH, normalizeMonthlyClimate } from "./typical-weather.ts";
+import { normalizeCoordinates } from "./coordinates.ts";
 import { MAX_PHOTO_ZOOM } from "./photo-focus.ts";
 import { SESSION_DAYS } from "./session-cookie.ts";
 import { alreadyTagged, cleanTagName, MAX_TAG_LENGTH, tagKey } from "./trip-tags.ts";
@@ -19,6 +20,7 @@ import { RESTAURANT_TYPES } from "./types.ts";
 import { ACCESS_TOKEN_MS, AUTHORIZATION_CODE_MS, CONNECTION_MS, PROPOSAL_MS, aiPlatform, isPkceChallenge, pkceMatches } from "./ai-auth.ts";
 import { DATA_TABLES, PHOTO_TABLES, UNREAD_COLUMNS, effectsBetween, previewChange } from "./ai-preview.ts";
 import type { AiPlatform } from "./ai-auth.ts";
+import type { Coordinates, CoordinatesAccuracy, SavedCoordinates } from "./coordinates.ts";
 import type { Effect, PreviewChange, Row, Tables } from "./ai-preview.ts";
 import type { EntryRequirements } from "./entry-requirements.ts";
 import type { HealthSafety } from "./health-safety.ts";
@@ -28,10 +30,12 @@ import type { AuthorizedAccount, DestinationAccess, GoogleIdentity, LibraryDesti
 import type { FoodBudgetMode, ActivitiesBudgetMode, Candidate, CandidateImage, Category, Church, MassTime, Destination, DestinationImage, HomeItem, StoredImage, ItineraryStop, Mutation, ResearchLink, RestaurantType, Snapshot, TravelLeg, Trip } from "./types";
 
 type StoredDestination = Omit<Destination, "churchEnabled" | "cityFromSuggestion" | "images" | "entryRequirements" | "healthSafety" | "climate" | "mainImageId" | "imageVersion"> & { churchEnabled: number; cityFromSuggestion: number; ownerId: string; cityKey: string };
-type StoredChurch = Omit<Church, "massTimes" | "images"> & { massTimesJson: string };
+/** A hotel's, activity's, restaurant's or church's coordinate columns (TRA-150): latitude, longitude and accuracy all set, or all empty with review 0. */
+type StoredCoordinates = { latitude: number | null; longitude: number | null; coordinatesAccuracy: CoordinatesAccuracy | null; coordinatesReview: number };
+type StoredChurch = Omit<Church, "massTimes" | "images" | "coordinates"> & StoredCoordinates & { massTimesJson: string };
 type StoredHomeItem = Omit<HomeItem, "completed"> & { completed: number };
 type StoredLeg = Omit<TravelLeg, "itinerary" | "links"> & { itineraryJson: string; linksJson: string };
-type StoredCandidate = Omit<Candidate, "links" | "included" | "mustDo" | "images" | "restaurantTypes"> & { linksJson: string; included: number; mustDo: number; restaurantTypesJson: string };
+type StoredCandidate = Omit<Candidate, "links" | "included" | "mustDo" | "images" | "restaurantTypes" | "coordinates"> & StoredCoordinates & { linksJson: string; included: number; mustDo: number; restaurantTypesJson: string };
 
 const CATEGORIES = ["hotels", "activities", "restaurants"] as const;
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -267,6 +271,30 @@ function restaurantTypesField(input: Input): RestaurantType[] | undefined {
   if (new Set(value).size !== value.length) throw new ValidationError("Choose each restaurant type once.");
   return RESTAURANT_TYPES.filter((type) => value.includes(type));
 }
+/** A save's coordinates (TRA-150): new ones, null to remove them, or undefined, left out, to keep the saved ones. */
+function coordinatesField(input: Input): Coordinates | null | undefined {
+  if (input.coordinates === undefined) return undefined;
+  try { return normalizeCoordinates(input.coordinates); }
+  catch (error) { throw new ValidationError(error instanceof Error ? error.message : "Enter valid coordinates."); }
+}
+/** A place's saved coordinates from its columns (TRA-150), or null without them. */
+function coordinatesOf({ latitude, longitude, coordinatesAccuracy, coordinatesReview }: StoredCoordinates): SavedCoordinates | null {
+  return latitude === null ? null : { latitude, longitude: longitude!, accuracy: coordinatesAccuracy!, review: coordinatesReview === 1 };
+}
+/** The coordinate columns for the coordinates a change gives, or for none. They are given for the place's address as it is, so none wait for review. */
+function coordinateColumns(coordinates: Coordinates | null): StoredCoordinates {
+  return coordinates ? { latitude: coordinates.latitude, longitude: coordinates.longitude, coordinatesAccuracy: coordinates.accuracy, coordinatesReview: 0 }
+    : { latitude: null, longitude: null, coordinatesAccuracy: null, coordinatesReview: 0 };
+}
+/**
+ * A place's coordinate columns after a save of its details (TRA-150): the coordinates it gives, or without them the saved
+ * ones, which wait to be reviewed once the save changes the address, so the map never treats them as right for the new one.
+ */
+function savedCoordinateColumns(coordinates: Coordinates | null | undefined, before: (StoredCoordinates & { address: string }) | undefined, address: string): StoredCoordinates {
+  if (coordinates !== undefined || before === undefined) return coordinateColumns(coordinates ?? null);
+  const { latitude, longitude, coordinatesAccuracy, coordinatesReview } = before;
+  return { latitude, longitude, coordinatesAccuracy, coordinatesReview: latitude !== null && before.address !== address ? 1 : coordinatesReview };
+}
 function storedLinks(row: { id: string; url: string; linksJson: string }): ResearchLink[] {
   const links = JSON.parse(row.linksJson) as ResearchLink[];
   // An older container may still write the legacy URL during a rolling deployment.
@@ -467,7 +495,7 @@ function validate(input: unknown): Mutation {
     case "destination.churchVisibility":
       return { type: value.type, id: idField(value), enabled: booleanField(value, "enabled") };
     case "church.save":
-      return { type: value.type, id: saveIdField(value), create: createField(value), destinationId: idField(value, "destinationId"), name: textField(value, "name", 160, true), address: textField(value, "address", 500), denomination: textField(value, "denomination", 160), url: urlField(value), massTimes: massTimesField(value), gallery: galleryField(value, "Church") };
+      return { type: value.type, id: saveIdField(value), create: createField(value), destinationId: idField(value, "destinationId"), name: textField(value, "name", 160, true), address: textField(value, "address", 500), denomination: textField(value, "denomination", 160), url: urlField(value), massTimes: massTimesField(value), coordinates: coordinatesField(value), gallery: galleryField(value, "Church") };
     case "church.delete":
       return { type: value.type, id: idField(value), destinationId: idField(value, "destinationId") };
     case "stop.add":
@@ -480,7 +508,7 @@ function validate(input: unknown): Mutation {
     case "leg.save":
       return { type: value.type, id: idField(value), method: textField(value, "method", 120), price: priceField(value), miscAmount: miscAmountField(value), departure: textField(value, "departure", 120), arrival: textField(value, "arrival", 120), url: urlField(value), notes: textField(value, "notes", 8000), itinerary: itineraryField(value), links: linksField(value) };
     case "candidate.save":
-      return { type: value.type, id: saveIdField(value), create: createField(value), destinationId: idField(value, "destinationId"), category: categoryField(value), name: textField(value, "name", 160, true), description: value.description === undefined ? undefined : textField(value, "description", 120), price: priceField(value), address: textField(value, "address", 500), url: urlField(value), notes: textField(value, "notes", 8000), included: booleanField(value, "included"), mustDo: value.mustDo === undefined ? undefined : booleanField(value, "mustDo"), restaurantTypes: restaurantTypesField(value), links: linksField(value), gallery: galleryField(value) };
+      return { type: value.type, id: saveIdField(value), create: createField(value), destinationId: idField(value, "destinationId"), category: categoryField(value), name: textField(value, "name", 160, true), description: value.description === undefined ? undefined : textField(value, "description", 120), price: priceField(value), address: textField(value, "address", 500), url: urlField(value), notes: textField(value, "notes", 8000), included: booleanField(value, "included"), mustDo: value.mustDo === undefined ? undefined : booleanField(value, "mustDo"), restaurantTypes: restaurantTypesField(value), links: linksField(value), coordinates: coordinatesField(value), gallery: galleryField(value) };
     case "candidate.move":
       if (value.direction !== "up" && value.direction !== "down") throw new ValidationError("Choose a valid direction for this idea.");
       return { type: value.type, id: idField(value), direction: value.direction };
@@ -558,6 +586,12 @@ function aiChange(input: unknown, photos: ReadonlyMap<string, PreparedImage>): M
   if (!input || typeof input !== "object" || Array.isArray(input)) throw new ValidationError("Each change must be an object.");
   const value = input as Input;
   if (isPhotoChange(value.type)) return photoChange(value as Input & { type: PhotoChange["type"] }, photos);
+  // Coordinates change only with these, which change nothing else, so a proposal never resends a place's other details (TRA-150).
+  if (value.type === "candidate.coordinates" || value.type === "church.coordinates") {
+    if (value.coordinates === undefined) throw new ValidationError("Give the coordinates, or null to remove them.");
+    return { type: value.type, id: idField(value), coordinates: coordinatesField(value)! };
+  }
+  if ((value.type === "candidate.save" || value.type === "church.save") && "coordinates" in value) throw new ValidationError("Change coordinates with candidate.coordinates or church.coordinates.");
   // Each person arranges their own trips on All trips (TRA-16), an order assistants can't read.
   if (value.type === "trip.order") throw new ValidationError("Each person puts their own trips in order on All trips, so trip order can't be proposed.");
   // A trip's headline image comes only from a person's device, in its editor (TRA-133).
@@ -616,7 +650,7 @@ const LIVE: Make = { id: () => randomUUID(), now: () => new Date().toISOString()
  * The schema this build upgrades every database to, as SQLite's user_version. A schema change adds the next
  * upgrade in createStore and raises this to match; earlier upgrades keep their own numbers.
  */
-export const SCHEMA_VERSION = 37;
+export const SCHEMA_VERSION = 38;
 
 /** A destination as schema 20 saved it, inside one trip, with that trip's owner and name. */
 type TripDestinationRow = Omit<StoredDestination, "cityKey"> & Omit<TripStop, "destinationId"> & { tripName: string };
@@ -811,7 +845,7 @@ export function createStore(databasePath: string, ownerEmail: string) {
     `);
     // Version 1 reset user_version at startup. Check columns as well so a rollback
     // followed by redeployment cannot repeat ALTER TABLE or replace saved links.
-    const hasColumn = (table: "trips" | "destinations" | "legs" | "candidates" | "candidate_images" | "destination_images" | "church_images" | "ai_proposal_photos", column: string) =>
+    const hasColumn = (table: "trips" | "destinations" | "legs" | "candidates" | "churches" | "candidate_images" | "destination_images" | "church_images" | "ai_proposal_photos", column: string) =>
       db.prepare(`PRAGMA table_info(${table})`).all().some((row) => row.name === column);
     // Before schema 21 each destination belonged to one trip. The upgrades from then add trip columns only to such a
     // table, so replaying them on a later database leaves its shared destinations as they are.
@@ -1283,6 +1317,19 @@ export function createStore(databasePath: string, ownerEmail: string) {
       if (!hasColumn("candidates", "description")) db.exec("ALTER TABLE candidates ADD COLUMN description TEXT NOT NULL DEFAULT '';");
       db.exec("PRAGMA user_version = 37;");
     }
+    if (version < 38) {
+      // Each hotel's, activity's, restaurant's and church's coordinates (TRA-150), which place it on its destination's map
+      // without a lookup: its latitude and longitude in range, whether they are exact or approximate, and whether they wait
+      // to be reviewed since its address changed after they were saved. A place has all of them or none. Every saved place
+      // starts without, so every map looks as it did. A replay keeps saved coordinates.
+      for (const table of ["candidates", "churches"] as const) {
+        if (!hasColumn(table, "latitude")) db.exec(`ALTER TABLE ${table} ADD COLUMN latitude REAL CHECK(latitude BETWEEN -90 AND 90);`);
+        if (!hasColumn(table, "longitude")) db.exec(`ALTER TABLE ${table} ADD COLUMN longitude REAL CHECK(longitude BETWEEN -180 AND 180);`);
+        if (!hasColumn(table, "coordinatesAccuracy")) db.exec(`ALTER TABLE ${table} ADD COLUMN coordinatesAccuracy TEXT CHECK((latitude IS NULL) = (longitude IS NULL) AND (latitude IS NULL) = (coordinatesAccuracy IS NULL) AND (coordinatesAccuracy IS NULL OR coordinatesAccuracy IN ('exact', 'approximate')));`);
+        if (!hasColumn(table, "coordinatesReview")) db.exec(`ALTER TABLE ${table} ADD COLUMN coordinatesReview INTEGER NOT NULL DEFAULT 0 CHECK(coordinatesReview IN (0,1) AND (coordinatesReview = 0 OR latitude IS NOT NULL));`);
+      }
+      db.exec("PRAGMA user_version = 38;");
+    }
     if (version < SCHEMA_VERSION && db.prepare("PRAGMA foreign_key_check").get()) {
       throw new Error("This upgrade would leave saved items without the trip or destination they belong to. Nothing was changed; review the database against a backup before upgrading.");
     }
@@ -1394,9 +1441,10 @@ export function createStore(databasePath: string, ownerEmail: string) {
     const rows = db.prepare(`SELECT candidates.*, candidate_images.id AS mainImageId FROM candidates LEFT JOIN candidate_images ON candidate_images.candidateId = candidates.id AND candidate_images.isMain = 1${where}
       ORDER BY candidates.destinationId, candidates.category, candidates.position, candidates.id`).all(...args) as unknown as StoredCandidate[];
     const photos = photosOf("candidate_images", "candidateId", destinationIds === null ? null : rows.map((candidate) => candidate.id));
-    return rows.map(({ linksJson, restaurantTypesJson, ...candidate }) => {
+    return rows.map(({ linksJson, restaurantTypesJson, latitude, longitude, coordinatesAccuracy, coordinatesReview, ...candidate }) => {
       const links = storedLinks({ ...candidate, linksJson });
-      return { ...candidate, url: links[0]?.url ?? "", included: candidate.included === 1, mustDo: candidate.mustDo === 1, restaurantTypes: JSON.parse(restaurantTypesJson) as RestaurantType[], links, images: photos.get(candidate.id) ?? [] };
+      return { ...candidate, url: links[0]?.url ?? "", included: candidate.included === 1, mustDo: candidate.mustDo === 1, restaurantTypes: JSON.parse(restaurantTypesJson) as RestaurantType[], links, images: photos.get(candidate.id) ?? [],
+        coordinates: coordinatesOf({ latitude, longitude, coordinatesAccuracy, coordinatesReview }) };
     });
   }
   function readChurches(destinationIds: readonly string[] | null): Church[] {
@@ -1404,7 +1452,8 @@ export function createStore(databasePath: string, ownerEmail: string) {
     const rows = db.prepare(`SELECT churches.*, church_images.id AS mainImageId FROM churches LEFT JOIN church_images ON church_images.churchId = churches.id AND church_images.isMain = 1${where}
       ORDER BY churches.name COLLATE NOCASE, churches.id`).all(...args) as unknown as (StoredChurch & { mainImageId: string | null })[];
     const photos = photosOf("church_images", "churchId", destinationIds === null ? null : rows.map((church) => church.id));
-    return rows.map(({ massTimesJson, ...church }) => ({ ...church, massTimes: JSON.parse(massTimesJson) as MassTime[], images: photos.get(church.id) ?? [] }));
+    return rows.map(({ massTimesJson, latitude, longitude, coordinatesAccuracy, coordinatesReview, ...church }) => ({ ...church, massTimes: JSON.parse(massTimesJson) as MassTime[], images: photos.get(church.id) ?? [],
+      coordinates: coordinatesOf({ latitude, longitude, coordinatesAccuracy, coordinatesReview }) }));
   }
   /** Everything saved, for checks and tests. What the app shows or changes always takes the signed-in account. */
   function getSnapshot(): Snapshot {
@@ -1701,6 +1750,11 @@ export function createStore(databasePath: string, ownerEmail: string) {
     gallery.order?.forEach((id, position) => db.prepare(`UPDATE ${table} SET position = ? WHERE ${ownerColumn} = ? AND id = ?`).run(position, ownerId, id));
     db.prepare(`UPDATE ${table} SET isMain = 0 WHERE ${ownerColumn} = ? AND isMain = 1`).run(ownerId);
     if (main) db.prepare(`UPDATE ${table} SET isMain = 1 WHERE ${ownerColumn} = ? AND id = ?`).run(ownerId, main);
+  }
+  /** Writes a hotel's, activity's, restaurant's or church's coordinate columns (TRA-150), and nothing else of it. */
+  function saveCoordinates(table: "candidates" | "churches", id: string, columns: StoredCoordinates) {
+    db.prepare(`UPDATE ${table} SET latitude = ?, longitude = ?, coordinatesAccuracy = ?, coordinatesReview = ? WHERE id = ?`)
+      .run(columns.latitude, columns.longitude, columns.coordinatesAccuracy, columns.coordinatesReview, id);
   }
   function existing<T>(table: "trips" | "destinations" | "trip_stops" | "legs" | "candidates" | "home_items" | "churches", id: string): T {
     const row = db.prepare(`SELECT * FROM ${table} WHERE id = ?`).get(id);
@@ -2007,13 +2061,14 @@ export function createStore(databasePath: string, ownerEmail: string) {
       case "church.save": {
         existing<Destination>("destinations", input.destinationId);
         const id = input.id;
-        if (changesSaved("churches", input)) {
-          const before = existing<StoredChurch>("churches", id);
+        const before = changesSaved("churches", input) ? existing<StoredChurch>("churches", id) : undefined;
+        if (before) {
           if (before.destinationId !== input.destinationId) throw new ValidationError("This church belongs to a different destination.");
           db.prepare("UPDATE churches SET name = ?, address = ?, denomination = ?, url = ?, massTimesJson = ? WHERE id = ? AND destinationId = ?").run(input.name, input.address, input.denomination, input.url, JSON.stringify(input.massTimes), id, input.destinationId);
         } else {
           db.prepare("INSERT INTO churches(id,destinationId,name,address,denomination,url,massTimesJson) VALUES(?,?,?,?,?,?,?)").run(id, input.destinationId, input.name, input.address, input.denomination, input.url, JSON.stringify(input.massTimes));
         }
+        saveCoordinates("churches", id, savedCoordinateColumns(input.coordinates, before, input.address));
         saveGallery("church", id, input.gallery, make);
         return id;
       }
@@ -2078,6 +2133,7 @@ export function createStore(databasePath: string, ownerEmail: string) {
           const position = Number(db.prepare("SELECT coalesce(max(position), -1) + 1 AS position FROM candidates WHERE destinationId = ? AND category = ?").get(input.destinationId, input.category)!.position);
           db.prepare("INSERT INTO candidates(id,destinationId,category,name,description,priceCents,address,url,notes,included,mustDo,restaurantTypesJson,position,linksJson) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)").run(id, input.destinationId, input.category, input.name, input.description ?? "", priceCents(input.price), input.address, url, input.notes, Number(input.included), mustDo, restaurantTypesJson, position, JSON.stringify(links));
         }
+        saveCoordinates("candidates", id, savedCoordinateColumns(input.coordinates, before, input.address));
         saveGallery("candidate", id, input.gallery, make);
         return id;
       }
@@ -2122,6 +2178,15 @@ export function createStore(databasePath: string, ownerEmail: string) {
         existing<StoredChurch>("churches", input.id);
         saveGallery("church", input.id, input.gallery, make);
         return input.id;
+      // Only the coordinates change, and none waits for review (TRA-150).
+      case "candidate.coordinates":
+        existing<StoredCandidate>("candidates", input.id);
+        saveCoordinates("candidates", input.id, coordinateColumns(input.coordinates));
+        return input.id;
+      case "church.coordinates":
+        existing<StoredChurch>("churches", input.id);
+        saveCoordinates("churches", input.id, coordinateColumns(input.coordinates));
+        return input.id;
     }
   }
   /**
@@ -2153,8 +2218,8 @@ export function createStore(databasePath: string, ownerEmail: string) {
       case "candidate.save": return { destination: destinationOf("candidates", input.id) ?? (input.create && destinationOf("destinations", input.destinationId)) };
       case "candidate.move": case "candidate.mustDo": case "candidate.delete": case "candidate.include": return { destination: destinationOf("candidates", input.id) };
       case "destination.photos": return { destination: destinationOf("destinations", input.id) };
-      case "candidate.photos": return { destination: destinationOf("candidates", input.id) };
-      case "church.photos": return { destination: destinationOf("churches", input.id) };
+      case "candidate.photos": case "candidate.coordinates": return { destination: destinationOf("candidates", input.id) };
+      case "church.photos": case "church.coordinates": return { destination: destinationOf("churches", input.id) };
     }
   }
   /**

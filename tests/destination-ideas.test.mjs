@@ -5,6 +5,7 @@ import test from "node:test";
 import { runInNewContext } from "node:vm";
 import ts from "typescript";
 import * as budget from "../src/lib/budget.ts";
+import * as coordinates from "../src/lib/coordinates.ts";
 import * as destinationLabel from "../src/lib/destination-label.ts";
 import * as galleryDraft from "../src/lib/gallery-draft.ts";
 import * as imageLimits from "../src/lib/image-limits.ts";
@@ -21,7 +22,7 @@ const shared = {
   "react": { useId: () => "id", useState: (initial) => [initial, () => {}], useRef: (current) => ({ current }), useEffect: () => {} },
   "react/jsx-runtime": { jsx: element, jsxs: element, Fragment: "fragment" },
   "next/link": { default: "a" }, "lucide-react": new Proxy({}, { get: (_, name) => "icon:" + String(name) }),
-  "@/lib/budget": budget, "@/lib/destination-label": destinationLabel, "@/lib/gallery-draft": galleryDraft, "@/lib/image-limits": imageLimits, "@/lib/money": money, "@/lib/trip-dates": tripDates, "@/lib/types": types, "@/lib/uuid": uuid,
+  "@/lib/budget": budget, "@/lib/coordinates": coordinates, "@/lib/destination-label": destinationLabel, "@/lib/gallery-draft": galleryDraft, "@/lib/image-limits": imageLimits, "@/lib/money": money, "@/lib/trip-dates": tripDates, "@/lib/types": types, "@/lib/uuid": uuid,
 };
 /** A component module, given the components it imports. A CSS module's class names are their own names. */
 function load(file, modules = {}) {
@@ -44,12 +45,13 @@ const ideaModules = {
   "./candidate-gallery": load("../src/components/candidate-gallery.tsx", { "./focus-after": load("../src/components/focus-after.ts"), "./image-by-url": imageByUrl, "./photo-browsing": load("../src/components/photo-browsing.tsx"), "./photo-drag": load("../src/components/photo-drag.ts") }),
   "./research-links": load("../src/components/research-links.tsx"),
   "./restaurant-types": load("../src/components/restaurant-types.tsx"),
+  "./place-location": load("../src/components/place-location.tsx"),
 };
 const { DestinationIdeas, IdeaDetails } = load("../src/components/destination-ideas.tsx", ideaModules);
 const { default: CandidateList } = load("../src/components/candidate-list.tsx", ideaModules);
 const { RestaurantTypesField } = ideaModules["./restaurant-types"];
 const { DestinationBudget } = load("../src/components/destination-budget.tsx");
-const { ChurchOptions } = load("../src/components/churches.tsx", { "./candidate-gallery": ideaModules["./candidate-gallery"], "./focus-after": load("../src/components/focus-after.ts") });
+const { ChurchOptions } = load("../src/components/churches.tsx", { "./candidate-gallery": ideaModules["./candidate-gallery"], "./focus-after": load("../src/components/focus-after.ts"), "./place-location": ideaModules["./place-location"] });
 const { ChurchSundays } = load("../src/components/church-sundays.tsx");
 
 /** The host elements an element renders to, with every component rendered. */
@@ -150,7 +152,8 @@ test("cards show details, and each section edits its budget, adds an idea and li
 
 test("an idea's details show what its editor saves, read only", (t) => {
   const { store, id } = seed(t);
-  const saved = store.applyMutation(candidateInput(id, "activities", { name: "Walking tour", description: "Guided walk through the old town", price: "45.50", address: "Stephansplatz", notes: "Morning\nBring water", links: [{ id: randomUUID(), url: "https://example.com/tour", description: "Booking" }], included: true, mustDo: true })).id;
+  const saved = store.applyMutation(candidateInput(id, "activities", { name: "Walking tour", description: "Guided walk through the old town", price: "45.50", address: "Stephansplatz", notes: "Morning\nBring water", links: [{ id: randomUUID(), url: "https://example.com/tour", description: "Booking" }], included: true, mustDo: true,
+    coordinates: { latitude: 48.20849, longitude: 16.37208, accuracy: "approximate" } })).id;
   const details = (itemId) => {
     const rendered = hosts({ type: IdeaDetails, props: { item: store.getSnapshot().candidates.find((item) => item.id === itemId) } });
     return rendered.filter((node) => node.type === "div").map((row) => [text(row.props.children[0]), text(row.props.children[1])]);
@@ -159,6 +162,8 @@ test("an idea's details show what its editor saves, read only", (t) => {
     ["What it is", "Guided walk through the old town"],
     ["Estimated price (USD)", "$45.50Total for the whole party for this activity."],
     ["Address or neighborhood", "Stephansplatz"],
+    // Its coordinates, below its address as in its editor, latitude first, with how accurate they are (TRA-150).
+    ["Coordinates", "48.20849, 16.37208Approximate"],
     ["Activity photos", "Not added"],
     ["Website and research links", "Bookingexample.com"],
     ["Notes", "Morning\nBring water"],
@@ -170,11 +175,15 @@ test("an idea's details show what its editor saves, read only", (t) => {
     ["What it is", "Not added"],
     ["Estimated price (USD)", "Not estimatedTotal for all rooms and the entire stay."],
     ["Address or neighborhood", "Not added"],
+    ["Coordinates", "Not added"],
     ["Hotel photos", "Not added"],
     ["Website and research links", "Not added"],
     ["Notes", "Not added"],
     ["Choose this hotel for the budget", "No"],
   ]);
+  // A new address leaves the saved coordinates waiting to be checked, and the details say why the map doesn't use them.
+  store.applyMutation(candidateInput(id, "activities", { id: saved, name: "Walking tour", price: "45.50", address: "Graben 1", included: true }));
+  assert.deepEqual(details(saved).find(([name]) => name === "Coordinates"), ["Coordinates", "48.20849, 16.37208Approximate. The address changed after they were saved, so the map doesn't use them until they're confirmed in the editor."]);
 });
 
 test("a restaurant's types show as labeled tags on its cards and in its details, and a restaurant without them shows none (TRA-36)", (t) => {
@@ -197,7 +206,7 @@ test("a restaurant's types show as labeled tags on its cards and in its details,
   const details = (itemId) => hosts({ type: IdeaDetails, props: { item: ideas.find((item) => item.id === itemId) } }).filter((node) => node.type === "div").map((row) => [text(row.props.children[0]), text(row.props.children[1])]);
   // Below what it is (TRA-138), in its editor's order.
   assert.deepEqual(details(both).slice(0, 3), [["What it is", "Not added"], ["Restaurant types", "LunchDrinks"], ["Estimated price (USD)", "$30Total for one meal for the whole party."]]);
-  assert.deepEqual(details(plain).map(([name]) => name), ["What it is", "Estimated price (USD)", "Address or neighborhood", "Restaurant photos", "Website and research links", "Notes", "Must do", "Include in itemized restaurant costs"], "no empty row or placeholder");
+  assert.deepEqual(details(plain).map(([name]) => name), ["What it is", "Estimated price (USD)", "Address or neighborhood", "Coordinates", "Restaurant photos", "Website and research links", "Notes", "Must do", "Include in itemized restaurant costs"], "no empty row or placeholder");
 });
 
 test("a restaurant's editor has an independent checkbox for each type, checked as saved (TRA-36)", () => {

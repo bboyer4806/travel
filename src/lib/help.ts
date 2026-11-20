@@ -29,7 +29,7 @@ const IDEA_PAGES: Record<IdeaPage, PageHelp> = {
     title: "Hotels",
     points: [
       "Hotels you're considering for this destination, with what each costs for the whole stay.",
-      "Add hotel saves one, with what it is, its price, address, photos, links and notes. The pencil edits a hotel and the trash can deletes it.",
+      "Add hotel saves one, with what it is, its price, address, coordinates, photos, links and notes. The pencil edits a hotel and the trash can deletes it.",
       "Choose hotel uses its price in the budget instead of the general nightly estimate. Select Included to go back to the estimate.",
       "The Accommodation budget's edit button sets the general nightly estimate, and in a trip, the stay's nights.",
       "Up and Down set the order of the list.",
@@ -40,7 +40,7 @@ const IDEA_PAGES: Record<IdeaPage, PageHelp> = {
     title: "Activities",
     points: [
       "Things you'd like to do at this destination, with what each costs for the whole party.",
-      "Add activity saves one, with what it is, its price, address, photos, links and notes. The pencil edits an activity and the trash can deletes it.",
+      "Add activity saves one, with what it is, its price, address, coordinates, photos, links and notes. The pencil edits it and the trash can deletes it.",
       "Edit activities budget chooses a general amount for the whole stay or itemized activity costs.",
       "With itemized costs, Include in budget adds an activity's price. Switching methods keeps your amounts and selections.",
       "Mark as must do flags a priority without changing the budget. Up and Down set the order of the list.",
@@ -51,7 +51,7 @@ const IDEA_PAGES: Record<IdeaPage, PageHelp> = {
     title: "Restaurants",
     points: [
       "Places to eat at this destination, with what a meal costs for the whole party.",
-      "Add restaurant saves one, with what it is, its price, the meals it suits, photos, links and notes. The pencil edits a restaurant and the trash can deletes it.",
+      "Add restaurant saves one: what it is, its price, meals, address, coordinates, photos, links and notes. The pencil edits it and the trash can deletes it.",
       "Edit food budget chooses a daily food amount or itemized restaurant costs. In a trip, Edit destination nights sets the stay's nights.",
       "With itemized costs, Include in budget adds a restaurant's price. Switching methods keeps your amounts and selections.",
       "Mark as must do flags a priority without changing the budget. Up and Down set the order of the list.",
@@ -62,7 +62,7 @@ const IDEA_PAGES: Record<IdeaPage, PageHelp> = {
     title: "Church",
     points: [
       "Churches you might attend at this destination, with their Mass times. A church's arrows, or a swipe across its photo, show its other photos.",
-      "Add church saves one, with its address, website, Mass times and photos. The pencil edits a church and the trash can deletes it.",
+      "Add church saves one, with its address, coordinates, website, Mass times and photos. The pencil edits a church and the trash can deletes it.",
       "Mass times are only what you enter. Confirm them with the church before you go.",
       "In a trip, Church lists the Sundays of the stay, and a stay without a Sunday doesn't show it.",
       "Hide Church hides it in every trip without deleting anything, and Show Church brings it back.",
@@ -114,7 +114,7 @@ const HELP: { [Route in SignedInRoute]: Route extends `${string}/[category]` ? R
     points: [
       "One city's research, shared by every trip that visits it: photos, notes, budget, ideas, entry requirements, health and safety, weather and churches.",
       "Edit destination changes its city, tagline, budget amounts, photos and notes. In Typical weather, select a month on the chart for its averages.",
-      "Its map shows its hotels, activities, restaurants and churches, and the checkboxes choose which. Select a marker, then View details.",
+      "Its map shows its places, at their coordinates when saved, and a dashed ring means approximate. Checkboxes choose places; select a marker, then View details.",
       "Hotels, Activities and Restaurants show its ideas, with what each is below its name. Select one for its details, or Manage to reorder, choose and delete them.",
       "Select a heading, such as Map, Budget or Entry requirements, to show or hide it. The buttons beside it add or edit what's there.",
       "In your trips lists each of your trips that visits it, with its nights and estimate. Its owner can delete it once no trip visits it.",

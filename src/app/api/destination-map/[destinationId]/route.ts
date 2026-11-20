@@ -1,5 +1,5 @@
 import { currentAccount, signedOutResponse } from "@/auth";
-import { destinationPlaces, placeKey, type DestinationMapAnswer } from "@/lib/destination-map";
+import { destinationPlaces, mapCoordinates, placeKey, type DestinationMapAnswer } from "@/lib/destination-map";
 import { locatePlaces } from "@/lib/location-search";
 import { locateNear, type PlaceAnswer } from "@/lib/place-search";
 import { getDestinationSnapshot } from "@/lib/store";
@@ -10,7 +10,8 @@ export const dynamic = "force-dynamic";
 /**
  * Where each hotel, activity, restaurant and church saved for a destination is on its map (TRA-130), by saved ID. The
  * destination is found by its city as the trip map finds it (TRA-44), and its places by their saved addresses and names
- * around it. Places still waiting their turn are pending, for the map to ask again.
+ * around it. Places still waiting their turn are pending, for the map to ask again. Places the map shows at their saved
+ * coordinates aren't looked up, so Nominatim is never asked about them (TRA-150).
  */
 export async function GET(_request: Request, { params }: { params: Promise<{ destinationId: string }> }) {
   const account = await currentAccount();
@@ -20,7 +21,7 @@ export async function GET(_request: Request, { params }: { params: Promise<{ des
   const snapshot = getDestinationSnapshot(account.id, destinationId);
   if (!snapshot) return Response.json({ error: "This destination is no longer here." }, { status: 404, headers: { "Cache-Control": "no-store" } });
   const destination = snapshot.data.destinations.find((item) => item.id === destinationId)!;
-  const places = destinationPlaces(snapshot.data, destinationId);
+  const places = destinationPlaces(snapshot.data, destinationId).filter((place) => !mapCoordinates(place));
   const city = destination.city.trim();
   const area = (await locatePlaces([city]))[city];
   // Without the destination, its places can't be looked up around it.

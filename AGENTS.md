@@ -107,7 +107,7 @@ Repeat passing checks when subsequent changes affect their coverage or required 
 - The trip map (TRA-44) is `src/components/trip-map.tsx`, with Leaflet in `trip-map-canvas.tsx`, loaded only in the
   browser. `tripJourney` and `mapLayout` in `src/lib/trip-map.ts` decide what it shows, and `/api/trip-map/[tripId]` looks
   the trip's saved names up with `locatePlaces` in `src/lib/location-search.ts`, within the city suggestions' Open-Meteo
-  limits. Travel stores no coordinates and never guesses one: a place the map can't find is listed below it.
+  limits. The trip map stores no coordinates and never guesses one: a place it can't find is listed below it.
 - The destination map (TRA-130) is `src/components/destination-map.tsx`, with Leaflet in `destination-map-canvas.tsx`,
   loaded only in the browser, on each trip destination card and destination page. `destinationPlaces` and
   `destinationMapLayout` in `src/lib/destination-map.ts` decide what it shows, and `/api/destination-map/[destinationId]`
@@ -115,6 +115,14 @@ Repeat passing checks when subsequent changes affect their coverage or required 
   `src/lib/place-search.ts`. That is the only code that asks Nominatim, whose usage policy it keeps: one request at a
   time, more than a second apart, named `TravelPlanner/1.0`, with answers kept for a day. A place is found only when
   exactly one place matches its address, or else its name, within 50 km; tests use a stand-in, never Nominatim.
+- Coordinates (TRA-150) are each idea's and church's `latitude`, `longitude`, `coordinatesAccuracy` (`exact` or
+  `approximate`) and `coordinatesReview` columns, all set or none, read as `coordinates` and checked by
+  `normalizeCoordinates` in `src/lib/coordinates.ts`. People change them only with `candidate.save` and `church.save`,
+  from `PlaceLocationFields` in each place's editor, read by `coordinatesFromForm`; left out they are kept, and a save
+  that changes the address leaves them waiting for review until a save gives them again or removes them. Only proposals
+  make `candidate.coordinates` and `church.coordinates`, which change nothing else, and `aiChange` refuses coordinates in
+  a proposal's save. `mapCoordinates` in `src/lib/destination-map.ts` decides which places the map shows at their
+  coordinates, however far away; the route never looks those up. Travel never looks coordinates up or checks them.
 - Airports (TRA-132) are OurAirports' public-domain list in `src/lib/airports.json`, written only by
   `node scripts/update-airports.mjs` and found only by `airportByCode` in `src/lib/airports.ts`. City suggestions
   offer the airport for a three-letter IATA code in any letter case, except in destination fields, and the trip map

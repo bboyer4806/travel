@@ -21,6 +21,9 @@
 .restaurants { background: #2d5a7b; }
 .churches { background: #6a4c6e; }
 .group { background: var(--ink); }
+/* A place shown at approximate coordinates (TRA-150): a dashed ring around it, so it never reads as a verified address.
+   Keyboard focus's solid outline replaces the ring while the marker has focus. */
+.approximate { outline: 2px dashed var(--ink); outline-offset: 2px; }
 .anchor:focus-visible .content > * { outline: 3px solid var(--ink); outline-offset: 2px; }
 
 /* A marker's popup: each place found there, with its category and View details. */
@@ -30,6 +33,9 @@
 .popupPlaces strong { color: var(--ink); font-size: 13px; font-weight: 600; }
 .category { color: var(--muted); font-size: 11px; }
 
+/* What the dashed ring of approximate places means, below the map while it shows one (TRA-150). */
+.note { display: flex; align-items: center; gap: 8px; margin: 8px 0 0; color: var(--muted); font-size: 11px; }
+.key { flex: none; width: 14px; height: 14px; border: 2px dashed var(--ink); border-radius: 50%; }
 .status { margin: 8px 0 0; color: var(--muted); font-size: 11px; }
 .status:empty { display: none; }
 

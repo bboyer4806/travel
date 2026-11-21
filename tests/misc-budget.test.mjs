@@ -33,7 +33,7 @@ test("all USD categories reconcile exactly once, isolate trips, and retain activ
  store.applyMutation(candidateInput(id,"activities",{price:""}));
  store.applyMutation(candidateInput(id,"hotels",{price:"9999",included:false}));
  for(const leg of store.getSnapshot().legs.filter(x=>x.tripId===tripId)) store.applyMutation({type:"leg.save",id:leg.id,method:"Train",price:"10.01",departure:"",arrival:"",url:"",notes:""});
- for(const price of ["2.02","","0"]) store.applyMutation({type:"homeItem.save",...newItem(),tripId,name:"Task",price,notes:"",completed:true});
+ for(const price of ["2.02","","0"]) store.applyMutation({type:"homeItem.save",...newItem(),tripId,name:"Task",price,notes:""});
  const budget=()=>calculateBudget(store.getSnapshot(),tripId);
  assert.deepEqual(calculateDestinationBudget(store.getSnapshot(),visit(store,id)).totalsByCurrency,{USD:52500});
  assert.equal(budget().totalsByCurrency.USD,54704); assert.equal(budget().complete,true);

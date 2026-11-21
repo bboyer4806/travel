@@ -125,7 +125,7 @@ test("weather edits leave existing destination data, routes, choices, and separa
   });
   store.applyMutation({ type: "candidate.save", ...newItem(), destinationId: id, category: "activities", name: "Museum", price: "999", address: "", url: "", notes: "Preserve this idea", included: true });
   for (const leg of store.getSnapshot().legs) store.applyMutation({ type: "leg.save", id: leg.id, method: "Flight", price: "100", departure: "Morning", arrival: "Evening", url: "", notes: "Booked" });
-  store.applyMutation({ type: "homeItem.save", ...newItem(), tripId, name: "Pause mail", price: "", notes: "", completed: false });
+  store.applyMutation({ type: "homeItem.save", ...newItem(), tripId, name: "Pause mail", price: "", notes: "" });
   const before = store.getSnapshot();
   const budget = calculateBudget(before, tripId);
   const visitIn = (snapshot) => ({ ...snapshot.destinations.find((item) => item.id === id), nights: snapshot.stops.find((item) => item.id === id).nights });
@@ -153,7 +153,7 @@ test("schema 12 upgrade defaults weather to missing and preserves old data; migr
     });
     const hotelPhoto = { id: randomUUID(), ...prepared(webp) };
     const candidateId = store.applyMutation({ type: "candidate.save", ...newItem(), destinationId: id, category: "hotels", name: "Saved hotel", price: "123.45", address: "Main street", url: "", notes: "", included: true, gallery: { add: [hotelPhoto], remove: [] }, links: [{ id: randomUUID(), url: "https://example.com/hotel", description: "Booking" }] }).id;
-    store.applyMutation({ type: "homeItem.save", ...newItem(), tripId, name: "House sitting", price: "23.95", notes: "Leave a key", completed: true });
+    store.applyMutation({ type: "homeItem.save", ...newItem(), tripId, name: "House sitting", price: "23.95", notes: "Leave a key" });
     for (const leg of store.getSnapshot().legs) store.applyMutation({ type: "leg.save", id: leg.id, method: "Flight", price: "100", departure: "Morning", arrival: "Evening", url: "", notes: "Booked", itinerary: [{ id: randomUUID(), kind: "layover", place: "London", arrival: "10:00", departure: "12:00", notes: "" }] });
     const before = store.getSnapshot();
     const budget = calculateBudget(before, tripId);

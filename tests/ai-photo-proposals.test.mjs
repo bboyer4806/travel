@@ -142,7 +142,7 @@ test("approving makes exactly the photo changes previewed, all of them with the 
   assert.equal(store.aiPhoto("idea", hotelId, N1), undefined);
 
   // A photo change with a change the planner then refuses: the photo isn't added either.
-  const itemId = store.applyMutation(owner, { type: "homeItem.save", ...newItem(), tripId: ownerTrip, name: "Pause mail", price: "", notes: "", completed: false }).id;
+  const itemId = store.applyMutation(owner, { type: "homeItem.save", ...newItem(), tripId: ownerTrip, name: "Pause mail", price: "", notes: "" }).id;
   const batch = propose([
     { type: "destination.photos", id: destinationId, gallery: { add: add(added, N2), remove: [], mainImageId: N2 } },
     { type: "homeItem.delete", id: itemId, tripId: ownerTrip },

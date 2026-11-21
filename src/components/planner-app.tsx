@@ -395,7 +395,7 @@ export default function PlannerApp({ initialData, initialBudgets, access = {}, d
         break;
       }
       case "homeItem": {
-        if (trip) void perform({ type: "homeItem.save", ...itemToSave(editor.item), tripId: trip.id, name: text("name"), price: text("price"), notes: text("notes"), completed: fields.has("completed") }, "At home item saved.");
+        if (trip) void perform({ type: "homeItem.save", ...itemToSave(editor.item), tripId: trip.id, name: text("name"), price: text("price"), notes: text("notes") }, "At home item saved.");
         break;
       }
       case "share": {
@@ -622,8 +622,7 @@ export default function PlannerApp({ initialData, initialBudgets, access = {}, d
           <HomeItems items={data.homeItems.filter((item) => item.tripId === trip.id)} busy={busy}
             onAdd={() => open({ kind: "homeItem" })}
             onEdit={(item) => open({ kind: "homeItem", item })}
-            onDelete={(item) => confirmDelete({ type: "homeItem.delete", id: item.id, tripId: trip.id }, "Delete “" + item.name + "”?", "This removes the item and any cost from the trip estimate.")}
-            onComplete={(item, control) => saveFrom(control, { type: "homeItem.complete", id: item.id, tripId: trip.id, completed: !item.completed }, item.completed ? "Item reopened." : "Item marked complete.")} />
+            onDelete={(item) => confirmDelete({ type: "homeItem.delete", id: item.id, tripId: trip.id }, "Delete “" + item.name + "”?", "This removes the item and any cost from the trip estimate.")} />
         </div>
         {budget && <aside className="budget-panel"><span className="budget-symbol"><Wallet size={23} strokeWidth={1.4} /></span><h2>The trip estimate</h2><div className="budget-total"><BudgetValue budget={budget} /></div><p className="budget-caption">Total for {trip.travelers === 1 ? "1 traveler" : "all " + trip.travelers + " travelers"}</p><dl className="budget-breakdown"><div><dt>Travel{budget.travelMissingCount > 0 && <small>{budget.travelMissingCount} not estimated</small>}</dt><dd>{tripLegs.some((leg) => leg.priceCents !== null) ? formatCurrency(budget.travelCents, "USD") : "Not estimated"}</dd></div><div><dt>Transit miscellaneous</dt><dd>{budget.transitMiscCents === null ? "Not set" : formatCurrency(budget.transitMiscCents, "USD")}</dd></div><div><dt>Hotels{budget.hotelMissingCount > 0 && <small>{budget.hotelMissingCount} not estimated</small>}</dt><dd><CurrencyTotals totals={budget.hotelsByCurrency} /></dd></div><div><dt>Activities{budget.activitiesMissingCount > 0 && <small>{budget.activitiesMissingCount} not estimated</small>}</dt><dd><CurrencyTotals totals={budget.activitiesByCurrency} empty={budget.activitiesMissingCount ? "Not estimated" : "$0"} /></dd></div><div><dt>Food{budget.foodMissingCount > 0 && <small>{budget.foodMissingCount} not estimated</small>}</dt><dd><CurrencyTotals totals={budget.foodByCurrency} empty={budget.foodMissingCount ? "Not estimated" : "$0"} /></dd></div><div><dt>Shopping</dt><dd><CurrencyTotals totals={budget.shoppingByCurrency} empty="Not set" /></dd></div><div><dt>At home</dt><dd>{formatCurrency(budget.homeCents, "USD")}</dd></div><div><dt>Miscellaneous{budget.miscMissingCount > 0 && <small>{budget.miscMissingCount} not estimated</small>}</dt><dd><CurrencyTotals totals={budget.miscellaneousByCurrency} /></dd></div></dl><div className="budget-note">{budget.complete ? <CheckCircle2 size={17} /> : <MoreHorizontal size={20} />}<p>{budget.complete ? "All required estimates are added." : budget.missingCount + " " + (budget.missingCount === 1 ? "detail still needs" : "details still need") + " an estimate or a choice."}</p></div></aside>}
         </div>
@@ -716,7 +715,6 @@ export default function PlannerApp({ initialData, initialBudgets, access = {}, d
         <Field label="Name" wide><input name="name" defaultValue={editor.item?.name} required maxLength={160} placeholder="House sitting, babysitting, or another task" disabled={busy} /></Field>
         <Field label="Estimated price (USD, optional)" wide hint="Add the total cost for this trip, or leave blank if there is no cost to add. You can add a price later."><input name="price" type="number" className="no-spin-buttons" min="0" max={MAX_AMOUNT_DOLLARS} step="0.01" defaultValue={minorAmountValue(editor.item?.priceCents, "USD")} placeholder="No price added" disabled={busy} /></Field>
         <Field label="Notes" wide><textarea name="notes" defaultValue={editor.item?.notes} maxLength={8000} rows={3} placeholder="Contacts, arrangements, or anything to remember" disabled={busy} /></Field>
-        <label className="checkbox-field wide"><input name="completed" type="checkbox" defaultChecked={editor.item?.completed ?? false} disabled={busy} /><span>Completed<small>Any price stays in the trip estimate when this item is complete.</small></span></label>
       </>}
       {editor.kind === "share" && trip && tripAccess?.role === "owner" && <TripSharing access={tripAccess} busy={busy}
         onRemove={(member) => void perform({ type: "trip.unshare", tripId: trip.id, email: member.email }, member.email + " can no longer open this trip.")} />}

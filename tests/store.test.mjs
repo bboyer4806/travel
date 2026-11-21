@@ -644,7 +644,7 @@ test("saving a trip without a tagline, or changing anything else, keeps its tagl
     { type: "trip.tag", tripId, name: "Asia" },
     { type: "trip.untag", tripId, name: "Asia" },
     stopEdit(destinationId, { nights: 5 }),
-    { type: "homeItem.save", ...newItem(), tripId, name: "House sitting", price: "120", notes: "", completed: false },
+    { type: "homeItem.save", ...newItem(), tripId, name: "House sitting", price: "120", notes: "" },
   ]) {
     store.applyMutation(edit);
     assert.equal(tagline(store, tripId), TRIP_TAGLINE, JSON.stringify(edit));

@@ -9,7 +9,7 @@ const NOT_AVAILABLE = "This item no longer exists or isn't shared with you. Plea
 const webp = new Uint8Array([82, 73, 70, 70, 4, 0, 0, 0, 87, 69, 66, 80]);
 const photo = () => ({ id: randomUUID(), ...prepared(webp) });
 const gallery = (...photos) => ({ add: photos, remove: [], mainImageId: photos[0].id });
-const homeInput = (tripId, overrides = {}) => ({ type: "homeItem.save", tripId, name: "House sitting", price: "40", notes: "", completed: false, ...overrides, ...newItem(overrides) });
+const homeInput = (tripId, overrides = {}) => ({ type: "homeItem.save", tripId, name: "House sitting", price: "40", notes: "", ...overrides, ...newItem(overrides) });
 const churchInput = (destinationId, overrides = {}) => ({ type: "church.save", destinationId, name: "Duomo", address: "", denomination: "", url: "", massTimes: [], ...overrides, ...newItem(overrides) });
 
 /** Saves a change, then sends it again, as Save does after a response is lost, and checks the second save changed nothing. */

@@ -1,4 +1,4 @@
-import { useEffect, useRef } from "react";
+import { useCallback, useEffect, useRef, type RefObject } from "react";
 
 type FindControl = () => HTMLElement | null | undefined;
 
@@ -20,6 +20,18 @@ export function useFocusAfter(settled = true) {
     find()?.focus();
   });
   return (find: FindControl) => { pending.current = find; };
+}
+
+/**
+ * A ref for controls that a change can remove while one has keyboard focus, as a save hides a closed section's Edit
+ * (TRA-148): if they hold focus as they're removed, `fallback` takes it rather than the page. React detaches a ref
+ * before it removes the element, so focus is still inside them then.
+ */
+export function useFocusFallback(fallback: RefObject<HTMLElement | null>) {
+  return useCallback((controls: HTMLElement | null) => {
+    if (!controls) return;
+    return () => { if (controls.contains(document.activeElement)) fallback.current?.focus(); };
+  }, [fallback]);
 }
 
 /** A control after its change: itself, or when the change disabled it, the first enabled button beside it, as Move up for an item moved to the end. */

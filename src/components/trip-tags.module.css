@@ -20,7 +20,8 @@
 .filterTag[aria-pressed="true"] { border-color: var(--green); background: var(--green); color: white; }
 
 @media (max-width: 540px) {
-  .add { flex: 1 1 100%; }
+  /* TRA-157: the field narrows with the screen; its own width never widens the page. */
+  .add { flex: 1 1 100%; min-width: 0; }
   /* 16px keeps phones from zooming into the field. */
   .add input { flex: 1; width: auto; min-width: 0; font-size: 16px; }
   .remove { width: 32px; height: 32px; }

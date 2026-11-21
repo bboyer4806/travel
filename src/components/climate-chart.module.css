@@ -53,6 +53,9 @@
 
 .table { margin-top: 10px; font-size: 13px; }
 .table summary { width: fit-content; color: var(--green); font-weight: 600; cursor: pointer; }
+/* TRA-157: a screen too narrow for the table's four columns, as a 320px phone's, scrolls it sideways within its own box,
+   as a data table may, so it never reaches past its panel or widens the page. */
+.tableScroll { overflow-x: auto; }
 .table table { width: 100%; margin-top: 8px; border-collapse: collapse; font-variant-numeric: tabular-nums; }
 .table th, .table td { padding: 6px 8px; border-bottom: 1px solid var(--line); text-align: right; font-weight: 400; }
 .table thead th { color: var(--muted); font-size: 12px; }

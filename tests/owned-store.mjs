@@ -57,6 +57,13 @@ export const UNDO_SCHEMA_32 = ["destination_images", "candidate_images", "church
   .map((table) => `ALTER TABLE ${table} DROP COLUMN thumbnail;`).join(" ") + " PRAGMA user_version = 31;";
 
 /**
+ * Turns a schema 39 database back into schema 38, before photos had large versions (TRA-154), to test the upgrade.
+ * `largeWidth` goes first, since its check names the other two columns.
+ */
+export const UNDO_SCHEMA_39 = ["destination_images", "candidate_images", "church_images", "trip_images", "ai_proposal_photos"]
+  .map((table) => `ALTER TABLE ${table} DROP COLUMN largeWidth; ALTER TABLE ${table} DROP COLUMN photoWidth; ALTER TABLE ${table} DROP COLUMN large;`).join(" ") + " PRAGMA user_version = 38;";
+
+/**
  * A store as its designated owner uses it, for tests about planning rather than access: every read and
  * change is made as that account, as Travel's pages and Server Action make them for the signed-in account.
  */

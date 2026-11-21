@@ -3,11 +3,12 @@
 import Link from "next/link";
 import { useEffect, useId, useRef, useState } from "react";
 import { BedDouble, Binoculars, Check, ChevronDown, ChevronLeft, ChevronRight, Pencil, Plus, Utensils } from "lucide-react";
-import { CandidateGallery, photoUrl } from "./candidate-gallery";
+import { CandidateGallery, largeUrl, photoUrl } from "./candidate-gallery";
 import { CoordinatesDetail } from "./place-location";
 import { ResearchLinks } from "./research-links";
 import { RestaurantTypeTags } from "./restaurant-types";
 import { formatCurrency } from "@/lib/money";
+import { CAROUSEL_CARD, DIALOG, photoSizes } from "@/lib/photo-sizes";
 import type { Candidate, Category } from "@/lib/types";
 import styles from "./destination-ideas.module.css";
 
@@ -109,7 +110,7 @@ function Carousel({ category, ideas, onView }: { category: Category; ideas: Cand
           <span className={styles.photo}>
             {/* Stored photos are resized and optimized on upload. */}
             {/* eslint-disable-next-line @next/next/no-img-element */}
-            {photo ? <img src={photoUrl(item.id, photo, "candidate")} alt="" loading="lazy" decoding="async" width={400} height={300} /> : <Icon size={30} strokeWidth={1.3} aria-hidden="true" />}
+            {photo ? <img src={photoUrl(item.id, photo, "candidate")} {...photoSizes(photoUrl(item.id, photo, "candidate"), largeUrl(item.id, photo, "candidate"), photo.widths, CAROUSEL_CARD)} alt="" loading="lazy" decoding="async" width={400} height={300} /> : <Icon size={30} strokeWidth={1.3} aria-hidden="true" />}
           </span>
           <span className={styles.name}>{item.name}</span>
           {item.description && <span className={styles.description}>{item.description}</span>}
@@ -132,7 +133,7 @@ export function IdeaDetails({ item }: { item: Candidate }) {
     <div><dt>Estimated price (USD)</dt><dd>{price(item)}<small>{priceNotes[category]}</small></dd></div>
     <div><dt>Address or neighborhood</dt><dd>{item.address || "Not added"}</dd></div>
     <div><dt>Coordinates</dt><dd><CoordinatesDetail coordinates={item.coordinates} /></dd></div>
-    <div><dt>{subjects[category]} photos</dt><dd>{item.images.length ? <CandidateGallery candidate={item} /> : "Not added"}</dd></div>
+    <div><dt>{subjects[category]} photos</dt><dd>{item.images.length ? <CandidateGallery candidate={item} frame={DIALOG} /> : "Not added"}</dd></div>
     <div><dt>Website and research links</dt><dd>{item.links.length ? <ResearchLinks links={item.links} /> : "Not added"}</dd></div>
     <div><dt>Notes</dt><dd className="preserve-lines">{item.notes || "Not added"}</dd></div>
     {category !== "hotels" && <div><dt>Must do</dt><dd>{item.mustDo ? "Yes" : "No"}</dd></div>}

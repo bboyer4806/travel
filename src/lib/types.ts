@@ -35,8 +35,15 @@ export interface TripStop { id: string; tripId: string; destinationId: string; p
 /** A destination with the nights of one stay there, which its duration-based amounts use. Outside a trip they are unknown. */
 export type DestinationVisit = Destination & { nights: number | null };
 export interface StoredImage { version: string; data: Uint8Array; }
-/** A photo as Travel saves it, re-encoded as WebP with its thumbnail, which gallery thumbnails and editor previews show (TRA-89). */
-export interface PreparedImage { data: Uint8Array; thumbnail: Uint8Array; }
+/** The widths in pixels of a photo and of its large version, which is wider (TRA-154). */
+export interface PhotoWidths { photo: number; large: number; }
+/** A photo's large version (TRA-154): the whole photo as WebP, scaled down only as far as fitting 2560 × 1920, with its width and the photo's. */
+export interface LargePhoto { data: Uint8Array; widths: PhotoWidths; }
+/**
+ * A photo as Travel saves it, re-encoded as WebP with its thumbnail, which gallery thumbnails and editor previews show
+ * (TRA-89), and its large version, or null when the upload was no larger than the photo (TRA-154).
+ */
+export interface PreparedImage { data: Uint8Array; thumbnail: Uint8Array; large: LargePhoto | null; }
 /** A saved photo's thumbnail, or for a photo saved before Travel kept thumbnails (TRA-89), the photo to make one from. */
 export type StoredThumbnail = StoredImage | { version: string; photo: Uint8Array };
 export interface ResearchLink { id: string; url: string; description: string; }
@@ -46,7 +53,11 @@ export interface ItineraryStop { id: string; kind: "layover" | "stop"; place: st
  * layover purchases, apart from its price, or null when not estimated (TRA-26).
  */
 export interface TravelLeg { id: string; tripId: string; fromId: string | null; toId: string | null; method: string; priceCents: number | null; miscCents: number | null; departure: string; arrival: string; url: string; notes: string; itinerary: ItineraryStop[]; links: ResearchLink[]; }
-export interface CandidateImage { id: string; version: string; }
+/**
+ * A saved photo: its ID and version, which its address names, and the widths of it and its large version, or null for a
+ * photo without one, as a photo saved before TRA-154 or no larger than 1600 × 1200 is.
+ */
+export interface CandidateImage { id: string; version: string; widths: PhotoWidths | null; }
 /**
  * A destination photo's focal point (TRA-53): the point of the photo, as percentages of its width and height from its top
  * left corner, that stays in view where it is cropped to fit a frame, at the same place in the frame. 50, 50 is its center.
@@ -61,13 +72,17 @@ export interface DestinationImage extends CandidateImage, PhotoFocus {}
 export interface PhotoCrop extends PhotoFocus { zoom: number; }
 /** A trip's headline image crops (TRA-133): one for the top of its card on All trips, and one for the banner on its page. */
 export interface TripImageCrops { card: PhotoCrop; banner: PhotoCrop; }
-/** A trip's headline image (TRA-133): its version, which its address names, and its crops. */
-export interface TripImage extends TripImageCrops { version: string; }
 /**
- * A trip save's change to its headline image (TRA-133): a new image Travel prepared from an upload, with its crops; new
- * crops for the saved image of `version`; or null to remove the image. A save without one keeps the image and its crops.
+ * A trip's headline image (TRA-133): its version, which its address names, its crops, and the widths of it and its large
+ * version, or null without one (TRA-154).
  */
-export type TripImageUpdate = ({ data: Uint8Array } & TripImageCrops) | TripImage | null;
+export interface TripImage extends TripImageCrops { version: string; widths: PhotoWidths | null; }
+/**
+ * A trip save's change to its headline image (TRA-133): a new image Travel prepared from an upload, with its large version
+ * (TRA-154) and its crops; new crops for the saved image of `version`; or null to remove the image. A save without one
+ * keeps the image and its crops.
+ */
+export type TripImageUpdate = ({ data: Uint8Array; large: LargePhoto | null } & TripImageCrops) | ({ version: string } & TripImageCrops) | null;
 export interface DestinationPhotos { images: DestinationImage[]; mainImageId: string | null; }
 /**
  * A photo editor's changes to a destination's, idea's or church's photos. `order` lists every photo it keeps and adds, and

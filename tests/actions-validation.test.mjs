@@ -108,7 +108,7 @@ test("a trip's headline image comes only from the trip editor's form, as a valid
   const saved = store.getTripImage(account.id, created.id);
   assert.equal((await sharp(saved.data).metadata()).format, "webp");
   const savedTrip = () => store.getSnapshot().trips.find((item) => item.id === created.id);
-  assert.deepEqual(savedTrip().image, { version: saved.version, card: crop, banner: crop });
+  assert.deepEqual(savedTrip().image, { version: saved.version, card: crop, banner: crop, widths: null });
 
   // An image named in the change itself, without the editor's form, changes nothing.
   for (const image of [null, { version: saved.version, card: { ...crop, zoom: 3 }, banner: crop }, { data: [...saved.data], card: crop, banner: crop }]) {

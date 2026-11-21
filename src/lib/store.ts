@@ -7,7 +7,7 @@ import { containsSunday, isValidDate, nightsToBudgetDays } from "./destination-d
 import { destinationKey, formatSavedDestinationLabel, hasSuggestionLabelShape } from "./destination-label.ts";
 import { backfillDates, MAX_NIGHTS, sequenceDates } from "./trip-dates.ts";
 import { MAX_AMOUNT_CENTS, parseMinorAmount } from "./money.ts";
-import { formatMegabytes, MAX_CANDIDATE_IMAGES, MAX_DESTINATION_IMAGES, MAX_STORED_IMAGE_BYTES } from "./image-limits.ts";
+import { formatMegabytes, LARGE_PHOTO_SIZE, MAX_CANDIDATE_IMAGES, MAX_DESTINATION_IMAGES, MAX_STORED_IMAGE_BYTES, MAX_STORED_LARGE_IMAGE_BYTES, PHOTO_SIZE } from "./image-limits.ts";
 import { ENTRY_REQUIREMENT_FIELDS, normalizeEntryRequirements } from "./entry-requirements.ts";
 import { normalizeHealthSafety } from "./health-safety.ts";
 import { climateFromJson, climateJson, NAME_EACH_MONTH, normalizeMonthlyClimate } from "./typical-weather.ts";
@@ -25,7 +25,7 @@ import type { Effect, PreviewChange, Row, Tables } from "./ai-preview.ts";
 import type { EntryRequirements } from "./entry-requirements.ts";
 import type { HealthSafety } from "./health-safety.ts";
 import type { MonthlyClimate } from "./typical-weather.ts";
-import type { AiConnection, AiPhotoToAdd, AiProposal, DestinationFields, GalleryUpdate, PhotoCrop, PreparedImage, StoredThumbnail, TripImage, TripImageUpdate } from "./types";
+import type { AiConnection, AiPhotoToAdd, AiProposal, DestinationFields, GalleryUpdate, LargePhoto, PhotoCrop, PhotoWidths, PreparedImage, StoredThumbnail, TripImage, TripImageUpdate } from "./types";
 import type { AuthorizedAccount, DestinationAccess, GoogleIdentity, LibraryDestination, TripAccess, TripMember, TripStop } from "./types";
 import type { FoodBudgetMode, ActivitiesBudgetMode, Candidate, CandidateImage, Category, Church, MassTime, Destination, DestinationImage, HomeItem, StoredImage, ItineraryStop, Mutation, ResearchLink, RestaurantType, Snapshot, TravelLeg, Trip } from "./types";
 
@@ -317,15 +317,44 @@ function imageField(input: Input, label = "Destination"): PreparedImage | null |
   if (value === undefined || value === null) return value;
   return preparedImage(value, label);
 }
-/** A photo Travel prepared: its WebP bytes and its thumbnail's (TRA-89). */
+/** A photo Travel prepared: its WebP bytes, its thumbnail's (TRA-89) and its large version, or null (TRA-154). */
 function preparedImage(value: unknown, label: string): PreparedImage {
   if (!value || typeof value !== "object" || Array.isArray(value)) throw new ValidationError(`Choose a valid WebP ${label.toLowerCase()} image.`);
-  const { data, thumbnail } = value as Input;
-  return { data: webpBytes(data, label), thumbnail: webpBytes(thumbnail, label) };
+  const { data, thumbnail, large } = value as Input;
+  return { data: webpBytes(data, label), thumbnail: webpBytes(thumbnail, label), large: largePhoto(large, label) };
 }
-function webpBytes(value: unknown, label: string): Uint8Array {
+/**
+ * A photo's large version as Travel prepared it (TRA-154), or null for a photo without one: WebP bytes, with its width
+ * and the photo's, in pixels, each within its saved size, the large version's the wider.
+ */
+function largePhoto(value: unknown, label: string): LargePhoto | null {
+  if (value === null) return null;
+  const invalid = new ValidationError(`Choose a valid WebP ${label.toLowerCase()} image.`);
+  if (!value || typeof value !== "object" || Array.isArray(value)) throw invalid;
+  const { data, widths } = value as Input;
+  if (!widths || typeof widths !== "object" || Array.isArray(widths)) throw invalid;
+  const { photo, large } = widths as Input;
+  if (!Number.isInteger(photo) || !Number.isInteger(large)) throw invalid;
+  const sized: PhotoWidths = { photo: photo as number, large: large as number };
+  if (sized.photo < 1 || sized.photo > PHOTO_SIZE.width || sized.large <= sized.photo || sized.large > LARGE_PHOTO_SIZE.width) throw invalid;
+  return { data: webpBytes(data, label, MAX_STORED_LARGE_IMAGE_BYTES), widths: sized };
+}
+/** A photo's large version columns (TRA-154): its bytes, the photo's width and its own, or all null for a photo without one. */
+function largeColumns(large: LargePhoto | null): [Uint8Array | null, number | null, number | null] {
+  return large ? [large.data, large.widths.photo, large.widths.large] : [null, null, null];
+}
+/** A photo's and its large version's widths from their columns (TRA-154), or null for a photo without a large version. */
+function widthsOf(row: Record<string, unknown>): PhotoWidths | null {
+  return row.largeWidth === null ? null : { photo: row.photoWidth as number, large: row.largeWidth as number };
+}
+/** A saved photo's large version (TRA-154), from its columns, or null for a photo without one. */
+function storedLarge(row: Record<string, unknown>): LargePhoto | null {
+  const widths = widthsOf(row);
+  return widths && { data: new Uint8Array(row.large as Uint8Array), widths };
+}
+function webpBytes(value: unknown, label: string, maxBytes = MAX_STORED_IMAGE_BYTES): Uint8Array {
   if (!(value instanceof Uint8Array)) throw new ValidationError(`Choose a valid WebP ${label.toLowerCase()} image.`);
-  if (value.byteLength > MAX_STORED_IMAGE_BYTES) throw new ValidationError(`${label} image must be ${formatMegabytes(MAX_STORED_IMAGE_BYTES)} or smaller.`);
+  if (value.byteLength > maxBytes) throw new ValidationError(`${label} image must be ${formatMegabytes(maxBytes)} or smaller.`);
   if (value.byteLength < 12 || ![82, 73, 70, 70].every((byte, index) => value[index] === byte) || ![87, 69, 66, 80].every((byte, index) => value[index + 8] === byte)) {
     throw new ValidationError(`Choose a valid WebP ${label.toLowerCase()} image.`);
   }
@@ -343,7 +372,7 @@ function tripImageField(input: Input): TripImageUpdate | undefined {
   const crops = { card: cropField(image.card), banner: cropField(image.banner) };
   if (image.data === undefined) return { version: idField(image, "version"), ...crops };
   if (image.version !== undefined) throw new ValidationError("These headline image changes are invalid. Refresh and try again.");
-  return { data: webpBytes(image.data, "Headline"), ...crops };
+  return { data: webpBytes(image.data, "Headline"), large: largePhoto(image.large, "Headline"), ...crops };
 }
 /** One of a trip's headline image crops (TRA-133): its focal point within the image, and its zoom from 1 to MAX_PHOTO_ZOOM. */
 function cropField(value: unknown): PhotoCrop {
@@ -650,7 +679,7 @@ const LIVE: Make = { id: () => randomUUID(), now: () => new Date().toISOString()
  * The schema this build upgrades every database to, as SQLite's user_version. A schema change adds the next
  * upgrade in createStore and raises this to match; earlier upgrades keep their own numbers.
  */
-export const SCHEMA_VERSION = 38;
+export const SCHEMA_VERSION = 39;
 
 /** A destination as schema 20 saved it, inside one trip, with that trip's owner and name. */
 type TripDestinationRow = Omit<StoredDestination, "cityKey"> & Omit<TripStop, "destinationId"> & { tripName: string };
@@ -845,7 +874,7 @@ export function createStore(databasePath: string, ownerEmail: string) {
     `);
     // Version 1 reset user_version at startup. Check columns as well so a rollback
     // followed by redeployment cannot repeat ALTER TABLE or replace saved links.
-    const hasColumn = (table: "trips" | "destinations" | "legs" | "candidates" | "churches" | "candidate_images" | "destination_images" | "church_images" | "ai_proposal_photos", column: string) =>
+    const hasColumn = (table: "trips" | "destinations" | "legs" | "candidates" | "churches" | "candidate_images" | "destination_images" | "church_images" | "trip_images" | "ai_proposal_photos", column: string) =>
       db.prepare(`PRAGMA table_info(${table})`).all().some((row) => row.name === column);
     // Before schema 21 each destination belonged to one trip. The upgrades from then add trip columns only to such a
     // table, so replaying them on a later database leaves its shared destinations as they are.
@@ -1330,6 +1359,19 @@ export function createStore(databasePath: string, ownerEmail: string) {
       }
       db.exec("PRAGMA user_version = 38;");
     }
+    if (version < 39) {
+      // Each photo's large version (TRA-154), for frames wider than the photo on high-resolution screens: the whole photo
+      // as WebP, scaled down only as far as fitting 2560 × 1920, with its width and the photo's in pixels, all three or
+      // none. Destination, idea and church photos, trip headline images and the photos ChatGPT and Claude propose are saved
+      // with theirs from now on, when an upload is larger than the photo. Travel keeps no original upload, so every saved
+      // photo and image starts without one and shows as it did. A replay keeps saved large versions.
+      for (const table of ["destination_images", "candidate_images", "church_images", "trip_images", "ai_proposal_photos"] as const) {
+        if (!hasColumn(table, "large")) db.exec(`ALTER TABLE ${table} ADD COLUMN large BLOB;`);
+        if (!hasColumn(table, "photoWidth")) db.exec(`ALTER TABLE ${table} ADD COLUMN photoWidth INTEGER;`);
+        if (!hasColumn(table, "largeWidth")) db.exec(`ALTER TABLE ${table} ADD COLUMN largeWidth INTEGER CHECK((large IS NULL) = (photoWidth IS NULL) AND (large IS NULL) = (largeWidth IS NULL) AND (largeWidth IS NULL OR (photoWidth > 0 AND largeWidth > photoWidth)));`);
+      }
+      db.exec("PRAGMA user_version = 39;");
+    }
     if (version < SCHEMA_VERSION && db.prepare("PRAGMA foreign_key_check").get()) {
       throw new Error("This upgrade would leave saved items without the trip or destination they belong to. Nothing was changed; review the database against a backup before upgrading.");
     }
@@ -1352,12 +1394,15 @@ export function createStore(databasePath: string, ownerEmail: string) {
   function among(column: string, ids: readonly string[] | null): [string, string[]] {
     return ids === null ? ["", []] : [` WHERE ${column} IN (SELECT value FROM json_each(?))`, [JSON.stringify(ids)]];
   }
-  /** Each of the given owners' photos in order, or every owner's, with `columns`: a destination's have their focal points too (TRA-53). */
+  /**
+   * Each of the given owners' photos in order, or every owner's, with `columns` and their widths (TRA-154): a destination's
+   * have their focal points too (TRA-53).
+   */
   function photosOf<Photo extends CandidateImage>(table: "destination_images" | "candidate_images" | "church_images", ownerColumn: string, ids: readonly string[] | null, columns = "id, version"): Map<string, Photo[]> {
     const [where, args] = among(ownerColumn, ids);
     const photos = new Map<string, Photo[]>();
-    for (const { ownerId, ...photo } of db.prepare(`SELECT ${ownerColumn} AS ownerId, ${columns} FROM ${table}${where} ORDER BY ${ownerColumn}, position, id`).all(...args)) {
-      photos.set(ownerId as string, [...(photos.get(ownerId as string) ?? []), photo as unknown as Photo]);
+    for (const { ownerId, photoWidth, largeWidth, ...photo } of db.prepare(`SELECT ${ownerColumn} AS ownerId, ${columns}, photoWidth, largeWidth FROM ${table}${where} ORDER BY ${ownerColumn}, position, id`).all(...args)) {
+      photos.set(ownerId as string, [...(photos.get(ownerId as string) ?? []), { ...photo, widths: widthsOf({ photoWidth, largeWidth }) } as unknown as Photo]);
     }
     return photos;
   }
@@ -1370,13 +1415,17 @@ export function createStore(databasePath: string, ownerEmail: string) {
     }
     return tags;
   }
-  /** Each of the given trips' headline images (TRA-133), or every trip's, without their bytes. A trip without one has no entry. */
+  /**
+   * Each of the given trips' headline images (TRA-133), or every trip's, without their bytes, with their widths (TRA-154).
+   * A trip without one has no entry.
+   */
   function imagesOf(tripIds: readonly string[] | null): Map<string, TripImage> {
     const [where, args] = among("tripId", tripIds);
-    return new Map(db.prepare(`SELECT tripId, version, cardFocusX, cardFocusY, cardZoom, bannerFocusX, bannerFocusY, bannerZoom FROM trip_images${where}`).all(...args).map((row) => [row.tripId as string, {
+    return new Map(db.prepare(`SELECT tripId, version, cardFocusX, cardFocusY, cardZoom, bannerFocusX, bannerFocusY, bannerZoom, photoWidth, largeWidth FROM trip_images${where}`).all(...args).map((row) => [row.tripId as string, {
       version: row.version as string,
       card: { focusX: row.cardFocusX as number, focusY: row.cardFocusY as number, zoom: row.cardZoom as number },
       banner: { focusX: row.bannerFocusX as number, focusY: row.bannerFocusY as number, zoom: row.bannerZoom as number },
+      widths: widthsOf(row),
     }]));
   }
   /**
@@ -1644,6 +1693,27 @@ export function createStore(databasePath: string, ownerEmail: string) {
     const row = db.prepare("SELECT version, data FROM church_images WHERE churchId = ? AND id = ?").get(churchId, imageId);
     return row ? { version: row.version as string, data: new Uint8Array(row.data as Uint8Array) } : undefined;
   }
+  // Each photo's and headline image's large version (TRA-154) is served to exactly the accounts its photo is.
+  function getTripLargeImage(accountId: string, tripId: string): StoredImage | undefined {
+    if (!tripRole(accountId, tripId)) return undefined;
+    return largeOf(db.prepare("SELECT version, large FROM trip_images WHERE tripId = ?").get(tripId));
+  }
+  function getDestinationLargePhoto(accountId: string, destinationId: string, imageId: string): StoredImage | undefined {
+    if (!destinationRole(accountId, destinationId)) return undefined;
+    return largeOf(db.prepare("SELECT version, large FROM destination_images WHERE destinationId = ? AND id = ?").get(destinationId, imageId));
+  }
+  function getCandidateLargePhoto(accountId: string, candidateId: string, imageId: string): StoredImage | undefined {
+    if (!destinationRole(accountId, destinationOf("candidates", candidateId))) return undefined;
+    return largeOf(db.prepare("SELECT version, large FROM candidate_images WHERE candidateId = ? AND id = ?").get(candidateId, imageId));
+  }
+  function getChurchLargePhoto(accountId: string, churchId: string, imageId: string): StoredImage | undefined {
+    if (!destinationRole(accountId, destinationOf("churches", churchId))) return undefined;
+    return largeOf(db.prepare("SELECT version, large FROM church_images WHERE churchId = ? AND id = ?").get(churchId, imageId));
+  }
+  /** A photo's large version with the photo's version, or undefined for no photo, or one without a large version. */
+  function largeOf(row: Record<string, unknown> | undefined): StoredImage | undefined {
+    return row && row.large !== null ? { version: row.version as string, data: new Uint8Array(row.large as Uint8Array) } : undefined;
+  }
   // Each photo's thumbnail (TRA-89) is served to exactly the accounts its photo is.
   function getDestinationThumbnail(accountId: string, destinationId: string, imageId: string): StoredThumbnail | undefined {
     if (!destinationRole(accountId, destinationId)) return undefined;
@@ -1674,7 +1744,8 @@ export function createStore(databasePath: string, ownerEmail: string) {
         gallery = { add: [], remove: currentMain ? [currentMain] : [] };
       } else if (image !== undefined && currentMain) {
         // Old clients and URLs continue to replace or remove only the primary photo. A new photo starts centered (TRA-53).
-        db.prepare("INSERT INTO destination_images(id,destinationId,version,data,thumbnail,position,isMain) VALUES(?,?,?,?,?,?,1) ON CONFLICT(id) DO UPDATE SET version = excluded.version, data = excluded.data, thumbnail = excluded.thumbnail, focusX = excluded.focusX, focusY = excluded.focusY").run(currentMain, destinationId, make.id(), image.data, image.thumbnail, current.find((photo) => photo.id === currentMain)!.position);
+        db.prepare("INSERT INTO destination_images(id,destinationId,version,data,thumbnail,large,photoWidth,largeWidth,position,isMain) VALUES(?,?,?,?,?,?,?,?,?,1) ON CONFLICT(id) DO UPDATE SET version = excluded.version, data = excluded.data, thumbnail = excluded.thumbnail, large = excluded.large, photoWidth = excluded.photoWidth, largeWidth = excluded.largeWidth, focusX = excluded.focusX, focusY = excluded.focusY")
+          .run(currentMain, destinationId, make.id(), image.data, image.thumbnail, ...largeColumns(image.large), current.find((photo) => photo.id === currentMain)!.position);
         return;
       } else {
         gallery = { add: image ? [{ id: make.id(), ...image }] : [], remove: [] };
@@ -1696,7 +1767,8 @@ export function createStore(databasePath: string, ownerEmail: string) {
     if ((main === null && order.length > 0) || (main !== null && !order.includes(main))) throw new ValidationError("Choose a primary photo from the remaining destination photos. Refresh if the gallery has changed.");
     if (gallery.focus?.some((photo) => !order.includes(photo.id))) throw new ValidationError("A destination photo has changed or no longer exists. Refresh and try again.");
     for (const id of gallery.remove) db.prepare("DELETE FROM destination_images WHERE destinationId = ? AND id = ?").run(destinationId, id);
-    added.forEach((photo) => db.prepare("INSERT INTO destination_images(id,destinationId,version,data,thumbnail,position,isMain) VALUES(?,?,?,?,?,?,0)").run(photo.id, destinationId, make.id(), photo.data, photo.thumbnail, order.indexOf(photo.id)));
+    added.forEach((photo) => db.prepare("INSERT INTO destination_images(id,destinationId,version,data,thumbnail,large,photoWidth,largeWidth,position,isMain) VALUES(?,?,?,?,?,?,?,?,?,0)")
+      .run(photo.id, destinationId, make.id(), photo.data, photo.thumbnail, ...largeColumns(photo.large), order.indexOf(photo.id)));
     order.forEach((id, position) => db.prepare("UPDATE destination_images SET position = ? WHERE destinationId = ? AND id = ?").run(position, destinationId, id));
     // Photos the save doesn't recenter keep their focal points, and new ones start centered (TRA-53).
     for (const { id, focusX, focusY } of gallery.focus ?? []) db.prepare("UPDATE destination_images SET focusX = ?, focusY = ? WHERE destinationId = ? AND id = ?").run(focusX, focusY, destinationId, id);
@@ -1715,7 +1787,8 @@ export function createStore(databasePath: string, ownerEmail: string) {
     }
     const crops = [image.card.focusX, image.card.focusY, image.card.zoom, image.banner.focusX, image.banner.focusY, image.banner.zoom];
     if ("data" in image) {
-      db.prepare("INSERT OR REPLACE INTO trip_images(tripId, version, data, cardFocusX, cardFocusY, cardZoom, bannerFocusX, bannerFocusY, bannerZoom) VALUES(?,?,?,?,?,?,?,?,?)").run(tripId, make.id(), image.data, ...crops);
+      db.prepare("INSERT OR REPLACE INTO trip_images(tripId, version, data, large, photoWidth, largeWidth, cardFocusX, cardFocusY, cardZoom, bannerFocusX, bannerFocusY, bannerZoom) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)")
+        .run(tripId, make.id(), image.data, ...largeColumns(image.large), ...crops);
       return;
     }
     const cropped = db.prepare("UPDATE trip_images SET cardFocusX = ?, cardFocusY = ?, cardZoom = ?, bannerFocusX = ?, bannerFocusY = ?, bannerZoom = ? WHERE tripId = ? AND version = ?").run(...crops, tripId, image.version);
@@ -1746,7 +1819,8 @@ export function createStore(databasePath: string, ownerEmail: string) {
     if ((main === null && finalIds.length > 0) || (main !== null && !finalIds.includes(main))) throw new ValidationError("Choose a main photo from the remaining photos. Refresh if the gallery has changed.");
     for (const id of gallery.remove) db.prepare(`DELETE FROM ${table} WHERE ${ownerColumn} = ? AND id = ?`).run(ownerId, id);
     const nextPosition = current.reduce((next, photo) => Math.max(next, photo.position + 1), 0);
-    added.forEach((photo, index) => db.prepare(`INSERT INTO ${table}(id,${ownerColumn},version,data,thumbnail,position,isMain) VALUES(?,?,?,?,?,?,0)`).run(photo.id, ownerId, make.id(), photo.data, photo.thumbnail, nextPosition + index));
+    added.forEach((photo, index) => db.prepare(`INSERT INTO ${table}(id,${ownerColumn},version,data,thumbnail,large,photoWidth,largeWidth,position,isMain) VALUES(?,?,?,?,?,?,?,?,?,0)`)
+      .run(photo.id, ownerId, make.id(), photo.data, photo.thumbnail, ...largeColumns(photo.large), nextPosition + index));
     gallery.order?.forEach((id, position) => db.prepare(`UPDATE ${table} SET position = ? WHERE ${ownerColumn} = ? AND id = ?`).run(position, ownerId, id));
     db.prepare(`UPDATE ${table} SET isMain = 0 WHERE ${ownerColumn} = ? AND isMain = 1`).run(ownerId);
     if (main) db.prepare(`UPDATE ${table} SET isMain = 1 WHERE ${ownerColumn} = ? AND id = ?`).run(ownerId, main);
@@ -2450,10 +2524,10 @@ export function createStore(databasePath: string, ownerEmail: string) {
       sweepProposalPhotos(now);
       db.prepare("INSERT INTO ai_proposals(id, connectionId, summary, changesJson, previewJson, effectsJson, createdAt, expiresAt) VALUES(?, ?, ?, ?, ?, ?, ?, ?)")
         .run(id, connectionId, summary, JSON.stringify(changes.map(recorded)), JSON.stringify(rehearsal.preview), JSON.stringify(rehearsal.effects), now, now + PROPOSAL_MS);
-      const keep = db.prepare("INSERT INTO ai_proposal_photos(proposalId, id, data, thumbnail) VALUES(?, ?, ?, ?)");
+      const keep = db.prepare("INSERT INTO ai_proposal_photos(proposalId, id, data, thumbnail, large, photoWidth, largeWidth) VALUES(?, ?, ?, ?, ?, ?, ?)");
       for (const change of changes) {
         if (change.type === "destination.photos" || change.type === "candidate.photos" || change.type === "church.photos") {
-          for (const photo of change.gallery.add) keep.run(id, photo.id, photo.data, photo.thumbnail);
+          for (const photo of change.gallery.add) keep.run(id, photo.id, photo.data, photo.thumbnail, ...largeColumns(photo.large));
         }
       }
     });
@@ -2464,12 +2538,13 @@ export function createStore(databasePath: string, ownerEmail: string) {
     db.prepare("DELETE FROM ai_proposal_photos WHERE proposalId IN (SELECT id FROM ai_proposals WHERE status != 'pending' OR expiresAt <= ?)").run(now);
   }
   /**
-   * The photos a proposal adds, by their IDs, with their thumbnails. A photo proposed before thumbnails (TRA-89) has none,
-   * so it is left out, and approving its proposal fails, asking for the photos to be proposed again.
+   * The photos a proposal adds, by their IDs, with their thumbnails and large versions. A photo proposed before thumbnails
+   * (TRA-89) has none, so it is left out, and approving its proposal fails, asking for the photos to be proposed again. A
+   * photo proposed before large versions (TRA-154) has none, and is saved without one.
    */
   function proposalPhotos(proposalId: string): Map<string, PreparedImage> {
-    return new Map(db.prepare("SELECT id, data, thumbnail FROM ai_proposal_photos WHERE proposalId = ? AND thumbnail IS NOT NULL").all(proposalId)
-      .map((row) => [row.id as string, { data: new Uint8Array(row.data as Uint8Array), thumbnail: new Uint8Array(row.thumbnail as Uint8Array) }]));
+    return new Map(db.prepare("SELECT id, data, thumbnail, large, photoWidth, largeWidth FROM ai_proposal_photos WHERE proposalId = ? AND thumbnail IS NOT NULL").all(proposalId)
+      .map((row) => [row.id as string, { data: new Uint8Array(row.data as Uint8Array), thumbnail: new Uint8Array(row.thumbnail as Uint8Array), large: storedLarge(row) }]));
   }
   /**
    * A photo the designated owner sees while deciding a proposal (TRA-122): one it adds, or a saved photo it changes or
@@ -2674,7 +2749,7 @@ export function createStore(databasePath: string, ownerEmail: string) {
   // getSnapshot reads everything, for checks and tests. Everything the app shows or changes takes the signed-in account,
   // or an AI connection of the designated owner's.
   return {
-    getSnapshot, getHomeOverview, getTripSnapshot, getDestinationsOverview, getDestinationSnapshot, getTripName, getStopName, getDestinationName, checkHealth, getTripImage, getDestinationImage, getDestinationPhoto, getCandidatePhoto, getChurchPhoto, getDestinationThumbnail, getCandidateThumbnail, getChurchThumbnail, applyMutation, authorizeAccount, getAccountByGoogleSubject, authorizeGoogleSignIn, createSession, readSession, deleteSession,
+    getSnapshot, getHomeOverview, getTripSnapshot, getDestinationsOverview, getDestinationSnapshot, getTripName, getStopName, getDestinationName, checkHealth, getTripImage, getDestinationImage, getDestinationPhoto, getCandidatePhoto, getChurchPhoto, getDestinationThumbnail, getCandidateThumbnail, getChurchThumbnail, getTripLargeImage, getDestinationLargePhoto, getCandidateLargePhoto, getChurchLargePhoto, applyMutation, authorizeAccount, getAccountByGoogleSubject, authorizeGoogleSignIn, createSession, readSession, deleteSession,
     isAiOwner, aiAccounts, aiTrips, aiTrip, aiDestinations, aiDestination, aiPhoto, proposeAiChanges, getAiProposal, getAiProposalPhoto, decideAiProposal, aiOverview,
     registerAiClient, aiClientPlatform, allowAiConnection, exchangeAiCode, refreshAiTokens, readAiConnection, revokeAiConnection,
     close: () => db.close(),
@@ -2724,6 +2799,18 @@ export function getCandidateThumbnail(accountId: string, candidateId: string, im
 }
 export function getChurchThumbnail(accountId: string, churchId: string, imageId: string): StoredThumbnail | undefined {
   return defaultStore().getChurchThumbnail(accountId, churchId, imageId);
+}
+export function getTripLargeImage(accountId: string, tripId: string): StoredImage | undefined {
+  return defaultStore().getTripLargeImage(accountId, tripId);
+}
+export function getDestinationLargePhoto(accountId: string, destinationId: string, imageId: string): StoredImage | undefined {
+  return defaultStore().getDestinationLargePhoto(accountId, destinationId, imageId);
+}
+export function getCandidateLargePhoto(accountId: string, candidateId: string, imageId: string): StoredImage | undefined {
+  return defaultStore().getCandidateLargePhoto(accountId, candidateId, imageId);
+}
+export function getChurchLargePhoto(accountId: string, churchId: string, imageId: string): StoredImage | undefined {
+  return defaultStore().getChurchLargePhoto(accountId, churchId, imageId);
 }
 export function applyMutation(accountId: string, input: unknown): { id?: string } {
   return defaultStore().applyMutation(accountId, input);

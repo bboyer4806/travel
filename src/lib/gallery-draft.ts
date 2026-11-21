@@ -1,10 +1,13 @@
 import { photoFocus } from "./photo-focus.ts";
-import type { CandidateImage, PhotoFocus } from "./types";
+import type { CandidateImage, PhotoFocus, PhotoWidths } from "./types";
 
 /** A destination's, idea's or church's saved photos, which its photo editor starts from. Only a destination's photos have focal points (TRA-53). */
 type SavedPhotos = { images: (CandidateImage & Partial<PhotoFocus>)[]; mainImageId: string | null };
-/** A draft photo: a saved one with its version, or a new one with its file. A destination photo has its focal point once saved or adjusted. */
-export type DraftImage = { id: string; version?: string; file?: File } & Partial<PhotoFocus>;
+/**
+ * A draft photo: a saved one with its version and widths (TRA-154), or a new one with its file. A destination photo has
+ * its focal point once saved or adjusted.
+ */
+export type DraftImage = { id: string; version?: string; widths?: PhotoWidths | null; file?: File } & Partial<PhotoFocus>;
 /** A photo editor's draft, shared by the destination, idea and church editors: its photos in order, saved photos it removes, and the primary or main photo. */
 export type GalleryDraft = { images: DraftImage[]; removedIds: string[]; mainImageId: string | null };
 

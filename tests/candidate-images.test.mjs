@@ -51,7 +51,7 @@ for (const category of categories) {
       assert.ok(initialImage.data instanceof Uint8Array);
       assert.deepEqual(initialImage.data, webp);
       assert.match(initialImage.version, /^[0-9a-f-]{36}$/);
-      assert.deepEqual(saved().images, [{ id: first.id, version: initialImage.version }]);
+      assert.deepEqual(saved().images, [{ id: first.id, version: initialImage.version, widths: null }]);
       assert.equal(saved().mainImageId, first.id);
       assert.equal("image" in saved(), false);
       assert.equal("data" in saved(), false);

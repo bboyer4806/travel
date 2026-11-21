@@ -42,7 +42,7 @@ for (const category of ["hotels", "activities", "restaurants"]) {
       assert.equal(saved.mainImageId, second.id);
       assert.deepEqual(store.getCandidatePhoto(id, first.id).data, first.data);
       assert.deepEqual(store.getCandidatePhoto(id, second.id).data, second.data);
-      assert.ok(saved.images.every((item) => Object.keys(item).sort().join(",") === "id,version"), "snapshots contain metadata, never photo bytes");
+      assert.ok(saved.images.every((item) => Object.keys(item).sort().join(",") === "id,version,widths"), "snapshots contain metadata, never photo bytes");
       const budget = calculateBudget(store.getSnapshot(), tripId);
       const originalPhotos = saved.images.map((item) => store.getCandidatePhoto(id, item.id));
       store.applyMutation({ ...input, id, gallery: { add: [], remove: [], mainImageId: first.id } });
@@ -198,7 +198,7 @@ test("schema 5 photos migrate with their exact bytes and versions, and repeated 
     legacy.close();
     store = createOwnedStore(path);
     assert.deepEqual(store.getCandidatePhoto(id, id), original);
-    assert.deepEqual(candidate(store, id).images, [{ id, version: original.version }]);
+    assert.deepEqual(candidate(store, id).images, [{ id, version: original.version, widths: null }]);
     assert.equal(candidate(store, id).mainImageId, id);
     assert.deepEqual(planningFields(candidate(store, id)), planningFields(before.candidates[0]));
     assert.deepEqual(store.getDestinationImage(destinationId), destinationPhoto);

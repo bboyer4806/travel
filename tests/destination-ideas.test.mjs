@@ -9,6 +9,7 @@ import * as coordinates from "../src/lib/coordinates.ts";
 import * as destinationLabel from "../src/lib/destination-label.ts";
 import * as galleryDraft from "../src/lib/gallery-draft.ts";
 import * as imageLimits from "../src/lib/image-limits.ts";
+import * as photoSizes from "../src/lib/photo-sizes.ts";
 import * as money from "../src/lib/money.ts";
 import * as tripDates from "../src/lib/trip-dates.ts";
 import * as types from "../src/lib/types.ts";
@@ -22,7 +23,7 @@ const shared = {
   "react": { useId: () => "id", useState: (initial) => [initial, () => {}], useRef: (current) => ({ current }), useEffect: () => {} },
   "react/jsx-runtime": { jsx: element, jsxs: element, Fragment: "fragment" },
   "next/link": { default: "a" }, "lucide-react": new Proxy({}, { get: (_, name) => "icon:" + String(name) }),
-  "@/lib/budget": budget, "@/lib/coordinates": coordinates, "@/lib/destination-label": destinationLabel, "@/lib/gallery-draft": galleryDraft, "@/lib/image-limits": imageLimits, "@/lib/money": money, "@/lib/trip-dates": tripDates, "@/lib/types": types, "@/lib/uuid": uuid,
+  "@/lib/budget": budget, "@/lib/coordinates": coordinates, "@/lib/destination-label": destinationLabel, "@/lib/gallery-draft": galleryDraft, "@/lib/image-limits": imageLimits, "@/lib/photo-sizes": photoSizes, "@/lib/money": money, "@/lib/trip-dates": tripDates, "@/lib/types": types, "@/lib/uuid": uuid,
 };
 /** A component module, given the components it imports. A CSS module's class names are their own names. */
 function load(file, modules = {}) {

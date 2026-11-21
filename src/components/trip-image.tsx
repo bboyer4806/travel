@@ -4,8 +4,9 @@ import { useEffect, useEffectEvent, useId, useRef, useState, type ChangeEvent, t
 import { ImagePlus, RotateCcw, Trash2 } from "lucide-react";
 import { formatMegabytes, IMAGE_UPLOAD_TYPES, MAX_IMAGE_UPLOAD_BYTES } from "@/lib/image-limits";
 import { cropStyle, draggedFocus, MAX_PHOTO_ZOOM, UNCROPPED, type Size } from "@/lib/photo-focus";
+import { CARD, CARD_PREVIEW, DIALOG, PAGE, photoSizes, type FrameWidths } from "@/lib/photo-sizes";
 import { createTripImageDraft, tripImageChanged, type TripImageDraft } from "@/lib/trip-image-draft";
-import type { PhotoCrop, Trip, TripImageCrops } from "@/lib/types";
+import type { PhotoCrop, PhotoWidths, Trip, TripImageCrops } from "@/lib/types";
 import { useFocusAfter } from "./focus-after";
 import { AddImageByUrl } from "./image-by-url";
 import styles from "./trip-image.module.css";
@@ -18,22 +19,35 @@ type TripWithImage = Pick<Trip, "id" | "image">;
 function imageUrl(tripId: string, version: string) {
   return `/api/trip-images/${tripId}?v=${version}`;
 }
+/** A saved headline image's large version (TRA-154), beside the image's address. */
+function largeUrl(tripId: string, version: string) {
+  return `/api/trip-images/${tripId}/large?v=${version}`;
+}
+/** How wide each frame is on the page, and in the trip editor's previews (TRA-154). */
+const PAGE_FRAMES: Record<Frame, FrameWidths> = { card: CARD, banner: PAGE };
+const PREVIEW_FRAMES: Record<Frame, FrameWidths> = { card: CARD_PREVIEW, banner: DIALOG };
 
 /**
  * A trip's headline image cropped for its card or for its banner (TRA-133), or nothing for a trip without one, which looks
- * as it always has. The trip's name follows it, so it is decorative.
+ * as it always has. The trip's name follows it, so it is decorative. Browsers load its large version only when the frame,
+ * zoomed as its crop is, shows more pixels than the image has, as the banner does on high-resolution screens (TRA-154).
  */
 export function TripImageView({ trip, frame }: { trip: TripWithImage; frame: Frame }) {
   if (!trip.image) return null;
+  const { version, widths } = trip.image;
+  const crop = trip.image[frame];
   return <div className={frame === "card" ? "trip-card-image" : "trip-banner"}>
     {/* Stored images are resized and optimized on upload. */}
     {/* eslint-disable-next-line @next/next/no-img-element */}
-    <img src={imageUrl(trip.id, trip.image.version)} alt="" loading={frame === "card" ? "lazy" : "eager"} decoding="async" style={cropStyle(trip.image[frame])} />
+    <img src={imageUrl(trip.id, version)} {...photoSizes(imageUrl(trip.id, version), largeUrl(trip.id, version), widths, PAGE_FRAMES[frame], crop.zoom)} alt="" loading={frame === "card" ? "lazy" : "eager"} decoding="async" style={cropStyle(crop)} />
   </div>;
 }
 
-/** The draft's image, a new one from its file or the saved one from its address, cropped as `crop` says. */
-function DraftImage({ source, crop, alt }: { source: File | string; crop: PhotoCrop; alt: string }) {
+/**
+ * The draft's image, a new one from its file or the saved one from its address, cropped as `crop` says. A saved image
+ * offers its large version as `sources` says (TRA-154).
+ */
+function DraftImage({ source, sources, crop, alt }: { source: File | string; sources: { srcSet?: string; sizes?: string }; crop: PhotoCrop; alt: string }) {
   const image = useRef<HTMLImageElement>(null);
   useEffect(() => {
     if (typeof source === "string") return;
@@ -42,8 +56,11 @@ function DraftImage({ source, crop, alt }: { source: File | string; crop: PhotoC
     return () => URL.revokeObjectURL(previewUrl);
   }, [source]);
   // eslint-disable-next-line @next/next/no-img-element
-  return <img ref={image} src={typeof source === "string" ? source : undefined} alt={alt} style={cropStyle(crop)} />;
+  return <img ref={image} src={typeof source === "string" ? source : undefined} {...sources} alt={alt} style={cropStyle(crop)} />;
 }
+
+/** A saved headline image's large version (TRA-154): its address and the widths of it and the image. */
+type SavedLarge = { url: string; widths: PhotoWidths };
 
 /** An image being dragged in a preview: the pointer dragging it, where it started, the sizes its focal point moves by, and its crop so far. */
 type CropDrag = { pointerId: number; x: number; y: number; start: PhotoCrop; frame: Size; natural: Size; crop: PhotoCrop };
@@ -54,7 +71,7 @@ type CropDrag = { pointerId: number; x: number; y: number; start: PhotoCrop; fra
  * drag's crop goes in the draft when the drag ends, and a zoom when the slider is let go, so meanwhile only this preview
  * changes, however large the page beneath the editor.
  */
-function CropPreview({ id, frame, label, source, crop, disabled, onCrop }: { id: string; frame: Frame; label: string; source: File | string; crop: PhotoCrop; disabled: boolean; onCrop: (crop: PhotoCrop) => void }) {
+function CropPreview({ id, frame, label, source, large, crop, disabled, onCrop }: { id: string; frame: Frame; label: string; source: File | string; large: SavedLarge | null; crop: PhotoCrop; disabled: boolean; onCrop: (crop: PhotoCrop) => void }) {
   const [dragged, setDragged] = useState<PhotoCrop | null>(null);
   const [zooming, setZooming] = useState<number | null>(null);
   const drag = useRef<CropDrag | null>(null);
@@ -99,7 +116,7 @@ function CropPreview({ id, frame, label, source, crop, disabled, onCrop }: { id:
   return <div className={styles.preview} role="group" aria-labelledby={`${id}-title`}>
     <p id={`${id}-title`} className={styles.previewTitle}>{label}</p>
     <div className={`${styles.frame} ${styles[frame]}`} onPointerDown={start} onPointerMove={move} onPointerUp={end} onPointerCancel={end}>
-      <DraftImage source={source} crop={shown} alt={`Headline image as the ${label.toLowerCase()} shows it`} />
+      <DraftImage source={source} sources={large && typeof source === "string" ? photoSizes(source, large.url, large.widths, PREVIEW_FRAMES[frame], shown.zoom) : {}} crop={shown} alt={`Headline image as the ${label.toLowerCase()} shows it`} />
     </div>
     <div className={styles.zoom}>
       <label htmlFor={`${id}-zoom`}><span className="sr-only">{label} </span>Zoom</label>
@@ -125,6 +142,8 @@ export function TripImageEditor({ trip, draft, onChange, disabled }: { trip?: Tr
   const changed = tripImageChanged(draft, saved);
   // A saved image's draft exists only for a trip that has one.
   const source = draft === null ? null : "file" in draft ? draft.file : trip && imageUrl(trip.id, draft.version);
+  // A saved image's large version (TRA-154), which its previews load once zoomed in further than the image is wide.
+  const large = draft && "version" in draft && trip && saved?.widths ? { url: largeUrl(trip.id, draft.version), widths: saved.widths } : null;
 
   /**
    * A new image, a file chosen from the device or an image added by URL (TRA-139), checked as uploads are on the server,
@@ -160,8 +179,8 @@ export function TripImageEditor({ trip, draft, onChange, disabled }: { trip?: Tr
     <p id={`${id}-hint`} className={styles.hint}>Shown across the top of the trip&apos;s card on All trips and as a banner on its page. Drag each preview to choose what it shows, and zoom with its slider.<br />JPEG, PNG, or WebP, up to {formatMegabytes(MAX_IMAGE_UPLOAD_BYTES)}.</p>
     <input ref={input} type="file" accept={IMAGE_UPLOAD_TYPES.join(",")} onChange={choose} disabled={disabled} hidden aria-label="Choose a headline image" />
     {draft && source && <div className={styles.previews}>
-      <CropPreview id={`${id}-card`} frame="card" label="Trip card" source={source} crop={draft.card} disabled={disabled} onCrop={(card) => onChange({ ...draft, card })} />
-      <CropPreview id={`${id}-banner`} frame="banner" label="Trip page banner" source={source} crop={draft.banner} disabled={disabled} onCrop={(banner) => onChange({ ...draft, banner })} />
+      <CropPreview id={`${id}-card`} frame="card" label="Trip card" source={source} large={large} crop={draft.card} disabled={disabled} onCrop={(card) => onChange({ ...draft, card })} />
+      <CropPreview id={`${id}-banner`} frame="banner" label="Trip page banner" source={source} large={large} crop={draft.banner} disabled={disabled} onCrop={(banner) => onChange({ ...draft, banner })} />
     </div>}
     <div className={styles.actions}>
       <button type="button" ref={chooseButton} className="button secondary small" disabled={disabled} onClick={() => input.current?.click()}><ImagePlus size={15} aria-hidden="true" />{draft ? "Replace image" : "Add image"}</button>

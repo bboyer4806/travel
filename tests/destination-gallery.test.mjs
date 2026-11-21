@@ -140,7 +140,7 @@ test("schema 16 single images migrate unchanged and replay preserves galleries a
     store = createOwnedStore(path);
     assert.deepEqual(store.getDestinationImage(id), original);
     assert.deepEqual(store.getDestinationPhoto(id, id), original);
-    assert.deepEqual(destination(store, id).images, [{ id, version: original.version, focusX: 50, focusY: 50 }], "the photo starts centered (TRA-53)");
+    assert.deepEqual(destination(store, id).images, [{ id, version: original.version, focusX: 50, focusY: 50, widths: null }], "the photo starts centered (TRA-53)");
     assert.equal(destination(store, id).mainImageId, id);
     assert.deepEqual(store.getSnapshot().legs, planning.legs);
     const extra = photo();
@@ -264,7 +264,7 @@ test("focal points are refused outside a photo, for photos a destination doesn't
   const church = { type: "church.save", destinationId: id, name: "Church", address: "", denomination: "", url: "", massTimes: [] };
   const churchId = store.applyMutation({ ...church, ...newItem(), gallery: { add: [churchPhoto], remove: [] } }).id;
   assert.throws(() => store.applyMutation({ ...church, id: churchId, gallery: { add: [], remove: [], focus: [point(churchPhoto.id, 10, 10)] } }), /Only a destination's photos can be recentered/);
-  assert.deepEqual(store.getSnapshot().candidates[0].images, [{ id: ideaPhoto.id, version: store.getCandidatePhoto(hotelId, ideaPhoto.id).version }], "idea photos have no focal point");
+  assert.deepEqual(store.getSnapshot().candidates[0].images, [{ id: ideaPhoto.id, version: store.getCandidatePhoto(hotelId, ideaPhoto.id).version, widths: null }], "idea photos have no focal point");
 });
 
 test("an old client's replacement of the primary photo starts it centered, and other photos keep their focal points (TRA-53)", (t) => {

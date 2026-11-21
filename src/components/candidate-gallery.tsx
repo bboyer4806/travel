@@ -4,6 +4,7 @@ import { useEffect, useId, useRef, useState, type ChangeEvent } from "react";
 import { Check, ImagePlus, RotateCcw, Trash2, type LucideIcon } from "lucide-react";
 import { createGalleryDraft, galleryChanged, placePhoto, removePhoto, type DraftImage, type GalleryDraft } from "@/lib/gallery-draft";
 import { formatMegabytes, IMAGE_UPLOAD_TYPES, MAX_CANDIDATE_IMAGES, MAX_GALLERY_UPLOAD_BYTES, MAX_IMAGE_UPLOAD_BYTES } from "@/lib/image-limits";
+import { photoSizes, type FrameWidths } from "@/lib/photo-sizes";
 import type { Candidate } from "@/lib/types";
 import { randomUuid } from "@/lib/uuid";
 import { useFocusAfter } from "./focus-after";
@@ -20,6 +21,10 @@ const subjectLabels: Record<ImageSubject, string> = { hotel: "Hotel", activity: 
 export function photoUrl(candidateId: string, image: { id: string; version?: string }, imageKind: ImageKind) {
   return `/api/${imageKind}-images/${candidateId}/${image.id}?v=${image.version}`;
 }
+/** A photo's large version (TRA-154), which frames wider than the photo load on high-resolution screens. */
+export function largeUrl(candidateId: string, image: { id: string; version?: string }, imageKind: ImageKind) {
+  return `/api/${imageKind}-images/${candidateId}/${image.id}/large?v=${image.version}`;
+}
 /**
  * A photo's thumbnail (TRA-89), which a gallery's thumbnails, its editor's previews and a destination map's popups
  * (TRA-152) show in place of the photo.
@@ -31,11 +36,12 @@ export function thumbnailUrl(candidateId: string, image: { id: string; version?:
 /**
  * An idea's or church's photos, opening on its main photo, or nothing without photos. With `browse`, as a church's have
  * (TRA-136), two or more photos also have Previous and Next on the main photo, as a destination's do (TRA-123), and
- * swiping it shows the next or previous photo.
+ * swiping it shows the next or previous photo. `frame` is how wide the main photo is where the gallery shows, so
+ * browsers load a photo's large version only when it shows more pixels than the photo has (TRA-154).
  */
-export function CandidateGallery({ candidate, imageKind = "candidate", browse = false }: { candidate: GalleryOwner; imageKind?: ImageKind; browse?: boolean }) {
+export function CandidateGallery({ candidate, frame, imageKind = "candidate", browse = false }: { candidate: GalleryOwner; frame: FrameWidths; imageKind?: ImageKind; browse?: boolean }) {
   if (!candidate.images.length) return null;
-  return <GalleryView key={`${candidate.mainImageId}:${candidate.images.map((image) => `${image.id}:${image.version}`).join(",")}`} candidate={candidate} imageKind={imageKind} browse={browse} />;
+  return <GalleryView key={`${candidate.mainImageId}:${candidate.images.map((image) => `${image.id}:${image.version}`).join(",")}`} candidate={candidate} frame={frame} imageKind={imageKind} browse={browse} />;
 }
 
 /** An empty frame the size of a gallery's main photo, showing `icon`, where an idea without photos would show one (TRA-124). */
@@ -43,7 +49,7 @@ export function GalleryPlaceholder({ icon: Icon }: { icon: LucideIcon }) {
   return <div className={styles.gallery}><div className={styles.hero + " " + styles.placeholder}><Icon size={36} strokeWidth={1.3} aria-hidden="true" /></div></div>;
 }
 
-function GalleryView({ candidate, imageKind, browse }: { candidate: GalleryOwner; imageKind: ImageKind; browse: boolean }) {
+function GalleryView({ candidate, frame, imageKind, browse }: { candidate: GalleryOwner; frame: FrameWidths; imageKind: ImageKind; browse: boolean }) {
   const [selectedId, setSelectedId] = useState(candidate.mainImageId);
   const selected = candidate.images.find((image) => image.id === selectedId) ?? candidate.images[0];
   const index = candidate.images.findIndex((image) => image.id === selected.id);
@@ -55,7 +61,7 @@ function GalleryView({ candidate, imageKind, browse }: { candidate: GalleryOwner
     <div className={styles.hero} {...(browsing ? swipe : {})}>
       {/* Stored photos are resized and optimized on upload. */}
       {/* eslint-disable-next-line @next/next/no-img-element */}
-      <img className={styles.image} src={photoUrl(candidate.id, selected, imageKind)} alt={`${candidate.name}, photo ${index + 1}`} loading="lazy" decoding="async" width={1600} height={700} />
+      <img className={styles.image} src={photoUrl(candidate.id, selected, imageKind)} {...photoSizes(photoUrl(candidate.id, selected, imageKind), largeUrl(candidate.id, selected, imageKind), selected.widths, frame)} alt={`${candidate.name}, photo ${index + 1}`} loading="lazy" decoding="async" width={1600} height={700} />
       {selected.id === candidate.mainImageId && <span className={styles.mainBadge}>Main photo</span>}
       {candidate.images.length > 1 && <span className={styles.count}>{index + 1} / {candidate.images.length}</span>}
       {browsing && <PhotoArrows name={candidate.name} onStep={step} />}

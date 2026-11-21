@@ -6,7 +6,8 @@ import { formatMegabytes, IMAGE_UPLOAD_TYPES, MAX_DESTINATION_IMAGES, MAX_GALLER
 import { formatSavedDestinationLabel } from "@/lib/destination-label";
 import { createGalleryDraft, focusPhoto, galleryChanged, movePhoto, placePhoto, removePhoto, type DraftImage, type GalleryDraft } from "@/lib/gallery-draft";
 import { CENTERED, draggedFocus, objectPosition, photoFocus, type Size } from "@/lib/photo-focus";
-import type { Destination, PhotoFocus } from "@/lib/types";
+import { CARD, DIALOG, MAIN_COLUMN, photoSizes } from "@/lib/photo-sizes";
+import type { Destination, PhotoFocus, PhotoWidths } from "@/lib/types";
 import { randomUuid } from "@/lib/uuid";
 import { controlOrNeighbor, useFocusAfter } from "./focus-after";
 import { AddImageByUrl } from "./image-by-url";
@@ -18,6 +19,10 @@ type DestinationGalleryOwner = Pick<Destination, "id" | "city" | "cityFromSugges
 
 function photoUrl(destinationId: string, image: { id: string; version?: string }) {
   return `/api/destination-images/${destinationId}/${image.id}?v=${image.version}`;
+}
+/** A photo's large version (TRA-154), which frames wider than the photo load on high-resolution screens. */
+function largeUrl(destinationId: string, image: { id: string; version?: string }) {
+  return `/api/destination-images/${destinationId}/${image.id}/large?v=${image.version}`;
 }
 /**
  * A photo's thumbnail (TRA-89), which the gallery's thumbnails, the editor's previews and the trip map's destination
@@ -42,7 +47,7 @@ function GalleryView({ destination }: { destination: DestinationGalleryOwner }) 
     <div className={styles.hero}>
       {/* Stored photos are resized and optimized on upload. */}
       {/* eslint-disable-next-line @next/next/no-img-element */}
-      <img className={styles.image} src={photoUrl(destination.id, selected)} alt={`${formatSavedDestinationLabel(destination)}, photo ${index + 1}`} loading="lazy" decoding="async" width={1600} height={700} style={{ objectPosition: objectPosition(selected) }} />
+      <img className={styles.image} src={photoUrl(destination.id, selected)} {...photoSizes(photoUrl(destination.id, selected), largeUrl(destination.id, selected), selected.widths, MAIN_COLUMN)} alt={`${formatSavedDestinationLabel(destination)}, photo ${index + 1}`} loading="lazy" decoding="async" width={1600} height={700} style={{ objectPosition: objectPosition(selected) }} />
       {selected.id === destination.mainImageId && <span className={styles.mainBadge}>Primary photo</span>}
       {destination.images.length > 1 && <span className={styles.count}>{index + 1} / {destination.images.length}</span>}
       {destination.images.length > 1 && <PhotoArrows name={formatSavedDestinationLabel(destination)} onStep={step} />}
@@ -67,14 +72,18 @@ export function DestinationCardPhoto({ destination }: { destination: Pick<Destin
   return <div className="trip-card-image">
     {/* Stored photos are resized and optimized on upload. */}
     {/* eslint-disable-next-line @next/next/no-img-element */}
-    <img src={photoUrl(destination.id, photo)} alt="" loading="lazy" decoding="async" style={{ objectPosition: objectPosition(photo) }} />
+    <img src={photoUrl(destination.id, photo)} {...photoSizes(photoUrl(destination.id, photo), largeUrl(destination.id, photo), photo.widths, CARD)} alt="" loading="lazy" decoding="async" style={{ objectPosition: objectPosition(photo) }} />
   </div>;
 }
 
-/** A saved photo, cropped to fit its frame around its focal point (TRA-53): its thumbnail (TRA-89), or with `full` the photo itself. */
-function SavedPhoto({ destinationId, image, alt, focus, full = false }: { destinationId: string; image: { id: string; version?: string }; alt: string; focus: PhotoFocus; full?: boolean }) {
+/**
+ * A saved photo, cropped to fit its frame around its focal point (TRA-53): its thumbnail (TRA-89), or with `full` the
+ * photo itself, as the crop editor shows it, offering its large version (TRA-154).
+ */
+function SavedPhoto({ destinationId, image, alt, focus, full = false }: { destinationId: string; image: { id: string; version?: string; widths?: PhotoWidths | null }; alt: string; focus: PhotoFocus; full?: boolean }) {
+  const sources = full ? photoSizes(photoUrl(destinationId, image), largeUrl(destinationId, image), image.widths ?? null, DIALOG) : {};
   // eslint-disable-next-line @next/next/no-img-element
-  return <img className={styles.image} src={full ? photoUrl(destinationId, image) : thumbnailUrl(destinationId, image)} alt={alt} loading="lazy" decoding="async" width={240} height={160} style={{ objectPosition: objectPosition(focus) }} />;
+  return <img className={styles.image} src={full ? photoUrl(destinationId, image) : thumbnailUrl(destinationId, image)} {...sources} alt={alt} loading="lazy" decoding="async" width={240} height={160} style={{ objectPosition: objectPosition(focus) }} />;
 }
 
 /** A new photo before it is saved, cropped to fit its frame around its focal point (TRA-53). */

@@ -1,5 +1,6 @@
 import { COORDINATE_ACCURACIES } from "./coordinates.ts";
 import { ENTRY_REQUIREMENT_FIELDS } from "./entry-requirements.ts";
+import { LAYOVER_BUFFERS, MAX_LAYOVER_ACTIVITIES, MAX_LAYOVER_MINUTES } from "./layover-plan.ts";
 import { EMERGENCY_CONTACT_MAX_LENGTH, HEALTH_SAFETY_FIELDS, MAX_EMERGENCY_CONTACTS } from "./health-safety.ts";
 import { AI_PHOTO_DOWNLOAD_SECONDS, formatMegabytes, MAX_AI_PROPOSAL_PHOTOS, MAX_CANDIDATE_IMAGES, MAX_DESTINATION_IMAGES, MAX_GALLERY_UPLOAD_BYTES, MAX_IMAGE_UPLOAD_BYTES } from "./image-limits.ts";
 import { MAX_NIGHTS } from "./trip-dates.ts";
@@ -29,6 +30,9 @@ const link = (noun: string) => ({
 const links = { type: "array", maxItems: 20, items: link("link"), description: "Research links, replacing the saved ones. Left out keeps them, with url as the first one's address." };
 const sources = { type: "array", maxItems: 20, items: link("source"), description: "Where it was checked." };
 const lastChecked = { type: ["string", "null"], pattern: DATE, description: "When it was last checked, YYYY-MM-DD, or null." };
+/** A local date and time, as a layover plan's flights give them (TRA-45). */
+const LOCAL_TIME = "^\\d{4}-(0[1-9]|1[0-2])-(0[1-9]|[12]\\d|3[01])T([01]\\d|2[0-3]):[0-5]\\d$";
+const minutes = (description: string) => ({ type: "integer", minimum: 0, maximum: MAX_LAYOVER_MINUTES, description });
 
 /** A hotel's, activity's, restaurant's or church's coordinates for its destination's map (TRA-150), or null to remove them. */
 const coordinates = {
@@ -171,10 +175,39 @@ const CHANGES = [
     miscAmount: amount("Miscellaneous spending on the way, such as airport meals, drinks and layover purchases, for the whole party and the whole connection, apart from its price. Left out keeps the saved amount."),
     departure: text("When it leaves. Empty for none.", 120), arrival: text("When it arrives. Empty for none.", 120), url: text("A booking or research link, https:// or http://. Empty for none.", 2048),
     notes: text("Notes. Empty for none.", 8000),
-    itinerary: { type: "array", maxItems: 30, description: "Layovers and stops on the way, replacing the saved ones. Left out keeps them.", items: { type: "object", additionalProperties: false, required: ["id", "kind", "place"], properties: { id: id("The entry's id: a new UUID for a new one."), kind: { type: "string", enum: ["layover", "stop"] }, place: text("Where.", 160), arrival: text("When it arrives. Empty for none.", 120), departure: text("When it leaves. Empty for none.", 120), notes: text("Notes. Empty for none.", 2000) } } },
+    itinerary: { type: "array", maxItems: 30, description: "Layovers and stops on the way, replacing the saved ones. Left out keeps them. A layover this leaves out, or makes a stop, loses its plan.", items: { type: "object", additionalProperties: false, required: ["id", "kind", "place"], properties: { id: id("The entry's id: a new UUID for a new one."), kind: { type: "string", enum: ["layover", "stop"] }, place: text("Where.", 160), arrival: text("When it arrives. Empty for none.", 120), departure: text("When it leaves. Empty for none.", 120), notes: text("Notes. Empty for none.", 2000) } } },
     links,
   }, ["id", "method", "price", "departure", "arrival", "url", "notes"]),
-  change("leg.clear", "Clears everything saved for the travel between two stays.", { id: id("The travel's id.") }, ["id"]),
+  change("leg.clear", "Clears everything saved for the travel between two stays, with its layovers' plans.", { id: id("The travel's id.") }, ["id"]),
+  change("leg.layoverPlan", "Saves the plan of one layover in a travel's itinerary, replacing any saved one, or removes it with null. The layover and everything else about the travel stay. A plan times what the travelers will do during the layover against the flight that lands there and the connecting flight that departs, and Travel works out its schedule and warns when it runs past boarding or departure. Its minutes are estimates, never guarantees: give only times and estimates the travelers gave or from a source you can name, and 0 for any that doesn't apply. Removing the layover from the itinerary, or clearing the travel, removes its plan.", {
+    id: id("The travel's id."), layoverId: id("The layover's id, from the travel's itinerary: an entry of kind layover, not another stop."),
+    plan: {
+      type: ["object", "null"], additionalProperties: false,
+      required: ["timeZone", "arrival", "departure", ...LAYOVER_BUFFERS.map(({ name }) => name), "returnMinutes", "activities"],
+      properties: {
+        timeZone: text("The airport's IANA time zone, such as Europe/Berlin. Both flights' times are in it.", 64),
+        arrival: { type: "string", pattern: LOCAL_TIME, description: "When the arriving flight is scheduled to land, as the airport's clocks show it: YYYY-MM-DDTHH:MM." },
+        departure: { type: "string", pattern: LOCAL_TIME, description: "When the connecting flight is scheduled to depart, as the airport's clocks show it: YYYY-MM-DDTHH:MM, after arrival." },
+        ...Object.fromEntries(LAYOVER_BUFFERS.map(({ name, label, hint }) => [name, minutes(`${label}: ${hint} In minutes, 0 when it doesn't apply.`)])),
+        returnMinutes: { type: ["integer", "null"], minimum: 0, maximum: MAX_LAYOVER_MINUTES, description: "How long the travel back to the airport takes after the activities outside it, in minutes, or null when every activity is in the airport." },
+        activities: {
+          type: "array", maxItems: MAX_LAYOVER_ACTIVITIES,
+          description: "The activities in the order they happen, replacing the saved ones. Empty for none. Those outside the airport come one after another, in one trip out of it. Airport activities listed before them come after immigration and customs, and the rest after security and the terminal transfer.",
+          items: {
+            type: "object", additionalProperties: false, required: ["id", "name", "outside", "minutes", "travelMinutes"],
+            properties: {
+              id: id("The activity's id: a new UUID for a new one."), name: text("What it is.", 160), place: text("Where it is, such as an address or a terminal. Empty for none.", 300),
+              outside: flag("true when it is outside the airport, which means leaving the airport for it."),
+              minutes: { type: "integer", minimum: 1, maximum: MAX_LAYOVER_MINUTES, description: "How long it takes, in minutes." },
+              travelMinutes: { type: ["integer", "null"], minimum: 0, maximum: MAX_LAYOVER_MINUTES, description: "Outside the airport, how long getting there takes, from the airport or the activity before it, in minutes. null in the airport." },
+              notes: text("Notes. Empty for none.", 2000),
+            },
+          },
+        },
+      },
+      description: "The whole plan, or null to remove it.",
+    },
+  }, ["id", "layoverId", "plan"]),
   change("candidate.save", "Adds a hotel, activity or restaurant idea to a destination, or changes a saved one. Each field is saved as given. Including a hotel chooses it, leaving out the others. Its coordinates change only with candidate.coordinates: a new address leaves any saved ones waiting to be reviewed, and its map doesn't use them until candidate.coordinates gives them again.", {
     id: id("The idea's id, or a new UUID with create."), create, destinationId: id("Its destination's id."), category: { type: "string", enum: ["hotels", "activities", "restaurants"] },
     name: text("Its name.", 160),
@@ -220,7 +253,7 @@ export const TOOLS = [
   },
   {
     name: "get_trip", title: "Get a trip", annotations: readOnly, inputSchema: input({ trip_id: id("The trip's id.") }),
-    description: "One trip with everything on its page: its tagline, stays, travel between them, At home items, the destinations it visits with their hotels, activities, restaurants, churches and research, and its estimated budget. Amounts are whole USD cents for the whole party; null is not estimated. Each idea's and church's coordinates are null, or place it on its destination's map, unless review is true: its address changed after they were saved, so the map doesn't use them.",
+    description: "One trip with everything on its page: its tagline, stays, travel between them with each layover's plan in layoverPlans, At home items, the destinations it visits with their hotels, activities, restaurants, churches and research, and its estimated budget. Amounts are whole USD cents for the whole party; null is not estimated. Each idea's and church's coordinates are null, or place it on its destination's map, unless review is true: its address changed after they were saved, so the map doesn't use them.",
   },
   {
     name: "list_destinations", title: "List destinations", annotations: readOnly, inputSchema: noInput,

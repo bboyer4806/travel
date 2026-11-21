@@ -5,6 +5,7 @@ import test from "node:test";
 import { runInNewContext } from "node:vm";
 import ts from "typescript";
 import * as imageLimits from "../src/lib/image-limits.ts";
+import * as photoSizes from "../src/lib/photo-sizes.ts";
 import * as photoFocus from "../src/lib/photo-focus.ts";
 import * as tripImageDraft from "../src/lib/trip-image-draft.ts";
 
@@ -119,7 +120,7 @@ function harness(trip) {
     "lucide-react": new Proxy({}, { get: (_, name) => "icon:" + String(name) }),
     // Add image by URL (TRA-139), tested in image-by-url.test.mjs, stands in as an element showing what the editor gives it.
     "./image-by-url": { AddImageByUrl: (props) => ({ type: "AddImageByUrl", props }) },
-    "@/lib/image-limits": imageLimits, "@/lib/photo-focus": photoFocus, "@/lib/trip-image-draft": tripImageDraft,
+    "@/lib/image-limits": imageLimits, "@/lib/photo-sizes": photoSizes, "@/lib/photo-focus": photoFocus, "@/lib/trip-image-draft": tripImageDraft,
   };
   const require = (name) => {
     // A CSS module's class names are their own names.
@@ -162,6 +163,11 @@ function harness(trip) {
     image(frame) {
       const image = (preview(frame) ?? []).find((node) => node.type === "img");
       return image && { src: image.props.src ?? domElements.get("img")?.src, alt: image.props.alt, style: image.props.style };
+    },
+    /** Each preview's saved image's large version, as its `srcset` offers it at its `sizes` (TRA-154). */
+    sources(frame) {
+      const image = (preview(frame) ?? []).find((node) => node.type === "img");
+      return image && { srcSet: image.props.srcSet, sizes: image.props.sizes };
     },
     zoomShown: (frame) => text(nodes.find((node) => node.type === "output" && node.props.htmlFor === `image-${frame}-zoom`)),
     slider: (frame) => nodes.find((node) => node.props.id === `image-${frame}-zoom`),
@@ -333,4 +339,22 @@ test("Add image by URL adds or replaces the headline image as a chosen file does
   assert.deepEqual(replacing.draft(), trip.image, "Undo image changes brings the saved image back");
   replacing.setDisabled(true);
   assert.deepEqual(replacing.byUrl(), { label: "Replace image by URL", disabled: true }, "it waits while the trip saves");
+});
+
+test("a saved image's previews offer its large version at each preview's width times its zoom, and a new file or an image without one offers none (TRA-154)", () => {
+  const image = { ...saved(), widths: { photo: 1600, large: 2560 } };
+  const trip = { id: randomUUID(), image };
+  const editor = harness(trip);
+  const photo = `/api/trip-images/${trip.id}?v=${image.version}`;
+  const srcSet = `${photo} 1600w, /api/trip-images/${trip.id}/large?v=${image.version} 2560w`;
+  // The card preview is at most 320 pixels wide, and the banner preview spans the dialog.
+  assert.deepEqual(editor.sources("card"), { srcSet, sizes: "(max-width: 384px) calc((100vw - 64px) * 1.5), calc((320px) * 1.5)" });
+  assert.deepEqual(editor.sources("banner"), { srcSet, sizes: "(max-width: 540px) calc((100vw - 64px) * 2), (max-width: 592px) calc((100vw - 88px) * 2), calc((504px) * 2)" });
+  // Zooming changes them as the slider moves, so a preview zoomed in loads the large version as the banner would.
+  editor.zoom("banner", 3, true);
+  assert.equal(editor.sources("banner").sizes, "(max-width: 540px) calc((100vw - 64px) * 3), (max-width: 592px) calc((100vw - 88px) * 3), calc((504px) * 3)");
+  editor.choose([new File(["new"], "new.png", { type: "image/png" })]);
+  assert.deepEqual(editor.sources("card"), { srcSet: undefined, sizes: undefined }, "a new file shows from the device");
+  const older = harness({ id: randomUUID(), image: { ...saved(), widths: null } });
+  assert.deepEqual(older.sources("banner"), { srcSet: undefined, sizes: undefined }, "an image saved without one shows as before");
 });

@@ -1,0 +1,58 @@
+/* TRA-45: a layover's plan, in its editor and under its layover in Between the places. Warnings use the app's orange. */
+.editor { display: grid; gap: 26px; min-width: 0; }
+.section { display: grid; gap: 14px; min-width: 0; border-top: 1px solid var(--line); padding-top: 18px; }
+.section:first-child { border-top: 0; padding-top: 0; }
+.section h3 { margin: 0; font-size: 20px; }
+.heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.heading > span { font-size: 10px; color: var(--muted); white-space: nowrap; }
+.note { margin: 0; font-size: 11px; color: var(--muted); line-height: 1.65; }
+.pair { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; }
+.editor select { width: 100%; min-width: 0; min-height: 42px; padding: 10px 12px; color: var(--ink); border: 1px solid #ccd6c7; border-radius: 5px; background: #fffffc; font-weight: 400; font-size: 13px; }
+.editor select:focus { outline: 2px solid #719683; outline-offset: 1px; }
+.length { display: flex; align-items: center; gap: 7px; margin: 0; color: var(--green); font-size: 12px; font-weight: 600; }
+
+.activities { display: grid; gap: 17px; }
+.activity { min-width: 0; margin: 0; padding: 0 14px 15px; border: 1px solid #d9dfd0; border-radius: 8px; background: #f8f9f3; }
+.activity legend { padding: 0 6px; color: var(--green); font-size: 12px; font-weight: 600; }
+.activityTools { display: flex; justify-content: flex-end; gap: 4px; margin: 2px -3px 6px; }
+.activityTools button { width: 36px; height: 36px; }
+.activityFields { display: grid; gap: 14px; }
+.activityFields textarea { min-height: 72px; }
+.add { display: flex; flex-wrap: wrap; gap: 10px; }
+
+/* The schedule: each step's time, what it is and how long it takes, in rows. Steps that run past boarding are orange. */
+.timeline { display: grid; margin: 0; padding: 0; list-style: none; font-size: 12px; }
+.timeline li { display: grid; grid-template-columns: 92px minmax(0, 1fr) auto; align-items: baseline; gap: 10px; padding: 6px 0; border-top: 1px solid var(--line); }
+.timeline li:first-child { border-top: 0; }
+.time { color: var(--green); font-weight: 600; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.day { display: block; color: var(--muted); font-size: 10px; font-weight: 400; }
+.step { min-width: 0; overflow-wrap: anywhere; }
+.minutes { color: var(--muted); white-space: nowrap; font-variant-numeric: tabular-nums; }
+.tag { display: inline-block; margin-left: 7px; padding: 0 6px; border: 1px solid #d3ddca; border-radius: 999px; color: var(--muted); font-size: 10px; line-height: 1.6; vertical-align: 1px; }
+.spare .step { color: var(--muted); font-style: italic; }
+.late .time, .late .step { color: var(--orange); }
+.lateTag { border-color: var(--orange); color: var(--orange); }
+
+.status { display: flex; align-items: flex-start; gap: 7px; margin: 0; color: var(--green); font-size: 12px; font-weight: 600; line-height: 1.55; }
+.status svg { flex: none; margin-top: 2px; }
+.warning { color: var(--orange); font-weight: 400; }
+.warning strong { font-weight: 600; }
+.caption { margin: 0; color: var(--muted); font-size: 11px; line-height: 1.6; }
+
+.summary { display: grid; gap: 7px; margin-top: 8px; padding: 10px 12px; border: 1px solid var(--line); border-radius: 6px; background: var(--white); }
+.totals { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 12px; margin: 0; color: var(--muted); font-size: 11px; }
+.details { display: grid; gap: 8px; }
+.details summary { color: var(--green); font-size: 12px; font-weight: 600; cursor: pointer; }
+.details[open] summary { margin-bottom: 4px; }
+.tools { display: flex; flex-wrap: wrap; gap: 2px 16px; margin-top: 4px; }
+
+@media (max-width: 540px) {
+  .pair { grid-template-columns: 1fr; }
+  .editor select { font-size: 16px; }
+  .section h3 { font-size: 19px; }
+  .activity { padding: 0 11px 13px; }
+  .add button { flex: 1; min-height: 42px; }
+  .timeline li { grid-template-columns: 76px minmax(0, 1fr); row-gap: 0; }
+  .minutes { grid-column: 2; font-size: 11px; }
+  .tools button { min-height: 36px; }
+}

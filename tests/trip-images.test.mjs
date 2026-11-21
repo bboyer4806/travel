@@ -33,11 +33,11 @@ test("a trip's headline image is saved with its own card and banner crops, which
   const path = fileDatabase(t);
   let store = createOwnedStore(path);
   t.after(() => store.close());
-  const tripId = store.applyMutation(tripInput({ image: { data: webp, card, banner } })).id;
+  const tripId = store.applyMutation(tripInput({ image: { data: webp, large: null, card, banner } })).id;
   const image = store.getTripImage(tripId);
   assert.deepEqual(image.data, webp);
   assert.match(image.version, UUID);
-  const saved = { version: image.version, card, banner };
+  const saved = { version: image.version, card, banner, widths: null };
   assert.deepEqual(tripOf(store, tripId).image, saved);
   assert.deepEqual(store.getHomeOverview().data.trips[0].image, saved, "All trips has what each card shows");
   assert.deepEqual(store.getTripSnapshot(tripId).data.trips[0].image, saved, "and the trip's page what its banner shows");
@@ -52,21 +52,21 @@ test("a trip's headline image is saved with its own card and banner crops, which
   const recropped = { version: image.version, card: UNCROPPED, banner: card };
   for (let attempt = 0; attempt < 2; attempt++) {
     assert.deepEqual(store.applyMutation(tripEdit(tripId, recropped)), { id: tripId });
-    assert.deepEqual(tripOf(store, tripId).image, recropped);
+    assert.deepEqual(tripOf(store, tripId).image, { ...recropped, widths: null });
     assert.deepEqual(store.getTripImage(tripId), image, "the image and its version stay as they were");
   }
 
   // Saved, as after refreshing or signing in again.
   store.close();
   store = createOwnedStore(path);
-  assert.deepEqual([store.getTripImage(tripId), tripOf(store, tripId).image], [image, recropped]);
+  assert.deepEqual([store.getTripImage(tripId), tripOf(store, tripId).image], [image, { ...recropped, widths: null }]);
 
   // A new image replaces it, with a new version and the crops chosen for it.
-  store.applyMutation(tripEdit(tripId, { data: replacement, card, banner }));
+  store.applyMutation(tripEdit(tripId, { data: replacement, large: null, card, banner }));
   const replaced = store.getTripImage(tripId);
   assert.deepEqual(replaced.data, replacement);
   assert.notEqual(replaced.version, image.version);
-  assert.deepEqual(tripOf(store, tripId).image, { version: replaced.version, card, banner });
+  assert.deepEqual(tripOf(store, tripId).image, { version: replaced.version, card, banner, widths: null });
   replaced.data.fill(0);
   assert.deepEqual(store.getTripImage(tripId).data, replacement, "callers can't change saved bytes through what they read");
 
@@ -80,7 +80,7 @@ test("a trip's headline image is saved with its own card and banner crops, which
 
 test("a new trip is saved with its headline image, and saved once when its save is sent again", (t) => {
   const { store } = setup(t, tripInput({ name: "Other" }));
-  const created = tripInput({ name: "With an image", image: { data: webp, card, banner } });
+  const created = tripInput({ name: "With an image", image: { data: webp, large: null, card, banner } });
   for (let attempt = 0; attempt < 2; attempt++) assert.deepEqual(store.applyMutation(created), { id: created.id });
   assert.deepEqual(store.getTripImage(created.id).data, webp);
   assert.deepEqual(Object.fromEntries(store.getHomeOverview().data.trips.map((trip) => [trip.name, trip.image?.card ?? null])), { "Other": null, "With an image": card }, "a trip without one has none");
@@ -89,7 +89,7 @@ test("a new trip is saved with its headline image, and saved once when its save 
 });
 
 test("an invalid headline image change is refused before anything in the trip changes", (t) => {
-  const { store, tripId } = setup(t, tripInput({ image: { data: webp, card, banner } }));
+  const { store, tripId } = setup(t, tripInput({ image: { data: webp, large: null, card, banner } }));
   const { version } = store.getTripImage(tripId);
   const before = store.getSnapshot();
   const beforeImage = store.getTripImage(tripId);
@@ -120,12 +120,12 @@ test("a headline image save that fails keeps the saved image, its crops and the 
   const store = createOwnedStore(path);
   const observer = new DatabaseSync(path);
   t.after(() => { observer.close(); store.close(); });
-  const tripId = store.applyMutation(tripInput({ image: { data: webp, card, banner } })).id;
+  const tripId = store.applyMutation(tripInput({ image: { data: webp, large: null, card, banner } })).id;
   const before = store.getSnapshot();
   const beforeImage = store.getTripImage(tripId);
   observer.exec("CREATE TRIGGER reject_insert BEFORE INSERT ON trip_images BEGIN SELECT RAISE(ABORT, 'Injected image failure'); END;");
   observer.exec("CREATE TRIGGER reject_delete BEFORE DELETE ON trip_images BEGIN SELECT RAISE(ABORT, 'Injected image failure'); END;");
-  for (const image of [{ data: replacement, card: UNCROPPED, banner: UNCROPPED }, null]) {
+  for (const image of [{ data: replacement, large: null, card: UNCROPPED, banner: UNCROPPED }, null]) {
     assert.throws(() => store.applyMutation(tripEdit(tripId, image, { name: "Not saved", startDate: "2027-01-01" })), /Injected image failure/);
     assert.deepEqual(store.getSnapshot(), before);
     assert.deepEqual(store.getTripImage(tripId), beforeImage);
@@ -137,8 +137,8 @@ test("deleting a trip deletes its headline image, and other trips keep theirs", 
   const store = createOwnedStore(path);
   const observer = new DatabaseSync(path);
   t.after(() => { observer.close(); store.close(); });
-  const deleted = store.applyMutation(tripInput({ image: { data: webp, card, banner } })).id;
-  const kept = store.applyMutation(tripInput({ name: "Kept", image: { data: replacement, card, banner } })).id;
+  const deleted = store.applyMutation(tripInput({ image: { data: webp, large: null, card, banner } })).id;
+  const kept = store.applyMutation(tripInput({ name: "Kept", image: { data: replacement, large: null, card, banner } })).id;
   store.applyMutation({ type: "trip.delete", id: deleted });
   assert.equal(store.getTripImage(deleted), undefined);
   assert.deepEqual(store.getTripImage(kept).data, replacement);
@@ -158,7 +158,7 @@ test("a schema 33 database upgrades with no headline images, and a replay keeps 
   old.close();
   store = createOwnedStore(path);
   assert.deepEqual(store.getSnapshot(), before, "every trip starts without a headline image");
-  store.applyMutation(tripEdit(tripId, { data: webp, card, banner }));
+  store.applyMutation(tripEdit(tripId, { data: webp, large: null, card, banner }));
   const withImage = [store.getSnapshot(), store.getTripImage(tripId)];
   store.close();
   old = new DatabaseSync(path);
@@ -181,7 +181,7 @@ test("a schema 33 database upgrades with no headline images, and a replay keeps 
 
 test("ChatGPT and Claude can't change a trip's headline image, and see what deleting a trip deletes with it", (t) => {
   const { store, owner, ownerTrip, propose, decide } = aiSetup(t);
-  store.applyMutation(owner, tripEdit(ownerTrip, { data: webp, card, banner }, { name: "Owner trip" }));
+  store.applyMutation(owner, tripEdit(ownerTrip, { data: webp, large: null, card, banner }, { name: "Owner trip" }));
   for (const image of [null, { version: store.getTripImage(owner, ownerTrip).version, card: UNCROPPED, banner }]) {
     assert.throws(() => propose([tripEdit(ownerTrip, image, { name: "Owner trip" })]), { name: "ValidationError", message: "Change 1: A trip's headline image can only be chosen in Travel." });
   }
@@ -197,10 +197,14 @@ test("the trip editor's form gives a new image prepared as uploads are, new crop
   assert.equal(await prepareTripImage(form({ removeImage: "true" })), null);
   const source = await sharp({ create: { width: 2400, height: 1200, channels: 3, background: "#496b62" } }).withMetadata({ orientation: 6 }).jpeg().toBuffer();
   const added = await prepareTripImage(form({ image: new File([source], "trip.jpg", { type: "image/jpeg" }), crops: JSON.stringify({ card, banner }) }));
-  assert.deepEqual(Object.keys(added).toSorted(), ["banner", "card", "data"], "only the photo is kept: a headline image has no thumbnail");
+  assert.deepEqual(Object.keys(added).toSorted(), ["banner", "card", "data", "large"], "the photo and its large version are kept: a headline image has no thumbnail");
   assert.deepEqual([added.card, added.banner], [card, banner]);
   const { format, width, height, orientation, exif } = await sharp(added.data).metadata();
   assert.deepEqual([format, width, height, orientation, exif], ["webp", 600, 1200, undefined, undefined], "turned upright, resized and without metadata, as every upload");
+  // TRA-154: the upload is larger than the photo, so its banner on high-resolution screens has a large version too.
+  const large = await sharp(added.large.data).metadata();
+  assert.deepEqual([large.format, large.width, large.height, large.orientation, large.exif], ["webp", 960, 1920, undefined, undefined], "upright and without metadata too");
+  assert.deepEqual(added.large.widths, { photo: 600, large: 960 });
   const version = randomUUID();
   assert.deepEqual(await prepareTripImage(form({ crops: JSON.stringify({ version, card, banner }) })), { version, card, banner });
 });

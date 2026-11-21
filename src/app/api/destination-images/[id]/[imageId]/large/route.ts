@@ -1,0 +1,15 @@
+import { currentAccount, signedOutResponse } from "@/auth";
+import { getDestinationLargePhoto } from "@/lib/store";
+import { storedImageResponse } from "@/lib/stored-image-response";
+
+export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
+
+/** A destination photo's large version (TRA-154), which frames wider than the photo load on high-resolution screens. */
+export async function GET(request: Request, { params }: { params: Promise<{ id: string; imageId: string }> }) {
+  const account = await currentAccount();
+  if (!account) return signedOutResponse();
+  const { id, imageId } = await params;
+  if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(imageId)) return new Response(null, { status: 404 });
+  return storedImageResponse(request, id, (destinationId) => getDestinationLargePhoto(account.id, destinationId, imageId));
+}

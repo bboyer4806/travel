@@ -38,7 +38,7 @@ function setup(t, path = ":memory:") {
  */
 function plannedTrip(store, accountId, name = "Portugal", [firstCity, secondCity] = ["Lisbon", "Porto"]) {
   const change = (input) => store.applyMutation(accountId, input).id;
-  const tripId = change({ type: "trip.save", ...newItem(), name, startDate: "2027-05-02", dateLabel: "Spring", homeCity: "Boston", travelers: 2, notes: "Trip notes", image: { data: webp, card: UNCROPPED, banner: UNCROPPED } });
+  const tripId = change({ type: "trip.save", ...newItem(), name, startDate: "2027-05-02", dateLabel: "Spring", homeCity: "Boston", travelers: 2, notes: "Trip notes", image: { data: webp, large: null, card: UNCROPPED, banner: UNCROPPED } });
   const lisbon = addCity(change, tripId, firstCity, { nights: 3, hotelNightlyAmount: "150", gallery: { add: [photo(), photo()], remove: [] } });
   const porto = addCity(change, tripId, secondCity, { nights: 2 });
   const hotel = change({ type: "candidate.save", ...newItem(), destinationId: lisbon, category: "hotels", name: "Hotel", price: "400", address: "", url: "", notes: "", included: true, gallery: { add: [photo()], remove: [] } });
@@ -144,7 +144,7 @@ test("people a trip is shared with change everything in it, but only its owner d
   const { tripId, lisbon, porto, hotel, activity, church, homeItem, legs } = trip;
   const portoPhoto = photo();
 
-  change({ type: "trip.save", id: tripId, name: "Portugal together", startDate: "2027-05-03", dateLabel: "Spring", homeCity: "Boston", travelers: 3, notes: "Edited together", image: { data: webp, card: { focusX: 20, focusY: 80, zoom: 2 }, banner: UNCROPPED } });
+  change({ type: "trip.save", id: tripId, name: "Portugal together", startDate: "2027-05-03", dateLabel: "Spring", homeCity: "Boston", travelers: 3, notes: "Edited together", image: { data: webp, large: null, card: { focusX: 20, focusY: 80, zoom: 2 }, banner: UNCROPPED } });
   change({ type: "trip.tag", tripId, name: "Together" });
   change({ type: "leg.save", id: legs[0], method: "Train", price: "45", departure: "", arrival: "", url: "", notes: "" });
   change({ type: "leg.clear", id: legs[1] });

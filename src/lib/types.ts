@@ -133,11 +133,13 @@ export type Mutation =
  | { type: "church.save"; id: string; create?: true; destinationId: string; name: string; address: string; denomination: string; url: string; massTimes: MassTime[]; coordinates?: Coordinates | null; gallery?: GalleryUpdate }
  | { type: "church.delete"; id: string; destinationId: string }
  // Adds a city to a trip as its last stop, without stay notes or nights: the trip owner's saved destination for the
- // city, or a new one. A city the trip already visits opens that stop instead of adding another.
- | { type: "stop.add"; tripId: string; city: string; cityFromSuggestion?: true }
+ // city, or a new one. A city the trip already visits opens that stop instead of adding another. With `before`, one of
+ // the trip's stops, the new stop goes directly before it instead (TRA-153).
+ | { type: "stop.add"; tripId: string; city: string; cityFromSuggestion?: true; before?: string }
  // Adds one of the trip owner's saved destinations to a trip as its last stop, with everything saved for it, without stay
- // notes or nights (TRA-142). A destination the trip already visits opens that stop instead of adding another.
- | { type: "stop.visit"; tripId: string; destinationId: string }
+ // notes or nights (TRA-142). A destination the trip already visits opens that stop instead of adding another. With
+ // `before`, one of the trip's stops, the new stop goes directly before it instead (TRA-153).
+ | { type: "stop.visit"; tripId: string; destinationId: string; before?: string }
  | { type: "stop.move"; id: string; direction: "up" | "down" }
  // Removes a destination from one trip. The destination and everything saved with it stay.
  | { type: "stop.remove"; id: string }

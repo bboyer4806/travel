@@ -1,7 +1,8 @@
 import assert from "node:assert/strict";
+import { randomUUID } from "node:crypto";
 import test from "node:test";
 import { destinationMapLayout, destinationPlaces, MAP_CATEGORIES, mapCoordinates, placeKey } from "../src/lib/destination-map.ts";
-import { candidateInput, newItem, setup } from "./budget-fixtures.mjs";
+import { candidateInput, newItem, prepared, setup } from "./budget-fixtures.mjs";
 
 const churchInput = (destinationId, overrides = {}) => ({ type: "church.save", destinationId, name: "St. Mary's", address: "", denomination: "", url: "", massTimes: [], ...overrides, ...newItem(overrides) });
 const found = (latitude, longitude, label = "Found") => ({ status: "found", latitude, longitude, label });
@@ -31,11 +32,11 @@ test("a destination's map has every hotel, activity, restaurant and church saved
   const { store, tripId, destinationId, ids } = vienna(t);
   const places = destinationPlaces(store.getTripSnapshot(tripId).data, destinationId);
   assert.deepEqual(places, [
-    { id: ids.hotel, category: "hotels", name: "Hotel Sacher", address: "Philharmonikerstraße 4", coordinates: null },
-    { id: ids.museum, category: "activities", name: "Albertina", address: "", coordinates: null },
-    { id: ids.palace, category: "activities", name: "Schönbrunn Palace", address: "", coordinates: null },
-    { id: ids.cafe, category: "restaurants", name: "Café Central", address: "Herrengasse 14", coordinates: null },
-    { id: ids.church, category: "churches", name: "St. Stephen's Cathedral", address: "Stephansplatz 3", coordinates: null },
+    { id: ids.hotel, category: "hotels", name: "Hotel Sacher", address: "Philharmonikerstraße 4", coordinates: null, photo: null },
+    { id: ids.museum, category: "activities", name: "Albertina", address: "", coordinates: null, photo: null },
+    { id: ids.palace, category: "activities", name: "Schönbrunn Palace", address: "", coordinates: null, photo: null },
+    { id: ids.cafe, category: "restaurants", name: "Café Central", address: "Herrengasse 14", coordinates: null, photo: null },
+    { id: ids.church, category: "churches", name: "St. Stephen's Cathedral", address: "Stephansplatz 3", coordinates: null, photo: null },
   ]);
   // The destination's own page, outside the trip, and its stop's idea page in the trip have the same places.
   assert.deepEqual(destinationPlaces(store.getDestinationSnapshot(destinationId).data, destinationId), places);
@@ -177,4 +178,35 @@ test("a destination's places carry their saved coordinates, and only usable ones
   store.applyMutation(churchInput(destinationId, { id: ids.church, name: "St. Stephen's Cathedral", address: "Stephansplatz 1" }));
   assert.equal(places()[ids.church].coordinates.review, true);
   assert.equal(mapCoordinates(places()[ids.church]), null);
+});
+
+// TRA-152: each place's primary photo, which its marker's popup shows.
+const webp = new Uint8Array(Buffer.from("UklGRiIAAABXRUJQVlA4IBYAAAAwAQCdASoBAAEADsD+JaQAA3AAAAAA", "base64"));
+const photo = () => ({ id: randomUUID(), ...prepared(webp) });
+
+test("a destination's places carry their primary photos, the same in a trip and in Destinations, and photos never change what they are looked up by (TRA-152)", (t) => {
+  const { store, tripId, destinationId, ids } = vienna(t);
+  const places = () => Object.fromEntries(destinationPlaces(store.getDestinationSnapshot(destinationId).data, destinationId).map((place) => [place.id, place]));
+  const keys = () => Object.fromEntries(Object.values(places()).map((place) => [place.id, placeKey("Vienna", place)]));
+  /** A saved photo, with the version the store gave it, which its address names. */
+  const saved = (kind, id, imageId) => store.getDestinationSnapshot(destinationId).data[kind].find((item) => item.id === id).images.find((image) => image.id === imageId);
+  const before = keys();
+  // The hotel gets two photos, the first its main photo, and the church one.
+  const [lobby, facade, nave] = [photo(), photo(), photo()];
+  const hotel = (overrides) => candidateInput(destinationId, "hotels", { id: ids.hotel, name: "Hotel Sacher", address: "Philharmonikerstraße 4", included: false, ...overrides });
+  const church = (overrides) => churchInput(destinationId, { id: ids.church, name: "St. Stephen's Cathedral", address: "Stephansplatz 3", ...overrides });
+  store.applyMutation(hotel({ gallery: { add: [lobby, facade], remove: [] } }));
+  store.applyMutation(church({ gallery: { add: [nave], remove: [] } }));
+  assert.deepEqual(places()[ids.hotel].photo, saved("candidates", ids.hotel, lobby.id));
+  assert.deepEqual(places()[ids.church].photo, saved("churches", ids.church, nave.id));
+  assert.deepEqual([places()[ids.museum].photo, places()[ids.palace].photo, places()[ids.cafe].photo], [null, null, null], "places without photos have none");
+  assert.deepEqual(destinationPlaces(store.getTripSnapshot(tripId).data, destinationId), Object.values(places()), "the trip's card shows the same photos");
+  // Choosing the hotel's second photo as its main photo shows that one, not its first.
+  store.applyMutation(hotel({ gallery: { add: [], remove: [], mainImageId: facade.id } }));
+  assert.deepEqual(places()[ids.hotel].photo, saved("candidates", ids.hotel, facade.id));
+  // Removing the church's only photo leaves it without one.
+  store.applyMutation(church({ gallery: { add: [], remove: [nave.id] } }));
+  assert.equal(places()[ids.church].photo, null);
+  // Photos never change what a place is looked up by, so the map looks nothing up again for them.
+  assert.deepEqual(keys(), before);
 });

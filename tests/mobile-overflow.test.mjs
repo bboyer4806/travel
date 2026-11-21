@@ -29,6 +29,8 @@ test("what people and assistants write wraps within the screen, a long link or w
   for (const [file, selectors] of [
     [GLOBALS, [".trip-meta", ".destination-name p", ".list-intro", ".helper", ".form-error", ".destination-budget-total small", ".budget-breakdown dt small", ".budget-category dt small"]],
     ["../src/components/destination-map.module.css", [".unmapped > p", ".credit"]],
+    // A layover plan's notes name the layover's place (TRA-45).
+    ["../src/components/layover-plan.module.css", [".note"]],
     ["../src/app/ai/ai.module.css", [".change h2"]],
   ]) {
     for (const selector of selectors) assert.deepEqual(values(file, selector, "overflow-wrap"), { "": "anywhere" }, selector);

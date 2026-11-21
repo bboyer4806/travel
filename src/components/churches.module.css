@@ -1,4 +1,5 @@
-.denomination { color: var(--muted); font-size: 13px; margin: 12px 0; overflow-wrap: anywhere; }
+/* What the church is, in ink as what an idea is on its card (TRA-51). */
+.denomination { color: var(--ink); font-size: 14px; line-height: 1.5; margin: 12px 0; overflow-wrap: anywhere; }
 .website { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; text-decoration: underline; margin: 8px 0; }
 /* Church headings take their level from the section listing the churches (TRA-95), so their class, not their tag, keeps
    the look they had as serif h2 and h3 headings. */

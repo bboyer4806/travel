@@ -652,6 +652,13 @@ This replaces TRA-62's destination Save in a sticky header.
 - Unchanged: the estimate's heading, total, caption, rows, amounts and note, how every amount is calculated, editing them, and saved data. The schema is unchanged.
 - Not included, as the ticket says: other explanatory text in Travel, Help included, such as the destination budget editors' notes and the In your trips box on a destination's page; and redesigning the estimate.
 
+## Added scope: November 21, 2026, more prominent details beneath location images (TRA-51)
+- The text below a location's image is easier to notice and read, and ranks the same way on every card that shows one: the location's name, then what the place, stay or trip is in Travel's dark text color, then further details in its gray secondary color, at 13 pixels or more, with larger labels and tags and more room between them.
+- The cards: a destination's on a trip's page and in Destinations, the trip cards on All trips, which share Destinations' card, and the cards of hotels, activities, restaurants and churches in a destination's carousels and on its pages.
+- The serif names of destinations, trips, ideas and churches keep their size and weight, as every heading in Travel does, so they still lead their cards. The carousels' names, the only small ones, are larger.
+- Colors are Travel's own, and all text keeps at least 4.5:1 contrast. Travel has one theme, so there is no dark theme to check.
+- Not included, as the ticket says: new fonts or card designs, changes to images, card layouts, order, links or controls, saved details, and text elsewhere in Travel.
+
 ## Added scope: November 21, 2026, photos in destination map popups (TRA-152)
 - Selecting a marker on a destination's map, on a trip's destination card or the destination's page, opens its popup with each place's primary photo at the top of its entry, above its name, category and View details: the main photo of the hotel, activity, restaurant or church, the one its card and details open on.
 - Every photo fills the same 2:1 frame, 240 pixels wide on desktops and tablets and 180 on phones, cropped to fit around its center and never stretched, and the place's name and category wrap to its width. A place without photos keeps the popup it had, with no empty frame or placeholder, and the photo is hidden from screen readers, which hear the name that follows it.

@@ -223,6 +223,8 @@ test("the Typical weather section keeps its typical weather and adds the monthly
   const inTrip = panel({ weather: { ...placeholder, climate: climate() }, stay: { arrivalDate: "2027-05-10" } });
   assert.deepEqual(copy([inTrip.chart().props, inTrip.chart().key]), [{ climate: climate(), startMonth: 4 }, 4]);
   assert.equal(inTrip.empty(), "");
+  // Edit typical weather shows only while the section is open (TRA-148).
+  inTrip.toggle();
   assert.deepEqual(inTrip.buttons().map(([label]) => label), ["Typical weather", "Edit typical weather", "Edit monthly averages", "Clear monthly averages"]);
   for (const [, onClick] of inTrip.buttons().slice(1)) onClick();
   assert.deepEqual(inTrip.calls, ["edit", "editClimate", "clearClimate"]);

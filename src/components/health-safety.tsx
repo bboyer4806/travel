@@ -2,6 +2,7 @@
 
 import { useEffect, useId, useRef, useState } from "react";
 import { ChevronDown, Pencil, Plus, Trash2 } from "lucide-react";
+import { useFocusFallback } from "@/components/focus-after";
 import { ResearchLinks, ResearchLinksEditor } from "@/components/research-links";
 import { EMERGENCY_CONTACT_MAX_LENGTH, HEALTH_SAFETY_FIELDS, MAX_EMERGENCY_CONTACTS, type EmergencyContact, type HealthSafety } from "@/lib/health-safety";
 import { formatCalendarDate } from "@/lib/trip-dates";
@@ -29,16 +30,19 @@ type PanelProps = {
 export function HealthSafetyPanel({ healthSafety, disabled, onEdit, onClear }: PanelProps) {
   const [expanded, setExpanded] = useState(false);
   const contentId = useId();
+  const toggle = useRef<HTMLButtonElement>(null);
+  const keepFocus = useFocusFallback(toggle);
   return <section className={styles.panel} aria-label="Health and safety">
     <div className="section-heading">
-      <h4><button type="button" className={styles.toggle} aria-expanded={expanded} aria-controls={contentId} onClick={() => setExpanded((open) => !open)}>Health and safety<ChevronDown size={18} aria-hidden="true" /></button></h4>
-      <div className={styles.actions}>
+      <h4><button ref={toggle} type="button" className={styles.toggle} aria-expanded={expanded} aria-controls={contentId} onClick={() => setExpanded((open) => !open)}>Health and safety<ChevronDown size={18} aria-hidden="true" /></button></h4>
+      {/* Edit and Clear show only while the section is open, and Add whenever nothing is recorded (TRA-148). */}
+      {(expanded || !healthSafety) && <div ref={keepFocus} className={styles.actions}>
         <button type="button" className="button secondary small" disabled={disabled} onClick={onEdit}>
           {healthSafety ? <Pencil size={15} aria-hidden="true" /> : <Plus size={15} aria-hidden="true" />}
           {healthSafety ? "Edit health and safety" : "Add health and safety"}
         </button>
         {healthSafety && <button type="button" className="text-button" disabled={disabled} onClick={onClear}><Trash2 size={14} aria-hidden="true" />Clear</button>}
-      </div>
+      </div>}
     </div>
     <div id={contentId} className={styles.content} hidden={!expanded}>
       <p className={styles.reminder}>{reminder}</p>

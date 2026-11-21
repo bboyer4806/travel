@@ -19,7 +19,7 @@ export interface TypicalWeather { weatherHighF: number | null; weatherLowF: numb
  * `tagline` is the line its page shows above its name, saved as typed, or empty for the default heading (TRA-134).
  */
 export interface Trip { startDate: string | null; endDate: string | null; id: string; name: string; tagline: string; dateLabel: string; homeCity: string; returnCity: string | null; travelers: number; notes: string; createdAt: string; tags: string[]; image: TripImage | null; }
-export interface HomeItem { id: string; tripId: string; name: string; notes: string; priceCents: number | null; completed: boolean; createdAt: string; }
+export interface HomeItem { id: string; tripId: string; name: string; notes: string; priceCents: number | null; createdAt: string; }
 /**
  * A city's research, ideas, selections and budget amounts, shared by every trip that visits it. Each owner has one per city.
  * `cityFromSuggestion` records that `city` is the label of a city suggestion chosen for it, the only city shown shorter (TRA-76).
@@ -128,9 +128,8 @@ export type Mutation =
  | { type: "trip.untag"; tripId: string; name: string }
  // Puts every trip the account can open, each once, in the account's own order on All trips (TRA-16). Other accounts keep theirs.
  | { type: "trip.order"; tripIds: string[] }
- | { type: "homeItem.save"; id: string; create?: true; tripId: string; name: string; price: string; notes: string; completed: boolean }
+ | { type: "homeItem.save"; id: string; create?: true; tripId: string; name: string; price: string; notes: string }
  | { type: "homeItem.delete"; id: string; tripId: string }
- | { type: "homeItem.complete"; id: string; tripId: string; completed: boolean }
  // Changes a saved destination everywhere it is used, and with `stopId` that trip's stay notes and nights too.
  | ({ type: "destination.save"; id: string; stopId?: string } & DestinationFields & StopFields)
  // Saves a destination outside any trip. A city the account already has a destination for opens that one instead.

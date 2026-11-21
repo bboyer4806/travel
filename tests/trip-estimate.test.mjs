@@ -65,7 +65,7 @@ function plan(t) {
   for (const leg of store.getTripSnapshot(tripId).data.legs) {
     store.applyMutation({ type: "leg.save", id: leg.id, method: "Flight", price: "900", miscAmount: "60", departure: "", arrival: "", url: "", notes: "" });
   }
-  store.applyMutation({ type: "homeItem.save", ...newItem(), tripId, name: "Pet sitter", price: "350", notes: "", completed: false });
+  store.applyMutation({ type: "homeItem.save", ...newItem(), tripId, name: "Pet sitter", price: "350", notes: "" });
   return { store, tripId };
 }
 /** The trip's page as `/trips/<trip ID>` renders it, as its host elements. */
@@ -118,7 +118,7 @@ test("the trip estimate ends with its note, without a paragraph about what it in
   const [flight, train] = store.getTripSnapshot(tripId).data.legs;
   store.applyMutation({ type: "leg.save", id: flight.id, method: "Flight", price: "1400", miscAmount: "60", departure: "", arrival: "", url: "", notes: "" });
   store.applyMutation({ type: "leg.save", id: train.id, method: "Train", price: "90", departure: "", arrival: "", url: "", notes: "" });
-  store.applyMutation({ type: "homeItem.save", ...newItem(), tripId, name: "Pet sitter", price: "300", notes: "", completed: false });
+  store.applyMutation({ type: "homeItem.save", ...newItem(), tripId, name: "Pet sitter", price: "300", notes: "" });
 
   const panel = estimate(tripPage(store, tripId));
   // Everything the estimate shows, in order: the amounts the trip's page showed before TRA-151, then the note, last.

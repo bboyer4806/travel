@@ -35,7 +35,6 @@ type StoredDestination = Omit<Destination, "churchEnabled" | "cityFromSuggestion
 /** A hotel's, activity's, restaurant's or church's coordinate columns (TRA-150): latitude, longitude and accuracy all set, or all empty with review 0. */
 type StoredCoordinates = { latitude: number | null; longitude: number | null; coordinatesAccuracy: CoordinatesAccuracy | null; coordinatesReview: number };
 type StoredChurch = Omit<Church, "massTimes" | "images" | "coordinates"> & StoredCoordinates & { massTimesJson: string };
-type StoredHomeItem = Omit<HomeItem, "completed"> & { completed: number };
 type StoredLeg = Omit<TravelLeg, "itinerary" | "links" | "layoverPlans"> & { itineraryJson: string; linksJson: string };
 /** A layover plan's row (TRA-45): its leg and layover, its plan's fields, and its activities as JSON. */
 type StoredLayoverPlan = Omit<SavedLayoverPlan, "activities"> & { legId: string; activitiesJson: string };
@@ -487,11 +486,9 @@ function validate(input: unknown): Mutation {
       return { type: value.type, tripIds };
     }
     case "homeItem.save":
-      return { type: value.type, id: saveIdField(value), create: createField(value), tripId: idField(value, "tripId"), name: textField(value, "name", 160, true), price: priceField(value), notes: textField(value, "notes", 8000), completed: booleanField(value, "completed") };
+      return { type: value.type, id: saveIdField(value), create: createField(value), tripId: idField(value, "tripId"), name: textField(value, "name", 160, true), price: priceField(value), notes: textField(value, "notes", 8000) };
     case "homeItem.delete":
       return { type: value.type, id: idField(value), tripId: idField(value, "tripId") };
-    case "homeItem.complete":
-      return { type: value.type, id: idField(value), tripId: idField(value, "tripId"), completed: booleanField(value, "completed") };
     case "destination.save": {
       // A trip adds a city with `stop.add` (TRA-107). Only a page opened before that adds a destination with this save.
       if (value.create !== undefined || value.tripId !== undefined) throw new ValidationError(PLANNER_UPDATED);
@@ -1500,12 +1497,10 @@ export function createStore(databasePath: string, ownerEmail: string) {
     }
     return plans;
   }
+  /** At home items, without whether each is done: Travel keeps that column as saved but no longer shows or changes it (TRA-146). */
   function readHomeItems(tripIds: readonly string[] | null): HomeItem[] {
     const [where, args] = among("tripId", tripIds);
-    return db.prepare(`SELECT * FROM home_items${where} ORDER BY createdAt, id`).all(...args).map((row) => {
-      const item = row as unknown as StoredHomeItem;
-      return { ...item, completed: item.completed === 1 };
-    });
+    return db.prepare(`SELECT id, tripId, name, notes, priceCents, createdAt FROM home_items${where} ORDER BY createdAt, id`).all(...args).map((row) => ({ ...row }) as unknown as HomeItem);
   }
   function readDestinations(ids: readonly string[] | null): Destination[] {
     const [where, args] = among("destinations.id", ids);
@@ -1881,8 +1876,8 @@ export function createStore(databasePath: string, ownerEmail: string) {
   function changesSaved(table: "trips" | "home_items" | "churches" | "candidates", input: { id: string; create?: true }): boolean {
     return !input.create || db.prepare(`SELECT 1 FROM ${table} WHERE id = ?`).get(input.id) !== undefined;
   }
-  function homeItemForTrip(id: string, tripId: string): StoredHomeItem {
-    const item = existing<StoredHomeItem>("home_items", id);
+  function homeItemForTrip(id: string, tripId: string): HomeItem {
+    const item = existing<HomeItem>("home_items", id);
     if (item.tripId !== tripId) throw new ValidationError("This home item belongs to a different trip.");
     return item;
   }
@@ -2120,9 +2115,10 @@ export function createStore(databasePath: string, ownerEmail: string) {
         const id = input.id;
         if (changesSaved("home_items", input)) {
           homeItemForTrip(id, input.tripId);
-          db.prepare("UPDATE home_items SET name = ?, priceCents = ?, notes = ?, completed = ? WHERE id = ? AND tripId = ?").run(input.name, priceCents(input.price), input.notes, Number(input.completed), id, input.tripId);
+          db.prepare("UPDATE home_items SET name = ?, priceCents = ?, notes = ? WHERE id = ? AND tripId = ?").run(input.name, priceCents(input.price), input.notes, id, input.tripId);
         } else {
-          db.prepare("INSERT INTO home_items(id,tripId,name,priceCents,notes,completed,createdAt) VALUES(?,?,?,?,?,?,?)").run(id, input.tripId, input.name, priceCents(input.price), input.notes, Number(input.completed), make.now());
+          // Whether an item is done is no longer tracked (TRA-146), so a new one takes the column's default.
+          db.prepare("INSERT INTO home_items(id,tripId,name,priceCents,notes,createdAt) VALUES(?,?,?,?,?,?)").run(id, input.tripId, input.name, priceCents(input.price), input.notes, make.now());
         }
         return id;
       }
@@ -2130,10 +2126,6 @@ export function createStore(databasePath: string, ownerEmail: string) {
         homeItemForTrip(input.id, input.tripId);
         db.prepare("DELETE FROM home_items WHERE id = ? AND tripId = ?").run(input.id, input.tripId);
         return;
-      case "homeItem.complete":
-        homeItemForTrip(input.id, input.tripId);
-        db.prepare("UPDATE home_items SET completed = ? WHERE id = ? AND tripId = ?").run(Number(input.completed), input.id, input.tripId);
-        return input.id;
       case "destination.save":
         return saveDestination(input, make);
       case "destination.create":
@@ -2350,7 +2342,7 @@ export function createStore(databasePath: string, ownerEmail: string) {
       // account arrange its own, and mutate checks the trips it names (TRA-16).
       case "trip.order": return { trip: undefined };
       case "homeItem.save": return { trip: tripOf("home_items", input.id) ?? (input.create && tripOf("trips", input.tripId)) };
-      case "homeItem.delete": case "homeItem.complete": return { trip: tripOf("home_items", input.id) };
+      case "homeItem.delete": return { trip: tripOf("home_items", input.id) };
       case "stop.move": case "stop.remove": return { trip: tripOf("trip_stops", input.id) };
       case "leg.save": case "leg.clear": case "leg.layoverPlan": return { trip: tripOf("legs", input.id) };
       // Changing a trip's stay there along with it is a change to that trip.

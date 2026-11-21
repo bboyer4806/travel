@@ -92,10 +92,9 @@ const CHANGES = [
   change("trip.untag", "Removes a tag from a trip. Other trips keep theirs.", { tripId: id("The trip's id."), name: text("The tag.", MAX_TAG_LENGTH) }, ["tripId", "name"]),
   change("homeItem.save", "Adds an At home item to a trip, such as house sitting or pausing the mail, or changes a saved one. Each field is saved as given.", {
     id: id("The item's id, or a new UUID with create."), create, tripId: id("Its trip's id."), name: text("What it is.", 160), price: amount("What it costs."),
-    notes: text("Notes. Empty for none.", 8000), completed: flag("Whether it is done."),
-  }, ["id", "tripId", "name", "price", "notes", "completed"]),
+    notes: text("Notes. Empty for none.", 8000),
+  }, ["id", "tripId", "name", "price", "notes"]),
   change("homeItem.delete", "Deletes an At home item.", { id: id("The item's id."), tripId: id("Its trip's id.") }, ["id", "tripId"]),
-  change("homeItem.complete", "Marks an At home item done, or not done.", { id: id("The item's id."), tripId: id("Its trip's id."), completed: flag("Whether it is done.") }, ["id", "tripId", "completed"]),
   change("destination.save", "Changes the fields given of a destination, in every trip that visits it. With stopId, also changes that trip's stay there: its stay notes and nights. Anything left out stays as it is. A new city clears the travel to and from it in every trip. Its weather fields summarize one time of year; averages for every month go in destination.climate.", {
     id: id("The destination's id."), stopId: id("A trip's stay at this destination, for stay and nights."), city: text("The city.", 120),
     tagline: text("A short line shown in capitals above the destination's name on its page, saved as written. Empty for Travel's default heading.", 120), notes: text("Notes. Empty for none.", 8000),

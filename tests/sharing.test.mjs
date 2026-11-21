@@ -44,7 +44,7 @@ function plannedTrip(store, accountId, name = "Portugal", [firstCity, secondCity
   const hotel = change({ type: "candidate.save", ...newItem(), destinationId: lisbon, category: "hotels", name: "Hotel", price: "400", address: "", url: "", notes: "", included: true, gallery: { add: [photo()], remove: [] } });
   const activity = change({ type: "candidate.save", ...newItem(), destinationId: lisbon, category: "activities", name: "Tram 28", price: "20", address: "", url: "", notes: "", included: true });
   const church = change({ type: "church.save", ...newItem(), destinationId: lisbon, name: "Sé", address: "", denomination: "", url: "", massTimes: [], gallery: { add: [photo()], remove: [] } });
-  const homeItem = change({ type: "homeItem.save", ...newItem(), tripId, name: "House sitting", price: "100", notes: "", completed: false });
+  const homeItem = change({ type: "homeItem.save", ...newItem(), tripId, name: "House sitting", price: "100", notes: "" });
   change({ type: "destination.entryRequirements", id: lisbon, requirements: requirements() });
   change({ type: "destination.healthSafety", id: lisbon, healthSafety: healthSafety() });
   change({ type: "destination.climate", id: lisbon, climate: climate() });
@@ -159,8 +159,7 @@ test("people a trip is shared with change everything in it, but only its owner d
   change({ type: "destination.healthSafety", id: porto, healthSafety: healthSafety() });
   change({ type: "destination.save", id: porto, notes: "Port wine", gallery: { add: [portoPhoto], remove: [] } });
   change({ type: "destination.save", id: porto, stopId: porto, stay: "By the river", nights: 4 });
-  change({ type: "homeItem.save", ...newItem(), tripId, name: "Pet care", price: "50", notes: "", completed: false });
-  change({ type: "homeItem.complete", id: homeItem, tripId, completed: true });
+  change({ type: "homeItem.save", ...newItem(), tripId, name: "Pet care", price: "50", notes: "" });
   const sintra = addCity(change, tripId, "Sintra", { nights: 1 });
   change({ type: "stop.move", id: sintra, direction: "up" });
   change({ type: "candidate.delete", id: activity });
@@ -212,9 +211,8 @@ test("an account a trip isn't shared with can neither read nor change any part o
     { type: "trip.unshare", tripId, email: "editor@example.com" },
     { type: "trip.tag", tripId, name: "Mine" },
     { type: "trip.untag", tripId, name: "Mine" },
-    { type: "homeItem.save", ...newItem(), tripId, name: "Mine", price: "", notes: "", completed: false },
-    { type: "homeItem.save", id: homeItem, tripId, name: "Mine", price: "", notes: "", completed: false },
-    { type: "homeItem.complete", id: homeItem, tripId, completed: true },
+    { type: "homeItem.save", ...newItem(), tripId, name: "Mine", price: "", notes: "" },
+    { type: "homeItem.save", id: homeItem, tripId, name: "Mine", price: "", notes: "" },
     { type: "homeItem.delete", id: homeItem, tripId },
     { type: "stop.add", tripId, city: "Mine" },
     { type: "destination.save", id: lisbon, notes: "Mine" },
@@ -239,14 +237,14 @@ test("an account a trip isn't shared with can neither read nor change any part o
     { type: "candidate.include", id: activity, included: false },
     { type: "candidate.delete", id: hotel },
     // Its own IDs don't open the other trip either, in whichever field they appear.
-    { type: "homeItem.save", id: homeItem, tripId: own.tripId, name: "Mine", price: "", notes: "", completed: false },
+    { type: "homeItem.save", id: homeItem, tripId: own.tripId, name: "Mine", price: "", notes: "" },
     { type: "homeItem.delete", id: homeItem, tripId: own.tripId },
     { type: "church.save", id: church, destinationId: own.lisbon, name: "Mine", address: "", denomination: "", url: "", massTimes: [] },
     { type: "church.delete", id: church, destinationId: own.lisbon },
     { type: "candidate.save", id: hotel, destinationId: own.lisbon, category: "hotels", name: "Mine", ...idea },
     // Nor as the IDs of new items, which would save over the other trip's.
     { type: "trip.save", id: tripId, create: true, name: "Mine now", dateLabel: "", homeCity: "", travelers: 1, notes: "" },
-    { type: "homeItem.save", id: homeItem, create: true, tripId: own.tripId, name: "Mine", price: "", notes: "", completed: false },
+    { type: "homeItem.save", id: homeItem, create: true, tripId: own.tripId, name: "Mine", price: "", notes: "" },
     { type: "church.save", id: church, create: true, destinationId: own.lisbon, name: "Mine", address: "", denomination: "", url: "", massTimes: [] },
     { type: "candidate.save", id: hotel, create: true, destinationId: own.lisbon, category: "hotels", name: "Mine", ...idea },
   ]) {
@@ -254,7 +252,7 @@ test("an account a trip isn't shared with can neither read nor change any part o
   }
   // Nor can it pull the other trip's items into its own, or put its own into the other trip.
   for (const input of [
-    { type: "homeItem.save", id: own.homeItem, tripId, name: "Moved", price: "", notes: "", completed: false },
+    { type: "homeItem.save", id: own.homeItem, tripId, name: "Moved", price: "", notes: "" },
     { type: "destination.save", id: own.lisbon, stopId: lisbon, notes: "Moved" },
     { type: "destination.save", id: lisbon, stopId: own.lisbon, notes: "Moved" },
     { type: "church.save", id: own.church, destinationId: lisbon, name: "Moved", address: "", denomination: "", url: "", massTimes: [] },

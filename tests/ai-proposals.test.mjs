@@ -22,7 +22,7 @@ test("a proposal previews every record each change makes, and changes nothing un
   const proposal = propose([
     tripEdit(store, guestTrip, { name: "Guest trip, renamed" }),
     { type: "trip.share", tripId: ownerTrip, email: "new@example.test" },
-    { type: "homeItem.save", id: itemId, create: true, tripId: guestTrip, name: "House sitting", price: "125.50", notes: "", completed: false },
+    { type: "homeItem.save", id: itemId, create: true, tripId: guestTrip, name: "House sitting", price: "125.50", notes: "" },
   ]);
   assert.equal(proposal.status, "pending");
   assert.equal(proposal.expiresAt, NOW + DAY, "a proposal waits a day");
@@ -34,13 +34,13 @@ test("a proposal previews every record each change makes, and changes nothing un
       { action: "Adds", record: `Trip “Owner trip” (${OWNER}): shared with new@example.test`, fields: [] },
       { action: "Adds", record: "Account new@example.test", fields: [{ name: "Email", before: null, after: "new@example.test" }] },
     ] },
-    { operation: "Add the At home item “House sitting”", records: [{ action: "Adds", record: `Trip “Guest trip, renamed” (${GUEST}): At home item “House sitting”`, fields: [{ name: "Name", before: null, after: "House sitting" }, { name: "Price", before: null, after: "$125.50" }, { name: "Done", before: null, after: "No" }] }] },
+    { operation: "Add the At home item “House sitting”", records: [{ action: "Adds", record: `Trip “Guest trip, renamed” (${GUEST}): At home item “House sitting”`, fields: [{ name: "Name", before: null, after: "House sitting" }, { name: "Price", before: null, after: "$125.50" }] }] },
   ]);
 
   assert.equal(decide(proposal, true).status, "applied");
   const after = store.getSnapshot();
   assert.equal(tripOf(store, guestTrip).name, "Guest trip, renamed");
-  assert.deepEqual(after.homeItems.find((item) => item.id === itemId), { id: itemId, tripId: guestTrip, name: "House sitting", notes: "", priceCents: 12550, completed: false, createdAt: new Date(NOW).toISOString() });
+  assert.deepEqual(after.homeItems.find((item) => item.id === itemId), { id: itemId, tripId: guestTrip, name: "House sitting", notes: "", priceCents: 12550, createdAt: new Date(NOW).toISOString() });
   assert.ok(emails(store).includes("new@example.test"), "approving the share authorizes the email");
   assert.deepEqual(store.aiTrips().find((trip) => trip.id === ownerTrip).sharedWith, [{ email: "new@example.test", name: null }]);
   assert.deepEqual(store.aiTrips().find((trip) => trip.id === guestTrip).owner, { email: GUEST, name: null }, "a change to another account's trip keeps its owner");
@@ -74,7 +74,7 @@ test("approving makes exactly the rows previewed, or nothing when Travel has cha
 test("a failure partway through a batch rolls back every change and the approval", (t) => {
   const path = fileDatabase(t);
   const { store, owner, guestTrip, ownerTrip, propose, decide } = aiSetup(t, path);
-  const itemId = store.applyMutation(owner, { type: "homeItem.save", ...newItem(), tripId: ownerTrip, name: "Pause mail", price: "", notes: "", completed: false }).id;
+  const itemId = store.applyMutation(owner, { type: "homeItem.save", ...newItem(), tripId: ownerTrip, name: "Pause mail", price: "", notes: "" }).id;
   // The planner refuses the second change when it is approved: everything rolls back, and the proposal fails for good.
   const refused = propose([tripEdit(store, guestTrip, { name: "Renamed" }), { type: "homeItem.delete", id: itemId, tripId: ownerTrip }]);
   store.applyMutation(owner, { type: "homeItem.delete", id: itemId, tripId: ownerTrip });
@@ -85,7 +85,7 @@ test("a failure partway through a batch rolls back every change and the approval
   assert.deepEqual(store.getSnapshot(), before, "the first change rolled back with the second");
 
   // The database fails partway through: everything rolls back, the approval included, so it can be approved again.
-  const batch = propose([tripEdit(store, guestTrip, { name: "Renamed again" }), { type: "homeItem.save", ...newItem(), tripId: ownerTrip, name: "Water plants", price: "", notes: "", completed: false }]);
+  const batch = propose([tripEdit(store, guestTrip, { name: "Renamed again" }), { type: "homeItem.save", ...newItem(), tripId: ownerTrip, name: "Water plants", price: "", notes: "" }]);
   const db = new DatabaseSync(path);
   t.after(() => db.close());
   db.exec("CREATE TRIGGER fail_items BEFORE INSERT ON home_items BEGIN SELECT RAISE(ABORT, 'database or disk is full'); END;");
@@ -151,15 +151,15 @@ test("a proposal can add items and change them in the same batch, and refuses wh
   const itemId = randomUUID();
   const proposal = propose([
     { type: "trip.save", id: tripId, create: true, name: "Lisbon", dateLabel: "Spring", homeCity: "Boston", travelers: 2, notes: "", startDate: "2027-04-01" },
-    { type: "homeItem.save", id: itemId, create: true, tripId, name: "Pet sitter", price: "40", notes: "", completed: false },
-    { type: "homeItem.complete", id: itemId, tripId, completed: true },
+    { type: "homeItem.save", id: itemId, create: true, tripId, name: "Pet sitter", price: "40", notes: "" },
+    { type: "homeItem.save", id: itemId, tripId, name: "Pet sitter", price: "45", notes: "Twice a day" },
     { type: "trip.tag", tripId, name: "Europe" },
   ]);
-  assert.deepEqual(proposal.preview.map((change) => change.operation), ["Add the trip “Lisbon”", "Add the At home item “Pet sitter”", "Mark an At home item done", "Tag a trip “Europe”"]);
+  assert.deepEqual(proposal.preview.map((change) => change.operation), ["Add the trip “Lisbon”", "Add the At home item “Pet sitter”", "Change the At home item “Pet sitter”", "Tag a trip “Europe”"]);
   assert.equal(decide(proposal, true).status, "applied");
   const lisbon = store.aiTrip(tripId);
   assert.deepEqual([lisbon.trip.name, lisbon.trip.startDate, lisbon.trip.tags, lisbon.owner.email], ["Lisbon", "2027-04-01", ["Europe"], OWNER], "a new trip belongs to the designated owner");
-  assert.deepEqual(lisbon.atHome.map((item) => [item.name, item.completed]), [["Pet sitter", true]]);
+  assert.deepEqual(lisbon.atHome.map((item) => [item.name, item.priceCents, item.notes]), [["Pet sitter", 4500, "Twice a day"]]);
 
   const refusals = [
     [[{ type: "trip.save", id: ownerTrip, create: true, name: "Overwrite", dateLabel: "", homeCity: "", travelers: 1, notes: "" }], /^Change 1: This id is already a saved item's/],
@@ -168,6 +168,8 @@ test("a proposal can add items and change them in the same batch, and refuses wh
     [[{ type: "trip.save", name: "No id", dateLabel: "", homeCity: "", travelers: 1, notes: "" }], /^Change 1: Give the id/],
     [[{ type: "stop.add", tripId: ownerTrip, city: "Rome" }, { type: "trip.save", ...newItem(), name: "", dateLabel: "", homeCity: "", travelers: 1, notes: "" }], /^Change 2: Please enter name/],
     [[{ type: "sql.run", sql: "DROP TABLE trips" }], /^Change 1: This action is not supported/],
+    // At home items aren't marked done (TRA-146).
+    [[{ type: "homeItem.complete", id: randomUUID(), tripId: ownerTrip, completed: true }], /^Change 1: This action is not supported/],
     [[], /Propose from 1 to 50 changes/],
     [Array.from({ length: 51 }, () => ({ type: "trip.tag", tripId: ownerTrip, name: "Too many" })), /Propose from 1 to 50 changes/],
   ];

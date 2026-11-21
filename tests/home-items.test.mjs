@@ -10,7 +10,7 @@ import { calculateBudget } from "../src/lib/budget.ts";
 const tripInput = (overrides = {}) => ({ type: "trip.save", name: "Spring trip", dateLabel: "Spring 2027", homeCity: "Boston", travelers: 2, notes: "", ...overrides, ...newItem(overrides) });
 const addDestination = (store, tripId, { city = "Vienna", ...overrides } = {}) => addCity((input) => store.applyMutation(input).id, tripId, city, { stay: "3 nights", notes: "", ...overrides });
 const candidateInput = (destinationId, overrides = {}) => ({ type: "candidate.save", destinationId, category: "hotels", name: "Hotel", price: "200.33", address: "City center", url: "https://example.com", notes: "Research", included: true, ...overrides, ...newItem(overrides) });
-const homeInput = (tripId, overrides = {}) => ({ type: "homeItem.save", tripId, name: "Arrange pet care", price: "", notes: "Leave the spare key", completed: false, ...overrides, ...newItem(overrides) });
+const homeInput = (tripId, overrides = {}) => ({ type: "homeItem.save", tripId, name: "Arrange pet care", price: "", notes: "Leave the spare key", ...overrides, ...newItem(overrides) });
 const webp = new Uint8Array(Buffer.from("UklGRiIAAABXRUJQVlA4IBYAAAAwAQCdASoBAAEADsD+JaQAA3AAAAAA", "base64"));
 const otherWebp = new Uint8Array(webp);
 otherWebp[otherWebp.length - 1] = 1;
@@ -24,7 +24,7 @@ function pricedTrip(store, tripId) {
   return destinationId;
 }
 
-test("home tasks and expenses support creating, editing, completing, reopening, and deleting", (t) => {
+test("home tasks and expenses support creating, editing, and deleting", (t) => {
   const { store, tripId } = setup(t, tripInput());
   assert.deepEqual(store.getSnapshot().homeItems, []);
   const taskId = store.applyMutation(homeInput(tripId, { name: "  Stop the mail  ", notes: "  Submit a hold request  " })).id;
@@ -34,19 +34,12 @@ test("home tasks and expenses support creating, editing, completing, reopening, 
   assert.equal(task.name, "Stop the mail");
   assert.equal(task.notes, "Submit a hold request");
   assert.equal(task.priceCents, null);
-  assert.equal(task.completed, false);
   assert.ok(Number.isFinite(Date.parse(task.createdAt)));
   const expenseId = store.applyMutation(homeInput(tripId, { name: "Pet sitter", price: "125.50" })).id;
   const original = item(store, expenseId);
   assert.equal(original.priceCents, 12550);
-  const beforeCompletion = calculateBudget(store.getSnapshot(), tripId);
-  store.applyMutation({ type: "homeItem.complete", id: expenseId, tripId, completed: true });
-  assert.deepEqual(item(store, expenseId), { ...original, completed: true });
-  assert.deepEqual(calculateBudget(store.getSnapshot(), tripId), beforeCompletion, "completing an expense does not remove its cost");
-  store.applyMutation({ type: "homeItem.complete", id: expenseId, tripId, completed: false });
-  assert.deepEqual(item(store, expenseId), original);
-  store.applyMutation(homeInput(tripId, { id: expenseId, name: "Confirmed pet sitter", price: "140.75", notes: "Paid a deposit", completed: true }));
-  assert.deepEqual(item(store, expenseId), { ...original, name: "Confirmed pet sitter", priceCents: 14075, notes: "Paid a deposit", completed: true });
+  store.applyMutation(homeInput(tripId, { id: expenseId, name: "Confirmed pet sitter", price: "140.75", notes: "Paid a deposit" }));
+  assert.deepEqual(item(store, expenseId), { ...original, name: "Confirmed pet sitter", priceCents: 14075, notes: "Paid a deposit" });
   assert.deepEqual(item(store, taskId), task);
   store.applyMutation({ type: "homeItem.delete", id: expenseId, tripId });
   assert.equal(item(store, expenseId), undefined);
@@ -55,7 +48,7 @@ test("home tasks and expenses support creating, editing, completing, reopening, 
   assert.deepEqual(store.getSnapshot().homeItems, []);
 });
 
-test("home budget totals distinguish optional tasks, known zero, and exact cents without depending on completion", (t) => {
+test("home budget totals distinguish optional tasks, known zero, and exact cents", (t) => {
   const { store, tripId } = setup(t, tripInput());
   pricedTrip(store, tripId);
   const baseline = calculateBudget(store.getSnapshot(), tripId);
@@ -65,17 +58,15 @@ test("home budget totals distinguish optional tasks, known zero, and exact cents
   const taskId = store.applyMutation(homeInput(tripId, { name: "Water plants", price: "  " })).id;
   assert.equal(item(store, taskId).priceCents, null);
   assert.deepEqual(calculateBudget(store.getSnapshot(), tripId), baseline, "a task without an expense does not create a missing estimate");
-  const freeId = store.applyMutation(homeInput(tripId, { name: "Mail hold", price: "0" })).id;
+  store.applyMutation(homeInput(tripId, { name: "Mail hold", price: "0" }));
   const sitterId = store.applyMutation(homeInput(tripId, { name: "Pet care", price: "125.50" })).id;
-  const extraId = store.applyMutation(homeInput(tripId, { name: "Small expense", price: ".10", completed: true })).id;
+  const extraId = store.applyMutation(homeInput(tripId, { name: "Small expense", price: ".10" })).id;
   const expected = { ...baseline, homeCents: 12560, totalsByCurrency: { USD: baseline.totalsByCurrency.USD + 12560 }, knownCount: baseline.knownCount + 3 };
-  assert.deepEqual(calculateBudget(store.getSnapshot(), tripId), expected);
-  for (const id of [taskId, freeId, sitterId]) store.applyMutation({ type: "homeItem.complete", id, tripId, completed: true });
   assert.deepEqual(calculateBudget(store.getSnapshot(), tripId), expected);
   const otherTripId = store.applyMutation(tripInput({ name: "Another trip" })).id;
   store.applyMutation(homeInput(otherTripId, { price: "9999" }));
   assert.deepEqual(calculateBudget(store.getSnapshot(), tripId), expected, "another trip's costs stay separate");
-  store.applyMutation(homeInput(tripId, { id: sitterId, name: "Pet care", price: "", completed: true }));
+  store.applyMutation(homeInput(tripId, { id: sitterId, name: "Pet care", price: "" }));
   assert.deepEqual(calculateBudget(store.getSnapshot(), tripId), { ...baseline, homeCents: 10, totalsByCurrency: { USD: baseline.totalsByCurrency.USD + 10 }, knownCount: baseline.knownCount + 2 });
   store.applyMutation({ type: "homeItem.delete", id: extraId, tripId });
   assert.deepEqual(calculateBudget(store.getSnapshot(), tripId), { ...baseline, knownCount: baseline.knownCount + 1 });
@@ -94,7 +85,7 @@ test("every home-item mutation verifies trip ownership and rejects stale or none
   const { store, tripId } = setup(t, tripInput());
   const otherTripId = store.applyMutation(tripInput({ name: "Other trip" })).id;
   const id = store.applyMutation(homeInput(tripId, { price: "50" })).id;
-  const otherId = store.applyMutation(homeInput(otherTripId, { name: "Arrange garden care", completed: true })).id;
+  const otherId = store.applyMutation(homeInput(otherTripId, { name: "Arrange garden care" })).id;
   const before = store.getSnapshot();
   const missingTripId = randomUUID();
   const missingId = randomUUID();
@@ -102,12 +93,10 @@ test("every home-item mutation verifies trip ownership and rejects stale or none
     homeInput(otherTripId, { id, name: "Moved item" }),
     homeInput(tripId, { id: otherId, name: "Moved other item" }),
     homeInput(missingTripId), homeInput(missingTripId, { id }), homeInput(tripId, { id: missingId }),
-    ...["homeItem.delete", "homeItem.complete"].flatMap((type) => [
-      { type, id, tripId: otherTripId, completed: true },
-      { type, id: otherId, tripId, completed: false },
-      { type, id, tripId: missingTripId, completed: true },
-      { type, id: missingId, tripId, completed: true },
-    ]),
+    { type: "homeItem.delete", id, tripId: otherTripId },
+    { type: "homeItem.delete", id: otherId, tripId },
+    { type: "homeItem.delete", id, tripId: missingTripId },
+    { type: "homeItem.delete", id: missingId, tripId },
   ];
   for (const input of inputs) {
     assert.throws(() => store.applyMutation(input), ValidationError);
@@ -115,7 +104,7 @@ test("every home-item mutation verifies trip ownership and rejects stale or none
   }
   store.applyMutation({ type: "homeItem.delete", id, tripId });
   const afterDelete = store.getSnapshot();
-  for (const input of [homeInput(tripId, { id }), { type: "homeItem.complete", id, tripId, completed: true }, { type: "homeItem.delete", id, tripId }]) {
+  for (const input of [homeInput(tripId, { id }), { type: "homeItem.delete", id, tripId }]) {
     assert.throws(() => store.applyMutation(input), ValidationError);
     assert.deepEqual(store.getSnapshot(), afterDelete, "a stale edit does not recreate a deleted task");
   }
@@ -129,7 +118,7 @@ test("invalid home-item values leave existing tasks, trip details, and budgets u
   const budget = calculateBudget(before, tripId);
   const invalidFields = [
     { name: " " }, { name: null }, { name: "x".repeat(161) }, { notes: 4 }, { notes: "x".repeat(8001) },
-    { price: null }, { price: 5 }, { completed: "true" }, { completed: 1 }, { completed: null },
+    { price: null }, { price: 5 },
     { tripId: "bad-id" }, { id: "bad-id" },
     ...["-1", "NaN", "Infinity", "1.234", "$1", "1,000", "1e2", "100000000.01"].map((price) => ({ price })),
   ];
@@ -141,9 +130,6 @@ test("invalid home-item values leave existing tasks, trip details, and budgets u
     }
   }
   for (const input of [
-    { type: "homeItem.complete", id, tripId, completed: "false" },
-    { type: "homeItem.complete", id, tripId },
-    { type: "homeItem.complete", id: "bad-id", tripId, completed: true },
     { type: "homeItem.delete", id, tripId: "bad-id" },
     { type: "homeItem.delete", id },
   ]) {
@@ -154,30 +140,58 @@ test("invalid home-item values leave existing tasks, trip details, and budgets u
   assert.equal(item(store, boundaryId).priceCents, 10_000_000_000);
 });
 
-test("home items survive database reopening with their exact amounts, notes, and completion state", (t) => {
+test("home items survive database reopening with their exact amounts and notes", (t) => {
   const path = fileDatabase(t);
   let store = createOwnedStore(path);
   try {
     const tripId = store.applyMutation(tripInput()).id;
     const taskId = store.applyMutation(homeInput(tripId)).id;
-    const expenseId = store.applyMutation(homeInput(tripId, { name: "House sitter", price: "305.29", completed: true, notes: "Arrives Friday\nEmergency contact has a key" })).id;
+    const expenseId = store.applyMutation(homeInput(tripId, { name: "House sitter", price: "305.29", notes: "Arrives Friday\nEmergency contact has a key" })).id;
     const before = store.getSnapshot();
     const budget = calculateBudget(before, tripId);
     store.close();
     store = createOwnedStore(path);
     assert.deepEqual(store.getSnapshot(), before);
     assert.deepEqual(calculateBudget(store.getSnapshot(), tripId), budget);
-    assert.equal(item(store, taskId).completed, false);
     assert.equal(item(store, taskId).priceCents, null);
-    assert.equal(item(store, expenseId).completed, true);
     assert.equal(item(store, expenseId).priceCents, 30529);
-    store.applyMutation({ type: "homeItem.complete", id: expenseId, tripId, completed: false });
-    const reopened = store.getSnapshot();
+    assert.equal(item(store, expenseId).notes, "Arrives Friday\nEmergency contact has a key");
+  } finally { store.close(); }
+});
+
+test("items aren't marked done, and whether one was before stays as saved (TRA-146)", (t) => {
+  const path = fileDatabase(t);
+  let store = createOwnedStore(path);
+  const observer = new DatabaseSync(path);
+  const saved = () => observer.prepare("SELECT name, completed FROM home_items ORDER BY name").all().map((row) => [row.name, row.completed]);
+  try {
+    const tripId = store.applyMutation(tripInput()).id;
+    const doneId = store.applyMutation(homeInput(tripId, { name: "House sitting", price: "1000" })).id;
+    const openId = store.applyMutation(homeInput(tripId, { name: "Pause mail" })).id;
+    assert.deepEqual(saved(), [["House sitting", 0], ["Pause mail", 0]], "a new item takes the column's default");
+    // An item someone marked done before TRA-146.
+    observer.prepare("UPDATE home_items SET completed = 1 WHERE id = ?").run(doneId);
+    assert.deepEqual(Object.keys(item(store, doneId)).toSorted(), ["createdAt", "id", "name", "notes", "priceCents", "tripId"], "reads leave out whether it's done");
+    assert.equal(calculateBudget(store.getSnapshot(), tripId).homeCents, 100000, "its price counts as every price does");
+
+    // Saves change everything else and keep it, even one from a page opened before TRA-146, which still sends it.
+    store.applyMutation(homeInput(tripId, { id: doneId, name: "House sitter", price: "1200", notes: "Two visits a day" }));
+    store.applyMutation(homeInput(tripId, { id: openId, name: "Pause mail", completed: true }));
+    const { name, priceCents, notes } = item(store, doneId);
+    assert.deepEqual([name, priceCents, notes], ["House sitter", 120000, "Two visits a day"]);
+    assert.deepEqual(saved(), [["House sitter", 1], ["Pause mail", 0]]);
+
+    // Nothing marks an item done or not done.
+    const before = store.getSnapshot();
+    for (const completed of [true, false]) {
+      assert.throws(() => store.applyMutation({ type: "homeItem.complete", id: doneId, tripId, completed }), (error) => error instanceof ValidationError && /This action is not supported/.test(error.message));
+    }
+    assert.deepEqual(store.getSnapshot(), before);
     store.close();
     store = createOwnedStore(path);
-    assert.deepEqual(store.getSnapshot(), reopened);
-    assert.equal(item(store, expenseId).completed, false);
-  } finally { store.close(); }
+    assert.deepEqual(store.getSnapshot(), before, "reopening changes nothing");
+    assert.deepEqual(saved(), [["House sitter", 1], ["Pause mail", 0]], "and keeps what was saved");
+  } finally { observer.close(); store.close(); }
 });
 
 test("deleting a trip cascades only its home items, while removing a destination preserves them", (t) => {
@@ -188,7 +202,7 @@ test("deleting a trip cascades only its home items, while removing a destination
     const tripId = store.applyMutation(tripInput()).id;
     const otherTripId = store.applyMutation(tripInput({ name: "Another trip" })).id;
     const destinationId = addDestination(store, tripId);
-    const ownedIds = [store.applyMutation(homeInput(tripId)).id, store.applyMutation(homeInput(tripId, { price: "90", completed: true })).id];
+    const ownedIds = [store.applyMutation(homeInput(tripId)).id, store.applyMutation(homeInput(tripId, { price: "90" })).id];
     const otherId = store.applyMutation(homeInput(otherTripId, { price: "27.01" })).id;
     const otherItem = item(store, otherId);
     const otherBudget = calculateBudget(store.getSnapshot(), otherTripId);
@@ -219,9 +233,8 @@ test("storage failures roll back home-item edits, deletions, and trip cascades",
     const budget = calculateBudget(before, tripId);
     observer.exec("CREATE TRIGGER reject_home_update BEFORE UPDATE ON home_items BEGIN SELECT RAISE(ABORT, 'Injected home-item failure'); END; CREATE TRIGGER reject_home_insert BEFORE INSERT ON home_items BEGIN SELECT RAISE(ABORT, 'Injected home-item failure'); END; CREATE TRIGGER reject_home_delete BEFORE DELETE ON home_items BEGIN SELECT RAISE(ABORT, 'Injected home-item failure'); END;");
     const inputs = [
-      homeInput(tripId, { id, name: "Unsaved change", price: "99", completed: true }),
+      homeInput(tripId, { id, name: "Unsaved change", price: "99" }),
       homeInput(tripId, { name: "Unsaved new item" }),
-      { type: "homeItem.complete", id, tripId, completed: true },
       { type: "homeItem.delete", id, tripId },
       { type: "trip.delete", id: tripId },
     ];
@@ -258,7 +271,7 @@ test("schema 6 migration adds home items while preserving trips, research, itine
     assert.deepEqual(photos.map((photo) => store.getCandidatePhoto(candidateId, photo.id)), originalPhotos);
     assert.deepEqual(store.getDestinationImage(destinationId), destinationPhoto);
     store.applyMutation(homeInput(tripId));
-    store.applyMutation(homeInput(tripId, { name: "Confirmed pet care", price: "117.25", completed: true }));
+    store.applyMutation(homeInput(tripId, { name: "Confirmed pet care", price: "117.25" }));
     const upgraded = store.getSnapshot();
     const budget = calculateBudget(upgraded, tripId);
     store.close();

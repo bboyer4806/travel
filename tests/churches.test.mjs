@@ -183,7 +183,7 @@ test("churches never change candidate counts, selections, trip budgets or destin
     foodBudgetMode: "daily", foodDailyAmount: "30", shoppingAmount: "12.34",
     weatherHighF: 70, weatherLowF: 40, weatherRainfall: "Low", weatherPeriod: "May", weatherSource: "Local archive", }));
   for (const category of ["hotels", "activities", "restaurants"]) store.applyMutation({ type: "candidate.save", ...newItem(), destinationId, category, name: category, price: category === "hotels" ? "0" : "", address: "", url: "", notes: "", included: true, gallery: { add: [photo()], remove: [] } });
-  store.applyMutation({ type: "homeItem.save", ...newItem(), tripId, name: "Mail hold", price: "", notes: "", completed: false });
+  store.applyMutation({ type: "homeItem.save", ...newItem(), tripId, name: "Mail hold", price: "", notes: "" });
   store.applyMutation({type:"destination.churchVisibility",id:destinationId,enabled:false});
   const before = store.getSnapshot();
   const visitIn = (snapshot) => ({ ...snapshot.destinations.find((item) => item.id === destinationId), nights: snapshot.stops.find((item) => item.id === destinationId).nights });
@@ -238,7 +238,7 @@ test("schema 13 upgrade initializes Sunday visibility, preserves prior data and 
     const unknownId = addDestination(store, tripId, { city: "Turin" });
     const hotelPhoto = photo();
     const candidateId = store.applyMutation({ type: "candidate.save", ...newItem(), destinationId: id, category: "hotels", name: "Saved hotel", price: "123.45", address: "Main street", url: "", notes: "", included: true, gallery: { add: [hotelPhoto], remove: [] } }).id;
-    store.applyMutation({ type: "homeItem.save", ...newItem(), tripId, name: "House sitting", price: "23.95", notes: "Leave a key", completed: true });
+    store.applyMutation({ type: "homeItem.save", ...newItem(), tripId, name: "House sitting", price: "23.95", notes: "Leave a key" });
     for (const hidden of [weekdayId,partialId,unknownId]) store.applyMutation({type:"destination.churchVisibility",id:hidden,enabled:false});
     const before = store.getSnapshot(), budget = calculateBudget(before, tripId);
     const destinationImage = store.getDestinationImage(id), candidateImage = store.getCandidatePhoto(candidateId, hotelPhoto.id);

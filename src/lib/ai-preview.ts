@@ -69,7 +69,8 @@ export const PREVIEW_COLUMNS: Record<DataTable, Record<string, [string, Format] 
     transferMinutes: ["Terminal transfer (minutes)", "number"], boardingMinutes: ["Boarding (minutes)", "number"], returnMinutes: ["Travel back to the airport (minutes)", "number"],
     activitiesJson: ["Activities", "json"],
   },
-  home_items: { id: null, tripId: null, name: ["Name", "text"], notes: ["Notes", "text"], priceCents: ["Price", "money"], completed: ["Done", "flag"], createdAt: null },
+  // Whether an item is done is kept as saved, but no longer shown or changed (TRA-146).
+  home_items: { id: null, tripId: null, name: ["Name", "text"], notes: ["Notes", "text"], priceCents: ["Price", "money"], completed: null, createdAt: null },
   destinations: {
     id: null, ownerId: ["Owner", "account"], city: ["City", "text"], cityKey: null, cityFromSuggestion: ["City chosen from a suggestion", "flag"], tagline: ["Tagline", "text"], notes: ["Notes", "text"],
     miscDailyMinor: ["Daily miscellaneous", "money"], miscCurrency: null, hotelNightlyMinor: ["Nightly hotel estimate", "money"], hotelCurrency: null,
@@ -243,7 +244,6 @@ export function operationTitle(change: Mutation): string {
     case "trip.order": return "Put trips in order";
     case "homeItem.save": return `${change.create ? "Add" : "Change"} the At home item “${change.name}”`;
     case "homeItem.delete": return "Delete an At home item";
-    case "homeItem.complete": return change.completed ? "Mark an At home item done" : "Mark an At home item not done";
     case "destination.save": return change.stopId === undefined ? "Change a destination" : "Change a destination and a trip's stay there";
     case "destination.create": return `Add the destination “${change.city}”`;
     case "destination.delete": return "Delete a destination";

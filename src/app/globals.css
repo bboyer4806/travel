@@ -717,6 +717,14 @@ button svg,a svg {
 }
 
 }
+/* TRA-155: on phones, a trip's destination photos reach the top of their cards, so with a mouse each + takes a row as
+   tall as itself, clear of the photo below. Touchscreens' rows, next, already hold theirs. */
+@media(max-width:540px) {
+  .stop-insertion {
+  height:32px
+}
+
+}
 @media(pointer:coarse) {
   .stop-insertion {
   height:44px

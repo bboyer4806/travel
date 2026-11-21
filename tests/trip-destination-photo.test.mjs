@@ -107,18 +107,26 @@ test("a trip's destination cards start with the main photo, in the trip's list o
   assert.deepEqual(mainPhoto(card), lisbonPhoto);
 });
 
-/** Whether an at-rule holds on a screen `width` pixels wide. These rules depend only on the screen's width. */
-function holds(atRule, width) {
+/** A mouse or trackpad, and a touchscreen, as media queries describe them. */
+const MOUSE = { pointer: "fine", hover: "hover" };
+const TOUCH = { pointer: "coarse", hover: "none" };
+/** Whether an at-rule holds on a screen `width` pixels wide used with `input`. These rules depend only on those. */
+function holds(atRule, width, input) {
   if (atRule === null) return true;
-  const [, bound, pixels] = atRule.match(/^@media\((max|min)-width:(\d+)px\)$/) ?? assert.fail("Unexpected at-rule " + atRule);
-  return bound === "max" ? width <= Number(pixels) : width >= Number(pixels);
+  const [, feature, value] = atRule.match(/^@media\(([a-z-]+):([a-z0-9]+)\)$/) ?? assert.fail("Unexpected at-rule " + atRule);
+  if (feature === "max-width" || feature === "min-width") {
+    const pixels = Number(value.match(/^(\d+)px$/)?.[1] ?? assert.fail("Unexpected width " + value));
+    return feature === "max-width" ? width <= pixels : width >= pixels;
+  }
+  assert.ok(feature in input, "Unexpected media feature " + feature);
+  return input[feature] === value;
 }
 /**
  * The declarations a CSS file, by its path from tests, gives an element matched by any of `selectors` on a screen
- * `width` pixels wide, each rule over the ones before it, as these rules' specificities agree.
+ * `width` pixels wide used with `input`, each rule over the ones before it, as these rules' specificities agree.
  */
-function styles(file, selectors, width) {
-  return Object.assign({}, ...cssRules(file).filter(([selector, , atRule]) => selector.split(",").some((part) => selectors.includes(part.trim())) && holds(atRule, width))
+function styles(file, selectors, width, input = MOUSE) {
+  return Object.assign({}, ...cssRules(file).filter(([selector, , atRule]) => selector.split(",").some((part) => selectors.includes(part.trim())) && holds(atRule, width, input))
     .map(([, declarations]) => declarations));
 }
 const GALLERY = "../src/components/destination-gallery.module.css";
@@ -154,5 +162,20 @@ test("tablets, desktops and destination pages keep the main photo inside the car
   for (const width of [...PHONES, ...WIDER]) {
     assert.deepEqual(styles(GALLERY, PAGE_PHOTO, width), framed, `a destination's page at ${width}px`);
     assert.equal(styles(GALLERY, [".cropFrame"], width)["aspect-ratio"], "16 / 7", `the crop editor at ${width}px`);
+  }
+});
+
+test("each + between a trip's destination cards stays clear of their photos and details, with a mouse or a finger, at every width (TRA-155)", () => {
+  for (const width of [...PHONES, ...WIDER]) for (const input of [MOUSE, TOUCH]) {
+    const screen = `${width}px with ${input === MOUSE ? "a mouse" : "a touchscreen"}`;
+    // TRA-153's + is centered in its row, between two cards, and reaches past the row into each by this much.
+    const row = parseInt(styles(GLOBALS, [".stop-insertion"], width, input).height);
+    const reach = Math.max(0, (parseInt(styles(GLOBALS, [".stop-insertion .button"], width, input).height) - row) / 2);
+    const card = styles(GLOBALS, [".destination-card"], width, input);
+    const edge = Number(card.border.match(/^(\d+)px solid /)[1]) + parseInt(card.padding);
+    // The card below's photo starts inside its border and padding, less what the photo takes back on phones.
+    const photo = edge + parseInt(styles(GALLERY, TRIP_PHOTO, width, input).margin ?? "0");
+    assert.ok(reach <= photo, `${screen}: the + reaches ${reach}px into the card below, whose photo starts ${photo}px in`);
+    assert.ok(reach <= edge, `${screen}: the + reaches ${reach}px into the card above, whose details end ${edge}px from its bottom`);
   }
 });

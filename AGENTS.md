@@ -172,8 +172,8 @@ Repeat passing checks when subsequent changes affect their coverage or required 
   tools use them, and messages state them from there.
 - Each photo is saved with its thumbnail (TRA-89): `prepareImage` returns both as a `PreparedImage`, and
   every save of a photo, an AI proposal's included, carries both. A trip's headline image keeps only the photo, since it
-  shows only cropped in its card and banner. Gallery thumbnails and editor previews
-  load each photo's `/thumbnail` route; the main photo and the crop editor load the photo. A photo saved
+  shows only cropped in its card and banner. Gallery thumbnails, editor previews, and the maps' previews and popups
+  (TRA-143, TRA-152) load each photo's `/thumbnail` route; the main photo and the crop editor load the photo. A photo saved
   before schema 32 has a NULL thumbnail, so `storedThumbnailResponse` makes one with `makeThumbnail` for
   each request and saves nothing: image routes never write.
 - A trip's optional headline image (TRA-133) is its one row of `trip_images`, deleted with the trip, with its own

@@ -20,8 +20,11 @@ const subjectLabels: Record<ImageSubject, string> = { hotel: "Hotel", activity: 
 export function photoUrl(candidateId: string, image: { id: string; version?: string }, imageKind: ImageKind) {
   return `/api/${imageKind}-images/${candidateId}/${image.id}?v=${image.version}`;
 }
-/** A photo's thumbnail (TRA-89), which a gallery's thumbnails and its editor's previews show in place of the photo. */
-function thumbnailUrl(candidateId: string, image: { id: string; version?: string }, imageKind: ImageKind) {
+/**
+ * A photo's thumbnail (TRA-89), which a gallery's thumbnails, its editor's previews and a destination map's popups
+ * (TRA-152) show in place of the photo.
+ */
+export function thumbnailUrl(candidateId: string, image: { id: string; version?: string }, imageKind: ImageKind) {
   return `/api/${imageKind}-images/${candidateId}/${image.id}/thumbnail?v=${image.version}`;
 }
 

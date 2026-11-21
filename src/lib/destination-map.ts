@@ -1,6 +1,6 @@
 import type { Coordinates, SavedCoordinates } from "./coordinates";
 import type { PlaceAnswer } from "./place-search";
-import type { Snapshot } from "./types";
+import type { CandidateImage, Snapshot } from "./types";
 
 /** The places a destination's map shows (TRA-130), in the order its checkboxes and Not on the map name them. */
 export const MAP_CATEGORIES = ["hotels", "activities", "restaurants", "churches"] as const;
@@ -10,10 +10,15 @@ export const MAP_CATEGORY_LABELS: Record<MapCategory, string> = { hotels: "Hotel
 export const MAP_PLACE_LABELS: Record<MapCategory, string> = { hotels: "Hotel", activities: "Activity", restaurants: "Restaurant", churches: "Church" };
 
 /**
- * A hotel, activity, restaurant or church saved for a destination, by its saved ID, with the text it is looked up by and
- * any coordinates saved for it (TRA-150).
+ * A hotel, activity, restaurant or church saved for a destination, by its saved ID, with the text it is looked up by, any
+ * coordinates saved for it (TRA-150), and its primary photo, which its marker's popup shows, or null without photos (TRA-152).
  */
-export interface SavedPlace { id: string; category: MapCategory; name: string; address: string; coordinates: SavedCoordinates | null }
+export interface SavedPlace { id: string; category: MapCategory; name: string; address: string; coordinates: SavedCoordinates | null; photo: CandidateImage | null }
+
+/** A saved idea's or church's primary photo (TRA-152): the one its photos mark as main, or null when it has no photos. */
+function primaryPhoto(images: readonly CandidateImage[], mainImageId: string | null): CandidateImage | null {
+  return images.find((image) => image.id === mainImageId) ?? null;
+}
 
 /**
  * Every hotel, activity, restaurant and church saved for a destination, selected for the budget or not, each once: its
@@ -22,8 +27,8 @@ export interface SavedPlace { id: string; category: MapCategory; name: string; a
 export function destinationPlaces(snapshot: Pick<Snapshot, "candidates" | "churches">, destinationId: string): SavedPlace[] {
   const ideas = MAP_CATEGORIES.flatMap((category) => snapshot.candidates.filter((item) => item.destinationId === destinationId && item.category === category).sort((a, b) => a.position - b.position));
   return [
-    ...ideas.map(({ id, category, name, address, coordinates }) => ({ id, category, name, address, coordinates })),
-    ...snapshot.churches.filter((item) => item.destinationId === destinationId).map(({ id, name, address, coordinates }) => ({ id, category: "churches" as const, name, address, coordinates })),
+    ...ideas.map(({ id, category, name, address, coordinates, images, mainImageId }) => ({ id, category, name, address, coordinates, photo: primaryPhoto(images, mainImageId) })),
+    ...snapshot.churches.filter((item) => item.destinationId === destinationId).map(({ id, name, address, coordinates, images, mainImageId }) => ({ id, category: "churches" as const, name, address, coordinates, photo: primaryPhoto(images, mainImageId) })),
   ];
 }
 

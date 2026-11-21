@@ -1,0 +1,9 @@
+/* TRA-147: a flight's airline and flight number on its card in Between the places, each label before its value, as the
+   itinerary's times are. They wrap onto their own lines when the card is narrow. */
+.details { display: flex; flex-wrap: wrap; gap: 3px 16px; margin: 5px 0 0; font-size: 11px; }
+.details > div { display: flex; gap: 6px; min-width: 0; }
+.details dt { flex-shrink: 0; color: var(--muted); }
+.details dd { min-width: 0; margin: 0; overflow-wrap: anywhere; }
+@media (max-width: 540px) {
+  .details { font-size: 10px; }
+}

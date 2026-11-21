@@ -52,9 +52,10 @@ export interface ItineraryStop { id: string; kind: "layover" | "stop"; place: st
 /**
  * A travel connection. `miscCents` is the whole party's miscellaneous spending on the way, such as airport meals and
  * layover purchases, apart from its price, or null when not estimated (TRA-26). `layoverPlans` are the plans of layovers
- * in its itinerary, each naming its layover (TRA-45).
+ * in its itinerary, each naming its layover (TRA-45). `airline` and `flightNumber` are saved as typed, or empty, and show
+ * only while its transportation names an airplane, though they stay saved when it doesn't (TRA-147).
  */
-export interface TravelLeg { id: string; tripId: string; fromId: string | null; toId: string | null; method: string; priceCents: number | null; miscCents: number | null; departure: string; arrival: string; url: string; notes: string; itinerary: ItineraryStop[]; links: ResearchLink[]; layoverPlans: SavedLayoverPlan[]; }
+export interface TravelLeg { id: string; tripId: string; fromId: string | null; toId: string | null; method: string; airline: string; flightNumber: string; priceCents: number | null; miscCents: number | null; departure: string; arrival: string; url: string; notes: string; itinerary: ItineraryStop[]; links: ResearchLink[]; layoverPlans: SavedLayoverPlan[]; }
 /**
  * A saved photo: its ID and version, which its address names, and the widths of it and its large version, or null for a
  * photo without one, as a photo saved before TRA-154 or no larger than 1600 × 1200 is.
@@ -159,7 +160,8 @@ export type Mutation =
  // Removes a destination from one trip. The destination and everything saved with it stay.
  | { type: "stop.remove"; id: string }
  // `miscAmount` is the connection's miscellaneous spending on the way (TRA-26). Left out, like `itinerary` and `links`, it keeps the saved one.
- | { type: "leg.save"; id: string; method: string; price: string; miscAmount?: string; departure: string; arrival: string; url: string; notes: string; itinerary?: ItineraryStop[]; links?: ResearchLink[] }
+ // `airline` and `flightNumber` are a flight's (TRA-147). Left out, as a page opened before them does, each keeps the saved one.
+ | { type: "leg.save"; id: string; method: string; airline?: string; flightNumber?: string; price: string; miscAmount?: string; departure: string; arrival: string; url: string; notes: string; itinerary?: ItineraryStop[]; links?: ResearchLink[] }
  | { type: "leg.clear"; id: string }
  // Saves the plan of one layover in a connection's itinerary, replacing any saved one, or removes it with null (TRA-45).
  // The layover and everything else about the connection stay.

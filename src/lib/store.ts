@@ -539,7 +539,7 @@ function validate(input: unknown): Mutation {
       if (value.direction !== "up" && value.direction !== "down") throw new ValidationError("Choose a valid direction for this destination.");
       return { type: value.type, id: idField(value), direction: value.direction };
     case "leg.save":
-      return { type: value.type, id: idField(value), method: textField(value, "method", 120), price: priceField(value), miscAmount: miscAmountField(value), departure: textField(value, "departure", 120), arrival: textField(value, "arrival", 120), url: urlField(value), notes: textField(value, "notes", 8000), itinerary: itineraryField(value), links: linksField(value) };
+      return { type: value.type, id: idField(value), method: textField(value, "method", 120), airline: value.airline === undefined ? undefined : textField(value, "airline", 120), flightNumber: value.flightNumber === undefined ? undefined : textField(value, "flightNumber", 120), price: priceField(value), miscAmount: miscAmountField(value), departure: textField(value, "departure", 120), arrival: textField(value, "arrival", 120), url: urlField(value), notes: textField(value, "notes", 8000), itinerary: itineraryField(value), links: linksField(value) };
     case "leg.layoverPlan": {
       let plan: LayoverPlan | null;
       try { plan = normalizeLayoverPlan(value.plan); }
@@ -689,7 +689,7 @@ const LIVE: Make = { id: () => randomUUID(), now: () => new Date().toISOString()
  * The schema this build upgrades every database to, as SQLite's user_version. A schema change adds the next
  * upgrade in createStore and raises this to match; earlier upgrades keep their own numbers.
  */
-export const SCHEMA_VERSION = 40;
+export const SCHEMA_VERSION = 41;
 
 /** A destination as schema 20 saved it, inside one trip, with that trip's owner and name. */
 type TripDestinationRow = Omit<StoredDestination, "cityKey"> & Omit<TripStop, "destinationId"> & { tripName: string };
@@ -1400,6 +1400,13 @@ export function createStore(databasePath: string, ownerEmail: string) {
       }
       db.exec("PRAGMA user_version = 40;");
     }
+    if (version < 41) {
+      // Each connection's airline and flight number (TRA-147), saved as typed and shown while its transportation names an
+      // airplane. Every saved connection starts without them, so no trip looks different. A replay keeps saved ones.
+      if (!hasColumn("legs", "airline")) db.exec("ALTER TABLE legs ADD COLUMN airline TEXT NOT NULL DEFAULT '';");
+      if (!hasColumn("legs", "flightNumber")) db.exec("ALTER TABLE legs ADD COLUMN flightNumber TEXT NOT NULL DEFAULT '';");
+      db.exec("PRAGMA user_version = 41;");
+    }
     if (version < SCHEMA_VERSION && db.prepare("PRAGMA foreign_key_check").get()) {
       throw new Error("This upgrade would leave saved items without the trip or destination they belong to. Nothing was changed; review the database against a backup before upgrading.");
     }
@@ -1936,7 +1943,7 @@ export function createStore(databasePath: string, ownerEmail: string) {
     }
   }
   function clearLeg(id: string) {
-    db.prepare("UPDATE legs SET method = '', priceCents = NULL, miscCents = NULL, departure = '', arrival = '', url = '', notes = '', itineraryJson = '[]', linksJson = '[]' WHERE id = ?").run(id);
+    db.prepare("UPDATE legs SET method = '', airline = '', flightNumber = '', priceCents = NULL, miscCents = NULL, departure = '', arrival = '', url = '', notes = '', itineraryJson = '[]', linksJson = '[]' WHERE id = ?").run(id);
     // Its layovers go with its itinerary, and so do their plans (TRA-45).
     db.prepare("DELETE FROM layover_plans WHERE legId = ?").run(id);
   }
@@ -2232,7 +2239,7 @@ export function createStore(databasePath: string, ownerEmail: string) {
         const itineraryJson = input.itinerary === undefined ? before.itineraryJson : JSON.stringify(input.itinerary);
         const links = savedLinks(input, before, make.id);
         const misc = input.miscAmount === undefined ? before.miscCents : miscCents(input.miscAmount);
-        db.prepare("UPDATE legs SET method = ?, priceCents = ?, miscCents = ?, departure = ?, arrival = ?, url = ?, notes = ?, itineraryJson = ?, linksJson = ? WHERE id = ?").run(input.method, priceCents(input.price), misc, input.departure, input.arrival, links[0]?.url ?? "", input.notes, itineraryJson, JSON.stringify(links), input.id);
+        db.prepare("UPDATE legs SET method = ?, airline = ?, flightNumber = ?, priceCents = ?, miscCents = ?, departure = ?, arrival = ?, url = ?, notes = ?, itineraryJson = ?, linksJson = ? WHERE id = ?").run(input.method, input.airline ?? before.airline, input.flightNumber ?? before.flightNumber, priceCents(input.price), misc, input.departure, input.arrival, links[0]?.url ?? "", input.notes, itineraryJson, JSON.stringify(links), input.id);
         // A layover the new itinerary removes, or makes another kind of stop, takes its plan with it (TRA-45).
         if (input.itinerary !== undefined) {
           const layovers = input.itinerary.filter((stop) => stop.kind === "layover").map((stop) => stop.id);

@@ -94,7 +94,7 @@ const HELP: { [Route in SignedInRoute]: Route extends `${string}/[category]` ? R
       "Edit trip changes its name, tagline, dates, travelers, departing and return cities, and headline image. Tags under its details group it in All trips.",
       "Add destination adds a city last, a + between cards there, one In your library with its research. Card arrows move it, the pencil edits, the trash removes it.",
       "Each stay's nights set its dates, and Typical weather's chart opens on the month it begins. A destination's ideas, research and budget are shared by its trips.",
-      "Between the places has the travel between stops: Edit adds transportation, price and layovers. Plan layover times what you'll do during a layover.",
+      "Between the places: Edit adds transportation, a flight's airline and flight number, price and layovers. Plan layover times what you'll do during a layover.",
       "At home keeps arrangements such as pet care. The trip estimate adds up every cost in USD for the whole party. Only the owner can share or delete the trip.",
     ],
   },

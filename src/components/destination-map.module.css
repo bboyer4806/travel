@@ -49,7 +49,7 @@
 
 .unmapped { margin-top: 18px; padding-top: 16px; border-top: 1px solid var(--line); }
 .unmapped h5 { margin: 0; font-size: 15px; }
-.unmapped > p { margin: 6px 0 4px; max-width: 640px; color: var(--muted); font-size: 12px; }
+.unmapped > p { margin: 6px 0 4px; max-width: 640px; color: var(--muted); font-size: 12px; overflow-wrap: anywhere; }
 .unmapped h6 { margin: 14px 0 6px; color: var(--muted); font-size: 11px; font-weight: 600; letter-spacing: .04em; text-transform: uppercase; }
 .unmapped ul { display: grid; gap: 4px; margin: 0 0 6px; padding: 0; list-style: none; }
 .unmapped li { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 0 16px; font-size: 12px; }
@@ -57,7 +57,7 @@
 .place { display: grid; gap: 1px; min-width: 0; overflow-wrap: anywhere; }
 .place strong { font-weight: 600; }
 .reason { color: var(--orange); font-size: 11px; }
-.credit { margin-top: 12px; color: var(--muted); font-size: 10px; }
+.credit { margin-top: 12px; color: var(--muted); font-size: 10px; overflow-wrap: anywhere; }
 .credit a { text-decoration: underline; }
 
 @media (max-width: 540px) {

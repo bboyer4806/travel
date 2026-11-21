@@ -421,7 +421,8 @@ button svg,a svg {
   gap:14px 22px;
   flex-wrap:wrap;
   color:var(--muted);
-  font-size:12px
+  font-size:12px;
+  overflow-wrap:anywhere
 }
 .trip-meta>span {
   display:flex;
@@ -654,6 +655,11 @@ button svg,a svg {
   border-bottom:1px solid var(--line);
   margin-bottom:39px
 }
+/* TRA-157: a trip's or destination's name and details narrow with a phone's screen, wrapping what they hold, so they
+   never widen the page. */
+.trip-heading>div:first-child {
+  min-width:0
+}
 .trip-heading h1,.ideas-heading h1 {
   font-size:clamp(38px,4.3vw,59px);
   letter-spacing:-1.7px;
@@ -670,11 +676,15 @@ button svg,a svg {
   font-size:13px;
   overflow-wrap:anywhere
 }
+/* TRA-157: where a screen is too narrow for its buttons side by side, as a phone for a food budget's two, they wrap
+   within its width. */
 .heading-actions {
   display:flex;
+  flex-wrap:wrap;
   align-items:center;
   gap:10px;
   flex-shrink:0;
+  max-width:100%;
   margin-top:36px
 }
 .trip-layout {
@@ -773,7 +783,8 @@ button svg,a svg {
   font-size:14px;
   line-height:1.5;
   color:var(--ink);
-  margin-top:6px
+  margin-top:6px;
+  overflow-wrap:anywhere
 }
 .destination-name p.unknown {
   color:var(--muted)
@@ -830,7 +841,8 @@ button svg,a svg {
   font-size:10px;
   color:var(--muted);
   line-height:1.7;
-  margin-top:13px
+  margin-top:13px;
+  overflow-wrap:anywhere
 }
 .travel-section {
   margin-top:43px
@@ -1016,7 +1028,8 @@ button svg,a svg {
   gap:18px;
   margin:24px 0;
   font-size:11px;
-  color:var(--muted)
+  color:var(--muted);
+  overflow-wrap:anywhere
 }
 .list-intro>span {
   flex-shrink:0
@@ -1367,7 +1380,8 @@ button svg,a svg {
   padding:10px 13px;
   border-radius:5px;
   margin-top:17px;
-  font-size:12px
+  font-size:12px;
+  overflow-wrap:anywhere
 }
 
 @media(min-width:1450px) {
@@ -1409,6 +1423,8 @@ button svg,a svg {
 .budget-panel {
   padding:20px
 }
+/* An idea's price and its button share a line while both fit, and on phones too, so a long price never widens the
+   page (TRA-157). */
 .idea-bottom {
   flex-wrap:wrap;
   gap:16px
@@ -1484,7 +1500,7 @@ button svg,a svg {
   display:none
 }
 .trip-layout {
-  grid-template-columns:1fr
+  grid-template-columns:minmax(0,1fr)
 }
 .budget-panel {
   position:static;
@@ -1762,13 +1778,10 @@ button svg,a svg {
   padding:0 5px
 }
 .ideas-grid {
-  grid-template-columns:1fr
+  grid-template-columns:minmax(0,1fr)
 }
 .idea-card {
   padding:21px
-}
-.idea-bottom {
-  flex-wrap:nowrap
 }
 .idea-bottom .button {
   font-size:10px;
@@ -2121,7 +2134,7 @@ button svg,a svg {
 .misc-breakdown dd { margin: 0; text-align: right; }
 .destination-budget-total { display: flex; justify-content: space-between; gap: 16px; border-top: 1px solid var(--line); padding-top: 12px; font-size: 13px; }
 .destination-budget-total strong { text-align: right; }
-.destination-budget-total small, .budget-breakdown dt small, .budget-category dt small { display: block; color: var(--muted); font-size: 10px; line-height: 1.5; margin-top: 4px; }
+.destination-budget-total small, .budget-breakdown dt small, .budget-category dt small { display: block; color: var(--muted); font-size: 10px; line-height: 1.5; margin-top: 4px; overflow-wrap: anywhere; }
 /* TRA-109: each category's amount and page or editor stay in view; the Budget heading shows or hides the breakdowns. */
 .budget-toggle { display: inline-flex; align-items: center; gap: 8px; padding: 0; border: 0; background: none; color: inherit; }
 .budget-toggle:hover { color: var(--orange); }

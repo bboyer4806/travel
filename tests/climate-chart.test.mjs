@@ -81,6 +81,8 @@ function chart(props) {
     shownPoints: () => find((node) => has(node, "shownPoint")).map((node) => node.props.style.left),
     source: () => find((node) => has(node, "source"))[0],
     rows: () => copy(find((node) => node.type === "tr").map((row) => row.props.children.flat(Infinity).filter(Boolean).map(text))),
+    /** The table's details: its summary, and the box the table scrolls sideways in. */
+    table: () => find((node) => has(node, "table"))[0],
     /** A choice from the keyboard, a tap or a click: the month's radio button changes. */
     choose(index) { this.radios()[index].props.onChange(); show(); },
     /** A pointer moving over the plot, `month` columns across from its left edge, for a plot 240 pixels wide. */
@@ -260,4 +262,12 @@ test("narrow charts show each month's initial, every month fills an equal full-h
   assert.match(narrow, /\.abbreviation \{ display: none; \}/);
   assert.match(narrow, /\.initial \{ display: inline; \}/);
   assert.match(rule(".initial"), /display: none/);
+});
+
+test("a table too wide for a phone scrolls sideways within its own box, below its summary, never past its panel (TRA-157)", () => {
+  const details = chart({ climate: climate(), startMonth: null }).table();
+  assert.deepEqual([details.props.children].flat().map((child) => child.type === "div" ? child.props.className : child.type), ["summary", "tableScroll"]);
+  assert.equal(nodes(details).filter((node) => has(node, "tableScroll"))[0].props.children.type, "table");
+  const css = readFileSync(new URL("../src/components/climate-chart.module.css", import.meta.url), "utf8");
+  assert.match(css, /^\.tableScroll \{ overflow-x: auto; \}$/m);
 });

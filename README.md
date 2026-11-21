@@ -173,6 +173,8 @@ Every amount follows the same rules, from destination budgets and connections' m
 
 A destination's amounts, rates and methods are shared by every trip that visits it, and each trip's estimate uses its own nights. The estimate sums every travel leg and its miscellaneous spending in transit, one selected hotel or the general nightly estimate per destination, the selected activities and food methods, miscellaneous spending at destinations, shopping, and entered at-home expenses. Alternatives stay saved without contributing. Missing required amounts remain visibly unknown; zero is known. At-home, shopping and transit miscellaneous amounts are optional: blank adds no cost and does not make a complete estimate partial. The departing city is optional and is not an amount, so leaving it blank never makes an estimate partial; the travel from and to it is priced and counted like every other connection (TRA-85).
 
+On a trip's page, **The trip estimate** shows the total and who it is for, each category's amount, and whether every required estimate is added, below its heading. The ROOM IN THE BUDGET label that was above the heading is removed, with its space, on desktop, tablets and phones (TRA-149). It had no amount of its own, so no amount or calculation changes.
+
 Changing a destination, departing city, or effective return city clears only affected travel plans, including miscellaneous spending, links and itinerary; renaming a destination clears them in every trip that visits it. Reordering destinations keeps unchanged connections.
 
 ## Daily miscellaneous spending

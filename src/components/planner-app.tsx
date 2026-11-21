@@ -26,6 +26,8 @@ import { PlaceLocationFields } from "@/components/place-location";
 import { coordinatesFromForm } from "@/lib/coordinates";
 import TripRouteFields from "@/components/trip-route-fields";
 import { ConnectionItinerary, ConnectionItineraryEditor } from "@/components/connection-itinerary";
+import { LayoverPlanEditor } from "@/components/layover-plan";
+import { layoverPlanDraft, layoverPlanFromDraft, type LayoverPlanDraft } from "@/lib/layover-plan";
 import { ResearchLinks, ResearchLinksEditor } from "@/components/research-links";
 import { unstable_isUnrecognizedActionError, useRouter } from "next/navigation";
 import { useEffect, useId, useRef, useState, useTransition, type FormEvent, type ReactNode } from "react";
@@ -73,6 +75,8 @@ type Editor =
   | { kind: "activitiesBudget"; item: Destination }
   | { kind: "foodBudget"; item: Destination; nights: number | null }
   | { kind: "leg"; item: TravelLeg }
+  // One layover's plan (TRA-45), saved apart from its connection.
+  | { kind: "layover"; leg: TravelLeg; layover: ItineraryStop }
   // An idea's editor, which adds one to the destination without `item`. Opened from its details, Cancel and saving return there.
   // `deleting` shows a saved idea's Delete confirmation above it, which leaves the editor and its draft as they are (TRA-128).
   | { kind: "candidate"; destinationId: string; category: Category; item?: Candidate; details?: true; deleting?: boolean }
@@ -163,6 +167,8 @@ export default function PlannerApp({ initialData, initialBudgets, access = {}, d
   const [refreshing, startRefresh] = useTransition();
   const focusAfterSave = useFocusAfter(!busy && !refreshing);
   const [itinerary, setItinerary] = useState<ItineraryStop[]>([]);
+  // The layover plan editor's draft (TRA-45): the saved plan, or a new one with every estimate at 0.
+  const [layoverDraft, setLayoverDraft] = useState<LayoverPlanDraft>(() => layoverPlanDraft(undefined));
   const [massTimes, setMassTimes] = useState<MassTime[]>([]);
   const [researchLinks, setResearchLinks] = useState<ResearchLink[]>([]);
   const [emergencyContacts, setEmergencyContacts] = useState<EmergencyContact[]>([]);
@@ -217,6 +223,7 @@ export default function PlannerApp({ initialData, initialBudgets, access = {}, d
   const open = (value: Editor) => {
     if (busy) return;
     if (value.kind === "leg") setItinerary(value.item.itinerary ?? []);
+    if (value.kind === "layover") setLayoverDraft(layoverPlanDraft(value.leg.layoverPlans.find((plan) => plan.layoverId === value.layover.id)));
     if (value.kind === "leg" || value.kind === "candidate") setResearchLinks(value.item?.links ?? []);
     if (value.kind === "entryRequirements") setResearchLinks(value.item.entryRequirements?.sources ?? []);
     if (value.kind === "healthSafety") { setResearchLinks(value.item.healthSafety?.sources ?? []); setEmergencyContacts(value.item.healthSafety?.emergencyContacts ?? []); }
@@ -394,6 +401,7 @@ export default function PlannerApp({ initialData, initialBudgets, access = {}, d
         break;
       }
       case "leg": void perform({ type: "leg.save", id: editor.item.id, method: text("method"), price: text("price"), miscAmount: text("miscAmount"), departure: text("departure"), arrival: text("arrival"), url: researchLinks[0]?.url ?? "", links: researchLinks, notes: text("notes"), itinerary }); break;
+      case "layover": void perform({ type: "leg.layoverPlan", id: editor.leg.id, layoverId: editor.layover.id, plan: layoverPlanFromDraft(layoverDraft) }, "Layover plan saved."); break;
       case "church": {
         void perform({ type: "church.save", ...itemToSave(editor.item), destinationId: editor.destinationId, name: text("name"), address: text("address"), denomination: text("denomination"), url: text("url"), massTimes, coordinates: coordinatesFromForm(fields, editor.item?.coordinates ?? null) }, "Church saved.", undefined, galleryForm(candidateGallery, editor.item));
         break;
@@ -424,6 +432,7 @@ export default function PlannerApp({ initialData, initialBudgets, access = {}, d
     : editor?.kind === "foodBudget" ? "Edit food budget"
     : editor?.kind === "activitiesBudget" ? "Edit activities budget"
     : editor?.kind === "leg" ? "Plan this connection"
+    : editor?.kind === "layover" ? "Layover in " + editor.layover.place
     : editor?.kind === "homeItem" ? (editor.item ? "Edit home item" : "Add an item at home")
     : editor?.kind === "share" ? "Share this trip"
     : editor?.kind === "candidate" ? (editor.item ? "Edit " : editor.category === "activities" ? "Add " : "Add a ") + singular[editor.category]
@@ -602,7 +611,7 @@ export default function PlannerApp({ initialData, initialBudgets, access = {}, d
             {visits.length > 0 && <p className="helper">A destination’s ideas, research, photos, selections, and budget amounts are shared with every trip that visits it, and with Destinations. Each trip keeps its own nights, dates, stay notes, and travel connections.</p>}
           </section>
           <section className="travel-section"><div className="section-heading"><div><p className="eyebrow">GETTING THERE & BACK</p><h2>Between the places</h2></div><Plane size={25} strokeWidth={1.3} /></div>
-            {visits.length === 0 ? <p className="section-description">Your travel connections will appear once you add a destination.</p> : <div className="travel-list">{tripLegs.map((leg) => <article className="travel-card" key={leg.id} id={connectionTarget(leg.id)} tabIndex={-1}><TransportationIcons method={leg.method} /><div className="travel-content"><h3>{legName(leg.fromId, "from")} <ArrowRight size={15} aria-hidden="true" /><span className="sr-only">to</span> {legName(leg.toId, "to")}</h3><p>{leg.method || "Travel details to be decided"}{leg.departure && " · " + leg.departure}{leg.arrival && " → " + leg.arrival}</p>{leg.notes && <p className="preserve-lines">{leg.notes}</p>}<ResearchLinks links={leg.links ?? []} /><ConnectionItinerary legId={leg.id} stops={leg.itinerary ?? []} /><span className={leg.priceCents === null ? "price unknown" : "price"}>{displayPrice(leg.priceCents)}{leg.priceCents === null && " · Needs estimate"}</span>{leg.miscCents !== null && <span className="price">Miscellaneous spending: {formatCurrency(leg.miscCents, "USD")}</span>}</div><div className="travel-tools"><button className="text-button" aria-label={"Edit travel from " + legName(leg.fromId, "from") + " to " + legName(leg.toId, "to")} onClick={() => open({ kind: "leg", item: leg })}><Pencil size={14} />Edit</button>{(leg.method || leg.priceCents !== null || leg.miscCents !== null || leg.notes || leg.url || leg.departure || leg.arrival || (leg.itinerary?.length ?? 0) > 0 || (leg.links?.length ?? 0) > 0) && <button className="text-button muted" onClick={() => confirmDelete({ type: "leg.clear", id: leg.id }, "Clear this travel plan?", "The connection will remain in your route, with its price, miscellaneous spending, travel details, links, and itinerary cleared.")}>Clear</button>}</div></article>)}</div>}
+            {visits.length === 0 ? <p className="section-description">Your travel connections will appear once you add a destination.</p> : <div className="travel-list">{tripLegs.map((leg) => <article className="travel-card" key={leg.id} id={connectionTarget(leg.id)} tabIndex={-1}><TransportationIcons method={leg.method} /><div className="travel-content"><h3>{legName(leg.fromId, "from")} <ArrowRight size={15} aria-hidden="true" /><span className="sr-only">to</span> {legName(leg.toId, "to")}</h3><p>{leg.method || "Travel details to be decided"}{leg.departure && " · " + leg.departure}{leg.arrival && " → " + leg.arrival}</p>{leg.notes && <p className="preserve-lines">{leg.notes}</p>}<ResearchLinks links={leg.links ?? []} /><ConnectionItinerary legId={leg.id} stops={leg.itinerary ?? []} plans={leg.layoverPlans} disabled={busy} onPlan={(layover) => open({ kind: "layover", leg, layover })} onRemovePlan={(layover) => confirmDelete({ type: "leg.layoverPlan", id: leg.id, layoverId: layover.id, plan: null }, "Remove the layover plan for " + layover.place + "?", "Its flight times, airport time and activities are removed. The layover stays in the connection, and nothing else changes.")} /><span className={leg.priceCents === null ? "price unknown" : "price"}>{displayPrice(leg.priceCents)}{leg.priceCents === null && " · Needs estimate"}</span>{leg.miscCents !== null && <span className="price">Miscellaneous spending: {formatCurrency(leg.miscCents, "USD")}</span>}</div><div className="travel-tools"><button className="text-button" aria-label={"Edit travel from " + legName(leg.fromId, "from") + " to " + legName(leg.toId, "to")} onClick={() => open({ kind: "leg", item: leg })}><Pencil size={14} />Edit</button>{(leg.method || leg.priceCents !== null || leg.miscCents !== null || leg.notes || leg.url || leg.departure || leg.arrival || (leg.itinerary?.length ?? 0) > 0 || (leg.links?.length ?? 0) > 0) && <button className="text-button muted" onClick={() => confirmDelete({ type: "leg.clear", id: leg.id }, "Clear this travel plan?", "The connection will remain in your route, with its price, miscellaneous spending, travel details, links, itinerary, and layover plans cleared.")}>Clear</button>}</div></article>)}</div>}
           </section>
           <HomeItems items={data.homeItems.filter((item) => item.tripId === trip.id)} busy={busy}
             onAdd={() => open({ kind: "homeItem" })}
@@ -691,7 +700,11 @@ export default function PlannerApp({ initialData, initialBudgets, access = {}, d
         <Field label="Departure"><input name="departure" defaultValue={editor.item.departure} maxLength={120} placeholder="Date, time, or general plan" /></Field>
         <Field label="Arrival"><input name="arrival" defaultValue={editor.item.arrival} maxLength={120} placeholder="Date, time, or general plan" /></Field>
         <ResearchLinksEditor links={researchLinks} onChange={setResearchLinks} disabled={busy} /><Notes value={editor.item.notes} />
-        <ConnectionItineraryEditor stops={itinerary} onChange={setItinerary} disabled={busy} />
+        <ConnectionItineraryEditor stops={itinerary} onChange={setItinerary} planned={editor.item.layoverPlans.map((plan) => plan.layoverId)} disabled={busy} />
+      </>}
+      {editor.kind === "layover" && <>
+        <p className="form-route wide">{legName(editor.leg.fromId, "from")} <ArrowRight size={16} aria-hidden="true" /><span className="sr-only">to</span> {legName(editor.leg.toId, "to")}</p>
+        <LayoverPlanEditor place={editor.layover.place} draft={layoverDraft} onChange={setLayoverDraft} disabled={busy} />
       </>}
       {editor.kind === "homeItem" && <>
         <Field label="Name" wide><input name="name" defaultValue={editor.item?.name} required maxLength={160} placeholder="House sitting, babysitting, or another task" disabled={busy} /></Field>
@@ -712,7 +725,7 @@ export default function PlannerApp({ initialData, initialBudgets, access = {}, d
         {editor.category !== "hotels" && <label className="checkbox-field wide"><input name="mustDo" type="checkbox" defaultChecked={editor.item?.mustDo ?? false} disabled={busy} /><span>Must do<small>A planning priority. Budget inclusion and list order stay separate.</small></span></label>}
         <label className="checkbox-field wide"><input name="included" type="checkbox" defaultChecked={editor.item?.included ?? false} /><span>{selectionLabels[editor.category]}<small>{editor.category === "hotels" ? "Replaces the general estimate or other chosen hotel. Your general estimate stays saved." : editor.category === "activities" ? "Applies only in Itemized activity costs mode. This does not change your budgeting method." : "Applies only in Itemized restaurant costs mode. This does not change your budgeting method."}</small></span></label>
       </>}
-    </div><div className="dialog-footer">{error && !deleting && <p className="form-error" role="alert">{error}</p>}<div className="dialog-actions"><button type="button" className="button secondary" onClick={cancel} disabled={busy}>Cancel</button>{editor.kind === "candidate" && editor.item && <button type="button" className="button danger editor-delete" onClick={() => setDeleting(true)} disabled={busy}>Delete</button>}<button className={editor.kind === "delete" ? "button danger" : "button primary"} type="submit" disabled={busy}>{busy ? "Saving…" : editor.kind === "delete" ? (editor.mutation.type === "leg.clear" ? "Clear travel plan" : editor.mutation.type === "destination.entryRequirements" ? "Clear entry requirements" : editor.mutation.type === "destination.healthSafety" ? "Clear health and safety" : editor.mutation.type === "stop.remove" ? "Remove from trip" : "Delete") : editor.kind === "trip" && !editor.item ? "Create trip" : editor.kind === "addStop" ? "Add destination" : editor.kind === "newDestination" ? "Create destination" : editor.kind === "share" ? "Share" : "Save changes"}</button></div></div></form>}</Dialog>}
+    </div><div className="dialog-footer">{error && !deleting && <p className="form-error" role="alert">{error}</p>}<div className="dialog-actions"><button type="button" className="button secondary" onClick={cancel} disabled={busy}>Cancel</button>{editor.kind === "candidate" && editor.item && <button type="button" className="button danger editor-delete" onClick={() => setDeleting(true)} disabled={busy}>Delete</button>}<button className={editor.kind === "delete" ? "button danger" : "button primary"} type="submit" disabled={busy}>{busy ? "Saving…" : editor.kind === "delete" ? (editor.mutation.type === "leg.clear" ? "Clear travel plan" : editor.mutation.type === "leg.layoverPlan" ? "Remove plan" : editor.mutation.type === "destination.entryRequirements" ? "Clear entry requirements" : editor.mutation.type === "destination.healthSafety" ? "Clear health and safety" : editor.mutation.type === "stop.remove" ? "Remove from trip" : "Delete") : editor.kind === "trip" && !editor.item ? "Create trip" : editor.kind === "addStop" ? "Add destination" : editor.kind === "newDestination" ? "Create destination" : editor.kind === "share" ? "Share" : editor.kind === "layover" ? "Save plan" : "Save changes"}</button></div></div></form>}</Dialog>}
     {/* An idea's Delete confirmation, above its editor (TRA-128). It deletes the saved idea without saving the draft, which Cancel keeps. */}
     {deleting && <Dialog title={ideaDeletion(deleting).title} view="delete" confirm busy={busy} onClose={() => setDeleting(false)} onClosed={leaveDeleting}><div className="form-grid dialog-body"><p className="delete-description wide">{ideaDeletion(deleting).description} This cannot be undone.</p></div>
       <div className="dialog-footer">{error && <p className="form-error" role="alert">{error}</p>}<div className="dialog-actions"><button type="button" className="button secondary" onClick={() => setDeleting(false)} disabled={busy}>Cancel</button><button type="button" className="button danger" onClick={() => void perform({ type: "candidate.delete", id: deleting.id }, "Removed from your notebook.")} disabled={busy}>{busy ? "Saving…" : "Delete"}</button></div></div></Dialog>}

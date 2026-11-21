@@ -139,6 +139,12 @@ Repeat passing checks when subsequent changes affect their coverage or required 
   its source, years and every month, each beside the saved one. Travel never looks them up, estimates them or fills in a
   month. `src/components/climate-chart.tsx` charts them for every destination; in a trip it first chooses the month of the
   stay's `arrivalDate`, and choosing a month changes only what it shows.
+- Layover plans (TRA-45) are `layover_plans`, at most one per layover in a connection's `itineraryJson`, keyed by
+  `legId` and `layoverId`, read as each leg's `layoverPlans` and changed only by `leg.layoverPlan` with a whole plan or
+  null. `normalizeLayoverPlan` and `layoverSchedule` in `src/lib/layover-plan.ts` check a plan and work out its schedule:
+  both flights' times are the airport's wall-clock times in one IANA time zone, and every minute is the traveler's own
+  estimate, starting at 0. Travel suggests no activities and supplies no estimates. A `leg.save` whose itinerary drops a
+  layover or makes it a stop, and `clearLeg`, delete its plan, and deleting the leg cascades.
 - Application writes go through `mutatePlanner` in `src/app/actions.ts`, into `applyMutation`
   in `src/lib/store.ts`, or come from an approved AI proposal. A new operation adds a `Mutation`
   variant in `src/lib/types.ts`, a case in `validate` (or, for a change only proposals make, in

@@ -169,8 +169,11 @@ const CHANGES = [
   change("stop.visit", "Adds one of the trip owner's saved destinations to the end of a trip's route as a stay without nights, with everything saved for it. A destination the trip visits isn't added again. Its new stay's id is known only once approved, so set its nights in a later proposal.", { tripId: id("The trip's id."), destinationId: id("The destination's id. Its owner must be the trip's.") }, ["tripId", "destinationId"]),
   change("stop.move", "Moves a stay one place earlier or later in its trip's route.", { id: id("The stay's id."), direction }, ["id", "direction"]),
   change("stop.remove", "Removes a trip's stay at a destination. The destination stays, with everything saved for it.", { id: id("The stay's id.") }, ["id"]),
-  change("leg.save", "Changes the travel between two stays, or from the departing city or to the return city. Each field is saved as given.", {
-    id: id("The travel's id."), method: text("How, such as Flight or Train. Empty for none.", 120), price: amount("What it costs for the whole party."),
+  change("leg.save", "Changes the travel between two stays, or from the departing city or to the return city. Each field is saved as given. Its airline and flight number show only while its method names an airplane, such as Flight or Plane, and stay saved when it doesn't.", {
+    id: id("The travel's id."), method: text("How, such as Flight or Train. Empty for none.", 120),
+    airline: text("A flight's airline, such as Delta. Empty for none. Left out keeps the saved one.", 120),
+    flightNumber: text("A flight's flight number, such as DL 123. Empty for none. Left out keeps the saved one.", 120),
+    price: amount("What it costs for the whole party."),
     miscAmount: amount("Miscellaneous spending on the way, such as airport meals, drinks and layover purchases, for the whole party and the whole connection, apart from its price. Left out keeps the saved amount."),
     departure: text("When it leaves. Empty for none.", 120), arrival: text("When it arrives. Empty for none.", 120), url: text("A booking or research link, https:// or http://. Empty for none.", 2048),
     notes: text("Notes. Empty for none.", 8000),
@@ -252,7 +255,7 @@ export const TOOLS = [
   },
   {
     name: "get_trip", title: "Get a trip", annotations: readOnly, inputSchema: input({ trip_id: id("The trip's id.") }),
-    description: "One trip with everything on its page: its tagline, stays, travel between them with each layover's plan in layoverPlans, At home items, the destinations it visits with their hotels, activities, restaurants, churches and research, and its estimated budget. Amounts are whole USD cents for the whole party; null is not estimated. Each idea's and church's coordinates are null, or place it on its destination's map, unless review is true: its address changed after they were saved, so the map doesn't use them.",
+    description: "One trip with everything on its page: its tagline, stays, travel between them with a flight's airline and flightNumber and each layover's plan in layoverPlans, At home items, the destinations it visits with their hotels, activities, restaurants, churches and research, and its estimated budget. Amounts are whole USD cents for the whole party; null is not estimated. Each idea's and church's coordinates are null, or place it on its destination's map, unless review is true: its address changed after they were saved, so the map doesn't use them.",
   },
   {
     name: "list_destinations", title: "List destinations", annotations: readOnly, inputSchema: noInput,

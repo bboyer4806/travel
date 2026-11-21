@@ -32,3 +32,11 @@ export function transportationIcons(method: string): TransportationIcon[] {
   });
   return icons.length > 0 ? icons : ["route"];
 }
+
+/**
+ * Whether a connection's Transportation text names an airplane, as its airplane icon shows, alone or with other kinds.
+ * Only then do its editor and card show its airline and flight number (TRA-147).
+ */
+export function isFlight(method: string): boolean {
+  return transportationIcons(method).includes("airplane");
+}

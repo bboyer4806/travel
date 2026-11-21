@@ -12,6 +12,7 @@ import { ENTRY_REQUIREMENT_FIELDS, normalizeEntryRequirements } from "./entry-re
 import { normalizeHealthSafety } from "./health-safety.ts";
 import { climateFromJson, climateJson, NAME_EACH_MONTH, normalizeMonthlyClimate } from "./typical-weather.ts";
 import { normalizeCoordinates } from "./coordinates.ts";
+import { MAX_LAYOVER_MINUTES, normalizeLayoverPlan } from "./layover-plan.ts";
 import { MAX_PHOTO_ZOOM } from "./photo-focus.ts";
 import { SESSION_DAYS } from "./session-cookie.ts";
 import { alreadyTagged, cleanTagName, MAX_TAG_LENGTH, tagKey } from "./trip-tags.ts";
@@ -24,6 +25,7 @@ import type { Coordinates, CoordinatesAccuracy, SavedCoordinates } from "./coord
 import type { Effect, PreviewChange, Row, Tables } from "./ai-preview.ts";
 import type { EntryRequirements } from "./entry-requirements.ts";
 import type { HealthSafety } from "./health-safety.ts";
+import type { LayoverActivity, LayoverPlan, SavedLayoverPlan } from "./layover-plan.ts";
 import type { MonthlyClimate } from "./typical-weather.ts";
 import type { AiConnection, AiPhotoToAdd, AiProposal, DestinationFields, GalleryUpdate, PhotoCrop, PreparedImage, StoredThumbnail, TripImage, TripImageUpdate } from "./types";
 import type { AuthorizedAccount, DestinationAccess, GoogleIdentity, LibraryDestination, TripAccess, TripMember, TripStop } from "./types";
@@ -34,7 +36,9 @@ type StoredDestination = Omit<Destination, "churchEnabled" | "cityFromSuggestion
 type StoredCoordinates = { latitude: number | null; longitude: number | null; coordinatesAccuracy: CoordinatesAccuracy | null; coordinatesReview: number };
 type StoredChurch = Omit<Church, "massTimes" | "images" | "coordinates"> & StoredCoordinates & { massTimesJson: string };
 type StoredHomeItem = Omit<HomeItem, "completed"> & { completed: number };
-type StoredLeg = Omit<TravelLeg, "itinerary" | "links"> & { itineraryJson: string; linksJson: string };
+type StoredLeg = Omit<TravelLeg, "itinerary" | "links" | "layoverPlans"> & { itineraryJson: string; linksJson: string };
+/** A layover plan's row (TRA-45): its leg and layover, its plan's fields, and its activities as JSON. */
+type StoredLayoverPlan = Omit<SavedLayoverPlan, "activities"> & { legId: string; activitiesJson: string };
 type StoredCandidate = Omit<Candidate, "links" | "included" | "mustDo" | "images" | "restaurantTypes" | "coordinates"> & StoredCoordinates & { linksJson: string; included: number; mustDo: number; restaurantTypesJson: string };
 
 const CATEGORIES = ["hotels", "activities", "restaurants"] as const;
@@ -507,6 +511,12 @@ function validate(input: unknown): Mutation {
       return { type: value.type, id: idField(value), direction: value.direction };
     case "leg.save":
       return { type: value.type, id: idField(value), method: textField(value, "method", 120), price: priceField(value), miscAmount: miscAmountField(value), departure: textField(value, "departure", 120), arrival: textField(value, "arrival", 120), url: urlField(value), notes: textField(value, "notes", 8000), itinerary: itineraryField(value), links: linksField(value) };
+    case "leg.layoverPlan": {
+      let plan: LayoverPlan | null;
+      try { plan = normalizeLayoverPlan(value.plan); }
+      catch (error) { throw new ValidationError(error instanceof Error ? error.message : "Enter a valid layover plan."); }
+      return { type: value.type, id: idField(value), layoverId: idField(value, "layoverId"), plan };
+    }
     case "candidate.save":
       return { type: value.type, id: saveIdField(value), create: createField(value), destinationId: idField(value, "destinationId"), category: categoryField(value), name: textField(value, "name", 160, true), description: value.description === undefined ? undefined : textField(value, "description", 120), price: priceField(value), address: textField(value, "address", 500), url: urlField(value), notes: textField(value, "notes", 8000), included: booleanField(value, "included"), mustDo: value.mustDo === undefined ? undefined : booleanField(value, "mustDo"), restaurantTypes: restaurantTypesField(value), links: linksField(value), coordinates: coordinatesField(value), gallery: galleryField(value) };
     case "candidate.move":
@@ -650,7 +660,7 @@ const LIVE: Make = { id: () => randomUUID(), now: () => new Date().toISOString()
  * The schema this build upgrades every database to, as SQLite's user_version. A schema change adds the next
  * upgrade in createStore and raises this to match; earlier upgrades keep their own numbers.
  */
-export const SCHEMA_VERSION = 38;
+export const SCHEMA_VERSION = 39;
 
 /** A destination as schema 20 saved it, inside one trip, with that trip's owner and name. */
 type TripDestinationRow = Omit<StoredDestination, "cityKey"> & Omit<TripStop, "destinationId"> & { tripName: string };
@@ -1330,6 +1340,24 @@ export function createStore(databasePath: string, ownerEmail: string) {
       }
       db.exec("PRAGMA user_version = 38;");
     }
+    if (version < 39) {
+      // Each layover's plan (TRA-45), at most one per layover in a connection's itinerary: both flights' scheduled times
+      // in the airport's time zone, the traveler's estimates of airport time in minutes, and their activities. Every
+      // connection starts without any, so no trip changes. Deleting a connection deletes its plans. A replay keeps saved plans.
+      const minutes = (column: string, nullable = false) => `${column} INTEGER${nullable ? "" : " NOT NULL"} CHECK(${column} BETWEEN 0 AND ${MAX_LAYOVER_MINUTES})`;
+      db.exec(`
+        CREATE TABLE IF NOT EXISTS layover_plans (
+          legId TEXT NOT NULL REFERENCES legs(id) ON DELETE CASCADE,
+          layoverId TEXT NOT NULL,
+          timeZone TEXT NOT NULL, arrival TEXT NOT NULL, departure TEXT NOT NULL,
+          ${["immigrationMinutes", "customsMinutes", "securityMinutes", "transferMinutes", "boardingMinutes"].map((column) => minutes(column)).join(", ")},
+          ${minutes("returnMinutes", true)},
+          activitiesJson TEXT NOT NULL,
+          PRIMARY KEY (legId, layoverId)
+        ) STRICT;
+        PRAGMA user_version = 39;
+      `);
+    }
     if (version < SCHEMA_VERSION && db.prepare("PRAGMA foreign_key_check").get()) {
       throw new Error("This upgrade would leave saved items without the trip or destination they belong to. Nothing was changed; review the database against a backup before upgrading.");
     }
@@ -1406,11 +1434,22 @@ export function createStore(databasePath: string, ownerEmail: string) {
   }
   function readLegs(tripIds: readonly string[] | null): TravelLeg[] {
     const [where, args] = among("legs.tripId", tripIds);
+    const plans = layoverPlansOf(tripIds);
     return db.prepare(`SELECT legs.* FROM legs LEFT JOIN trip_stops ON trip_stops.id = legs.fromId${where} ORDER BY legs.tripId, coalesce(trip_stops.position, -1)`).all(...args).map((row) => {
       const { itineraryJson, linksJson, ...leg } = row as unknown as StoredLeg;
       const links = storedLinks({ ...leg, linksJson });
-      return { ...leg, url: links[0]?.url ?? "", itinerary: JSON.parse(itineraryJson) as ItineraryStop[], links };
+      return { ...leg, url: links[0]?.url ?? "", itinerary: JSON.parse(itineraryJson) as ItineraryStop[], links, layoverPlans: plans.get(leg.id) ?? [] };
     });
+  }
+  /** The layover plans of the given trips' connections, or of every connection, by connection (TRA-45). A connection without any has no entry. */
+  function layoverPlansOf(tripIds: readonly string[] | null): Map<string, SavedLayoverPlan[]> {
+    const [where, args] = among("legs.tripId", tripIds);
+    const plans = new Map<string, SavedLayoverPlan[]>();
+    const rows = db.prepare(`SELECT layover_plans.* FROM layover_plans JOIN legs ON legs.id = layover_plans.legId${where} ORDER BY layover_plans.legId, layover_plans.layoverId`).all(...args);
+    for (const { legId, activitiesJson, ...plan } of rows as unknown as StoredLayoverPlan[]) {
+      plans.set(legId, [...(plans.get(legId) ?? []), { ...plan, activities: JSON.parse(activitiesJson) as LayoverActivity[] }]);
+    }
+    return plans;
   }
   function readHomeItems(tripIds: readonly string[] | null): HomeItem[] {
     const [where, args] = among("tripId", tripIds);
@@ -1824,6 +1863,8 @@ export function createStore(databasePath: string, ownerEmail: string) {
   }
   function clearLeg(id: string) {
     db.prepare("UPDATE legs SET method = '', priceCents = NULL, miscCents = NULL, departure = '', arrival = '', url = '', notes = '', itineraryJson = '[]', linksJson = '[]' WHERE id = ?").run(id);
+    // Its layovers go with its itinerary, and so do their plans (TRA-45).
+    db.prepare("DELETE FROM layover_plans WHERE legId = ?").run(id);
   }
   function clearHotelSelection(destinationId: string) {
     db.prepare("UPDATE candidates SET included = 0 WHERE destinationId = ? AND category = 'hotels'").run(destinationId);
@@ -2107,12 +2148,33 @@ export function createStore(databasePath: string, ownerEmail: string) {
         const links = savedLinks(input, before, make.id);
         const misc = input.miscAmount === undefined ? before.miscCents : miscCents(input.miscAmount);
         db.prepare("UPDATE legs SET method = ?, priceCents = ?, miscCents = ?, departure = ?, arrival = ?, url = ?, notes = ?, itineraryJson = ?, linksJson = ? WHERE id = ?").run(input.method, priceCents(input.price), misc, input.departure, input.arrival, links[0]?.url ?? "", input.notes, itineraryJson, JSON.stringify(links), input.id);
+        // A layover the new itinerary removes, or makes another kind of stop, takes its plan with it (TRA-45).
+        if (input.itinerary !== undefined) {
+          const layovers = input.itinerary.filter((stop) => stop.kind === "layover").map((stop) => stop.id);
+          db.prepare("DELETE FROM layover_plans WHERE legId = ? AND layoverId NOT IN (SELECT value FROM json_each(?))").run(input.id, JSON.stringify(layovers));
+        }
         return input.id;
       }
       case "leg.clear":
         existing<TravelLeg>("legs", input.id);
         clearLeg(input.id);
         return input.id;
+      case "leg.layoverPlan": {
+        // Only a layover in the connection's saved itinerary has a plan. Removing one that has none changes nothing.
+        const leg = existing<StoredLeg>("legs", input.id);
+        const layover = (JSON.parse(leg.itineraryJson) as ItineraryStop[]).find((stop) => stop.id === input.layoverId);
+        if (layover?.kind !== "layover") throw new ValidationError("This layover is no longer in the connection's itinerary. Refresh and try again.");
+        if (input.plan === null) {
+          db.prepare("DELETE FROM layover_plans WHERE legId = ? AND layoverId = ?").run(input.id, input.layoverId);
+          return input.id;
+        }
+        const { activities, ...fields } = input.plan;
+        const row = { legId: input.id, layoverId: input.layoverId, ...fields, activitiesJson: JSON.stringify(activities) };
+        const columns = Object.keys(row);
+        db.prepare(`INSERT INTO layover_plans(${columns.join(", ")}) VALUES(${columns.map(() => "?").join(", ")})
+          ON CONFLICT(legId, layoverId) DO UPDATE SET ${columns.slice(2).map((column) => `${column} = excluded.${column}`).join(", ")}`).run(...Object.values(row));
+        return input.id;
+      }
       case "candidate.save": {
         existing<Destination>("destinations", input.destinationId);
         const id = input.id;
@@ -2205,7 +2267,7 @@ export function createStore(databasePath: string, ownerEmail: string) {
       case "homeItem.save": return { trip: tripOf("home_items", input.id) ?? (input.create && tripOf("trips", input.tripId)) };
       case "homeItem.delete": case "homeItem.complete": return { trip: tripOf("home_items", input.id) };
       case "stop.move": case "stop.remove": return { trip: tripOf("trip_stops", input.id) };
-      case "leg.save": case "leg.clear": return { trip: tripOf("legs", input.id) };
+      case "leg.save": case "leg.clear": case "leg.layoverPlan": return { trip: tripOf("legs", input.id) };
       // Changing a trip's stay there along with it is a change to that trip.
       case "destination.save":
         return input.stopId === undefined ? { destination: destinationOf("destinations", input.id) } : { trip: tripOf("trip_stops", input.stopId) };

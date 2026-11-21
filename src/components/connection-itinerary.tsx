@@ -3,19 +3,23 @@
 import { useId, useRef, useState } from "react";
 import { ArrowDown, ArrowUp, MapPin, Plane, Plus, Trash2 } from "lucide-react";
 import { itineraryTarget } from "@/lib/trip-map";
+import type { SavedLayoverPlan } from "@/lib/layover-plan";
 import type { ItineraryStop } from "@/lib/types";
 import { randomUuid } from "@/lib/uuid";
 import { controlOrNeighbor, useFocusAfter } from "./focus-after";
+import { LayoverPlanPanel } from "./layover-plan";
 
 const MAX_STOPS = 30;
 
 type EditorProps = {
   stops: ItineraryStop[];
   onChange: (stops: ItineraryStop[]) => void;
+  /** The saved layovers with a plan (TRA-45), which saving without them, or as other stops, removes. */
+  planned: string[];
   disabled?: boolean;
 };
 
-export function ConnectionItineraryEditor({ stops, onChange, disabled = false }: EditorProps) {
+export function ConnectionItineraryEditor({ stops, onChange, planned, disabled = false }: EditorProps) {
   const id = useId();
   const focusPlace = useRef<string | null>(null);
   const addLayoverButton = useRef<HTMLButtonElement>(null);
@@ -51,7 +55,7 @@ export function ConnectionItineraryEditor({ stops, onChange, disabled = false }:
     focusPlace.current = remaining[Math.min(index, remaining.length - 1)]?.id ?? null;
     onChange(remaining);
     if (remaining.length === 0) addLayoverButton.current?.focus();
-    setAnnouncement(`${stops[index].place || "Stop"} removed.`);
+    setAnnouncement(`${stops[index].place || "Stop"} removed.${planned.includes(stops[index].id) ? " Saving removes its layover plan." : ""}`);
   }
 
   return <section className="connection-itinerary-editor wide" aria-labelledby={id + "-title"}>
@@ -87,6 +91,7 @@ export function ConnectionItineraryEditor({ stops, onChange, disabled = false }:
             <label className="field"><span>Departure from stop</span><input id={`${id}-${stop.id}-departure`} maxLength={120} value={stop.departure} placeholder="Date, time, or general plan" onChange={(event) => updateStop(stop.id, { departure: event.target.value })} /></label>
           </div>
           <label className="field"><span>Stop notes</span><textarea id={`${id}-${stop.id}-notes`} rows={2} maxLength={2000} value={stop.notes} placeholder="Flight numbers, time to explore, or anything to remember…" onChange={(event) => updateStop(stop.id, { notes: event.target.value })} /></label>
+          {planned.includes(stop.id) && <p className="connection-itinerary-help">This layover has a plan. Removing the layover, or changing it to another kind of stop, removes its plan when you save.</p>}
         </div>
       </fieldset>)}
     </div>
@@ -99,8 +104,11 @@ export function ConnectionItineraryEditor({ stops, onChange, disabled = false }:
   </section>;
 }
 
-/** A connection's itinerary. Each entry is where the trip map's marker for it leads (TRA-44). */
-export function ConnectionItinerary({ legId, stops }: { legId: string; stops: ItineraryStop[] }) {
+/**
+ * A connection's itinerary. Each entry is where the trip map's marker for it leads (TRA-44), and each layover has its
+ * plan, or Plan layover (TRA-45).
+ */
+export function ConnectionItinerary({ legId, stops, plans, disabled, onPlan, onRemovePlan }: { legId: string; stops: ItineraryStop[]; plans: SavedLayoverPlan[]; disabled: boolean; onPlan: (stop: ItineraryStop) => void; onRemovePlan: (stop: ItineraryStop) => void }) {
   if (stops.length === 0) return null;
   return <ol className="connection-itinerary" aria-label="Stops along this connection">
     {stops.map((stop, index) => <li key={stop.id} id={itineraryTarget(legId, stop.id)} tabIndex={-1}>
@@ -113,6 +121,7 @@ export function ConnectionItinerary({ legId, stops }: { legId: string; stops: It
           {stop.departure && <div><dt>Depart</dt><dd>{stop.departure}</dd></div>}
         </dl>}
         {stop.notes && <p className="preserve-lines">{stop.notes}</p>}
+        {stop.kind === "layover" && <LayoverPlanPanel place={stop.place} plan={plans.find((plan) => plan.layoverId === stop.id)} disabled={disabled} onEdit={() => onPlan(stop)} onRemove={() => onRemovePlan(stop)} />}
       </div>
     </li>)}
   </ol>;

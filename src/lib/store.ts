@@ -499,9 +499,9 @@ function validate(input: unknown): Mutation {
     case "church.delete":
       return { type: value.type, id: idField(value), destinationId: idField(value, "destinationId") };
     case "stop.add":
-      return { type: value.type, tripId: idField(value, "tripId"), city: textField(value, "city", 120, true), cityFromSuggestion: cityFromSuggestionField(value) };
+      return { type: value.type, tripId: idField(value, "tripId"), city: textField(value, "city", 120, true), cityFromSuggestion: cityFromSuggestionField(value), before: value.before === undefined ? undefined : idField(value, "before") };
     case "stop.visit":
-      return { type: value.type, tripId: idField(value, "tripId"), destinationId: idField(value, "destinationId") };
+      return { type: value.type, tripId: idField(value, "tripId"), destinationId: idField(value, "destinationId"), before: value.before === undefined ? undefined : idField(value, "before") };
     case "stop.move":
       if (value.direction !== "up" && value.direction !== "down") throw new ValidationError("Choose a valid direction for this destination.");
       return { type: value.type, id: idField(value), direction: value.direction };
@@ -1876,31 +1876,42 @@ export function createStore(databasePath: string, ownerEmail: string) {
     return id;
   }
   /**
-   * Adds a city to a trip as its last stop, without stay notes or nights. A trip visits its owner's destinations,
-   * whoever on the trip adds the city, so this is the owner's saved destination for it, with everything saved for it,
-   * or a new one whose first stop shares its ID. A city the trip already visits returns that stop instead of adding
-   * another, so adding it again after a lost response adds it once.
+   * Adds a city to a trip as its last stop, or directly before its stop `before` (TRA-153), without stay notes or
+   * nights. A trip visits its owner's destinations, whoever on the trip adds the city, so this is the owner's saved
+   * destination for it, with everything saved for it, or a new one whose first stop shares its ID. A city the trip
+   * already visits returns that stop instead of adding another, so adding it again after a lost response adds it once.
    */
-  function addStop(tripId: string, place: { city: string; cityFromSuggestion?: true }, make: Make): string {
+  function addStop(tripId: string, place: { city: string; cityFromSuggestion?: true }, before: string | undefined, make: Make): string {
     const trip = existing<Trip & { ownerId: string }>("trips", tripId);
     const id = make.id();
-    return stopAt(trip.id, destinationFor(trip.ownerId, place, id), id, make);
+    return stopAt(trip.id, destinationFor(trip.ownerId, place, id), id, before, make);
   }
   /**
-   * Adds one of the trip owner's saved destinations to a trip as its last stop, with everything saved for it, without
-   * stay notes or nights (TRA-142). A destination the trip already visits returns that stop instead of adding another.
+   * Adds one of the trip owner's saved destinations to a trip as its last stop, or directly before its stop `before`
+   * (TRA-153), with everything saved for it, without stay notes or nights (TRA-142). A destination the trip already
+   * visits returns that stop instead of adding another.
    */
-  function visitDestination(tripId: string, destinationId: string, make: Make): string {
+  function visitDestination(tripId: string, destinationId: string, before: string | undefined, make: Make): string {
     const trip = existing<Trip & { ownerId: string }>("trips", tripId);
     const destination = existing<StoredDestination>("destinations", destinationId);
     if (destination.ownerId !== trip.ownerId) throw new ValidationError("A trip can only visit its owner's destinations.");
-    return stopAt(trip.id, destination.id, make.id(), make);
+    return stopAt(trip.id, destination.id, make.id(), before, make);
   }
-  /** A trip's stop at one of its owner's destinations: its first stay there, or a new last stop with this ID. */
-  function stopAt(tripId: string, destinationId: string, id: string, make: Make): string {
+  /**
+   * A trip's stop at one of its owner's destinations: its first stay there, which stays where it is, or a new stop with
+   * this ID, last or directly before the trip's stop `before` (TRA-153). The other stops keep their order, and only the
+   * connection where the new stop goes is replaced, by connections to and from it.
+   */
+  function stopAt(tripId: string, destinationId: string, id: string, before: string | undefined, make: Make): string {
     const visiting = db.prepare("SELECT id FROM trip_stops WHERE tripId = ? AND destinationId = ? ORDER BY position, id").get(tripId, destinationId);
     if (visiting) return visiting.id as string;
-    db.prepare("INSERT INTO trip_stops(id,tripId,destinationId,position,stay,nights) VALUES(?,?,?,?,'',NULL)").run(id, tripId, destinationId, orderedStops(tripId).length);
+    const route = orderedStops(tripId).map((stop) => stop.id);
+    const position = before === undefined ? route.length : route.indexOf(before);
+    // A page opened before its stop was removed, or one naming another trip's stop.
+    if (position === -1) throw new ValidationError("This trip's route has changed. Refresh to see it, then add the destination again.");
+    route.splice(position, 0, id);
+    db.prepare("INSERT INTO trip_stops(id,tripId,destinationId,position,stay,nights) VALUES(?,?,?,?,'',NULL)").run(id, tripId, destinationId, position);
+    route.forEach((stopId, index) => db.prepare("UPDATE trip_stops SET position = ? WHERE id = ?").run(index, stopId));
     reconcileRoute(tripId, make);
     return id;
   }
@@ -2079,9 +2090,9 @@ export function createStore(databasePath: string, ownerEmail: string) {
         return;
       }
       case "stop.add":
-        return addStop(input.tripId, input, make);
+        return addStop(input.tripId, input, input.before, make);
       case "stop.visit":
-        return visitDestination(input.tripId, input.destinationId, make);
+        return visitDestination(input.tripId, input.destinationId, input.before, make);
       case "stop.remove": {
         // Only this trip's stay goes. The destination and everything saved with it stay, for other trips and Destinations.
         const stop = existing<TripStop>("trip_stops", input.id);

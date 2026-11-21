@@ -33,12 +33,14 @@
    and restaurant card's photo is then the same size whatever the photo's shape, while it loads too. */
 .photo { position: relative; display: grid; place-items: center; width: 100%; aspect-ratio: 4 / 3; background: var(--wash); color: #8c9b81; }
 .photo img { position: absolute; inset: 0; display: block; width: 100%; height: 100%; object-fit: cover; }
-.name { display: -webkit-box; margin: 10px 12px 0; overflow: hidden; -webkit-box-orient: vertical; -webkit-line-clamp: 2; font-size: 13px; font-weight: 600; line-height: 1.4; overflow-wrap: anywhere; }
+/* TRA-51: below the photo, the idea's name leads, then what it is, in ink, its types and its price, each with room to
+   scan, as every card ranks the details beneath a location's image. */
+.name { display: -webkit-box; margin: 12px 14px 0; overflow: hidden; -webkit-box-orient: vertical; -webkit-line-clamp: 2; font-size: 15px; font-weight: 600; line-height: 1.35; overflow-wrap: anywhere; }
 /* What an idea is, directly below its name (TRA-138): at most two lines, ending in an ellipsis when it is longer. */
-.description { display: -webkit-box; margin: 2px 12px 0; overflow: hidden; -webkit-box-orient: vertical; -webkit-line-clamp: 2; font-size: 12px; line-height: 1.4; color: var(--muted); overflow-wrap: anywhere; }
+.description { display: -webkit-box; margin: 4px 14px 0; overflow: hidden; -webkit-box-orient: vertical; -webkit-line-clamp: 2; font-size: 13px; line-height: 1.45; color: var(--ink); overflow-wrap: anywhere; }
 /* A restaurant's types, between its name and price (TRA-36). */
-.types { margin: 6px 12px 0; }
-.price { margin: 4px 12px 12px; font-size: 13px; font-weight: 600; color: var(--green); }
+.types { margin: 8px 14px 0; }
+.price { margin: 10px 14px 14px; font-size: 14px; font-weight: 600; color: var(--green); }
 .price.unknown { color: var(--muted); font-weight: 400; }
 .chosen { position: absolute; top: 8px; left: 8px; }
 

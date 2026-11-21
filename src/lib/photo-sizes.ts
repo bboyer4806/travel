@@ -12,10 +12,11 @@ export const PAGE: FrameWidths = [[540, "100vw - 36px"], [780, "100vw - 48px"], 
 /** A card on All trips or in Destinations: three columns, two from 1080 pixels and one from 540. */
 export const CARD: FrameWidths = [[540, "100vw - 36px"], [780, "(100vw - 70px) / 2"], [1080, "(100vw - 134px) / 2"], [1360, "(100vw - 156px) / 3"], [null, "401px"]];
 /**
- * Across a destination's card in the main column of its trip's or its own page, beside the budget until 780 pixels. A
- * church's card in the card nearly spans it.
+ * Across a destination's card in the main column of its trip's or its own page, beside the budget until 780 pixels. On
+ * phones a trip's cards show it edge to edge (TRA-155), and a destination's own page 34 pixels narrower, too little to
+ * change which version a phone loads. A church's card in the card nearly spans it.
  */
-export const MAIN_COLUMN: FrameWidths = [[540, "100vw - 70px"], [780, "100vw - 86px"], [1080, "100vw - 434px"], [1360, "100vw - 494px"], [null, "866px"]];
+export const MAIN_COLUMN: FrameWidths = [[540, "100vw - 38px"], [780, "100vw - 86px"], [1080, "100vw - 434px"], [1360, "100vw - 494px"], [null, "866px"]];
 /** An idea's card on its category's page: two columns, one from 540 pixels. */
 export const HALF_PAGE: FrameWidths = [[540, "100vw - 80px"], [780, "(100vw - 64px) / 2 - 38px"], [1360, "(100vw - 135px) / 2 - 48px"], [null, "564px"]];
 /** Across an editor dialog, as an idea's or church's details and the crop editors show photos. */

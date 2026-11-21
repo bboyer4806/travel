@@ -76,7 +76,8 @@ Repeat passing checks when subsequent changes affect their coverage or required 
   returns the trip's existing stop there instead of adding another. Add destination also lists the trip owner's
   destinations the account can open (`library` from `getTripSnapshot`, TRA-142), matched to what is typed and to city
   suggestions only by `searchLibrary` in `src/lib/destination-library.ts`, and `stop.visit` adds the one chosen by its ID,
-  refusing one the account can't open or that isn't the trip owner's. Removing a stop or deleting a trip
+  refusing one the account can't open or that isn't the trip owner's. Either adds the stop last, or with `before`, one of
+  the trip's stops, directly before it, from the + between the trip's cards (TRA-153). Removing a stop or deleting a trip
   never deletes a destination or what is saved with it. Only its owner deletes a destination, and only
   while no trip visits it.
 - A destination's city shows exactly as saved unless `destinations.cityFromSuggestion` records it as
@@ -138,6 +139,12 @@ Repeat passing checks when subsequent changes affect their coverage or required 
   its source, years and every month, each beside the saved one. Travel never looks them up, estimates them or fills in a
   month. `src/components/climate-chart.tsx` charts them for every destination; in a trip it first chooses the month of the
   stay's `arrivalDate`, and choosing a month changes only what it shows.
+- Layover plans (TRA-45) are `layover_plans`, at most one per layover in a connection's `itineraryJson`, keyed by
+  `legId` and `layoverId`, read as each leg's `layoverPlans` and changed only by `leg.layoverPlan` with a whole plan or
+  null. `normalizeLayoverPlan` and `layoverSchedule` in `src/lib/layover-plan.ts` check a plan and work out its schedule:
+  both flights' times are the airport's wall-clock times in one IANA time zone, and every minute is the traveler's own
+  estimate, starting at 0. Travel suggests no activities and supplies no estimates. A `leg.save` whose itinerary drops a
+  layover or makes it a stop, and `clearLeg`, delete its plan, and deleting the leg cascades.
 - Application writes go through `mutatePlanner` in `src/app/actions.ts`, into `applyMutation`
   in `src/lib/store.ts`, or come from an approved AI proposal. A new operation adds a `Mutation`
   variant in `src/lib/types.ts`, a case in `validate` (or, for a change only proposals make, in
@@ -174,11 +181,12 @@ Repeat passing checks when subsequent changes affect their coverage or required 
   photo, up to 2560 × 1920 with its width and the photo's (TRA-154): `prepareImage` returns them as a `PreparedImage`,
   and every save of a photo, an AI proposal's included, carries them, `large` null for none. A trip's headline image
   keeps the photo and its large version, without a thumbnail, since it shows only cropped in its card and banner.
-  Gallery thumbnails and editor previews load each photo's `/thumbnail` route; every frame that shows the photo itself
-  offers its `/large` route too, with `photoSizes` from `src/lib/photo-sizes.ts` and the frame's widths there, which
-  follow `globals.css`: a layout change updates them. A photo saved before schema 32 has a NULL thumbnail, so
-  `storedThumbnailResponse` makes one with `makeThumbnail` for each request and saves nothing: image routes never
-  write. One saved before schema 39 has no large version and loads as before.
+  Gallery thumbnails, editor previews, and the maps' previews and popups (TRA-143, TRA-152) load each photo's
+  `/thumbnail` route; every frame that shows the photo itself offers its `/large` route too, with `photoSizes` from
+  `src/lib/photo-sizes.ts` and the frame's widths there, which follow `globals.css`: a layout change updates them. A
+  photo saved before schema 32 has a NULL thumbnail, so `storedThumbnailResponse` makes one with `makeThumbnail` for
+  each request and saves nothing: image routes never write. One saved before schema 40 has no large version and loads
+  as before.
 - A trip's optional headline image (TRA-133) is its one row of `trip_images`, deleted with the trip, with its own
   crop for the trip's card on All trips and for its page's banner: a `PhotoCrop`, a focal point and a zoom, shown with
   `cropStyle` and dragged with `draggedFocus` from `src/lib/photo-focus.ts`. Only `trip.save` changes it, with `image`,

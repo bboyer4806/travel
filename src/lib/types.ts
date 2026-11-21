@@ -3,6 +3,7 @@ import type { Coordinates, SavedCoordinates } from "./coordinates";
 import type { PreviewChange } from "./ai-preview";
 import type { EntryRequirements } from "./entry-requirements";
 import type { HealthSafety } from "./health-safety";
+import type { LayoverPlan, SavedLayoverPlan } from "./layover-plan";
 import type { MonthlyClimate } from "./typical-weather";
 export type FoodBudgetMode = "itemized" | "daily";
 export type ActivitiesBudgetMode = "itemized" | "general";
@@ -50,9 +51,10 @@ export interface ResearchLink { id: string; url: string; description: string; }
 export interface ItineraryStop { id: string; kind: "layover" | "stop"; place: string; arrival: string; departure: string; notes: string; }
 /**
  * A travel connection. `miscCents` is the whole party's miscellaneous spending on the way, such as airport meals and
- * layover purchases, apart from its price, or null when not estimated (TRA-26).
+ * layover purchases, apart from its price, or null when not estimated (TRA-26). `layoverPlans` are the plans of layovers
+ * in its itinerary, each naming its layover (TRA-45).
  */
-export interface TravelLeg { id: string; tripId: string; fromId: string | null; toId: string | null; method: string; priceCents: number | null; miscCents: number | null; departure: string; arrival: string; url: string; notes: string; itinerary: ItineraryStop[]; links: ResearchLink[]; }
+export interface TravelLeg { id: string; tripId: string; fromId: string | null; toId: string | null; method: string; priceCents: number | null; miscCents: number | null; departure: string; arrival: string; url: string; notes: string; itinerary: ItineraryStop[]; links: ResearchLink[]; layoverPlans: SavedLayoverPlan[]; }
 /**
  * A saved photo: its ID and version, which its address names, and the widths of it and its large version, or null for a
  * photo without one, as a photo saved before TRA-154 or no larger than 1600 × 1200 is.
@@ -146,17 +148,22 @@ export type Mutation =
  | { type: "church.save"; id: string; create?: true; destinationId: string; name: string; address: string; denomination: string; url: string; massTimes: MassTime[]; coordinates?: Coordinates | null; gallery?: GalleryUpdate }
  | { type: "church.delete"; id: string; destinationId: string }
  // Adds a city to a trip as its last stop, without stay notes or nights: the trip owner's saved destination for the
- // city, or a new one. A city the trip already visits opens that stop instead of adding another.
- | { type: "stop.add"; tripId: string; city: string; cityFromSuggestion?: true }
+ // city, or a new one. A city the trip already visits opens that stop instead of adding another. With `before`, one of
+ // the trip's stops, the new stop goes directly before it instead (TRA-153).
+ | { type: "stop.add"; tripId: string; city: string; cityFromSuggestion?: true; before?: string }
  // Adds one of the trip owner's saved destinations to a trip as its last stop, with everything saved for it, without stay
- // notes or nights (TRA-142). A destination the trip already visits opens that stop instead of adding another.
- | { type: "stop.visit"; tripId: string; destinationId: string }
+ // notes or nights (TRA-142). A destination the trip already visits opens that stop instead of adding another. With
+ // `before`, one of the trip's stops, the new stop goes directly before it instead (TRA-153).
+ | { type: "stop.visit"; tripId: string; destinationId: string; before?: string }
  | { type: "stop.move"; id: string; direction: "up" | "down" }
  // Removes a destination from one trip. The destination and everything saved with it stay.
  | { type: "stop.remove"; id: string }
  // `miscAmount` is the connection's miscellaneous spending on the way (TRA-26). Left out, like `itinerary` and `links`, it keeps the saved one.
  | { type: "leg.save"; id: string; method: string; price: string; miscAmount?: string; departure: string; arrival: string; url: string; notes: string; itinerary?: ItineraryStop[]; links?: ResearchLink[] }
  | { type: "leg.clear"; id: string }
+ // Saves the plan of one layover in a connection's itinerary, replacing any saved one, or removes it with null (TRA-45).
+ // The layover and everything else about the connection stay.
+ | { type: "leg.layoverPlan"; id: string; layoverId: string; plan: LayoverPlan | null }
  // A restaurant's `restaurantTypes` replace its saved ones, and left out keep them. Hotels and activities have none.
  // `description` says what the idea is, below its name on its cards (TRA-138). Left out, as a page opened before it does, it keeps the saved one.
  | { type: "candidate.save"; id: string; create?: true; destinationId: string; category: Category; name: string; description?: string; price: string; address: string; url: string; notes: string; included: boolean; mustDo?: boolean; restaurantTypes?: RestaurantType[]; links?: ResearchLink[]; coordinates?: Coordinates | null; gallery?: GalleryUpdate }

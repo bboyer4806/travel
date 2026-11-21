@@ -26,6 +26,8 @@ import { PlaceLocationFields } from "@/components/place-location";
 import { coordinatesFromForm } from "@/lib/coordinates";
 import TripRouteFields from "@/components/trip-route-fields";
 import { ConnectionItinerary, ConnectionItineraryEditor } from "@/components/connection-itinerary";
+import { LayoverPlanEditor } from "@/components/layover-plan";
+import { layoverPlanDraft, layoverPlanFromDraft, type LayoverPlanDraft } from "@/lib/layover-plan";
 import { ResearchLinks, ResearchLinksEditor } from "@/components/research-links";
 import { unstable_isUnrecognizedActionError, useRouter } from "next/navigation";
 import { useEffect, useId, useRef, useState, useTransition, type FormEvent, type ReactNode } from "react";
@@ -55,8 +57,9 @@ type Editor =
   | { kind: "trip"; item?: Trip }
   // A saved destination; with a stop it also edits that trip's stay.
   | { kind: "destination"; item: Destination; stop?: TripStop }
-  // A city to add to the trip. Only the city is asked for.
-  | { kind: "addStop" }
+  // A city to add to the trip: last, or from a + between its cards, directly before the stop `before` (TRA-153). Only
+  // the city is asked for.
+  | { kind: "addStop"; before?: TripStop }
   // A destination outside any trip, from Destinations. Only its city is asked for.
   | { kind: "newDestination" }
   | { kind: "shoppingBudget"; item: Destination }
@@ -73,6 +76,8 @@ type Editor =
   | { kind: "activitiesBudget"; item: Destination }
   | { kind: "foodBudget"; item: Destination; nights: number | null }
   | { kind: "leg"; item: TravelLeg }
+  // One layover's plan (TRA-45), saved apart from its connection.
+  | { kind: "layover"; leg: TravelLeg; layover: ItineraryStop }
   // An idea's editor, which adds one to the destination without `item`. Opened from its details, Cancel and saving return there.
   // `deleting` shows a saved idea's Delete confirmation above it, which leaves the editor and its draft as they are (TRA-128).
   | { kind: "candidate"; destinationId: string; category: Category; item?: Candidate; details?: true; deleting?: boolean }
@@ -163,6 +168,8 @@ export default function PlannerApp({ initialData, initialBudgets, access = {}, d
   const [refreshing, startRefresh] = useTransition();
   const focusAfterSave = useFocusAfter(!busy && !refreshing);
   const [itinerary, setItinerary] = useState<ItineraryStop[]>([]);
+  // The layover plan editor's draft (TRA-45): the saved plan, or a new one with every estimate at 0.
+  const [layoverDraft, setLayoverDraft] = useState<LayoverPlanDraft>(() => layoverPlanDraft(undefined));
   const [massTimes, setMassTimes] = useState<MassTime[]>([]);
   const [researchLinks, setResearchLinks] = useState<ResearchLink[]>([]);
   const [emergencyContacts, setEmergencyContacts] = useState<EmergencyContact[]>([]);
@@ -217,6 +224,7 @@ export default function PlannerApp({ initialData, initialBudgets, access = {}, d
   const open = (value: Editor) => {
     if (busy) return;
     if (value.kind === "leg") setItinerary(value.item.itinerary ?? []);
+    if (value.kind === "layover") setLayoverDraft(layoverPlanDraft(value.leg.layoverPlans.find((plan) => plan.layoverId === value.layover.id)));
     if (value.kind === "leg" || value.kind === "candidate") setResearchLinks(value.item?.links ?? []);
     if (value.kind === "entryRequirements") setResearchLinks(value.item.entryRequirements?.sources ?? []);
     if (value.kind === "healthSafety") { setResearchLinks(value.item.healthSafety?.sources ?? []); setEmergencyContacts(value.item.healthSafety?.emergencyContacts ?? []); }
@@ -354,9 +362,11 @@ export default function PlannerApp({ initialData, initialBudgets, access = {}, d
         break;
       }
       case "addStop": {
-        // A saved destination chosen from the list is added by its ID (TRA-142); any other city by its name.
+        // A saved destination chosen from the list is added by its ID (TRA-142); any other city by its name. Either goes
+        // last, or before the stop whose + opened the editor (TRA-153).
         const destinationId = text("destinationId");
-        if (trip) void perform(destinationId ? { type: "stop.visit", tripId: trip.id, destinationId } : { type: "stop.add", tripId: trip.id, city: text("city"), cityFromSuggestion }, "Destination added. Review any new travel connections.");
+        const before = editor.before?.id;
+        if (trip) void perform(destinationId ? { type: "stop.visit", tripId: trip.id, destinationId, before } : { type: "stop.add", tripId: trip.id, city: text("city"), cityFromSuggestion, before }, "Destination added. Review any new travel connections.");
         break;
       }
       case "newDestination": void perform({ type: "destination.create", city: text("city"), cityFromSuggestion }); break;
@@ -392,6 +402,7 @@ export default function PlannerApp({ initialData, initialBudgets, access = {}, d
         break;
       }
       case "leg": void perform({ type: "leg.save", id: editor.item.id, method: text("method"), price: text("price"), miscAmount: text("miscAmount"), departure: text("departure"), arrival: text("arrival"), url: researchLinks[0]?.url ?? "", links: researchLinks, notes: text("notes"), itinerary }); break;
+      case "layover": void perform({ type: "leg.layoverPlan", id: editor.leg.id, layoverId: editor.layover.id, plan: layoverPlanFromDraft(layoverDraft) }, "Layover plan saved."); break;
       case "church": {
         void perform({ type: "church.save", ...itemToSave(editor.item), destinationId: editor.destinationId, name: text("name"), address: text("address"), denomination: text("denomination"), url: text("url"), massTimes, coordinates: coordinatesFromForm(fields, editor.item?.coordinates ?? null) }, "Church saved.", undefined, galleryForm(candidateGallery, editor.item));
         break;
@@ -413,7 +424,7 @@ export default function PlannerApp({ initialData, initialBudgets, access = {}, d
     : editor?.kind === "weather" ? "Edit typical weather"
     : editor?.kind === "climate" ? (editor.item.climate ? "Edit monthly averages" : "Add monthly averages")
     : editor?.kind === "destination" ? "Edit destination: " + formatSavedDestinationLabel(editor.item)
-    : editor?.kind === "addStop" ? "Add a destination"
+    : editor?.kind === "addStop" ? "Add a destination" + (editor.before ? " before " + formatSavedDestinationLabel(placeOf(editor.before.destinationId)) : "")
     : editor?.kind === "newDestination" ? "New destination"
     : editor?.kind === "shoppingBudget" ? "Edit shopping budget"
     : editor?.kind === "accommodationBudget" ? "Edit accommodation budget"
@@ -422,11 +433,22 @@ export default function PlannerApp({ initialData, initialBudgets, access = {}, d
     : editor?.kind === "foodBudget" ? "Edit food budget"
     : editor?.kind === "activitiesBudget" ? "Edit activities budget"
     : editor?.kind === "leg" ? "Plan this connection"
+    : editor?.kind === "layover" ? "Layover in " + editor.layover.place
     : editor?.kind === "homeItem" ? (editor.item ? "Edit home item" : "Add an item at home")
     : editor?.kind === "share" ? "Share this trip"
     : editor?.kind === "candidate" ? (editor.item ? "Edit " : editor.category === "activities" ? "Add " : "Add a ") + singular[editor.category]
     : editor?.kind === "ideaDetails" ? latest(editor.item).name
     : editor?.kind === "churchDetails" ? editor.item.name : "";
+  /**
+   * The + above a trip's destination card `index`, or below its last card (TRA-153). It opens Add destination to add a
+   * destination there: directly before that card, or last. With a mouse it shows while the pointer is over it or a card
+   * beside it, or it has keyboard focus; touchscreens always show it.
+   */
+  function renderStopInsertion(index: number) {
+    const next = visits[index];
+    const label = next ? "Add a destination before " + formatSavedDestinationLabel(next.visit) : "Add a destination after " + formatSavedDestinationLabel(visits[index - 1].visit);
+    return <div className="stop-insertion" key={next ? "insert-" + next.stop.id : "insert-last"}><button type="button" className="button secondary" aria-label={label} onClick={() => open({ kind: "addStop", before: next?.stop })}><Plus size={16} aria-hidden="true" /></button></div>;
+  }
   /**
    * A destination's Church section. In a trip, that stay's dates decide whether it can appear and which Sundays it lists.
    * `photoFrame` is how wide each church's photo is: across the page on its Church page, or a destination's card (TRA-154).
@@ -578,7 +600,7 @@ export default function PlannerApp({ initialData, initialBudgets, access = {}, d
           <TripMap tripId={trip.id} journey={tripJourney(data, trip.id)} />
           <section><div className="section-heading"><div><p className="eyebrow">ONE STOP AT A TIME</p><h2>The destinations</h2></div><button className="button secondary small" onClick={() => open({ kind: "addStop" })}><Plus size={16} />Add destination</button></div>
             {visits.length === 0 ? <div className="empty-state"><MapPin size={29} strokeWidth={1.4} /><h3>Where should this trip take you?</h3><p>Add your first destination. Your departure and return connections will appear automatically.</p><button className="text-button" onClick={() => open({ kind: "addStop" })}>Add a destination <ArrowRight size={16} /></button></div>
-              : <div className="destination-list">{visits.map(({ stop: visitStop, visit }, index) => { const label = formatSavedDestinationLabel(visit); return <article className="destination-card" key={visitStop.id} id={"destination-" + visitStop.id} tabIndex={-1}><DestinationGallery destination={visit} /><div className="destination-top"><span className="stop-number">{String(index + 1).padStart(2, "0")}</span><div className="destination-name"><h3><Link href={"/destinations/" + visit.id}>{label}</Link></h3><p>{visitStop.stay || "Stay notes not added"}</p></div><div className="destination-tools"><button className="icon-button" disabled={busy || index === 0} aria-label={"Move " + label + " up"} onClick={(event) => saveFrom(event.currentTarget, { type: "stop.move", id: visitStop.id, direction: "up" }, "Route updated. Review the new travel connections.")}><ArrowUp size={15} /></button><button className="icon-button" disabled={busy || index === visits.length - 1} aria-label={"Move " + label + " down"} onClick={(event) => saveFrom(event.currentTarget, { type: "stop.move", id: visitStop.id, direction: "down" }, "Route updated. Review the new travel connections.")}><ArrowDown size={15} /></button><button className="icon-button" aria-label={"Edit " + label} onClick={() => open({ kind: "destination", item: visit, stop: visitStop })}><Pencil size={15} /></button><button className="icon-button" aria-label={"Remove " + label + " from this trip"} onClick={() => confirmDelete({ type: "stop.remove", id: visitStop.id }, "Remove “" + label + "” from this trip?", "Its hotels, activities, restaurants, photos, and research stay in Destinations and in any other trip. This trip’s nights, stay notes, and travel plans to and from it are removed, and the remaining route reconnects.")}><Trash2 size={15} /></button></div></div>
+              : <div className="destination-list">{visits.map(({ stop: visitStop, visit }, index) => { const label = formatSavedDestinationLabel(visit); return [renderStopInsertion(index), <article className="destination-card" key={visitStop.id} id={"destination-" + visitStop.id} tabIndex={-1}><DestinationGallery destination={visit} /><div className="destination-top"><span className="stop-number">{String(index + 1).padStart(2, "0")}</span><div className="destination-name"><h3><Link href={"/destinations/" + visit.id}>{label}</Link></h3><p className={visitStop.stay ? undefined : "unknown"}>{visitStop.stay || "Stay notes not added"}</p></div><div className="destination-tools"><button className="icon-button" disabled={busy || index === 0} aria-label={"Move " + label + " up"} onClick={(event) => saveFrom(event.currentTarget, { type: "stop.move", id: visitStop.id, direction: "up" }, "Route updated. Review the new travel connections.")}><ArrowUp size={15} /></button><button className="icon-button" disabled={busy || index === visits.length - 1} aria-label={"Move " + label + " down"} onClick={(event) => saveFrom(event.currentTarget, { type: "stop.move", id: visitStop.id, direction: "down" }, "Route updated. Review the new travel connections.")}><ArrowDown size={15} /></button><button className="icon-button" aria-label={"Edit " + label} onClick={() => open({ kind: "destination", item: visit, stop: visitStop })}><Pencil size={15} /></button><button className="icon-button" aria-label={"Remove " + label + " from this trip"} onClick={() => confirmDelete({ type: "stop.remove", id: visitStop.id }, "Remove “" + label + "” from this trip?", "Its hotels, activities, restaurants, photos, and research stay in Destinations and in any other trip. This trip’s nights, stay notes, and travel plans to and from it are removed, and the remaining route reconnects.")}><Trash2 size={15} /></button></div></div>
                 {visit.notes && <p className="destination-notes">{visit.notes}</p>}
                 {/* The card's photos come first, then its name, stay notes and notes, so its map follows them, before its budget (TRA-130). */}
                 <DestinationMap destination={visit} places={destinationPlaces(data, visit.id)} onView={viewPlace} />
@@ -588,12 +610,12 @@ export default function PlannerApp({ initialData, initialBudgets, access = {}, d
                 <HealthSafetyPanel healthSafety={visit.healthSafety} disabled={busy} onEdit={() => open({ kind: "healthSafety", item: visit })} onClear={() => confirmDelete({ type: "destination.healthSafety", id: visit.id, healthSafety: null }, "Clear health and safety?", "This removes the recorded advisories, precautions, safety guidance, emergency contacts, sources, and last checked date for " + label + ", in every trip that visits it.")} />
                 <TypicalWeatherPanel weather={visit} stay={visitStop} disabled={busy} onEdit={() => open({ kind: "weather", item: visit })} onEditClimate={() => open({ kind: "climate", item: visit })} onClearClimate={() => confirmDelete({ type: "destination.climate", id: visit.id, climate: null }, "Clear monthly averages?", climateClearing(label))} />
                 {renderChurch(visit, MAIN_COLUMN, visitStop)}
-              </article>; })}</div>}
+              </article>]; })}{renderStopInsertion(visits.length)}</div>}
             {visits.length > 1 && <p className="helper">Use the arrows to change your route. Affected travel connections will need new details.</p>}
             {visits.length > 0 && <p className="helper">A destination’s ideas, research, photos, selections, and budget amounts are shared with every trip that visits it, and with Destinations. Each trip keeps its own nights, dates, stay notes, and travel connections.</p>}
           </section>
           <section className="travel-section"><div className="section-heading"><div><p className="eyebrow">GETTING THERE & BACK</p><h2>Between the places</h2></div><Plane size={25} strokeWidth={1.3} /></div>
-            {visits.length === 0 ? <p className="section-description">Your travel connections will appear once you add a destination.</p> : <div className="travel-list">{tripLegs.map((leg) => <article className="travel-card" key={leg.id} id={connectionTarget(leg.id)} tabIndex={-1}><TransportationIcons method={leg.method} /><div className="travel-content"><h3>{legName(leg.fromId, "from")} <ArrowRight size={15} aria-hidden="true" /><span className="sr-only">to</span> {legName(leg.toId, "to")}</h3><p>{leg.method || "Travel details to be decided"}{leg.departure && " · " + leg.departure}{leg.arrival && " → " + leg.arrival}</p>{leg.notes && <p className="preserve-lines">{leg.notes}</p>}<ResearchLinks links={leg.links ?? []} /><ConnectionItinerary legId={leg.id} stops={leg.itinerary ?? []} /><span className={leg.priceCents === null ? "price unknown" : "price"}>{displayPrice(leg.priceCents)}{leg.priceCents === null && " · Needs estimate"}</span>{leg.miscCents !== null && <span className="price">Miscellaneous spending: {formatCurrency(leg.miscCents, "USD")}</span>}</div><div className="travel-tools"><button className="text-button" aria-label={"Edit travel from " + legName(leg.fromId, "from") + " to " + legName(leg.toId, "to")} onClick={() => open({ kind: "leg", item: leg })}><Pencil size={14} />Edit</button>{(leg.method || leg.priceCents !== null || leg.miscCents !== null || leg.notes || leg.url || leg.departure || leg.arrival || (leg.itinerary?.length ?? 0) > 0 || (leg.links?.length ?? 0) > 0) && <button className="text-button muted" onClick={() => confirmDelete({ type: "leg.clear", id: leg.id }, "Clear this travel plan?", "The connection will remain in your route, with its price, miscellaneous spending, travel details, links, and itinerary cleared.")}>Clear</button>}</div></article>)}</div>}
+            {visits.length === 0 ? <p className="section-description">Your travel connections will appear once you add a destination.</p> : <div className="travel-list">{tripLegs.map((leg) => <article className="travel-card" key={leg.id} id={connectionTarget(leg.id)} tabIndex={-1}><TransportationIcons method={leg.method} /><div className="travel-content"><h3>{legName(leg.fromId, "from")} <ArrowRight size={15} aria-hidden="true" /><span className="sr-only">to</span> {legName(leg.toId, "to")}</h3><p>{leg.method || "Travel details to be decided"}{leg.departure && " · " + leg.departure}{leg.arrival && " → " + leg.arrival}</p>{leg.notes && <p className="preserve-lines">{leg.notes}</p>}<ResearchLinks links={leg.links ?? []} /><ConnectionItinerary legId={leg.id} stops={leg.itinerary ?? []} plans={leg.layoverPlans} disabled={busy} onPlan={(layover) => open({ kind: "layover", leg, layover })} onRemovePlan={(layover) => confirmDelete({ type: "leg.layoverPlan", id: leg.id, layoverId: layover.id, plan: null }, "Remove the layover plan for " + layover.place + "?", "Its flight times, airport time and activities are removed. The layover stays in the connection, and nothing else changes.")} /><span className={leg.priceCents === null ? "price unknown" : "price"}>{displayPrice(leg.priceCents)}{leg.priceCents === null && " · Needs estimate"}</span>{leg.miscCents !== null && <span className="price">Miscellaneous spending: {formatCurrency(leg.miscCents, "USD")}</span>}</div><div className="travel-tools"><button className="text-button" aria-label={"Edit travel from " + legName(leg.fromId, "from") + " to " + legName(leg.toId, "to")} onClick={() => open({ kind: "leg", item: leg })}><Pencil size={14} />Edit</button>{(leg.method || leg.priceCents !== null || leg.miscCents !== null || leg.notes || leg.url || leg.departure || leg.arrival || (leg.itinerary?.length ?? 0) > 0 || (leg.links?.length ?? 0) > 0) && <button className="text-button muted" onClick={() => confirmDelete({ type: "leg.clear", id: leg.id }, "Clear this travel plan?", "The connection will remain in your route, with its price, miscellaneous spending, travel details, links, itinerary, and layover plans cleared.")}>Clear</button>}</div></article>)}</div>}
           </section>
           <HomeItems items={data.homeItems.filter((item) => item.tripId === trip.id)} busy={busy}
             onAdd={() => open({ kind: "homeItem" })}
@@ -682,7 +704,11 @@ export default function PlannerApp({ initialData, initialBudgets, access = {}, d
         <Field label="Departure"><input name="departure" defaultValue={editor.item.departure} maxLength={120} placeholder="Date, time, or general plan" /></Field>
         <Field label="Arrival"><input name="arrival" defaultValue={editor.item.arrival} maxLength={120} placeholder="Date, time, or general plan" /></Field>
         <ResearchLinksEditor links={researchLinks} onChange={setResearchLinks} disabled={busy} /><Notes value={editor.item.notes} />
-        <ConnectionItineraryEditor stops={itinerary} onChange={setItinerary} disabled={busy} />
+        <ConnectionItineraryEditor stops={itinerary} onChange={setItinerary} planned={editor.item.layoverPlans.map((plan) => plan.layoverId)} disabled={busy} />
+      </>}
+      {editor.kind === "layover" && <>
+        <p className="form-route wide">{legName(editor.leg.fromId, "from")} <ArrowRight size={16} aria-hidden="true" /><span className="sr-only">to</span> {legName(editor.leg.toId, "to")}</p>
+        <LayoverPlanEditor place={editor.layover.place} draft={layoverDraft} onChange={setLayoverDraft} disabled={busy} />
       </>}
       {editor.kind === "homeItem" && <>
         <Field label="Name" wide><input name="name" defaultValue={editor.item?.name} required maxLength={160} placeholder="House sitting, babysitting, or another task" disabled={busy} /></Field>
@@ -703,7 +729,7 @@ export default function PlannerApp({ initialData, initialBudgets, access = {}, d
         {editor.category !== "hotels" && <label className="checkbox-field wide"><input name="mustDo" type="checkbox" defaultChecked={editor.item?.mustDo ?? false} disabled={busy} /><span>Must do<small>A planning priority. Budget inclusion and list order stay separate.</small></span></label>}
         <label className="checkbox-field wide"><input name="included" type="checkbox" defaultChecked={editor.item?.included ?? false} /><span>{selectionLabels[editor.category]}<small>{editor.category === "hotels" ? "Replaces the general estimate or other chosen hotel. Your general estimate stays saved." : editor.category === "activities" ? "Applies only in Itemized activity costs mode. This does not change your budgeting method." : "Applies only in Itemized restaurant costs mode. This does not change your budgeting method."}</small></span></label>
       </>}
-    </div><div className="dialog-footer">{error && !deleting && <p className="form-error" role="alert">{error}</p>}<div className="dialog-actions"><button type="button" className="button secondary" onClick={cancel} disabled={busy}>Cancel</button>{editor.kind === "candidate" && editor.item && <button type="button" className="button danger editor-delete" onClick={() => setDeleting(true)} disabled={busy}>Delete</button>}<button className={editor.kind === "delete" ? "button danger" : "button primary"} type="submit" disabled={busy}>{busy ? "Saving…" : editor.kind === "delete" ? (editor.mutation.type === "leg.clear" ? "Clear travel plan" : editor.mutation.type === "destination.entryRequirements" ? "Clear entry requirements" : editor.mutation.type === "destination.healthSafety" ? "Clear health and safety" : editor.mutation.type === "stop.remove" ? "Remove from trip" : "Delete") : editor.kind === "trip" && !editor.item ? "Create trip" : editor.kind === "addStop" ? "Add destination" : editor.kind === "newDestination" ? "Create destination" : editor.kind === "share" ? "Share" : "Save changes"}</button></div></div></form>}</Dialog>}
+    </div><div className="dialog-footer">{error && !deleting && <p className="form-error" role="alert">{error}</p>}<div className="dialog-actions"><button type="button" className="button secondary" onClick={cancel} disabled={busy}>Cancel</button>{editor.kind === "candidate" && editor.item && <button type="button" className="button danger editor-delete" onClick={() => setDeleting(true)} disabled={busy}>Delete</button>}<button className={editor.kind === "delete" ? "button danger" : "button primary"} type="submit" disabled={busy}>{busy ? "Saving…" : editor.kind === "delete" ? (editor.mutation.type === "leg.clear" ? "Clear travel plan" : editor.mutation.type === "leg.layoverPlan" ? "Remove plan" : editor.mutation.type === "destination.entryRequirements" ? "Clear entry requirements" : editor.mutation.type === "destination.healthSafety" ? "Clear health and safety" : editor.mutation.type === "stop.remove" ? "Remove from trip" : "Delete") : editor.kind === "trip" && !editor.item ? "Create trip" : editor.kind === "addStop" ? "Add destination" : editor.kind === "newDestination" ? "Create destination" : editor.kind === "share" ? "Share" : editor.kind === "layover" ? "Save plan" : "Save changes"}</button></div></div></form>}</Dialog>}
     {/* An idea's Delete confirmation, above its editor (TRA-128). It deletes the saved idea without saving the draft, which Cancel keeps. */}
     {deleting && <Dialog title={ideaDeletion(deleting).title} view="delete" confirm busy={busy} onClose={() => setDeleting(false)} onClosed={leaveDeleting}><div className="form-grid dialog-body"><p className="delete-description wide">{ideaDeletion(deleting).description} This cannot be undone.</p></div>
       <div className="dialog-footer">{error && <p className="form-error" role="alert">{error}</p>}<div className="dialog-actions"><button type="button" className="button secondary" onClick={() => setDeleting(false)} disabled={busy}>Cancel</button><button type="button" className="button danger" onClick={() => void perform({ type: "candidate.delete", id: deleting.id }, "Removed from your notebook.")} disabled={busy}>{busy ? "Saving…" : "Delete"}</button></div></div></Dialog>}

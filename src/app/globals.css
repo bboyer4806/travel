@@ -390,7 +390,7 @@ button svg,a svg {
   color:#647982
 }
 .trip-number {
-  font-size:9px;
+  font-size:10px;
   letter-spacing:2px;
   font-weight:600;
   padding-top:6px
@@ -400,18 +400,21 @@ button svg,a svg {
   letter-spacing:-.5px;
   overflow-wrap:anywhere
 }
+/* TRA-51: the text beneath a location's image on its cards ranks the same way on every card. Its name leads; then what
+   the place, stay or trip is, in ink (--ink); then further details, muted (--muted) and no smaller than 13px, except
+   small labels and tags. Here, a trip's destinations or the trips that visit a destination, in two lines' room. */
 .city-list {
   display:flex;
   align-items:flex-start;
   gap:6px;
-  font-size:12px;
-  color:var(--muted);
+  font-size:14px;
+  color:var(--ink);
   margin:13px 0 20px;
-  min-height:38px;
+  min-height:45px;
   overflow-wrap:anywhere
 }
 .city-list svg {
-  margin-top:3px
+  margin-top:4px
 }
 .trip-meta {
   display:flex;
@@ -427,7 +430,8 @@ button svg,a svg {
 }
 .trip-card .trip-meta {
   display:grid;
-  gap:8px
+  gap:8px;
+  font-size:13px
 }
 .card-budget {
   border-top:1px solid var(--line);
@@ -681,8 +685,55 @@ button svg,a svg {
 }
 .destination-list {
   display:flex;
-  flex-direction:column;
-  gap:17px
+  flex-direction:column
+}
+/* TRA-153: a + above each destination card, and below the last, adds a destination there. Its row is the space between
+   the cards, and its button reaches only into their padding, clear of photos and details. With a mouse, one shows while
+   the pointer is over it or a card beside it, or it has keyboard focus. Touchscreens always show them, each in its own
+   space between the cards, as 44 × 44 touch targets. */
+.stop-insertion {
+  display:flex;
+  justify-content:center;
+  align-items:center;
+  height:17px
+}
+.stop-insertion .button {
+  position:relative;
+  z-index:1;
+  flex:0 0 32px;
+  height:32px;
+  min-height:0;
+  padding:0;
+  border-radius:50%;
+  box-shadow:0 4px 12px #233d351f;
+  transition:opacity .16s,background .16s,border-color .16s,transform .16s
+}
+@media(hover:hover) {
+  .stop-insertion .button {
+  opacity:0
+}
+.stop-insertion:hover .button,.stop-insertion .button:focus-visible,.destination-card:hover+.stop-insertion .button,.stop-insertion:has(+.destination-card:hover) .button {
+  opacity:1
+}
+
+}
+/* TRA-155: on phones, a trip's destination photos reach the top of their cards, so with a mouse each + takes a row as
+   tall as itself, clear of the photo below. Touchscreens' rows, next, already hold theirs. */
+@media(max-width:540px) {
+  .stop-insertion {
+  height:32px
+}
+
+}
+@media(pointer:coarse) {
+  .stop-insertion {
+  height:44px
+}
+.stop-insertion .button {
+  flex-basis:44px;
+  height:44px
+}
+
 }
 .destination-card {
   border:1px solid var(--line);
@@ -717,16 +768,21 @@ button svg,a svg {
   font-size:28px;
   overflow-wrap:anywhere
 }
+/* TRA-51: a stay's notes, in ink below its destination's name, or muted while there are none. */
 .destination-name p {
-  font-size:11px;
-  color:var(--muted);
-  margin-top:4px
+  font-size:14px;
+  line-height:1.5;
+  color:var(--ink);
+  margin-top:6px
+}
+.destination-name p.unknown {
+  color:var(--muted)
 }
 .destination-name h3 a:hover {
   color:var(--orange)
 }
 .destination-full-name {
-  font-size:11px;
+  font-size:13px;
   color:var(--muted);
   margin-top:6px;
   overflow-wrap:anywhere
@@ -766,7 +822,7 @@ button svg,a svg {
 .destination-notes {
   margin:14px 0 0 55px;
   color:var(--muted);
-  font-size:12px;
+  font-size:13px;
   white-space:pre-wrap;
   overflow-wrap:anywhere
 }
@@ -989,8 +1045,10 @@ button svg,a svg {
   gap:12px;
   margin-bottom:19px
 }
+/* TRA-51: a label large enough to read beside a card's tools, below its photos, as restaurant types' tags are. */
 .selection-tag {
-  font-size:9px;
+  font-size:11px;
+  font-weight:600;
   letter-spacing:.4px;
   display:inline-flex;
   align-items:center;
@@ -1035,16 +1093,17 @@ button svg,a svg {
   font-size:28px;
   overflow-wrap:anywhere
 }
-/* What an idea is, directly below its name (TRA-138): at most two lines, ending in an ellipsis when it is longer. */
+/* What an idea is, directly below its name (TRA-138): at most two lines, ending in an ellipsis when it is longer. In ink,
+   as what a place is on every card (TRA-51). */
 .idea-description {
   display:-webkit-box;
   -webkit-box-orient:vertical;
   -webkit-line-clamp:2;
   overflow:hidden;
-  margin-top:6px;
+  margin-top:8px;
   font-size:14px;
   line-height:1.5;
-  color:var(--muted);
+  color:var(--ink);
   overflow-wrap:anywhere
 }
 /* A restaurant's types, below its name (TRA-36). */
@@ -1055,17 +1114,17 @@ button svg,a svg {
   display:flex;
   align-items:flex-start;
   gap:5px;
-  font-size:11px;
+  font-size:13px;
   color:var(--muted);
-  margin:11px 0 0;
+  margin:12px 0 0;
   overflow-wrap:anywhere
 }
 .idea-address svg {
-  margin-top:2px
+  margin-top:3px
 }
 .idea-notes {
   font-size:13px;
-  color:#6b796c;
+  color:var(--muted);
   line-height:1.8;
   margin-top:17px;
   white-space:pre-wrap;
@@ -1084,7 +1143,7 @@ button svg,a svg {
 }
 .idea-bottom small {
   display:block;
-  font-size:9px;
+  font-size:11px;
   color:var(--muted);
   margin-top:4px
 }

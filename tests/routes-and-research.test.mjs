@@ -63,8 +63,8 @@ function legacyDatabase(path, version) {
     // Each destination becomes a shared one, without a tagline (TRA-125), visited by a stop with its ID that keeps the trip's own details.
     destinations: db.prepare("SELECT * FROM destinations").all().map((row) => ({ id: row.id, city: row.city, cityFromSuggestion: false, tagline: "", notes: row.notes, imageVersion: null, miscDailyMinor: null, miscCurrency: null, hotelNightlyMinor: null, hotelCurrency: null, activitiesBudgetMode: "itemized", activitiesGeneralMinor: null, activitiesCurrency: null, foodBudgetMode: "itemized", foodDailyMinor: null, foodCurrency: null, shoppingMinor: null, shoppingCurrency: null, weatherHighF: null, weatherLowF: null, weatherRainfall: "", weatherPeriod: "", weatherSource: "", churchEnabled: false })),
     stops: db.prepare("SELECT * FROM destinations").all().map((row) => ({ id: row.id, tripId: row.tripId, destinationId: row.id, position: row.position, stay: row.stay, nights: null, arrivalDate: null, departureDate: null, legacyArrivalDate: null, legacyDepartureDate: null })),
-    // Connections from before miscellaneous spending in transit upgrade without an estimate (TRA-26).
-    legs: db.prepare("SELECT * FROM legs ORDER BY fromId IS NOT NULL").all().map((row) => ({ ...row, itinerary: [], miscCents: null })),
+    // Connections from before miscellaneous spending in transit upgrade without an estimate (TRA-26), and without layover plans (TRA-45).
+    legs: db.prepare("SELECT * FROM legs ORDER BY fromId IS NOT NULL").all().map((row) => ({ ...row, itinerary: [], miscCents: null, layoverPlans: [] })),
     // Ideas from before descriptions upgrade without one (TRA-138), and without coordinates (TRA-150).
     candidates: db.prepare("SELECT * FROM candidates").all().map((row) => ({ ...row, description: "", included: row.included === 1, mainImageId: null, images: [], coordinates: null })),
   };

@@ -1,11 +1,17 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 
-/** Each rule in a CSS file, by its path from tests: its selector and its declarations by property. A rule in a media query is listed as any other. */
+/**
+ * Each rule in a CSS file, by its path from tests, in order: its selector, its declarations by property, and the at-rule
+ * it is in, such as `@media(max-width:540px)` without spaces around its parentheses and colons, or null outside one. A
+ * rule in a media query is listed in its place, as any other.
+ */
 export function cssRules(file) {
   const css = readFileSync(new URL(file, import.meta.url), "utf8").replace(/\/\*[\s\S]*?\*\//g, "");
-  return [...css.matchAll(/([^{}]+)\{([^{}]*)\}/g)].map(([, selector, body]) => [selector.trim(), Object.fromEntries(body.split(";").filter((declaration) => declaration.trim())
-    .map((declaration) => [declaration.slice(0, declaration.indexOf(":")).trim(), declaration.slice(declaration.indexOf(":") + 1).trim()]))]);
+  const rules = (text, atRule) => [...text.matchAll(/([^{}]+)\{([^{}]*)\}/g)].map(([, selector, body]) => [selector.trim(), Object.fromEntries(body.split(";").filter((declaration) => declaration.trim())
+    .map((declaration) => [declaration.slice(0, declaration.indexOf(":")).trim(), declaration.slice(declaration.indexOf(":") + 1).trim()])), atRule]);
+  return [...css.matchAll(/(@[^{};]+)\{((?:[^{}]*\{[^{}]*\})*[^{}]*)\}|[^{}@;]+\{[^{}]*\}/g)].flatMap(([block, atRule, inner]) => atRule === undefined
+    ? rules(block, null) : rules(inner, atRule.replace(/\s+/g, " ").trim().replace(/ ?([():,]) ?/g, "$1")));
 }
 
 /** The declarations of the one rule for a selector, alone or after another, in a CSS file, so no rule for another screen width changes it. */

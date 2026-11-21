@@ -36,9 +36,11 @@ function claimed(frame, viewport) {
 
 test("each frame's width is the width Chromium lays its photo out at, at every screen width", () => {
   // Measured in Chromium on Travel's pages, at 390, 560, 700, 1000, 1200 and 1440 pixels wide. Frames leave out their
-  // 1-pixel borders, and a carousel's cards are a little wider on phones: neither changes which version loads.
+  // 1-pixel borders, and a carousel's cards are a little wider on phones: neither changes which version loads. A
+  // destination's photo is measured on a trip's card; on the destination's own page it is 34 pixels narrower on phones
+  // (318 at 390), far from the 1600 device pixels where the version changes.
   const laidOut = [
-    [PAGE, [352, 510, 650, 886, 1086, 1246]], [CARD, [352, 243, 313, 431, 346, 399]], [MAIN_COLUMN, [318, 472, 612, 564, 704, 864]],
+    [PAGE, [352, 510, 650, 886, 1086, 1246]], [CARD, [352, 243, 313, 431, 346, 399]], [MAIN_COLUMN, [352, 472, 612, 564, 704, 864]],
     [HALF_PAGE, [308, 208, 278, 383, 483, 563]], [DIALOG, [324, 470, 502, 502, 502, 502]], [CARD_PREVIEW, [318, 318, 318, 318, 318, 318]],
     [CAROUSEL_CARD, [204, 198, 198, 198, 198, 198]],
   ];

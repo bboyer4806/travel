@@ -8,7 +8,7 @@ import { makeThumbnail, prepareImage } from "../src/lib/image-upload.ts";
 import { createStore, SCHEMA_VERSION } from "../src/lib/store.ts";
 import { aiSetup, NOW } from "./ai-fixtures.mjs";
 import { addCity, candidateInput, fileDatabase, newItem, prepared, tripInput } from "./budget-fixtures.mjs";
-import { OWNER_EMAIL, UNDO_SCHEMA_39 } from "./owned-store.mjs";
+import { OWNER_EMAIL, UNDO_SCHEMA_40 } from "./owned-store.mjs";
 
 // TRA-154: each photo keeps a large version beside it when its upload is larger than the photo, for frames wider than
 // the photo on high-resolution screens, such as a trip's banner.
@@ -168,7 +168,7 @@ test("the database keeps each large version with both widths, the large one wide
   }
 });
 
-test("schema 39 keeps every photo and headline image as it was, without a large version, and a replay keeps those saved since", (t) => {
+test("schema 40 keeps every photo and headline image as it was, without a large version, and a replay keeps those saved since", (t) => {
   const path = fileDatabase(t);
   let store = createStore(path, OWNER_EMAIL);
   const owner = store.authorizeAccount(OWNER_EMAIL).id;
@@ -181,7 +181,7 @@ test("schema 39 keeps every photo and headline image as it was, without a large 
   const images = [store.getTripImage(owner, tripId), store.getDestinationPhoto(owner, destinationId, kept.id)];
   store.close();
   let db = new DatabaseSync(path);
-  db.exec(UNDO_SCHEMA_39);
+  db.exec(UNDO_SCHEMA_40);
   db.close();
 
   store = createStore(path, OWNER_EMAIL);
@@ -195,7 +195,7 @@ test("schema 39 keeps every photo and headline image as it was, without a large 
   store.close();
 
   db = new DatabaseSync(path);
-  db.exec("PRAGMA user_version = 38;");
+  db.exec("PRAGMA user_version = 39;");
   db.close();
   store = createStore(path, OWNER_EMAIL);
   t.after(() => store.close());

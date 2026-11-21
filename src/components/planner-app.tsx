@@ -54,8 +54,9 @@ type Editor =
   | { kind: "trip"; item?: Trip }
   // A saved destination; with a stop it also edits that trip's stay.
   | { kind: "destination"; item: Destination; stop?: TripStop }
-  // A city to add to the trip. Only the city is asked for.
-  | { kind: "addStop" }
+  // A city to add to the trip: last, or from a + between its cards, directly before the stop `before` (TRA-153). Only
+  // the city is asked for.
+  | { kind: "addStop"; before?: TripStop }
   // A destination outside any trip, from Destinations. Only its city is asked for.
   | { kind: "newDestination" }
   | { kind: "shoppingBudget"; item: Destination }
@@ -353,9 +354,11 @@ export default function PlannerApp({ initialData, initialBudgets, access = {}, d
         break;
       }
       case "addStop": {
-        // A saved destination chosen from the list is added by its ID (TRA-142); any other city by its name.
+        // A saved destination chosen from the list is added by its ID (TRA-142); any other city by its name. Either goes
+        // last, or before the stop whose + opened the editor (TRA-153).
         const destinationId = text("destinationId");
-        if (trip) void perform(destinationId ? { type: "stop.visit", tripId: trip.id, destinationId } : { type: "stop.add", tripId: trip.id, city: text("city"), cityFromSuggestion }, "Destination added. Review any new travel connections.");
+        const before = editor.before?.id;
+        if (trip) void perform(destinationId ? { type: "stop.visit", tripId: trip.id, destinationId, before } : { type: "stop.add", tripId: trip.id, city: text("city"), cityFromSuggestion, before }, "Destination added. Review any new travel connections.");
         break;
       }
       case "newDestination": void perform({ type: "destination.create", city: text("city"), cityFromSuggestion }); break;
@@ -412,7 +415,7 @@ export default function PlannerApp({ initialData, initialBudgets, access = {}, d
     : editor?.kind === "weather" ? "Edit typical weather"
     : editor?.kind === "climate" ? (editor.item.climate ? "Edit monthly averages" : "Add monthly averages")
     : editor?.kind === "destination" ? "Edit destination: " + formatSavedDestinationLabel(editor.item)
-    : editor?.kind === "addStop" ? "Add a destination"
+    : editor?.kind === "addStop" ? "Add a destination" + (editor.before ? " before " + formatSavedDestinationLabel(placeOf(editor.before.destinationId)) : "")
     : editor?.kind === "newDestination" ? "New destination"
     : editor?.kind === "shoppingBudget" ? "Edit shopping budget"
     : editor?.kind === "accommodationBudget" ? "Edit accommodation budget"
@@ -426,6 +429,16 @@ export default function PlannerApp({ initialData, initialBudgets, access = {}, d
     : editor?.kind === "candidate" ? (editor.item ? "Edit " : editor.category === "activities" ? "Add " : "Add a ") + singular[editor.category]
     : editor?.kind === "ideaDetails" ? latest(editor.item).name
     : editor?.kind === "churchDetails" ? editor.item.name : "";
+  /**
+   * The + above a trip's destination card `index`, or below its last card (TRA-153). It opens Add destination to add a
+   * destination there: directly before that card, or last. With a mouse it shows while the pointer is over it or a card
+   * beside it, or it has keyboard focus; touchscreens always show it.
+   */
+  function renderStopInsertion(index: number) {
+    const next = visits[index];
+    const label = next ? "Add a destination before " + formatSavedDestinationLabel(next.visit) : "Add a destination after " + formatSavedDestinationLabel(visits[index - 1].visit);
+    return <div className="stop-insertion" key={next ? "insert-" + next.stop.id : "insert-last"}><button type="button" className="button secondary" aria-label={label} onClick={() => open({ kind: "addStop", before: next?.stop })}><Plus size={16} aria-hidden="true" /></button></div>;
+  }
   /** A destination's Church section. In a trip, that stay's dates decide whether it can appear and which Sundays it lists. */
   function renderChurch(place: Destination, stay?: TripStop) {
     if (stay && !churchDateEligible(stay)) return null;
@@ -574,7 +587,7 @@ export default function PlannerApp({ initialData, initialBudgets, access = {}, d
           <TripMap tripId={trip.id} journey={tripJourney(data, trip.id)} />
           <section><div className="section-heading"><div><p className="eyebrow">ONE STOP AT A TIME</p><h2>The destinations</h2></div><button className="button secondary small" onClick={() => open({ kind: "addStop" })}><Plus size={16} />Add destination</button></div>
             {visits.length === 0 ? <div className="empty-state"><MapPin size={29} strokeWidth={1.4} /><h3>Where should this trip take you?</h3><p>Add your first destination. Your departure and return connections will appear automatically.</p><button className="text-button" onClick={() => open({ kind: "addStop" })}>Add a destination <ArrowRight size={16} /></button></div>
-              : <div className="destination-list">{visits.map(({ stop: visitStop, visit }, index) => { const label = formatSavedDestinationLabel(visit); return <article className="destination-card" key={visitStop.id} id={"destination-" + visitStop.id} tabIndex={-1}><DestinationGallery destination={visit} /><div className="destination-top"><span className="stop-number">{String(index + 1).padStart(2, "0")}</span><div className="destination-name"><h3><Link href={"/destinations/" + visit.id}>{label}</Link></h3><p>{visitStop.stay || "Stay notes not added"}</p></div><div className="destination-tools"><button className="icon-button" disabled={busy || index === 0} aria-label={"Move " + label + " up"} onClick={(event) => saveFrom(event.currentTarget, { type: "stop.move", id: visitStop.id, direction: "up" }, "Route updated. Review the new travel connections.")}><ArrowUp size={15} /></button><button className="icon-button" disabled={busy || index === visits.length - 1} aria-label={"Move " + label + " down"} onClick={(event) => saveFrom(event.currentTarget, { type: "stop.move", id: visitStop.id, direction: "down" }, "Route updated. Review the new travel connections.")}><ArrowDown size={15} /></button><button className="icon-button" aria-label={"Edit " + label} onClick={() => open({ kind: "destination", item: visit, stop: visitStop })}><Pencil size={15} /></button><button className="icon-button" aria-label={"Remove " + label + " from this trip"} onClick={() => confirmDelete({ type: "stop.remove", id: visitStop.id }, "Remove “" + label + "” from this trip?", "Its hotels, activities, restaurants, photos, and research stay in Destinations and in any other trip. This trip’s nights, stay notes, and travel plans to and from it are removed, and the remaining route reconnects.")}><Trash2 size={15} /></button></div></div>
+              : <div className="destination-list">{visits.map(({ stop: visitStop, visit }, index) => { const label = formatSavedDestinationLabel(visit); return [renderStopInsertion(index), <article className="destination-card" key={visitStop.id} id={"destination-" + visitStop.id} tabIndex={-1}><DestinationGallery destination={visit} /><div className="destination-top"><span className="stop-number">{String(index + 1).padStart(2, "0")}</span><div className="destination-name"><h3><Link href={"/destinations/" + visit.id}>{label}</Link></h3><p className={visitStop.stay ? undefined : "unknown"}>{visitStop.stay || "Stay notes not added"}</p></div><div className="destination-tools"><button className="icon-button" disabled={busy || index === 0} aria-label={"Move " + label + " up"} onClick={(event) => saveFrom(event.currentTarget, { type: "stop.move", id: visitStop.id, direction: "up" }, "Route updated. Review the new travel connections.")}><ArrowUp size={15} /></button><button className="icon-button" disabled={busy || index === visits.length - 1} aria-label={"Move " + label + " down"} onClick={(event) => saveFrom(event.currentTarget, { type: "stop.move", id: visitStop.id, direction: "down" }, "Route updated. Review the new travel connections.")}><ArrowDown size={15} /></button><button className="icon-button" aria-label={"Edit " + label} onClick={() => open({ kind: "destination", item: visit, stop: visitStop })}><Pencil size={15} /></button><button className="icon-button" aria-label={"Remove " + label + " from this trip"} onClick={() => confirmDelete({ type: "stop.remove", id: visitStop.id }, "Remove “" + label + "” from this trip?", "Its hotels, activities, restaurants, photos, and research stay in Destinations and in any other trip. This trip’s nights, stay notes, and travel plans to and from it are removed, and the remaining route reconnects.")}><Trash2 size={15} /></button></div></div>
                 {visit.notes && <p className="destination-notes">{visit.notes}</p>}
                 {/* The card's photos come first, then its name, stay notes and notes, so its map follows them, before its budget (TRA-130). */}
                 <DestinationMap destination={visit} places={destinationPlaces(data, visit.id)} onView={viewPlace} />
@@ -584,7 +597,7 @@ export default function PlannerApp({ initialData, initialBudgets, access = {}, d
                 <HealthSafetyPanel healthSafety={visit.healthSafety} disabled={busy} onEdit={() => open({ kind: "healthSafety", item: visit })} onClear={() => confirmDelete({ type: "destination.healthSafety", id: visit.id, healthSafety: null }, "Clear health and safety?", "This removes the recorded advisories, precautions, safety guidance, emergency contacts, sources, and last checked date for " + label + ", in every trip that visits it.")} />
                 <TypicalWeatherPanel weather={visit} stay={visitStop} disabled={busy} onEdit={() => open({ kind: "weather", item: visit })} onEditClimate={() => open({ kind: "climate", item: visit })} onClearClimate={() => confirmDelete({ type: "destination.climate", id: visit.id, climate: null }, "Clear monthly averages?", climateClearing(label))} />
                 {renderChurch(visit, visitStop)}
-              </article>; })}</div>}
+              </article>]; })}{renderStopInsertion(visits.length)}</div>}
             {visits.length > 1 && <p className="helper">Use the arrows to change your route. Affected travel connections will need new details.</p>}
             {visits.length > 0 && <p className="helper">A destination’s ideas, research, photos, selections, and budget amounts are shared with every trip that visits it, and with Destinations. Each trip keeps its own nights, dates, stay notes, and travel connections.</p>}
           </section>

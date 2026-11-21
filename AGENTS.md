@@ -76,7 +76,8 @@ Repeat passing checks when subsequent changes affect their coverage or required 
   returns the trip's existing stop there instead of adding another. Add destination also lists the trip owner's
   destinations the account can open (`library` from `getTripSnapshot`, TRA-142), matched to what is typed and to city
   suggestions only by `searchLibrary` in `src/lib/destination-library.ts`, and `stop.visit` adds the one chosen by its ID,
-  refusing one the account can't open or that isn't the trip owner's. Removing a stop or deleting a trip
+  refusing one the account can't open or that isn't the trip owner's. Either adds the stop last, or with `before`, one of
+  the trip's stops, directly before it, from the + between the trip's cards (TRA-153). Removing a stop or deleting a trip
   never deletes a destination or what is saved with it. Only its owner deletes a destination, and only
   while no trip visits it.
 - A destination's city shows exactly as saved unless `destinations.cityFromSuggestion` records it as
@@ -172,8 +173,8 @@ Repeat passing checks when subsequent changes affect their coverage or required 
   tools use them, and messages state them from there.
 - Each photo is saved with its thumbnail (TRA-89): `prepareImage` returns both as a `PreparedImage`, and
   every save of a photo, an AI proposal's included, carries both. A trip's headline image keeps only the photo, since it
-  shows only cropped in its card and banner. Gallery thumbnails and editor previews
-  load each photo's `/thumbnail` route; the main photo and the crop editor load the photo. A photo saved
+  shows only cropped in its card and banner. Gallery thumbnails, editor previews, and the maps' previews and popups
+  (TRA-143, TRA-152) load each photo's `/thumbnail` route; the main photo and the crop editor load the photo. A photo saved
   before schema 32 has a NULL thumbnail, so `storedThumbnailResponse` makes one with `makeThumbnail` for
   each request and saves nothing: image routes never write.
 - A trip's optional headline image (TRA-133) is its one row of `trip_images`, deleted with the trip, with its own

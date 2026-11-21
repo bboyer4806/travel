@@ -26,12 +26,20 @@
 .approximate { outline: 2px dashed var(--ink); outline-offset: 2px; }
 .anchor:focus-visible .content > * { outline: 3px solid var(--ink); outline-offset: 2px; }
 
-/* A marker's popup: each place found there, with its category and View details. */
-.popupPlaces { display: grid; gap: 10px; min-width: 160px; margin: 0; padding: 0; list-style: none; }
+/* A marker's popup: each place found there, with its primary photo when it has one (TRA-152), its category and View details. */
+.popupPlaces { --photo-width: 240px; display: grid; gap: 10px; min-width: 160px; margin: 0; padding: 0; list-style: none; }
 .popupPlaces li { display: grid; justify-items: start; gap: 1px; overflow-wrap: anywhere; }
 .popupPlaces li + li { padding-top: 10px; border-top: 1px solid var(--line); }
 .popupPlaces strong { color: var(--ink); font-size: 13px; font-weight: 600; }
 .category { color: var(--muted); font-size: 11px; }
+/* A place's primary photo across the top of its entry (TRA-152): the same 2:1 frame for every place, which the photo
+   covers without stretching, cropped to fit. The frame's size never waits for the photo, since Leaflet measures a popup as
+   it opens, and the place's details wrap to its width. A place without a photo has no frame. */
+.popupPhoto { width: var(--photo-width); aspect-ratio: 2 / 1; margin-bottom: 6px; border-radius: 6px; object-fit: cover; background: var(--wash); }
+.popupPhoto ~ * { max-width: var(--photo-width); }
+/* A popup taller than the map has room for scrolls (TRA-152). Its content keeps its place, inset within the scrolling area
+   so that the area doesn't cut off View details' focus ring. */
+.frame :global(.leaflet-popup-scrolled) { margin: 7px 18px 7px 14px; padding: 6px; }
 
 /* What the dashed ring of approximate places means, below the map while it shows one (TRA-150). */
 .note { display: flex; align-items: center; gap: 8px; margin: 8px 0 0; color: var(--muted); font-size: 11px; }
@@ -54,4 +62,5 @@
 
 @media (max-width: 540px) {
   .frame { height: 280px; }
+  .popupPlaces { --photo-width: 180px; }
 }

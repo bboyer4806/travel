@@ -652,6 +652,13 @@ This replaces TRA-62's destination Save in a sticky header.
 - Unchanged: the estimate's heading, total, caption, rows, amounts and note, how every amount is calculated, editing them, and saved data. The schema is unchanged.
 - Not included, as the ticket says: other explanatory text in Travel, Help included, such as the destination budget editors' notes and the In your trips box on a destination's page; and redesigning the estimate.
 
+## Added scope: November 21, 2026, more prominent details beneath location images (TRA-51)
+- The text below a location's image is easier to notice and read, and ranks the same way on every card that shows one: the location's name, then what the place, stay or trip is in Travel's dark text color, then further details in its gray secondary color, at 13 pixels or more, with larger labels and tags and more room between them.
+- The cards: a destination's on a trip's page and in Destinations, the trip cards on All trips, which share Destinations' card, and the cards of hotels, activities, restaurants and churches in a destination's carousels and on its pages.
+- The serif names of destinations, trips, ideas and churches keep their size and weight, as every heading in Travel does, so they still lead their cards. The carousels' names, the only small ones, are larger.
+- Colors are Travel's own, and all text keeps at least 4.5:1 contrast. Travel has one theme, so there is no dark theme to check.
+- Not included, as the ticket says: new fonts or card designs, changes to images, card layouts, order, links or controls, saved details, and text elsewhere in Travel.
+
 ## Added scope: November 21, 2026, adding a destination between others (TRA-153)
 - From feedback: a destination could only be added last, then moved into place with its card's arrows. A **+** above each destination card on a trip's page, and one below the last card, now opens the existing **Add destination** to add one there, titled with the destination it goes before. The new stop goes directly before that card, or last from the + below the last card, which opens Add destination as the heading's button does. The search, **In your library** and adding a new city are unchanged, and Cancel adds nothing.
 - With a mouse, a card's + above and below show while the pointer is over the card or a +, or a + has keyboard focus, and hide when it leaves. Touchscreens always show them, as 44 × 44 touch targets. Each sits in the space between the cards, in Travel's secondary button style, clear of photos and details; the cards keep their spacing, apart from the room the first + and the last take above and below them, and on touchscreens the room each + takes.

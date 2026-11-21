@@ -1,4 +1,4 @@
-// Production HTTP regressions for TRA-73, TRA-75, TRA-89, TRA-94, TRA-115, TRA-122, TRA-133 and TRA-139. Run after pnpm build with Node 24.
+// Production HTTP regressions for TRA-73, TRA-75, TRA-89, TRA-94, TRA-115, TRA-122, TRA-133, TRA-139 and TRA-154. Run after pnpm build with Node 24.
 // All writes and failure injection use a new, isolated database under test-results.
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
@@ -35,22 +35,26 @@ const cookie = `${sessionCookieName(false)}=${store.createSession(owner.id, Date
 const tripInput = { type: "trip.save", name: "Review smoke trip", dateLabel: "", homeCity: "Test", travelers: 2, notes: "" };
 // A new item carries the ID its editor gives it.
 const newItem = () => ({ id: randomUUID(), create: true });
-/** A photo as Travel prepares an upload, or a photo it downloads for a proposal (TRA-122), with its thumbnail (TRA-89). */
-async function preparedPhoto(color) {
+/**
+ * A photo as Travel prepares an upload, or a photo it downloads for a proposal (TRA-122), with its thumbnail (TRA-89), and
+ * its large version when the upload is larger than the photo (TRA-154).
+ */
+async function preparedPhoto(color, width = 48, height = 32) {
   const form = new FormData();
-  form.set("image", new File([await sharp({ create: { width: 48, height: 32, channels: 3, background: color } }).png().toBuffer()], "photo.png", { type: "image/png" }));
+  form.set("image", new File([await sharp({ create: { width, height, channels: 3, background: color } }).png().toBuffer()], "photo.png", { type: "image/png" }));
   return prepareImage(form);
 }
 const tripId = store.applyMutation(owner.id, { ...tripInput, ...newItem() }).id;
 // A city added to a trip is a new destination whose first stop shares its ID.
 const destinationId = store.applyMutation(owner.id, { type: "stop.add", tripId, city: "Vienna" }).id;
 const seedPhoto = Buffer.from("UklGRh4AAABXRUJQVlA4TBEAAAAvAUAAAAfQtSZVrP+BiOh/AAA=", "base64");
-store.applyMutation(owner.id, { type: "destination.save", id: destinationId, image: { data: seedPhoto, thumbnail: seedPhoto } });
+store.applyMutation(owner.id, { type: "destination.save", id: destinationId, image: { data: seedPhoto, thumbnail: seedPhoto, large: null } });
 const otherTripId = store.applyMutation(owner.id, { ...tripInput, ...newItem(), name: "Other smoke trip" }).id;
 // TRA-133: the trip's headline image, prepared as an upload is, and a signed-in account the trip is shared with only briefly.
-const headline = await preparedPhoto("#496b62");
+// The upload is larger than the photo, so the image has a large version too (TRA-154).
+const headline = await preparedPhoto("#496b62", 2000, 1500);
 const uncropped = { focusX: 50, focusY: 50, zoom: 1 };
-store.applyMutation(owner.id, { ...tripInput, id: tripId, image: { data: headline.data, card: uncropped, banner: uncropped } });
+store.applyMutation(owner.id, { ...tripInput, id: tripId, image: { data: headline.data, large: headline.large, card: uncropped, banner: uncropped } });
 const headlineVersion = store.getTripImage(owner.id, tripId).version;
 const friend = store.authorizeAccount("friend@example.test");
 assert.equal(store.authorizeGoogleSignIn({ subject: "review-smoke-friend", email: "friend@example.test", emailVerified: true, name: "Smoke Friend" })?.id, friend.id);
@@ -175,24 +179,33 @@ for (const [label, firstPath] of [
         assert.deepEqual([made.status, (await sharp(Buffer.from(await made.arrayBuffer())).metadata()).format], [200, "webp"], "a photo saved before thumbnails has one made");
         assert.equal(photos.prepare("SELECT thumbnail FROM destination_images WHERE id = ?").get(photoId).thumbnail, null, "making a thumbnail saves nothing");
         assert.equal((await server.request(thumbnailPath, { headers: { Cookie: "" } })).status, 401);
+        // TRA-154: a photo saved without a large version has none to serve.
+        assert.equal((await server.request(`/api/destination-images/${destinationId}/${photoId}/large?v=${version}`)).status, 404);
       } finally {
         photos.close();
       }
       // TRA-133: a trip's headline image is served, versioned and privately cached, only to the accounts that can open the
       // trip, and a save that names one changes nothing: only the trip editor's validated upload can.
       const headlinePath = `/api/trip-images/${tripId}?v=${headlineVersion}`;
+      // TRA-154: its large version, under its address, goes to exactly the accounts its image does.
+      const largePath = `/api/trip-images/${tripId}/large?v=${headlineVersion}`;
       const served = await server.request(headlinePath);
       assert.deepEqual([served.status, served.headers.get("content-type"), served.headers.get("cache-control")], [200, "image/webp", "private, max-age=31536000, immutable"]);
       assert.deepEqual(new Uint8Array(await served.arrayBuffer()), headline.data);
       assert.equal((await server.request(headlinePath, { headers: { Cookie: "" } })).status, 401);
       assert.equal((await server.request(`/api/trip-images/${tripId}?v=${missingId}`)).status, 404, "another version finds nothing");
       assert.equal((await server.request(`/api/trip-images/${otherTripId}?v=${headlineVersion}`)).status, 404, "a trip without an image has none");
+      const servedLarge = await server.request(largePath);
+      assert.deepEqual([servedLarge.status, servedLarge.headers.get("content-type"), servedLarge.headers.get("cache-control")], [200, "image/webp", "private, max-age=31536000, immutable"]);
+      assert.deepEqual(new Uint8Array(await servedLarge.arrayBuffer()), headline.large.data);
+      assert.equal((await server.request(largePath, { headers: { Cookie: "" } })).status, 401);
+      assert.equal((await server.request(`/api/trip-images/${tripId}/large?v=${missingId}`)).status, 404, "another version's large version finds nothing");
       const asFriend = { headers: { Cookie: friendCookie } };
-      assert.equal((await server.request(headlinePath, asFriend)).status, 404, "an account the trip isn't shared with finds nothing");
+      assert.deepEqual([(await server.request(headlinePath, asFriend)).status, (await server.request(largePath, asFriend)).status], [404, 404], "an account the trip isn't shared with finds nothing");
       assert.equal((await server.mutation({ type: "trip.share", tripId, email: "friend@example.test" })).ok, true);
-      assert.equal((await server.request(headlinePath, asFriend)).status, 200, "sharing the trip shares its image");
+      assert.deepEqual([(await server.request(headlinePath, asFriend)).status, (await server.request(largePath, asFriend)).status], [200, 200], "sharing the trip shares its image");
       assert.equal((await server.mutation({ type: "trip.unshare", tripId, email: "friend@example.test" })).ok, true);
-      assert.equal((await server.request(headlinePath, asFriend)).status, 404, "and ending the share ends it");
+      assert.deepEqual([(await server.request(headlinePath, asFriend)).status, (await server.request(largePath, asFriend)).status], [404, 404], "and ending the share ends it");
       assert.deepEqual(await server.mutation({ ...tripInput, id: tripId, image: null }), { ok: true, id: tripId });
       assert.equal((await server.request(headlinePath)).status, 200, "a save without the trip editor's form keeps the image");
       // TRA-139: Add image by URL downloads only for a signed-in account's request from Travel's own page, and never from a

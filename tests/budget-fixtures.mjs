@@ -13,8 +13,11 @@ import { createOwnedStore } from "./owned-store.mjs";
  * still means a new item.
  */
 export const newItem = (overrides = {}) => (overrides.id === undefined ? { id: randomUUID(), create: true } : {});
-/** A photo as Travel prepares one, with its thumbnail (TRA-89). Tests that don't look at thumbnails give it the photo's own bytes. */
-export const prepared = (data, thumbnail = data) => ({ data, thumbnail });
+/**
+ * A photo as Travel prepares one, with its thumbnail (TRA-89) and its large version, or null (TRA-154). Tests that don't
+ * look at thumbnails give it the photo's own bytes, and tests that don't look at large versions give it none.
+ */
+export const prepared = (data, thumbnail = data, large = null) => ({ data, thumbnail, large });
 export const tripInput = (overrides = {}) => ({ type: "trip.save", name: "Trip", dateLabel: "Someday", homeCity: "Boston", travelers: 2, notes: "Trip notes", ...overrides, ...newItem(overrides) });
 /** A change to a saved destination, shared by every trip that visits it. */
 export const destinationEdit = (id, overrides = {}) => ({ type: "destination.save", id, ...overrides });

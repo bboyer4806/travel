@@ -3,6 +3,7 @@
 import { useRef } from "react";
 import { Church as ChurchIcon, ExternalLink, MapPin, Pencil, Plus, Trash2 } from "lucide-react";
 import type { GalleryDraft } from "@/lib/gallery-draft";
+import { DIALOG, type FrameWidths } from "@/lib/photo-sizes";
 import { CandidateGallery, CandidateGalleryEditor } from "./candidate-gallery";
 import { useFocusAfter } from "./focus-after";
 import { CoordinatesDetail, PlaceLocationFields } from "./place-location";
@@ -15,10 +16,10 @@ const HEADINGS = ["h1", "h2", "h3", "h4", "h5", "h6"] as const;
 
 /**
  * A destination's churches. Each church's name is a heading at `headingLevel`, below the section that lists them, and
- * its Mass times one level lower (TRA-95).
+ * its Mass times one level lower (TRA-95). `photoFrame` is how wide each church's photo is where they show (TRA-154).
  */
-export function ChurchOptions({ items, headingLevel, busy, onAdd, onEdit, onDelete }: {
-  items: Church[]; headingLevel: 2 | 3 | 4 | 5; busy: boolean; onAdd: () => void; onEdit: (item: Church) => void; onDelete: (item: Church) => void;
+export function ChurchOptions({ items, headingLevel, photoFrame, busy, onAdd, onEdit, onDelete }: {
+  items: Church[]; headingLevel: 2 | 3 | 4 | 5; photoFrame: FrameWidths; busy: boolean; onAdd: () => void; onEdit: (item: Church) => void; onDelete: (item: Church) => void;
 }) {
   const Heading = HEADINGS[headingLevel - 1];
   const TimesHeading = HEADINGS[headingLevel];
@@ -29,7 +30,7 @@ export function ChurchOptions({ items, headingLevel, busy, onAdd, onEdit, onDele
     <button type="button" className="button secondary" onClick={onAdd} disabled={busy}><Plus size={16} />Add church</button>
   </div>;
   return <div className="ideas-grid">{items.map((item) => <article className="idea-card" key={item.id}>
-    <CandidateGallery candidate={item} imageKind="church" browse />
+    <CandidateGallery candidate={item} frame={photoFrame} imageKind="church" browse />
     <div className="idea-top"><span className="selection-tag">Church option</span><div className="idea-tools">
       <button type="button" className="icon-button" aria-label={`Edit ${item.name}`} onClick={() => onEdit(item)} disabled={busy}><Pencil size={16} /></button>
       <button type="button" className="icon-button" aria-label={`Delete ${item.name}`} onClick={() => onDelete(item)} disabled={busy}><Trash2 size={16} /></button>
@@ -55,7 +56,7 @@ export function ChurchDetails({ item }: { item: Church }) {
     <div><dt>Denomination</dt><dd>{item.denomination || "Not added"}</dd></div>
     <div><dt>Website</dt><dd>{item.url ? <a className={styles.website} href={item.url} target="_blank" rel="noopener noreferrer"><ExternalLink size={14} aria-hidden="true" />Church website<span className="sr-only"> for {item.name} (opens in a new tab)</span></a> : "Not added"}</dd></div>
     <div><dt>Mass times</dt><dd>{item.massTimes.length ? <dl className={styles.detailTimes}>{item.massTimes.map((entry) => <div key={entry.id}><dt>{entry.day}</dt><dd>{entry.time}</dd></div>)}</dl> : "Mass times unknown"}</dd></div>
-    <div><dt>Church photos</dt><dd>{item.images.length ? <CandidateGallery candidate={item} imageKind="church" browse /> : "Not added"}</dd></div>
+    <div><dt>Church photos</dt><dd>{item.images.length ? <CandidateGallery candidate={item} frame={DIALOG} imageKind="church" browse /> : "Not added"}</dd></div>
   </dl>;
 }
 

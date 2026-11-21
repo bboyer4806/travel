@@ -1,6 +1,6 @@
-import sharp from "sharp";
+import sharp, { type Sharp } from "sharp";
 
-import { formatMegabytes, IMAGE_UPLOAD_TYPES, MAX_IMAGE_UPLOAD_BYTES, MAX_STORED_IMAGE_BYTES } from "./image-limits.ts";
+import { formatMegabytes, IMAGE_UPLOAD_TYPES, LARGE_PHOTO_SIZE, MAX_IMAGE_UPLOAD_BYTES, MAX_STORED_IMAGE_BYTES, MAX_STORED_LARGE_IMAGE_BYTES, PHOTO_SIZE } from "./image-limits.ts";
 import type { PreparedImage } from "./types";
 
 /** The formats sharp reports once it decodes each of IMAGE_UPLOAD_TYPES. */
@@ -8,7 +8,10 @@ const ALLOWED_FORMATS = new Set(["jpeg", "png", "webp"]);
 
 export class ImageValidationError extends Error {}
 
-/** Decode untrusted uploads and store only bounded, metadata-free WebP images, each with its thumbnail (TRA-89). */
+/**
+ * Decode untrusted uploads and store only bounded, metadata-free WebP images, each with its thumbnail (TRA-89), and with
+ * its large version when the upload is larger than the photo (TRA-154).
+ */
 export async function prepareImage(form?: FormData): Promise<PreparedImage | null | undefined> {
   if (form === undefined) return undefined;
   if (!(form instanceof FormData)) throw new ImageValidationError("Choose an image and try again.");
@@ -31,17 +34,27 @@ export async function prepareImage(form?: FormData): Promise<PreparedImage | nul
       throw new ImageValidationError("Choose a JPEG, PNG, or WebP image.");
     }
     if ((metadata.pages ?? 1) > 1) throw new ImageValidationError("Choose a still image instead of an animated image.");
-    const image = await source.autoOrient()
-      .resize({ width: 1600, height: 1200, fit: "inside", withoutEnlargement: true })
-      .webp({ quality: 82 })
-      .toBuffer();
-    if (image.byteLength > MAX_STORED_IMAGE_BYTES) throw new ImageValidationError("That image is too detailed. Try a smaller image.");
-    const data = new Uint8Array(image);
-    return { data, thumbnail: await makeThumbnail(data) };
+    const oriented = source.autoOrient();
+    const [photo, large] = await Promise.all([
+      savedVersion(oriented.clone(), PHOTO_SIZE, MAX_STORED_IMAGE_BYTES),
+      savedVersion(oriented.clone(), LARGE_PHOTO_SIZE, MAX_STORED_LARGE_IMAGE_BYTES),
+    ]);
+    return {
+      data: photo.data,
+      thumbnail: await makeThumbnail(photo.data),
+      large: large.width > photo.width ? { data: large.data, widths: { photo: photo.width, large: large.width } } : null,
+    };
   } catch (error) {
     if (error instanceof ImageValidationError) throw error;
     throw new ImageValidationError("We couldn't read that image. Choose a JPEG, PNG, or WebP image up to 20 megapixels.");
   }
+}
+
+/** One version Travel saves of an upload: WebP, scaled down only as far as fitting `size`, with its width in pixels. */
+async function savedVersion(image: Sharp, size: { width: number; height: number }, maxBytes: number): Promise<{ data: Uint8Array; width: number }> {
+  const { data, info } = await image.resize({ ...size, fit: "inside", withoutEnlargement: true }).webp({ quality: 82 }).toBuffer({ resolveWithObject: true });
+  if (data.byteLength > maxBytes) throw new ImageValidationError("That image is too detailed. Try a smaller image.");
+  return { data: new Uint8Array(data), width: info.width };
 }
 
 /**

@@ -41,7 +41,7 @@ not verify those.
 After building, CI runs `node scripts/review-errors-smoke.mjs` against disposable databases and
 fixture sessions to check production HTTP errors, recovery, cross-bundle save validation,
 connecting Claude through OAuth, MCP and the owner's Server Actions, proposing, showing,
-approving and rejecting photo changes, serving trips' headline images only to accounts that can open them, and
+approving and rejecting photo changes, serving trips' headline images and their large versions only to accounts that can open them, and
 Add image by URL's refusals.
 Fix regressions caused by your change; report unrelated baseline failures and blocked checks.
 Repeat passing checks when subsequent changes affect their coverage or required gates demand it.
@@ -175,14 +175,18 @@ Repeat passing checks when subsequent changes affect their coverage or required 
   Budget math lives in `src/lib/budget.ts`. Parsing, validation messages, formatting, input values
   and the $100,000,000 limit for every amount, prices included, live in `src/lib/money.ts`.
 - Image upload types and size and gallery limits live in `src/lib/image-limits.ts`, as do the limits
-  on the photos one AI proposal downloads. The photo editors, upload decoding, the store and the MCP
-  tools use them, and messages state them from there.
-- Each photo is saved with its thumbnail (TRA-89): `prepareImage` returns both as a `PreparedImage`, and
-  every save of a photo, an AI proposal's included, carries both. A trip's headline image keeps only the photo, since it
-  shows only cropped in its card and banner. Gallery thumbnails, editor previews, and the maps' previews and popups
-  (TRA-143, TRA-152) load each photo's `/thumbnail` route; the main photo and the crop editor load the photo. A photo saved
-  before schema 32 has a NULL thumbnail, so `storedThumbnailResponse` makes one with `makeThumbnail` for
-  each request and saves nothing: image routes never write.
+  on the photos one AI proposal downloads and the sizes photos and their large versions are saved at. The photo
+  editors, upload decoding, the store and the MCP tools use them, and messages state them from there.
+- Each photo is saved with its thumbnail (TRA-89), and with its large version when its upload is larger than the
+  photo, up to 2560 × 1920 with its width and the photo's (TRA-154): `prepareImage` returns them as a `PreparedImage`,
+  and every save of a photo, an AI proposal's included, carries them, `large` null for none. A trip's headline image
+  keeps the photo and its large version, without a thumbnail, since it shows only cropped in its card and banner.
+  Gallery thumbnails, editor previews, and the maps' previews and popups (TRA-143, TRA-152) load each photo's
+  `/thumbnail` route; every frame that shows the photo itself offers its `/large` route too, with `photoSizes` from
+  `src/lib/photo-sizes.ts` and the frame's widths there, which follow `globals.css`: a layout change updates them. A
+  photo saved before schema 32 has a NULL thumbnail, so `storedThumbnailResponse` makes one with `makeThumbnail` for
+  each request and saves nothing: image routes never write. One saved before schema 40 has no large version and loads
+  as before.
 - A trip's optional headline image (TRA-133) is its one row of `trip_images`, deleted with the trip, with its own
   crop for the trip's card on All trips and for its page's banner: a `PhotoCrop`, a focal point and a zoom, shown with
   `cropStyle` and dragged with `draggedFocus` from `src/lib/photo-focus.ts`. Only `trip.save` changes it, with `image`,

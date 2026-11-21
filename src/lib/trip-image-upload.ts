@@ -30,5 +30,6 @@ export async function prepareTripImage(form?: FormData): Promise<TripImageUpdate
   if (!form.has("image")) return crops as TripImageUpdate;
   const image = await prepareImage(form);
   if (!image) throw invalid;
-  return { ...crops, data: image.data } as TripImageUpdate;
+  // The image keeps its large version for the trip's banner on high-resolution screens (TRA-154), but no thumbnail.
+  return { ...crops, data: image.data, large: image.large } as TripImageUpdate;
 }

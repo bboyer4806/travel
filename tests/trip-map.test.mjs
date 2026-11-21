@@ -83,7 +83,7 @@ test("each destination on the journey and the map has its primary photo, with it
   /** The journey's places that have photos, with their photos. */
   const withPhotos = () => tripJourney(store.getSnapshot(), tripId).places.filter((place) => place.photo !== null).map((place) => [place.key, place.photo]);
   // The primary photo rather than the gallery's first, named by the destination's ID, which its address takes.
-  assert.deepEqual(withPhotos(), [["destination-" + stop, { destinationId: porto, id: photos[1].id, version: version(photos[1].id), focusX: 20, focusY: 80 }]]);
+  assert.deepEqual(withPhotos(), [["destination-" + stop, { destinationId: porto, id: photos[1].id, version: version(photos[1].id), focusX: 20, focusY: 80, widths: null }]]);
   const snapshot = store.getSnapshot(), saved = structuredClone(snapshot);
   const journey = tripJourney(snapshot, tripId);
   assert.deepEqual([...new Set(journey.places.filter((place) => place.photo === null).map((place) => place.kind))].sort(), ["departure", "destination", "layover", "return", "stop"],
@@ -95,9 +95,9 @@ test("each destination on the journey and the map has its primary photo, with it
 
   // Choosing another primary photo, recentering it, or removing every photo changes the journey's.
   store.applyMutation({ type: "destination.save", id: porto, gallery: { add: [], remove: [], mainImageId: photos[0].id } });
-  assert.deepEqual(withPhotos(), [["destination-" + stop, { destinationId: porto, id: photos[0].id, version: version(photos[0].id), focusX: 50, focusY: 50 }]]);
+  assert.deepEqual(withPhotos(), [["destination-" + stop, { destinationId: porto, id: photos[0].id, version: version(photos[0].id), focusX: 50, focusY: 50, widths: null }]]);
   store.applyMutation({ type: "destination.save", id: porto, gallery: { add: [], remove: [], focus: [{ id: photos[0].id, focusX: 75, focusY: 25 }] } });
-  assert.deepEqual(withPhotos(), [["destination-" + stop, { destinationId: porto, id: photos[0].id, version: version(photos[0].id), focusX: 75, focusY: 25 }]]);
+  assert.deepEqual(withPhotos(), [["destination-" + stop, { destinationId: porto, id: photos[0].id, version: version(photos[0].id), focusX: 75, focusY: 25, widths: null }]]);
   store.applyMutation({ type: "destination.save", id: porto, gallery: { add: [], remove: photos.map((item) => item.id), mainImageId: null, order: [] } });
   assert.deepEqual(withPhotos(), []);
 });

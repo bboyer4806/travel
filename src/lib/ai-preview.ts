@@ -20,10 +20,15 @@ export const DATA_TABLES = ["trips", "trip_images", "trip_shares", "trip_tags", 
 export type DataTable = typeof DATA_TABLES[number];
 /** The photos of destinations, ideas and churches. The owner sees each photo a change adds, changes or deletes beside its record (TRA-122). */
 export const PHOTO_TABLES: readonly DataTable[] = ["destination_images", "candidate_images", "church_images"];
-/** Never read for a proposal: photo and thumbnail bytes (TRA-89), trips' headline image bytes (TRA-133), and the Google account each authorization is bound to. */
+/** A photo's large version and its widths (TRA-154), which come with the photo's bytes. */
+const LARGE_VERSION = ["large", "photoWidth", "largeWidth"];
+/**
+ * Never read for a proposal: photo and thumbnail bytes (TRA-89), trips' headline image bytes (TRA-133), large versions with
+ * their widths (TRA-154), and the Google account each authorization is bound to.
+ */
 export const UNREAD_COLUMNS: Record<DataTable, string[]> = {
-  trips: [], trip_images: ["data"], trip_shares: [], trip_tags: [], trip_order: [], trip_stops: [], legs: [], layover_plans: [], home_items: [], destinations: [], destination_entry_requirements: [], destination_health_safety: [], destination_climate: [],
-  destination_images: ["data", "thumbnail"], candidates: [], candidate_images: ["data", "thumbnail"], churches: [], church_images: ["data", "thumbnail"], accounts: ["googleSubject"],
+  trips: [], trip_images: ["data", ...LARGE_VERSION], trip_shares: [], trip_tags: [], trip_order: [], trip_stops: [], legs: [], layover_plans: [], home_items: [], destinations: [], destination_entry_requirements: [], destination_health_safety: [], destination_climate: [],
+  destination_images: ["data", "thumbnail", ...LARGE_VERSION], candidates: [], candidate_images: ["data", "thumbnail", ...LARGE_VERSION], churches: [], church_images: ["data", "thumbnail", ...LARGE_VERSION], accounts: ["googleSubject"],
 };
 
 export type Value = string | number | null;

@@ -1,7 +1,8 @@
 "use client";
 
-import { useId, useState } from "react";
+import { useId, useRef, useState } from "react";
 import { ChevronDown, Pencil, Plus, Trash2 } from "lucide-react";
+import { useFocusFallback } from "@/components/focus-after";
 import { ResearchLinks, ResearchLinksEditor } from "@/components/research-links";
 import { ENTRY_REQUIREMENT_FIELDS, type EntryRequirements } from "@/lib/entry-requirements";
 import { formatCalendarDate } from "@/lib/trip-dates";
@@ -22,16 +23,19 @@ const reminder = "Manually maintained research. Requirements depend on your pass
 export function EntryRequirementsPanel({ requirements, stay, disabled, onEdit, onClear }: PanelProps) {
   const [expanded, setExpanded] = useState(false);
   const contentId = useId();
+  const toggle = useRef<HTMLButtonElement>(null);
+  const keepFocus = useFocusFallback(toggle);
   return <section className={styles.panel} aria-label="Entry requirements">
     <div className="section-heading">
-      <h4><button type="button" className={styles.toggle} aria-expanded={expanded} aria-controls={contentId} onClick={() => setExpanded((open) => !open)}>Entry requirements<ChevronDown size={18} aria-hidden="true" /></button></h4>
-      <div className={styles.actions}>
+      <h4><button ref={toggle} type="button" className={styles.toggle} aria-expanded={expanded} aria-controls={contentId} onClick={() => setExpanded((open) => !open)}>Entry requirements<ChevronDown size={18} aria-hidden="true" /></button></h4>
+      {/* Edit and Clear show only while the section is open, and Add whenever nothing is recorded (TRA-148). */}
+      {(expanded || !requirements) && <div ref={keepFocus} className={styles.actions}>
         <button type="button" className="button secondary small" disabled={disabled} onClick={onEdit}>
           {requirements ? <Pencil size={15} aria-hidden="true" /> : <Plus size={15} aria-hidden="true" />}
           {requirements ? "Edit entry requirements" : "Add entry requirements"}
         </button>
         {requirements && <button type="button" className="text-button" disabled={disabled} onClick={onClear}><Trash2 size={14} aria-hidden="true" />Clear</button>}
-      </div>
+      </div>}
     </div>
     <div id={contentId} className={styles.content} hidden={!expanded}>
       <p className={styles.reminder}>{reminder}</p>

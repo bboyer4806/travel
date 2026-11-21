@@ -24,7 +24,8 @@ export function TypicalWeatherPanel({ weather, stay, disabled, onEdit, onEditCli
   const href = sourceHref(weather.weatherSource);
   const startMonth = monthOf(stay?.arrivalDate ?? null);
   return <section className={styles.panel} aria-label="Typical weather">
-    <div className="section-heading"><h4><button type="button" className={styles.toggle} aria-expanded={expanded} aria-controls={detailsId} onClick={() => setExpanded((open) => !open)}>Typical weather<ChevronDown size={18} aria-hidden="true" /></button></h4><button className="button secondary small" disabled={disabled} onClick={onEdit}><Pencil size={15} />Edit typical weather</button></div>
+    {/* Edit typical weather shows only while the section is open, as its monthly averages' buttons do (TRA-148). */}
+    <div className="section-heading"><h4><button type="button" className={styles.toggle} aria-expanded={expanded} aria-controls={detailsId} onClick={() => setExpanded((open) => !open)}>Typical weather<ChevronDown size={18} aria-hidden="true" /></button></h4>{expanded && <button className="button secondary small" disabled={disabled} onClick={onEdit}><Pencil size={15} />Edit typical weather</button>}</div>
     <div id={detailsId} hidden={!expanded}>
       <p className="helper">Manually recorded typical weather or historical averages.</p>
       <dl className={styles.details}>

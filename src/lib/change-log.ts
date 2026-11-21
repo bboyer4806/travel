@@ -2,6 +2,24 @@ export interface Release { version: string; date: string; changes: readonly stri
 
 // Add only verified, deployed changes and their actual release dates at release close.
 export const releases: readonly Release[] = [{
+  version: "1.15",
+  date: "2026-11-21",
+  changes: [
+    "Plan what to do during a layover: Plan layover, under a saved layover in Between the places, opens a plan with the airport's time zone, when you land and when your connecting flight leaves, your own estimates for immigration, customs, security, a terminal transfer, and boarding, and up to 20 activities of your own, in the airport or out, with the travel time for a trip out. Its schedule updates as you type, counts daylight saving and date changes, and warns when the plan could miss your connecting flight. Only the two flights' times are scheduled; everything else is your own estimate. ChatGPT and Claude can propose layover plans too.",
+    "Pin a hotel, activity, restaurant, or church to its destination's map when the map can't find its address: enter its Latitude and Longitude under Coordinates (optional) in its editor, marked Exact or Approximate. It shows on the map at once, however far it is from the destination, and leaves Not on the map. An approximate place gets a dashed ring and says approximate location instead of an address. If its address changes, the map sets its coordinates aside until you confirm, change, or clear them. ChatGPT and Claude can propose coordinates too.",
+    "Record a flight's airline and flight number in Plan this connection: Airline and Flight number appear below Transportation whenever it names a flight, such as Flight or Plane, and show on the connection's card once entered. Each connection keeps its own, and ChatGPT and Claude can propose them too.",
+    "Add a destination anywhere in a trip's route with the + between its destination cards. With a mouse, it shows above and below the card you point at; on a phone or tablet, it's always there. It opens Add destination and puts the city or saved destination you choose in that spot, replacing the connection that was there with two new ones to plan.",
+    "Select a hotel, activity, restaurant, or church on a destination's map to see its primary photo at the top of its details. Places without a photo show as before.",
+    "Photos you add from now on look sharper on large and high-resolution screens, such as in a trip's banner: Travel keeps a larger version of each new photo and loads it only where it's needed. Photos added before look as they did; add one again from a larger original to sharpen it.",
+    "On a phone, a trip's destination cards show their main photo edge to edge across the card, a little larger and in the same shape as before.",
+    "Pages no longer scroll sideways on phones, even when names, notes, or links are long words without spaces. On the narrowest phones, a destination's Every month as a table scrolls sideways inside its own box.",
+    "Details below a place's photo are easier to read on destination, trip, hotel, activity, restaurant, and church cards: what it is shows darker and larger under its name, addresses, notes, and dates are a little larger, and labels such as Chosen stay are bold.",
+    "Entry requirements, Health and safety, and Typical weather show their Edit and Clear buttons only while open, so a closed section is just its heading. Entry requirements and Health and safety still show Add when nothing is saved.",
+    "The trip estimate is shorter: the ROOM IN THE BUDGET label above it and the paragraph about what it includes are gone. Its amounts and its note on what still needs an estimate are unchanged.",
+    "At home is simpler: items no longer have Mark complete, a To do or Complete tag, a completed count, or a Completed checkbox in their editor. Every item's price still counts in the trip estimate.",
+    "When ChatGPT or Claude proposes a destination's monthly averages, the proposal page lists the source, the reference years, and every month from January to December, each with what's saved beside what's proposed. Assistants must name each month and use °F and inches, so a year that starts in another month or is in °C is refused instead of saved wrong.",
+  ],
+}, {
   version: "1.14",
   date: "2026-11-18",
   changes: [

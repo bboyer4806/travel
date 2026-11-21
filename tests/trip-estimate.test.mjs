@@ -8,10 +8,10 @@ import * as destinationLabel from "../src/lib/destination-label.ts";
 import * as money from "../src/lib/money.ts";
 import * as tripDates from "../src/lib/trip-dates.ts";
 import { createOwnedStore } from "./owned-store.mjs";
-import { addDestination, newItem, tripInput } from "./budget-fixtures.mjs";
+import { addDestination, candidateInput, newItem, setup, tripInput } from "./budget-fixtures.mjs";
 
-// TRA-149: the trip estimate beside each trip's page, rendered by the planner from what the store gives
-// `/trips/<trip ID>`, as its page does, with each render a page load. No browser or server is involved.
+// TRA-149 and TRA-151: the trip estimate beside each trip's page, rendered by the planner from what the store
+// gives `/trips/<trip ID>`, as its page does, with each render a page load. No browser or server is involved.
 function load(file, require) {
   const exports = {};
   runInNewContext(ts.transpileModule(readFileSync(new URL(file, import.meta.url), "utf8"), {
@@ -84,11 +84,11 @@ test("the trip estimate has no Room in the budget label: its heading follows the
   const { store, tripId } = plan(t);
   const page = tripPage(store, tripId);
   const panel = estimate(page);
-  // What the estimate shows, in order: the wallet, its heading, the total and who it is for, the categories, whether
-  // every estimate is added, and what it includes. Nothing is between the wallet and the heading.
+  // What the estimate shows, in order: the wallet, its heading, the total and who it is for, the categories, and
+  // whether every estimate is added. Nothing is between the wallet and the heading.
   assert.deepEqual(panel.props.children.map((child) => [child.type, child.props.className]), [
     ["span", "budget-symbol"], ["h2", undefined], ["div", "budget-total"], ["p", "budget-caption"],
-    ["dl", "budget-breakdown"], ["div", "budget-note"], ["p", "helper"],
+    ["dl", "budget-breakdown"], ["div", "budget-note"],
   ]);
   assert.deepEqual(within(panel.props.children[0]).map((node) => node.type), ["span", "icon:Wallet"]);
   assert.equal(text(panel.props.children[1]), "The trip estimate");
@@ -107,4 +107,28 @@ test("the trip estimate still shows the trip's total and each category's amount 
     ["Food", "$780"], ["Shopping", "$300"], ["At home", "$350"], ["Miscellaneous", "$250"],
   ]);
   assert.equal(text(part("budget-note")), "All required estimates are added.");
+});
+
+test("the trip estimate ends with its note, without a paragraph about what it includes, and keeps every amount (TRA-151)", (t) => {
+  const { store, tripId } = setup(t, tripInput({ name: "Spring in Austria" }));
+  const vienna = addDestination(store, tripId, { city: "Vienna", nights: 3, hotelNightlyAmount: "180", miscDailyAmount: "40", foodBudgetMode: "daily", foodDailyAmount: "120", shoppingAmount: "150" });
+  // Salzburg's hotel isn't estimated, nor is the travel home.
+  addDestination(store, tripId, { city: "Salzburg", nights: 2, miscDailyAmount: "35", foodBudgetMode: "daily", foodDailyAmount: "100" });
+  store.applyMutation(candidateInput(vienna, "activities", { name: "Schönbrunn Palace tour", price: "65" }));
+  const [flight, train] = store.getTripSnapshot(tripId).data.legs;
+  store.applyMutation({ type: "leg.save", id: flight.id, method: "Flight", price: "1400", miscAmount: "60", departure: "", arrival: "", url: "", notes: "" });
+  store.applyMutation({ type: "leg.save", id: train.id, method: "Train", price: "90", departure: "", arrival: "", url: "", notes: "" });
+  store.applyMutation({ type: "homeItem.save", ...newItem(), tripId, name: "Pet sitter", price: "300", notes: "", completed: false });
+
+  const panel = estimate(tripPage(store, tripId));
+  // Everything the estimate shows, in order: the amounts the trip's page showed before TRA-151, then the note, last.
+  assert.deepEqual(panel.props.children.map((child) => [child.props.className ?? child.type, text(child)]), [
+    ["budget-symbol", ""],
+    ["h2", "The trip estimate"],
+    ["budget-total", "$3,355Partial estimate"],
+    ["budget-caption", "Total for all 2 travelers"],
+    ["budget-breakdown", "Travel1 not estimated$1,490Transit miscellaneous$60Hotels1 not estimated$540Activities$65Food$560Shopping$150At home$300Miscellaneous$190"],
+    ["budget-note", "2 details still need an estimate or a choice."],
+  ]);
+  assert.deepEqual(within(panel).filter((node) => node.props.className === "helper"), [], "no explanation follows the note");
 });

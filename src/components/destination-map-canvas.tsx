@@ -5,12 +5,17 @@ import L from "leaflet";
 import { useLayoutEffect, useMemo, useRef } from "react";
 import { createPortal } from "react-dom";
 import { MAP_PLACE_LABELS, type DestinationMarker, type MappedPlace } from "@/lib/destination-map";
+import { thumbnailUrl } from "./candidate-gallery";
 import { GroupSymbol, PlaceSymbol } from "./destination-map-symbols";
 import styles from "./destination-map.module.css";
 
 // How close the map frames a single place, with the streets around it in view.
 const MAX_ZOOM = 16;
 const SIZE = 30;
+// How far an opening popup keeps from the map's edges, and how much of a popup surrounds its content: Leaflet's margins
+// above and below it (13 px each), the padding around them (1 px each) and its tip (20 px).
+const PAN_PADDING = 16;
+const POPUP_FRAME = 48;
 
 /**
  * Where a marker's tooltip says a place is: the address OpenStreetMap has where it was found, or its saved coordinates,
@@ -30,9 +35,10 @@ function element(tag: "span" | "div", className: string): HTMLElement {
  * A destination's saved places on an OpenStreetMap map (TRA-130): Leaflet places each marker and its popup, and React
  * draws what is in them. The map frames every marker when it opens and whenever their positions change, and leaves zoom
  * and panning alone otherwise, so a place saved far from its destination is in view too (TRA-150). Selecting a marker,
- * by pointer, touch, Enter or Space, opens its popup: the name and category of each place there, whether it is shown at
- * approximate coordinates, and View details. The popup takes focus as it opens, and Escape closes it and returns focus
- * to its marker.
+ * by pointer, touch, Enter or Space, opens its popup: for each place there, its primary photo when it has one (TRA-152),
+ * then its name and category, whether it is shown at approximate coordinates, and View details. A popup taller than the
+ * map has room for, as with several places' photos, scrolls. The popup takes focus as it opens, and Escape closes it and
+ * returns focus to its marker.
  */
 export default function DestinationMapCanvas({ markers, onView }: { markers: DestinationMarker[]; onView: (place: MappedPlace) => void }) {
   const container = useRef<HTMLDivElement>(null);
@@ -70,6 +76,7 @@ export default function DestinationMapCanvas({ markers, onView }: { markers: Des
     }
     group.clearLayers();
     const closers: (() => void)[] = [];
+    const maxHeight = instance.getSize().y - POPUP_FRAME - 2 * PAN_PADDING;
     for (const marker of markers) {
       const { symbol, popup } = elements.get(marker.key)!;
       const names = marker.places.map((place) => MAP_PLACE_LABELS[place.category] + ": " + place.name + (place.approximate ? " (approximate location)" : ""));
@@ -77,7 +84,7 @@ export default function DestinationMapCanvas({ markers, onView }: { markers: Des
         icon: L.divIcon({ className: styles.anchor, html: symbol, iconSize: [SIZE, SIZE] }),
         title: marker.places.map((place, index) => names[index] + "\n" + shownAt(place)).join("\n"),
         keyboard: true,
-      }).bindPopup(popup, { maxWidth: 280, autoPanPadding: [16, 16] }).addTo(group);
+      }).bindPopup(popup, { maxWidth: 280, maxHeight, autoPanPadding: [PAN_PADDING, PAN_PADDING] }).addTo(group);
       const target = item.getElement()!;
       target.setAttribute("aria-label", names.join("; "));
       // Leaflet opens a marker's popup on Enter, and Space, as for any button, opens it too.
@@ -87,8 +94,14 @@ export default function DestinationMapCanvas({ markers, onView }: { markers: Des
         originalEvent.preventDefault();
         item.openPopup();
       });
-      // Focus moves without scrolling, which would shift Leaflet's panes within the map.
-      item.on("popupopen", () => popup.querySelector("button")?.focus({ preventScroll: true }));
+      // Leaflet measures a popup's width before it knows the popup scrolls, so a popup that scrolls is measured again, with
+      // its scrollbar and the room for View details' focus ring around its content (TRA-152). Then focus moves without
+      // scrolling, which would shift Leaflet's panes within the map.
+      item.on("popupopen", () => {
+        const opened = item.getPopup()!;
+        if (opened.getElement()!.querySelector(".leaflet-popup-scrolled")) opened.update();
+        popup.querySelector("button")?.focus({ preventScroll: true });
+      });
       item.on("popupclose", () => {
         const active = document.activeElement;
         if (active === document.body || item.getPopup()?.getElement()?.contains(active)) target.focus({ preventScroll: true });
@@ -111,6 +124,10 @@ export default function DestinationMapCanvas({ markers, onView }: { markers: Des
       : <GroupSymbol count={marker.places.length} approximate={marker.places.every((place) => place.approximate)} />, elements.get(marker.key)!.symbol, "symbol-" + marker.key))}
     {markers.map((marker) => createPortal(<ul className={styles.popupPlaces}>
       {marker.places.map((place) => <li key={place.id}>
+        {/* Stored photos are resized and optimized on upload, and the thumbnail covers the photo's frame. Every popup is
+            rendered before it opens, so its photo loads lazily, once the popup shows it. Its name follows, so it is decorative. */}
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        {place.photo && <img className={styles.popupPhoto} src={thumbnailUrl(place.id, place.photo, place.category === "churches" ? "church" : "candidate")} alt="" loading="lazy" decoding="async" />}
         <strong>{place.name}</strong>
         <span className={styles.category}>{MAP_PLACE_LABELS[place.category]}{place.approximate && " · Approximate location"}</span>
         <button type="button" className="text-button" onClick={() => onView(place)}>View details<span className="sr-only"> for {place.name}</span></button>

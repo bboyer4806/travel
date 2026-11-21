@@ -5,6 +5,7 @@ import { runInNewContext } from "node:vm";
 import ts from "typescript";
 import * as destinationLabel from "../src/lib/destination-label.ts";
 import * as destinationMap from "../src/lib/destination-map.ts";
+import { cssRules } from "./css-rules.mjs";
 
 // Run the destination map's components with a small hook harness and stand-ins for fetch and Leaflet: no browser or
 // server is involved (TRA-130).
@@ -19,6 +20,10 @@ const styles = new Proxy({}, { get: (_target, name) => name });
 const copy = (value) => JSON.parse(JSON.stringify(value));
 const unchanged = (previous, deps) => previous && deps.every((dep, i) => Object.is(dep, previous.deps[i]));
 const settle = () => new Promise((resolve) => setImmediate(resolve));
+// The address of an idea's or church's photo thumbnail, from the gallery itself (TRA-152). Its module's other imports go unused here.
+const gallery = { exports: {} };
+runInNewContext(compile("../src/components/candidate-gallery.tsx"), { exports: gallery.exports, require: () => new Proxy({}, { get: () => () => null }) });
+const { thumbnailUrl } = gallery.exports;
 
 /** Hooks that keep their state between renders, running effects after each render whose dependencies changed. */
 function hooks() {
@@ -232,13 +237,13 @@ test("a destination with nothing saved, or that the map can't find, says so inst
   assert.deepEqual(nowhere.unmapped().filter((line) => !destinationMap.MAP_CATEGORIES.some((category) => destinationMap.MAP_CATEGORY_LABELS[category] === line)), saved.map((place) => place.name + "View details for " + place.name));
 });
 
-/** The map itself, with a stand-in for Leaflet that records its markers, popups and framing. */
-function mapCanvas() {
+/** The map itself, `height` pixels tall, with a stand-in for Leaflet that records its markers, popups and framing. */
+function mapCanvas(height = 340) {
   const { react, render } = hooks();
   const calls = [], markers = [];
   const document = { body: { name: "body" }, activeElement: null };
   const focusable = (name) => ({ name, focus(options) { document.activeElement = this; calls.push(["focus", name, { ...options }]); }, setAttribute(key, value) { this[key] = value; } });
-  const instance = { on() {}, remove() {}, fitBounds: (bounds, options) => calls.push(["fitBounds", Array.from(bounds, (position) => [...position]), options.maxZoom]) };
+  const instance = { on() {}, remove() {}, getSize: () => ({ x: 640, y: height }), fitBounds: (bounds, options) => calls.push(["fitBounds", Array.from(bounds, (position) => [...position]), options.maxZoom]) };
   const group = { addTo() { return this; }, clearLayers() { markers.length = 0; } };
   const L = {
     map: () => instance,
@@ -249,15 +254,16 @@ function mapCanvas() {
     marker(position, options) {
       const handlers = {};
       const element = focusable("marker " + options.title.split("\n")[0]);
-      const container = { contains: (node) => node === content.button || node === content.close };
+      // The popup's element, which Leaflet marks as scrolled when its content is taller than the map has room for (TRA-152).
+      const container = { contains: (node) => node === content.button || node === content.close, querySelector: (selector) => selector === ".leaflet-popup-scrolled" && marker.scrolled ? {} : null };
       let content;
       const marker = {
-        position, options, element, handlers, open: false,
+        position, options, element, handlers, open: false, scrolled: false,
         on(name, handler) { handlers[name] = handler; return this; },
-        bindPopup(popup) { content = popup; this.popup = popup; return this; },
+        bindPopup(popup, popupOptions) { content = popup; this.popup = popup; this.popupOptions = popupOptions; return this; },
         addTo() { markers.push(this); return this; },
         getElement: () => element,
-        getPopup: () => ({ getElement: () => container }),
+        getPopup: () => ({ getElement: () => container, update: () => calls.push(["update", element.name]) }),
         openPopup() { this.open = true; handlers.popupopen?.(); },
         closePopup() { this.open = false; handlers.popupclose?.(); },
       };
@@ -275,6 +281,7 @@ function mapCanvas() {
         leaflet: { default: L },
         "leaflet/dist/leaflet.css": {},
         "@/lib/destination-map": destinationMap,
+        "./candidate-gallery": { thumbnailUrl },
         "./destination-map-symbols": { PlaceSymbol: "symbol", GroupSymbol: "group" },
         "./destination-map.module.css": { default: styles },
       };
@@ -417,4 +424,82 @@ test("an approximate place's marker, tooltip and popup say it is approximate, an
   const popups = nodes(tree).filter((node) => node.type === "portal").slice(3);
   assert.deepEqual(nodes(popups[0]).filter((node) => node.type === "li").map(text), ["Leopoldstadt apartmentHotel · Approximate locationView details for Leopoldstadt apartment"]);
   assert.deepEqual(nodes(popups[1]).filter((node) => node.type === "li").map(text), ["Hotel SacherHotelView details for Hotel Sacher", "Café SacherRestaurantView details for Café Sacher"]);
+});
+
+// TRA-152: each place's primary photo in its marker's popup.
+const lobby = { id: "photo-lobby", version: "v1" };
+const nave = { id: "photo-nave", version: "v2" };
+/** What an entry in a popup shows, in order: its photo's address when it has one, then each other part's type. */
+const parts = (entry) => [entry.props.children].flat(Infinity).filter((child) => child && typeof child === "object").map((child) => child.type === "img" ? child.props.src : child.type);
+
+test("each place's popup shows its own primary photo at the top, above its name and category, and a place without one has no frame (TRA-152)", () => {
+  const map = mapCanvas();
+  const viewed = [];
+  // The hotel and its restaurant share a marker, only the hotel with a photo, and the cathedral has its own marker and photo.
+  const shared = { ...sacher, places: [{ ...sacher.places[0], photo: lobby }, { ...sacher.places[1], photo: null }] };
+  const cathedral = { key: "48.20857,16.37307", position: [48.20857, 16.37307], places: [{ id: "c1", category: "churches", name: "St. Stephen's Cathedral", address: "Stephansplatz 3", found: "St. Stephen's Cathedral, 3, Stephansplatz", photo: nave }] };
+  const tree = map.render({ markers: [shared, { ...albertina, places: [{ ...albertina.places[0], photo: null }] }, cathedral], onView: (place) => viewed.push(place.id) });
+  const popups = nodes(tree).filter((node) => node.type === "portal").slice(3);
+  const entries = (popup) => nodes(popup).filter((node) => node.type === "li");
+  // Each photo is its own place's thumbnail, from an idea's or a church's photos, before its details.
+  assert.deepEqual(popups.map((popup) => entries(popup).map(parts)), [
+    [["/api/candidate-images/h1/photo-lobby/thumbnail?v=v1", "strong", "span", "button"], ["strong", "span", "button"]],
+    [["strong", "span", "button"]],
+    [["/api/church-images/c1/photo-nave/thumbnail?v=v2", "strong", "span", "button"]],
+  ]);
+  assert.equal(thumbnailUrl("h1", lobby, "candidate"), "/api/candidate-images/h1/photo-lobby/thumbnail?v=v1", "the gallery's own thumbnail address");
+  // The name follows the photo, so it is decorative, and every popup is rendered before it opens, so the photo loads only once shown.
+  const [photo] = nodes(popups[0]).filter((node) => node.type === "img");
+  assert.deepEqual(copy(photo.props), { className: "popupPhoto", src: "/api/candidate-images/h1/photo-lobby/thumbnail?v=v1", alt: "", loading: "lazy", decoding: "async" });
+  // The names, categories and View details are as they were.
+  assert.deepEqual(entries(popups[0]).map(text), ["Hotel SacherHotelView details for Hotel Sacher", "Café SacherRestaurantView details for Café Sacher"]);
+  assert.deepEqual(entries(popups[2]).map(text), ["St. Stephen's CathedralChurchView details for St. Stephen's Cathedral"]);
+  for (const button of nodes(tree).filter((node) => node.type === "button")) button.props.onClick();
+  assert.deepEqual(viewed, ["h1", "r2", "a1", "c1"]);
+});
+
+test("a popup taller than its map has room for scrolls within it, on a desktop's map and a phone's, measured again with its scrollbar (TRA-152)", () => {
+  // Leaflet's margins, border and tip, and 16 px from the map's edges above and below, take 80 px of the map's height.
+  for (const [height, maxHeight] of [[340, 260], [280, 200]]) {
+    const map = mapCanvas(height);
+    map.render({ markers: [sacher, albertina], onView() {} });
+    assert.deepEqual(copy(map.markers.map((marker) => marker.popupOptions)), [sacher, albertina].map(() => ({ maxWidth: 280, maxHeight, autoPanPadding: [16, 16] })), height + " px");
+  }
+  // Leaflet measures a popup's width before it knows the popup scrolls, so one that scrolls is measured again, with its
+  // scrollbar, before its View details takes focus. One that fits isn't.
+  const map = mapCanvas();
+  map.render({ markers: [sacher, albertina], onView() {} });
+  const [group, single] = map.markers;
+  group.scrolled = true;
+  group.openPopup();
+  single.openPopup();
+  assert.deepEqual(map.calls.filter(([name]) => name === "update" || name === "focus").map(([name, target]) => [name, target]), [["update", "marker Hotel: Hotel Sacher"], ["focus", "View details"], ["focus", "View details"]]);
+});
+
+test("every popup photo fills the same 2:1 frame, cropped rather than stretched, smaller on phones, with its place's details wrapping to its width (TRA-152)", () => {
+  const rules = cssRules("../src/components/destination-map.module.css");
+  const rule = (selector) => rules.filter(([selectors]) => selectors === selector).map(([, declarations]) => declarations);
+  // The frame's width is set for desktops and tablets, then for phones' smaller maps.
+  assert.deepEqual(rule(".popupPlaces").map((declarations) => declarations["--photo-width"]), ["240px", "180px"]);
+  const [photo] = rule(".popupPhoto");
+  assert.deepEqual([photo.width, photo["aspect-ratio"], photo["object-fit"]], ["var(--photo-width)", "2 / 1", "cover"]);
+  assert.deepEqual(rule(".popupPhoto ~ *"), [{ "max-width": "var(--photo-width)" }]);
+  // A popup that scrolls keeps its content where Leaflet's margins put it, inset within the scrolling area by the room View
+  // details' focus ring takes: its 2 px outline, 4 px outside the button.
+  const [scrolled] = rule(".frame :global(.leaflet-popup-scrolled)");
+  const [[, leaflet]] = cssRules("../node_modules/leaflet/dist/leaflet.css").filter(([selector]) => selector === ".leaflet-popup-content");
+  const sides = (value) => value.split(" ").map((side) => parseFloat(side));
+  assert.equal(scrolled.padding, "6px");
+  assert.deepEqual(sides(scrolled.margin).map((side) => side + 6), sides(leaflet.margin));
+});
+
+test("a place's new primary photo reaches its marker's popup without looking anything up again (TRA-152)", async () => {
+  const places = saved.map((place) => ({ ...place, coordinates: null, photo: null }));
+  const map = destinationMapSection(() => ["found", { h1: found(48.204, 16.369), h2: { status: "missing" }, a1: found(48.2046, 16.3682), r1: { status: "missing" }, c1: found(48.2086, 16.3731) }], places);
+  await map.update();
+  const photos = () => copy(map.canvas().props.markers.flatMap((marker) => marker.places.map((place) => [place.id, place.photo])));
+  assert.deepEqual(photos(), [["h1", null], ["a1", null], ["c1", null]]);
+  await map.update({ places: places.map((place) => place.id === "h1" ? { ...place, photo: lobby } : place.id === "c1" ? { ...place, photo: nave } : place) });
+  assert.deepEqual(photos(), [["h1", lobby], ["a1", null], ["c1", nave]]);
+  assert.equal(map.requests.length, 1, "photos aren't looked up");
 });

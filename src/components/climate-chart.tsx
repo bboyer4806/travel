@@ -77,10 +77,12 @@ export function ClimateChart({ climate, startMonth }: { climate: MonthlyClimate;
     <p className={styles.source}>Historical averages for {formatReferenceYears(climate)} from {href ? <a href={href} target="_blank" rel="noopener noreferrer">{climate.source}</a> : climate.source}. These are typical conditions from past years, not a forecast.</p>
     <details className={styles.table}>
       <summary>Every month as a table</summary>
-      <table>
-        <thead><tr><th scope="col">Month</th><th scope="col">Average high</th><th scope="col">Average low</th><th scope="col">Precipitation</th></tr></thead>
-        <tbody>{climate.months.map((month, index) => <tr key={index}><th scope="row">{MONTHS[index]}</th><td>{formatFahrenheit(month.highF)}</td><td>{formatFahrenheit(month.lowF)}</td><td>{formatInches(month.precipitationIn)}</td></tr>)}</tbody>
-      </table>
+      <div className={styles.tableScroll}>
+        <table>
+          <thead><tr><th scope="col">Month</th><th scope="col">Average high</th><th scope="col">Average low</th><th scope="col">Precipitation</th></tr></thead>
+          <tbody>{climate.months.map((month, index) => <tr key={index}><th scope="row">{MONTHS[index]}</th><td>{formatFahrenheit(month.highF)}</td><td>{formatFahrenheit(month.lowF)}</td><td>{formatInches(month.precipitationIn)}</td></tr>)}</tbody>
+        </table>
+      </div>
     </details>
   </div>;
 }

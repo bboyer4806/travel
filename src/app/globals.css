@@ -681,8 +681,47 @@ button svg,a svg {
 }
 .destination-list {
   display:flex;
-  flex-direction:column;
-  gap:17px
+  flex-direction:column
+}
+/* TRA-153: a + above each destination card, and below the last, adds a destination there. Its row is the space between
+   the cards, and its button reaches only into their padding, clear of photos and details. With a mouse, one shows while
+   the pointer is over it or a card beside it, or it has keyboard focus. Touchscreens always show them, each in its own
+   space between the cards, as 44 × 44 touch targets. */
+.stop-insertion {
+  display:flex;
+  justify-content:center;
+  align-items:center;
+  height:17px
+}
+.stop-insertion .button {
+  position:relative;
+  z-index:1;
+  flex:0 0 32px;
+  height:32px;
+  min-height:0;
+  padding:0;
+  border-radius:50%;
+  box-shadow:0 4px 12px #233d351f;
+  transition:opacity .16s,background .16s,border-color .16s,transform .16s
+}
+@media(hover:hover) {
+  .stop-insertion .button {
+  opacity:0
+}
+.stop-insertion:hover .button,.stop-insertion .button:focus-visible,.destination-card:hover+.stop-insertion .button,.stop-insertion:has(+.destination-card:hover) .button {
+  opacity:1
+}
+
+}
+@media(pointer:coarse) {
+  .stop-insertion {
+  height:44px
+}
+.stop-insertion .button {
+  flex-basis:44px;
+  height:44px
+}
+
 }
 .destination-card {
   border:1px solid var(--line);

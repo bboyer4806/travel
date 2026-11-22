@@ -121,6 +121,17 @@ const HELP: { [Route in SignedInRoute]: Route extends `${string}/[category]` ? R
     ],
   },
   "/destinations/[destinationId]/[category]": IDEA_PAGES,
+  "/access": {
+    title: "Access",
+    points: [
+      "Who can open each trip and destination you can, each person by name and email, or by email until they first sign in.",
+      "You see everyone with access to your own trips and destinations. For one shared with you, you see its owner and yourself.",
+      "A destination is open to its owner and to everyone a trip that visits it is shared with. Each destination is listed once.",
+      "Search either table by name. Select Trip or Destination at the top of its first column to sort it A to Z or Z to A.",
+      "Select a name to open its page. Only a trip's owner changes who has access, with Share on the trip's page.",
+      "It shows access as it was when the page opened. Refresh to see changes.",
+    ],
+  },
   "/whats-new": {
     title: "What's new",
     points: [

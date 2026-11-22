@@ -63,6 +63,9 @@ Repeat passing checks when subsequent changes affect their coverage or required 
   store decides access: every read and `applyMutation` take the signed-in account's ID from
   `requireAccount()` or `currentAccount()`, never from input, and a trip the account can't open
   looks the same as a missing one. Only owners delete, share or unshare a trip.
+- Access (TRA-162), `src/app/access/page.tsx` with `src/components/access-chart.tsx`, is read-only: `getAccessOverview`
+  lists every trip and destination the account can open, with its owner and who else can open it, from the same rules
+  as every other read. Only an owner sees who else has access, so for anyone else's it lists the owner and the account.
 - Each account keeps its own order of the trips it can open on All trips in `trip_order` (TRA-16), which
   `getHomeOverview` follows. `trip.order` saves an account's whole order and is refused unless it names every trip the
   account can open, once each. A trip it hasn't placed, as one created or shared since, comes last, in the order the
@@ -163,7 +166,8 @@ Repeat passing checks when subsequent changes affect their coverage or required 
   or the trip's stop, for their city, or add one with an ID the store gives it.
 - `src/lib/store.ts` is the application's database boundary. Home pages read `getHomeOverview`,
   trip and category pages read `getTripSnapshot`, Destinations pages read
-  `getDestinationsOverview` and `getDestinationSnapshot`, and saves return only an ID or error.
+  `getDestinationsOverview` and `getDestinationSnapshot`, Access reads `getAccessOverview`, and saves return
+  only an ID or error.
   The store's `getSnapshot` reads every trip, for checks and tests only. Backup utilities and tests
   also access SQLite directly.
 - Store validation throws `ValidationError`; upload validation throws `ImageValidationError`.

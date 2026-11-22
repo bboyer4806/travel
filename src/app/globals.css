@@ -2221,9 +2221,11 @@ button.nav-link { border:0; background:none; }
 @media(max-width:540px) {
   .help-points { padding:18px 20px 22px 38px; }
 }
-/* With Help, the owner's navigation has five links. Closer spacing keeps each label on one line down to 360px wide. */
-@media(max-width:400px) {
-  .site-header nav { gap:8px; }
+/* With Access (TRA-162) and Help, the owner's navigation has six links. Smaller labels and closer spacing keep each on one
+   line down to 390px wide, and the five anyone else has down to 320px. On narrower screens a label wraps, within the screen. */
+@media(max-width:440px) {
+  .site-header nav { gap:6px; }
+  .site-header .nav-link { font-size:12px; }
 }
 .sign-in { max-width:620px; padding-top:72px; }
 .sign-in h1 { font-size:clamp(38px,4.5vw,56px); letter-spacing:-1.5px; }

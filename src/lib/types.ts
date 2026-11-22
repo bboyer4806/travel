@@ -192,6 +192,14 @@ export interface TripMember { email: string; name: string | null; }
 export type TripAccess = { role: "owner"; owner: TripMember; sharedWith: TripMember[] } | { role: "editor"; owner: TripMember };
 /** What the signed-in account may do with a destination: one it owns, or one that a trip shared with it visits. */
 export type DestinationAccess = { role: "owner" } | { role: "editor"; owner: TripMember };
+/**
+ * A trip or destination on Access (TRA-162): the signed-in account's role in it, its owner, and who else can open it as
+ * far as the account may see. Its owner sees everyone; anyone else sees only themselves, since only an owner sees who
+ * else has access.
+ */
+export interface AccessEntry { id: string; role: "owner" | "editor"; owner: TripMember; sharedWith: TripMember[]; }
+/** Every trip and destination the signed-in account can open, each list in alphabetical order, for Access (TRA-162). */
+export interface AccessOverview { trips: (AccessEntry & Pick<Trip, "name">)[]; destinations: (AccessEntry & LibraryDestination)[]; }
 /** A ChatGPT or Claude connection the designated owner allowed (TRA-115). Times are milliseconds since the epoch. */
 export interface AiConnection { id: string; platform: AiPlatform; connectedAt: number; lastUsedAt: number; }
 /**

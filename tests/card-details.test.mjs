@@ -8,7 +8,7 @@ import * as destinationLabel from "../src/lib/destination-label.ts";
 import * as money from "../src/lib/money.ts";
 import * as tripDates from "../src/lib/trip-dates.ts";
 import { addDestination, setup, tripInput } from "./budget-fixtures.mjs";
-import { cssRules } from "./css-rules.mjs";
+import { contrast, cssRules } from "./css-rules.mjs";
 
 // TRA-51: the text beneath a location's image ranks the same way on every card that shows one: a destination's on a
 // trip's page and in Destinations, whose cards trips' cards on All trips share, and a hotel's, activity's, restaurant's
@@ -74,16 +74,6 @@ test("the carousel's cards give the name room below the photo, and each detail r
     ".name": [12, 14, 0], ".description": [4, 14, 0], ".types": [8, 14, 0], ".price": [10, 14, 14],
   });
 });
-
-/** WCAG's contrast between two colors written as #rrggbb. */
-function contrast(first, second) {
-  const luminance = (hex) => {
-    const [r, g, b] = [1, 3, 5].map((start) => parseInt(hex.slice(start, start + 2), 16) / 255).map((value) => value <= 0.03928 ? value / 12.92 : ((value + 0.055) / 1.055) ** 2.4);
-    return 0.2126 * r + 0.7152 * g + 0.0722 * b;
-  };
-  const [lighter, darker] = [luminance(first), luminance(second)].sort((a, b) => b - a);
-  return (lighter + 0.05) / (darker + 0.05);
-}
 
 test("every detail beneath a location's image reaches 4.5:1 contrast with what is behind it (TRA-51)", () => {
   /** A color as written, or the one its custom property is in :root. */

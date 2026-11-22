@@ -502,7 +502,8 @@ export default function PlannerApp({ initialData, initialBudgets, access = {}, d
       pages={stay ? "/trips/" + stay.tripId + "/destinations/" + stay.id : "/destinations/" + place.id}
       onView={(item) => open({ kind: "ideaDetails", item })}
       onAdd={(kind) => open({ kind: "candidate", destinationId: place.id, category: kind })}
-      onBudgetEdit={(kind) => open(kind === "hotels" ? { kind: "accommodationBudget", item: place, stop: stay } : kind === "activities" ? { kind: "activitiesBudget", item: place } : { kind: "foodBudget", item: place, nights: stay?.nights ?? null })} />;
+      onBudgetEdit={(kind) => open(kind === "hotels" ? { kind: "accommodationBudget", item: place, stop: stay } : kind === "activities" ? { kind: "activitiesBudget", item: place } : { kind: "foodBudget", item: place, nights: stay?.nights ?? null })}
+      onMustDo={(item, control) => saveFrom(control, { type: "candidate.mustDo", id: item.id, mustDo: !item.mustDo }, item.mustDo ? "Must do removed." : "Marked as must do.")} />;
   }
   /** An idea's details, read only, with Close and Edit where an editor has Cancel and Save. Edit opens its editor, which returns here. */
   function renderIdeaDetails(item: Candidate) {

@@ -1,12 +1,16 @@
 import type { AiPlatform } from "./ai-auth";
 import type { Coordinates, SavedCoordinates } from "./coordinates";
 import type { PreviewChange } from "./ai-preview";
+import type { EDITABLE_FIELDS, FieldValues } from "./editable-fields";
 import type { EntryRequirements } from "./entry-requirements";
 import type { HealthSafety } from "./health-safety";
 import type { LayoverPlan, SavedLayoverPlan } from "./layover-plan";
 import type { MonthlyClimate } from "./typical-weather";
-export type FoodBudgetMode = "itemized" | "daily";
-export type ActivitiesBudgetMode = "itemized" | "general";
+/** How a destination budgets food and activities: from its ideas included in the budget, or from one amount. */
+export const FOOD_BUDGET_MODES = ["itemized", "daily"] as const;
+export type FoodBudgetMode = typeof FOOD_BUDGET_MODES[number];
+export const ACTIVITIES_BUDGET_MODES = ["itemized", "general"] as const;
+export type ActivitiesBudgetMode = typeof ACTIVITIES_BUDGET_MODES[number];
 export type Category = "hotels" | "activities" | "restaurants";
 /** The meals and visits a restaurant can suit, in the order its editor and tags list them (TRA-36). Only restaurants have them. */
 export const RESTAURANT_TYPES = ["breakfast", "lunch", "dinner", "snack", "drinks"] as const;
@@ -104,22 +108,29 @@ export interface MassTime { id: string; day: string; time: string; }
 export interface Church { id: string; destinationId: string; name: string; address: string; denomination: string; url: string; massTimes: MassTime[]; images: CandidateImage[]; mainImageId: string | null; coordinates: SavedCoordinates | null; }
 /** `tags` is one spelling of each tag on the trips the account can open, in alphabetical order, for a trip's page to reuse and the trip list to filter by. Destinations pages leave it empty. */
 export interface Snapshot { churches: Church[]; trips: Trip[]; homeItems: HomeItem[]; stops: TripStop[]; destinations: Destination[]; legs: TravelLeg[]; candidates: Candidate[]; tags: string[]; }
+/** A save's values for the editable fields of the record a table holds (TRA-174). */
+type Fields<T extends keyof typeof EDITABLE_FIELDS> = FieldValues<(typeof EDITABLE_FIELDS)[T]>;
 /**
  * A destination's shared research and budget amounts as a save sends them. A field left out keeps its saved value, except
  * that a new city sent without `cityFromSuggestion` was entered some other way.
  */
-export interface DestinationFields { city?: string; cityFromSuggestion?: true; tagline?: string; notes?: string; miscDailyAmount?: string; hotelNightlyAmount?: string; activitiesBudgetMode?: ActivitiesBudgetMode; activitiesGeneralAmount?: string; foodBudgetMode?: FoodBudgetMode; foodDailyAmount?: string; shoppingAmount?: string; weatherHighF?: number | null; weatherLowF?: number | null; weatherRainfall?: string; weatherPeriod?: string; weatherSource?: string; image?: PreparedImage | null; gallery?: GalleryUpdate }
+export type DestinationFields = Fields<"destinations"> & { cityFromSuggestion?: true; image?: PreparedImage | null; gallery?: GalleryUpdate };
 /** One trip's stay notes and nights at a destination. */
-export interface StopFields { stay?: string; nights?: number | null }
+export type StopFields = Fields<"trip_stops">;
 /**
  * A save names the item it changes by its ID. An editor adding an item gives it its ID when it opens and sends it with
  * `create`, so saving again after a response is lost changes that item instead of adding another. Without `create`, a
  * save changes a saved item, and is refused when the item no longer exists.
  */
 export type Mutation =
+ // A save's editable fields are its record's in EDITABLE_FIELDS (TRA-174), such as a trip's `tagline`, the line its page
+ // shows above its name (TRA-134), which a save may leave out, as a page opened before taglines does, to keep the saved one.
  // `image` changes the trip's headline image (TRA-133), only from an upload or the trip editor's crops. Left out, it keeps it.
- // `tagline` is the line the trip's page shows above its name (TRA-134). Left out, as a page opened before taglines does, it keeps the saved one.
- | { type: "trip.save"; id: string; create?: true; startDate?: string | null; name: string; tagline?: string; dateLabel: string; homeCity: string; returnCity?: string | null; travelers: number; notes: string; image?: TripImageUpdate }
+ | ({ type: "trip.save"; id: string; create?: true; image?: TripImageUpdate } & Fields<"trips">)
+ // Adds, replaces or removes a trip's headline image, and nothing else, with the image Travel downloaded and prepared for a
+ // ChatGPT or Claude proposal, by the new ID the proposal keeps it under (TRA-174). A new image starts uncropped. Only
+ // those proposals make it; people change the image with the trip's save.
+ | { type: "trip.image"; id: string; image: ({ id: string } & PreparedImage) | null }
  | { type: "trip.delete"; id: string }
  | { type: "trip.share"; tripId: string; email: string }
  | { type: "trip.unshare"; tripId: string; email: string }
@@ -129,7 +140,7 @@ export type Mutation =
  | { type: "trip.untag"; tripId: string; name: string }
  // Puts every trip the account can open, each once, in the account's own order on All trips (TRA-16). Other accounts keep theirs.
  | { type: "trip.order"; tripIds: string[] }
- | { type: "homeItem.save"; id: string; create?: true; tripId: string; name: string; price: string; notes: string }
+ | ({ type: "homeItem.save"; id: string; create?: true; tripId: string } & Fields<"home_items">)
  | { type: "homeItem.delete"; id: string; tripId: string }
  // Changes a saved destination everywhere it is used, and with `stopId` that trip's stay notes and nights too.
  | ({ type: "destination.save"; id: string; stopId?: string } & DestinationFields & StopFields)
@@ -145,7 +156,7 @@ export type Mutation =
  // An idea's or church's `coordinates` place it on its destination's map, or null removes them (TRA-150). Left out, they
  // are kept, and once a save changes the address they wait to be reviewed, so the map stops using them until they are
  // saved again or removed.
- | { type: "church.save"; id: string; create?: true; destinationId: string; name: string; address: string; denomination: string; url: string; massTimes: MassTime[]; coordinates?: Coordinates | null; gallery?: GalleryUpdate }
+ | ({ type: "church.save"; id: string; create?: true; destinationId: string; massTimes: MassTime[]; coordinates?: Coordinates | null; gallery?: GalleryUpdate } & Fields<"churches">)
  | { type: "church.delete"; id: string; destinationId: string }
  // Adds a city to a trip as its last stop, without stay notes or nights: the trip owner's saved destination for the
  // city, or a new one. A city the trip already visits opens that stop instead of adding another. With `before`, one of
@@ -160,14 +171,14 @@ export type Mutation =
  | { type: "stop.remove"; id: string }
  // `miscAmount` is the connection's miscellaneous spending on the way (TRA-26). Left out, like `itinerary` and `links`, it keeps the saved one.
  // `airline` and `flightNumber` are a flight's (TRA-147). Left out, as a page opened before them does, each keeps the saved one.
- | { type: "leg.save"; id: string; method: string; airline?: string; flightNumber?: string; price: string; miscAmount?: string; departure: string; arrival: string; url: string; notes: string; itinerary?: ItineraryStop[]; links?: ResearchLink[] }
+ | ({ type: "leg.save"; id: string; itinerary?: ItineraryStop[]; links?: ResearchLink[] } & Fields<"legs">)
  | { type: "leg.clear"; id: string }
  // Saves the plan of one layover in a connection's itinerary, replacing any saved one, or removes it with null (TRA-45).
  // The layover and everything else about the connection stay.
  | { type: "leg.layoverPlan"; id: string; layoverId: string; plan: LayoverPlan | null }
  // A restaurant's `restaurantTypes` replace its saved ones, and left out keep them. Hotels and activities have none.
  // `description` says what the idea is, below its name on its cards (TRA-138). Left out, as a page opened before it does, it keeps the saved one.
- | { type: "candidate.save"; id: string; create?: true; destinationId: string; category: Category; name: string; description?: string; price: string; address: string; url: string; notes: string; included: boolean; mustDo?: boolean; restaurantTypes?: RestaurantType[]; links?: ResearchLink[]; coordinates?: Coordinates | null; gallery?: GalleryUpdate }
+ | ({ type: "candidate.save"; id: string; create?: true; destinationId: string; category: Category; restaurantTypes?: RestaurantType[]; links?: ResearchLink[]; coordinates?: Coordinates | null; gallery?: GalleryUpdate } & Fields<"candidates">)
  | { type: "candidate.move"; id: string; direction: "up" | "down" }
  | { type: "candidate.mustDo"; id: string; mustDo: boolean }
  | { type: "candidate.delete"; id: string }

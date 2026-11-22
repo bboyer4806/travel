@@ -1,8 +1,10 @@
 import { ACCURACY_LABELS } from "./coordinates.ts";
+import { EDITABLE_FIELDS, fieldColumn } from "./editable-fields.ts";
 import { formatCurrency } from "./money.ts";
 import { RESTAURANT_TYPE_LABELS } from "./types.ts";
 import { climateAveragesText, climateFromJson, formatReferenceYears, MONTHS } from "./typical-weather.ts";
 import type { CoordinatesAccuracy } from "./coordinates";
+import type { EditableField } from "./editable-fields";
 import type { Category, Mutation, RestaurantType } from "./types";
 import type { MonthlyClimate } from "./typical-weather";
 
@@ -39,8 +41,12 @@ export type Tables = Record<DataTable, Map<string, Row>>;
 export interface Effect { table: DataTable; key: string; before: Row | null; after: Row | null }
 
 export interface PreviewField { name: string; before: string | null; after: string | null }
-/** One record a change adds, changes or deletes. `photo` is a destination's, idea's or church's photo's ID, for the owner to see it (TRA-122). */
-export interface PreviewRecord { action: "Adds" | "Changes" | "Deletes"; record: string; fields: PreviewField[]; photo?: string }
+/**
+ * One record a change adds, changes or deletes. `photo` is a destination's, idea's or church's photo's ID, for the owner to
+ * see it (TRA-122). `headline` names a trip's headline image before and after, for the owner to compare them (TRA-174):
+ * the saved image by its version, and the image a proposal adds by the ID it keeps it under.
+ */
+export interface PreviewRecord { action: "Adds" | "Changes" | "Deletes"; record: string; fields: PreviewField[]; photo?: string; headline?: { before: string | null; after: string | null } }
 /** One proposed change as the owner reviews it: what it does, and every record it adds, changes or deletes. */
 export interface PreviewChange { operation: string; records: PreviewRecord[] }
 
@@ -50,19 +56,27 @@ type Format = "text" | "number" | "order" | "money" | "flag" | "json" | "account
 const COORDINATE_COLUMNS: Record<string, [string, Format]> = {
   latitude: ["Latitude", "number"], longitude: ["Longitude", "number"], coordinatesAccuracy: ["Coordinates accuracy", "accuracy"], coordinatesReview: ["Coordinates to review", "review"],
 };
+/** How each kind of editable field reads (TRA-174). */
+const FIELD_FORMATS: Record<EditableField["kind"], Format> = { text: "text", url: "text", amount: "money", boolean: "flag", whole: "number", number: "number", choice: "text", date: "text" };
+/** A record's editable fields by their columns, each with its label and how it reads, or null where it isn't shown, from the contract (TRA-174). */
+export function fieldColumns(fields: Record<string, EditableField>): Record<string, [string, Format] | null> {
+  return Object.fromEntries(Object.entries(fields).map(([name, field]) => [fieldColumn(name, field), field.label === null ? null : [field.label, FIELD_FORMATS[field.kind]]]));
+}
 /**
  * Each column's label in a preview and how its values read, or null for one people never see: IDs, keys, timestamps,
  * photo versions, destination photos' focal points, which proposals never change (TRA-53), trips' headline image crops,
- * which only the trip editor changes (TRA-133), and values worked out from another column. Hidden columns still count when approving: a proposal makes exactly the rows it previewed, or nothing.
+ * which only the trip editor chooses (TRA-133), and values worked out from another column. Editable fields take theirs
+ * from the contract (TRA-174). Hidden columns still count when approving: a proposal makes exactly the rows it previewed, or nothing.
  */
 export const PREVIEW_COLUMNS: Record<DataTable, Record<string, [string, Format] | null>> = {
-  trips: { id: null, name: ["Name", "text"], tagline: ["Tagline", "text"], dateLabel: ["Dates", "text"], homeCity: ["Departing city", "text"], travelers: ["Travelers", "number"], notes: ["Notes", "text"], createdAt: null, returnCity: ["Return city", "text"], startDate: ["Start date", "text"], ownerId: ["Owner", "account"] },
+  trips: { id: null, createdAt: null, ownerId: ["Owner", "account"], ...fieldColumns(EDITABLE_FIELDS.trips) },
+  // A headline image shows as its current and proposed images instead (TRA-174).
   trip_images: { tripId: null, version: null, cardFocusX: null, cardFocusY: null, cardZoom: null, bannerFocusX: null, bannerFocusY: null, bannerZoom: null },
   trip_shares: { tripId: null, accountId: null, sharedAt: null },
   trip_tags: { tripId: null, tagKey: null, name: null },
   trip_order: { accountId: null, tripId: null, position: ["Order", "order"] },
-  trip_stops: { id: null, tripId: null, destinationId: null, position: ["Order", "order"], stay: ["Stay notes", "text"], nights: ["Nights", "number"], arrivalDate: ["Arrival", "text"], departureDate: ["Departure", "text"], legacyArrivalDate: null, legacyDepartureDate: null },
-  legs: { id: null, tripId: null, fromId: null, toId: null, method: ["Method", "text"], airline: ["Airline", "text"], flightNumber: ["Flight number", "text"], priceCents: ["Price", "money"], miscCents: ["Miscellaneous spending", "money"], departure: ["Departure", "text"], arrival: ["Arrival", "text"], url: null, notes: ["Notes", "text"], itineraryJson: ["Itinerary", "json"], linksJson: ["Research links", "json"] },
+  trip_stops: { id: null, tripId: null, destinationId: null, position: ["Order", "order"], arrivalDate: ["Arrival", "text"], departureDate: ["Departure", "text"], legacyArrivalDate: null, legacyDepartureDate: null, ...fieldColumns(EDITABLE_FIELDS.trip_stops) },
+  legs: { id: null, tripId: null, fromId: null, toId: null, itineraryJson: ["Itinerary", "json"], linksJson: ["Research links", "json"], ...fieldColumns(EDITABLE_FIELDS.legs) },
   layover_plans: {
     legId: null, layoverId: null, timeZone: ["Time zone", "text"], arrival: ["Arriving flight lands", "text"], departure: ["Connecting flight departs", "text"],
     immigrationMinutes: ["Immigration (minutes)", "number"], customsMinutes: ["Customs (minutes)", "number"], securityMinutes: ["Security (minutes)", "number"],
@@ -70,22 +84,19 @@ export const PREVIEW_COLUMNS: Record<DataTable, Record<string, [string, Format] 
     activitiesJson: ["Activities", "json"],
   },
   // Whether an item is done is kept as saved, but no longer shown or changed (TRA-146).
-  home_items: { id: null, tripId: null, name: ["Name", "text"], notes: ["Notes", "text"], priceCents: ["Price", "money"], completed: null, createdAt: null },
+  home_items: { id: null, tripId: null, completed: null, createdAt: null, ...fieldColumns(EDITABLE_FIELDS.home_items) },
   destinations: {
-    id: null, ownerId: ["Owner", "account"], city: ["City", "text"], cityKey: null, cityFromSuggestion: ["City chosen from a suggestion", "flag"], tagline: ["Tagline", "text"], notes: ["Notes", "text"],
-    miscDailyMinor: ["Daily miscellaneous", "money"], miscCurrency: null, hotelNightlyMinor: ["Nightly hotel estimate", "money"], hotelCurrency: null,
-    activitiesGeneralMinor: ["General activities budget", "money"], activitiesCurrency: null, foodDailyMinor: ["Daily food budget", "money"], foodCurrency: null,
-    shoppingMinor: ["Shopping budget", "money"], shoppingCurrency: null, activitiesBudgetMode: ["Activities budget method", "text"], foodBudgetMode: ["Food budget method", "text"],
-    weatherHighF: ["Typical high (°F)", "number"], weatherLowF: ["Typical low (°F)", "number"], weatherRainfall: ["Typical rainfall", "text"], weatherPeriod: ["Weather period", "text"], weatherSource: ["Weather source", "text"],
-    churchEnabled: ["Church shown", "flag"],
+    id: null, ownerId: ["Owner", "account"], cityKey: null, cityFromSuggestion: ["City chosen from a suggestion", "flag"],
+    miscCurrency: null, hotelCurrency: null, activitiesCurrency: null, foodCurrency: null, shoppingCurrency: null, churchEnabled: ["Church shown", "flag"],
+    ...fieldColumns(EDITABLE_FIELDS.destinations),
   },
   destination_entry_requirements: { destinationId: null, requirementsJson: ["Entry requirements", "json"] },
   destination_health_safety: { destinationId: null, healthSafetyJson: ["Health and safety", "json"] },
   destination_climate: { destinationId: null, climateJson: ["Monthly averages", "climate"] },
   destination_images: { id: null, destinationId: null, version: null, position: ["Order", "order"], isMain: ["Primary photo", "flag"], focusX: null, focusY: null },
-  candidates: { id: null, destinationId: null, category: null, name: ["Name", "text"], description: ["What it is", "text"], priceCents: ["Price", "money"], address: ["Address", "text"], url: null, notes: ["Notes", "text"], included: ["Included", "flag"], linksJson: ["Research links", "json"], position: ["Order", "order"], mustDo: ["Must do", "flag"], restaurantTypesJson: ["Restaurant types", "restaurantTypes"], ...COORDINATE_COLUMNS },
+  candidates: { id: null, destinationId: null, category: null, linksJson: ["Research links", "json"], position: ["Order", "order"], restaurantTypesJson: ["Restaurant types", "restaurantTypes"], ...COORDINATE_COLUMNS, ...fieldColumns(EDITABLE_FIELDS.candidates) },
   candidate_images: { id: null, candidateId: null, version: null, position: ["Order", "order"], isMain: ["Main photo", "flag"] },
-  churches: { id: null, destinationId: null, name: ["Name", "text"], address: ["Address", "text"], denomination: ["Denomination", "text"], url: ["Website", "text"], massTimesJson: ["Mass times", "json"], ...COORDINATE_COLUMNS },
+  churches: { id: null, destinationId: null, massTimesJson: ["Mass times", "json"], ...COORDINATE_COLUMNS, ...fieldColumns(EDITABLE_FIELDS.churches) },
   church_images: { id: null, churchId: null, version: null, position: ["Order", "order"], isMain: ["Main photo", "flag"] },
   accounts: { id: null, email: ["Email", "text"], name: ["Name", "text"], authorizedAt: null },
 };
@@ -176,6 +187,11 @@ export function previewChange(change: Mutation, effects: Effect[], before: Table
     const row = find(effect.table, effect.key);
     const record = label(effect.table, row);
     const photo = PHOTO_TABLES.includes(effect.table) ? { photo: String(row.id) } : {};
+    // A trip's headline image before and after (TRA-174): the saved one by its version, and one a change adds by the ID its
+    // proposal keeps it under. Only trip.image adds one, and replacing it changes no column the owner reads.
+    const headline = effect.table === "trip_images" ? {
+      headline: { before: effect.before && String(effect.before.version ?? row.version), after: effect.after && change.type === "trip.image" && change.image ? change.image.id : null },
+    } : undefined;
     const fields = shown((effect.after ?? effect.before)!).flatMap((column): PreviewField[] => {
       const [name, format] = PREVIEW_COLUMNS[effect.table][column]!;
       const [before, after] = [effect.before?.[column] ?? null, effect.after?.[column] ?? null];
@@ -184,8 +200,8 @@ export function previewChange(change: Mutation, effects: Effect[], before: Table
       const field = { name, before: display(format, before, email), after: display(format, after, email) };
       return field.before === field.after ? [] : [field];
     });
-    if (effect.before && effect.after) return fields.length ? [{ action: "Changes", record, fields, ...photo }] : [];
-    return [{ action: effect.after ? "Adds" : "Deletes", record, fields, ...photo }];
+    if (effect.before && effect.after) return fields.length || headline ? [{ action: "Changes", record, fields, ...photo, ...headline }] : [];
+    return [{ action: effect.after ? "Adds" : "Deletes", record, fields, ...photo, ...headline }];
   });
   return { operation: operationTitle(change), records };
 }
@@ -236,6 +252,7 @@ export function operationTitle(change: Mutation): string {
   switch (change.type) {
     case "trip.save": return `${change.create ? "Add" : "Change"} the trip “${change.name}”`;
     case "trip.delete": return "Delete a trip";
+    case "trip.image": return change.image ? "Set a trip's headline image" : "Remove a trip's headline image";
     case "trip.share": return `Share a trip with ${change.email}`;
     case "trip.unshare": return `Stop sharing a trip with ${change.email}`;
     case "trip.tag": return `Tag a trip “${change.name}”`;

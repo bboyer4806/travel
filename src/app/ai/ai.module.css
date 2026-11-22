@@ -19,6 +19,10 @@
 .change { padding: 16px; border: 1px solid var(--line); border-radius: 8px; background: var(--white); }
 .record { margin-top: 12px; overflow-wrap: anywhere; }
 .photo { display: block; width: 240px; max-width: 100%; height: auto; aspect-ratio: 3 / 2; margin-top: 8px; object-fit: contain; border: 1px solid var(--line); border-radius: 6px; background: var(--wash); }
+/* TRA-174: a headline image's current and proposed images, side by side, one above the other where they don't fit. */
+.headline { display: flex; flex-wrap: wrap; gap: 12px; }
+.headline figure { min-width: 0; max-width: 100%; margin: 0; }
+.headline figcaption { margin-top: 4px; color: var(--muted); font-size: 12px; }
 .action { display: inline-block; margin-right: 6px; padding: 2px 6px; border-radius: 4px; font-size: 11px; font-weight: 600; background: var(--wash); }
 .Adds { background: #e4ece0; color: var(--green); }
 .Changes { background: #f6e7d9; color: var(--orange); }

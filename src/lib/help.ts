@@ -151,7 +151,7 @@ const HELP: { [Route in SignedInRoute]: Route extends `${string}/[category]` ? R
     title: "Proposal",
     points: [
       "Changes ChatGPT or Claude proposes, with every record each one adds, changes or deletes, before and after.",
-      "While it waits, the photos it adds, changes or deletes show beside their records.",
+      "While it waits, the photos it adds, changes or deletes show beside their records, as do a trip's current and proposed headline images.",
       "A destination's monthly averages show their source, reference years and every month, each saved value beside the proposed one.",
       "Approve every change makes them all exactly as shown, or none if Travel has changed since.",
       "Reject changes nothing.",

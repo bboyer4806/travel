@@ -1,18 +1,20 @@
 import { COORDINATE_ACCURACIES } from "./coordinates.ts";
+import { EDITABLE_FIELDS } from "./editable-fields.ts";
 import { ENTRY_REQUIREMENT_FIELDS } from "./entry-requirements.ts";
 import { LAYOVER_BUFFERS, MAX_LAYOVER_ACTIVITIES, MAX_LAYOVER_MINUTES } from "./layover-plan.ts";
 import { EMERGENCY_CONTACT_MAX_LENGTH, HEALTH_SAFETY_FIELDS, MAX_EMERGENCY_CONTACTS } from "./health-safety.ts";
 import { AI_PHOTO_DOWNLOAD_SECONDS, formatMegabytes, MAX_AI_PROPOSAL_PHOTOS, MAX_CANDIDATE_IMAGES, MAX_DESTINATION_IMAGES, MAX_GALLERY_UPLOAD_BYTES, MAX_IMAGE_UPLOAD_BYTES } from "./image-limits.ts";
-import { MAX_NIGHTS } from "./trip-dates.ts";
 import { MAX_TAG_LENGTH } from "./trip-tags.ts";
 import { CLIMATE_LIMITS, MONTHS } from "./typical-weather.ts";
 import { RESTAURANT_TYPES } from "./types.ts";
+import type { EditableField } from "./editable-fields.ts";
 
 /**
  * The tools Travel's MCP endpoint offers ChatGPT and Claude (TRA-115). The read tools see every trip and destination,
  * whoever owns them. `propose_changes` takes the planner's own changes (`Mutation` in types.ts), checked by the store
- * as an editor's saves are; these schemas only describe them to the assistant. A photo change names each new photo by
- * the address Travel downloads it from, never by its bytes (TRA-122).
+ * as an editor's saves are. Each save's editable fields are described from the contract the store checks them by
+ * (`EDITABLE_FIELDS`, TRA-174), and the store refuses any property a change's schema doesn't list. A photo or headline
+ * image change names each new image by the address Travel downloads it from, never by its bytes (TRA-122).
  */
 
 const UUID = "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$";
@@ -49,6 +51,31 @@ function change(type: string, description: string, properties: Record<string, un
   return { type: "object", title: type, description, additionalProperties: false, properties: { type: { type: "string", enum: [type] }, ...properties }, required: ["type", ...required] };
 }
 
+/** How assistants are told about one of a record's editable fields (TRA-174), from the rules the store checks it by. */
+function fieldSchema(field: EditableField): Record<string, unknown> {
+  const { description } = field;
+  switch (field.kind) {
+    case "text": return { type: field.nullable ? ["string", "null"] : "string", ...(field.filled && { minLength: 1 }), maxLength: field.maxLength, description };
+    case "url": return text(description, 2048);
+    case "amount": return amount(description);
+    case "boolean": return flag(description);
+    case "whole": return { type: field.nullable ? ["integer", "null"] : "integer", minimum: field.min, maximum: field.max, description };
+    case "number": return { type: ["number", "null"], description };
+    case "choice": return { type: "string", enum: field.values, description };
+    case "date": return { type: ["string", "null"], pattern: DATE, description };
+  }
+}
+/** A record's editable fields as a schema's properties, and those of them a save must give: every one it can't leave out. */
+export function fieldProperties(fields: Record<string, EditableField>): { properties: Record<string, unknown>; required: string[] } {
+  const entries = Object.entries(fields);
+  return { properties: Object.fromEntries(entries.map(([name, field]) => [name, fieldSchema(field)])), required: entries.filter(([, field]) => !field.keep).map(([name]) => name) };
+}
+/** A save: its own properties, such as its id, and every editable field of its records, from the contract (TRA-174). */
+function save(type: string, description: string, properties: Record<string, unknown>, required: string[], ...records: Record<string, EditableField>[]) {
+  const fields = records.map(fieldProperties);
+  return change(type, description, Object.assign({}, properties, ...fields.map((field) => field.properties)), [...required, ...fields.flatMap((field) => field.required)]);
+}
+
 /**
  * A photo change's gallery (TRA-122): what the gallery editors change, with each new photo's https:// address for
  * Travel to download in place of a file. `main` is what the editor calls the photo shown first.
@@ -77,37 +104,32 @@ function gallery(owner: string, maxImages: number, main: string, ordered: boolea
 
 /** One of each of the planner's changes, as `propose_changes` takes them. */
 const CHANGES = [
-  change("trip.save", "Adds a trip, owned by Travel's owner, or changes a saved one. Each field is saved as given. A new departing or return city clears the travel from or to it.", {
-    id: id("The trip's id, or a new UUID with create."), create, name: text("Its name.", 120),
-    tagline: text("A short line shown in capitals above the trip's name on its page, saved as written. Empty for Travel's default heading. Left out keeps the saved one.", 120),
-    dateLabel: text("When, in words, such as \"Spring 2027\". Empty for none.", 120), homeCity: text("The departing city. Empty for none.", 120),
-    returnCity: { type: ["string", "null"], maxLength: 120, description: "The return city, or null when it is the departing city. Left out keeps the saved one." },
-    travelers: { type: "integer", minimum: 1, maximum: 999, description: "How many people travel." }, notes: text("Notes. Empty for none.", 8000),
-    startDate: { type: ["string", "null"], pattern: DATE, description: "The first day, YYYY-MM-DD, or null for none. Each stay's dates follow from it and the nights before it. Left out keeps the saved one." },
-  }, ["id", "name", "dateLabel", "homeCity", "travelers", "notes"]),
+  save("trip.save", "Adds a trip, owned by Travel's owner, or changes a saved one. Each field is saved as given. A new departing or return city clears the travel from or to it. Its headline image changes only with trip.image.", {
+    id: id("The trip's id, or a new UUID with create."), create,
+  }, ["id"], EDITABLE_FIELDS.trips),
+  change("trip.image", "Adds, replaces or removes a trip's headline image, and nothing else: the image across the top of its card on All trips and the banner on its page. A new image replaces any saved one and starts uncropped, centered at 100% in both, as in the trip editor, where only people crop it.", {
+    id: id("The trip's id."),
+    image: {
+      type: ["object", "null"], additionalProperties: false, required: ["id", "url"],
+      properties: {
+        id: id("A new UUID for the image."),
+        url: text(`The https:// address of the image file itself, not of a page showing it: a JPEG, PNG or WebP image of up to ${formatMegabytes(MAX_IMAGE_UPLOAD_BYTES)} on a public website.`, 2048),
+      },
+      description: "The new image, or null to remove the saved one.",
+    },
+  }, ["id", "image"]),
   change("trip.delete", "Deletes a trip with its stays, travel, At home items, tags and sharing. The destinations it visits stay, with everything saved for them.", { id: id("The trip's id.") }, ["id"]),
   change("trip.share", "Shares a trip with a Google account's email address, which can then sign in to Travel and change the trip. Nothing is sent to them.", { tripId: id("The trip's id."), email: text("Their Google account's email address.", 254) }, ["tripId", "email"]),
   change("trip.unshare", "Ends an account's access to a trip. The account can still sign in, and the trip is unchanged.", { tripId: id("The trip's id."), email: text("The email address it is shared with.", 254) }, ["tripId", "email"]),
   change("trip.tag", "Adds a tag to a trip, spelled as the same tag already is on another trip.", { tripId: id("The trip's id."), name: text("The tag.", MAX_TAG_LENGTH) }, ["tripId", "name"]),
   change("trip.untag", "Removes a tag from a trip. Other trips keep theirs.", { tripId: id("The trip's id."), name: text("The tag.", MAX_TAG_LENGTH) }, ["tripId", "name"]),
-  change("homeItem.save", "Adds an At home item to a trip, such as house sitting or pausing the mail, or changes a saved one. Each field is saved as given.", {
-    id: id("The item's id, or a new UUID with create."), create, tripId: id("Its trip's id."), name: text("What it is.", 160), price: amount("What it costs."),
-    notes: text("Notes. Empty for none.", 8000),
-  }, ["id", "tripId", "name", "price", "notes"]),
+  save("homeItem.save", "Adds an At home item to a trip, such as house sitting or pausing the mail, or changes a saved one. Each field is saved as given.", {
+    id: id("The item's id, or a new UUID with create."), create, tripId: id("Its trip's id."),
+  }, ["id", "tripId"], EDITABLE_FIELDS.home_items),
   change("homeItem.delete", "Deletes an At home item.", { id: id("The item's id."), tripId: id("Its trip's id.") }, ["id", "tripId"]),
-  change("destination.save", "Changes the fields given of a destination, in every trip that visits it. With stopId, also changes that trip's stay there: its stay notes and nights. Anything left out stays as it is. A new city clears the travel to and from it in every trip. Its weather fields summarize one time of year; averages for every month go in destination.climate.", {
-    id: id("The destination's id."), stopId: id("A trip's stay at this destination, for stay and nights."), city: text("The city.", 120),
-    tagline: text("A short line shown in capitals above the destination's name on its page, saved as written. Empty for Travel's default heading.", 120), notes: text("Notes. Empty for none.", 8000),
-    miscDailyAmount: amount("Daily miscellaneous spending for the whole party."), hotelNightlyAmount: amount("The nightly hotel estimate, used until a hotel is chosen."),
-    activitiesBudgetMode: { type: "string", enum: ["itemized", "general"], description: "itemized adds up included activities; general uses activitiesGeneralAmount." },
-    activitiesGeneralAmount: amount("The activities budget for a stay."),
-    foodBudgetMode: { type: "string", enum: ["itemized", "daily"], description: "itemized adds up included restaurants; daily uses foodDailyAmount." },
-    foodDailyAmount: amount("Daily food spending for the whole party."), shoppingAmount: amount("The shopping budget for a stay."),
-    weatherHighF: { type: ["number", "null"], description: "Typical high in °F, or null." }, weatherLowF: { type: ["number", "null"], description: "Typical low in °F, or null." },
-    weatherRainfall: text("Typical rainfall. Empty for none.", 4000), weatherPeriod: text("The weather's time of year. Empty for none.", 120), weatherSource: text("Where the weather is from. Empty for none.", 2048),
-    stay: text("Stay notes for the trip's stay, with stopId. Empty for none.", 120),
-    nights: { type: ["integer", "null"], minimum: 0, maximum: MAX_NIGHTS, description: "Nights of the trip's stay, with stopId, or null when unknown." },
-  }, ["id"]),
+  save("destination.save", "Changes the fields given of a destination, in every trip that visits it. With stopId, also changes that trip's stay there: its stay notes and nights. Anything left out stays as it is. A new city clears the travel to and from it in every trip. Its weather fields summarize one time of year; averages for every month go in destination.climate. Its photos, its primary one included, change only with destination.photos.", {
+    id: id("The destination's id."), stopId: id("A trip's stay at this destination, for stay and nights."),
+  }, ["id"], EDITABLE_FIELDS.destinations, EDITABLE_FIELDS.trip_stops),
   change("destination.create", "Adds a destination outside any trip, owned by Travel's owner. A city the owner already has a destination for is that destination, unchanged.", { city: text("The city, with its region and country, such as \"Paris, Île-de-France, France\".", 120) }, ["city"]),
   change("destination.delete", "Deletes a destination no trip visits, with its ideas, churches, photos and research.", { id: id("The destination's id.") }, ["id"]),
   change("destination.entryRequirements", "Replaces a destination's entry requirements research, or clears it with null.", {
@@ -159,27 +181,20 @@ const CHANGES = [
     },
   }, ["id", "climate"]),
   change("destination.churchVisibility", "Shows or hides a destination's Church section.", { id: id("The destination's id."), enabled: flag("Whether it shows.") }, ["id", "enabled"]),
-  change("church.save", "Adds a church to a destination, or changes a saved one. Each field is saved as given. Its coordinates change only with church.coordinates: a new address leaves any saved ones waiting to be reviewed, and its map doesn't use them until church.coordinates gives them again.", {
-    id: id("The church's id, or a new UUID with create."), create, destinationId: id("Its destination's id."), name: text("Its name.", 160), address: text("Its address. Empty for none.", 500),
-    denomination: text("Its denomination. Empty for none.", 160), url: text("Its website, https:// or http://. Empty for none.", 2048),
+  save("church.save", "Adds a church to a destination, or changes a saved one. Each field is saved as given. Its coordinates change only with church.coordinates: a new address leaves any saved ones waiting to be reviewed, and its map doesn't use them until church.coordinates gives them again.", {
+    id: id("The church's id, or a new UUID with create."), create, destinationId: id("Its destination's id."),
     massTimes: { type: "array", maxItems: 30, description: "Mass times, replacing the saved ones. Empty when unknown.", items: { type: "object", additionalProperties: false, required: ["id", "day", "time"], properties: { id: id("The Mass time's id: a new UUID for a new one."), day: text("A day, such as Sunday, or a date.", 120), time: text("The time.", 120) } } },
-  }, ["id", "destinationId", "name", "address", "denomination", "url", "massTimes"]),
+  }, ["id", "destinationId", "massTimes"], EDITABLE_FIELDS.churches),
   change("church.delete", "Deletes a church with its photos.", { id: id("The church's id."), destinationId: id("Its destination's id.") }, ["id", "destinationId"]),
   change("stop.add", "Adds a city to the end of a trip's route as a stay without nights: the trip owner's destination for the city, with everything saved for it, or a new one. A city the trip visits isn't added again. Its new ids are known only once approved, so set its nights in a later proposal. To add a destination the owner already has, whatever its city is called, use stop.visit.", { tripId: id("The trip's id."), city: text("The city, with its region and country.", 120) }, ["tripId", "city"]),
   change("stop.visit", "Adds one of the trip owner's saved destinations to the end of a trip's route as a stay without nights, with everything saved for it. A destination the trip visits isn't added again. Its new stay's id is known only once approved, so set its nights in a later proposal.", { tripId: id("The trip's id."), destinationId: id("The destination's id. Its owner must be the trip's.") }, ["tripId", "destinationId"]),
   change("stop.move", "Moves a stay one place earlier or later in its trip's route.", { id: id("The stay's id."), direction }, ["id", "direction"]),
   change("stop.remove", "Removes a trip's stay at a destination. The destination stays, with everything saved for it.", { id: id("The stay's id.") }, ["id"]),
-  change("leg.save", "Changes the travel between two stays, or from the departing city or to the return city. Each field is saved as given. Its airline and flight number show only while its method names an airplane, such as Flight or Plane, and stay saved when it doesn't.", {
-    id: id("The travel's id."), method: text("How, such as Flight or Train. Empty for none.", 120),
-    airline: text("A flight's airline, such as Delta. Empty for none. Left out keeps the saved one.", 120),
-    flightNumber: text("A flight's flight number, such as DL 123. Empty for none. Left out keeps the saved one.", 120),
-    price: amount("What it costs for the whole party."),
-    miscAmount: amount("Miscellaneous spending on the way, such as airport meals, drinks and layover purchases, for the whole party and the whole connection, apart from its price. Left out keeps the saved amount."),
-    departure: text("When it leaves. Empty for none.", 120), arrival: text("When it arrives. Empty for none.", 120), url: text("A booking or research link, https:// or http://. Empty for none.", 2048),
-    notes: text("Notes. Empty for none.", 8000),
+  save("leg.save", "Changes the travel between two stays, or from the departing city or to the return city. Each field is saved as given. Its airline and flight number show only while its method names an airplane, such as Flight or Plane, and stay saved when it doesn't.", {
+    id: id("The travel's id."),
     itinerary: { type: "array", maxItems: 30, description: "Layovers and stops on the way, replacing the saved ones. Left out keeps them. A layover this leaves out, or makes a stop, loses its plan.", items: { type: "object", additionalProperties: false, required: ["id", "kind", "place"], properties: { id: id("The entry's id: a new UUID for a new one."), kind: { type: "string", enum: ["layover", "stop"] }, place: text("Where.", 160), arrival: text("When it arrives. Empty for none.", 120), departure: text("When it leaves. Empty for none.", 120), notes: text("Notes. Empty for none.", 2000) } } },
     links,
-  }, ["id", "method", "price", "departure", "arrival", "url", "notes"]),
+  }, ["id"], EDITABLE_FIELDS.legs),
   change("leg.clear", "Clears everything saved for the travel between two stays, with its layovers' plans.", { id: id("The travel's id.") }, ["id"]),
   change("leg.layoverPlan", "Saves the plan of one layover in a travel's itinerary, replacing any saved one, or removes it with null. The layover and everything else about the travel stay. A plan times what the travelers will do during the layover against the flight that lands there and the connecting flight that departs, and Travel works out its schedule and warns when it runs past boarding or departure. Its minutes are estimates, never guarantees: give only times and estimates the travelers gave or from a source you can name, and 0 for any that doesn't apply. Removing the layover from the itinerary, or clearing the travel, removes its plan.", {
     id: id("The travel's id."), layoverId: id("The layover's id, from the travel's itinerary: an entry of kind layover, not another stop."),
@@ -210,24 +225,19 @@ const CHANGES = [
       description: "The whole plan, or null to remove it.",
     },
   }, ["id", "layoverId", "plan"]),
-  change("candidate.save", "Adds a hotel, activity or restaurant idea to a destination, or changes a saved one. Each field is saved as given. Including a hotel chooses it, leaving out the others. Its coordinates change only with candidate.coordinates: a new address leaves any saved ones waiting to be reviewed, and its map doesn't use them until candidate.coordinates gives them again.", {
+  save("candidate.save", "Adds a hotel, activity or restaurant idea to a destination, or changes a saved one. Each field is saved as given. Including a hotel chooses it, leaving out the others. Its coordinates change only with candidate.coordinates: a new address leaves any saved ones waiting to be reviewed, and its map doesn't use them until candidate.coordinates gives them again.", {
     id: id("The idea's id, or a new UUID with create."), create, destinationId: id("Its destination's id."), category: { type: "string", enum: ["hotels", "activities", "restaurants"] },
-    name: text("Its name.", 160),
-    description: text("What it is, in a few words, such as \"Boutique hotel\", \"Historic cathedral\" or \"Traditional Italian restaurant\", shown below its name on its cards. Empty for none. Left out keeps the saved one.", 120),
-    price: amount("Its cost for the whole party: a hotel's for the whole stay."), address: text("Its address. Empty for none.", 500),
-    url: text("A website, https:// or http://. Empty for none.", 2048), notes: text("Notes. Empty for none.", 8000), included: flag("Whether it is in the budget: for a hotel, whether it is the chosen one."),
-    mustDo: flag("Must do, for activities and restaurants only. Left out keeps it."),
     restaurantTypes: {
       type: "array", maxItems: RESTAURANT_TYPES.length, uniqueItems: true, items: { type: "string", enum: RESTAURANT_TYPES },
       description: "For restaurants only: the meals and visits it suits, any number of them, replacing the saved ones. Empty for none. Left out keeps them.",
     },
     links,
-  }, ["id", "destinationId", "category", "name", "price", "address", "url", "notes", "included"]),
+  }, ["id", "destinationId", "category"], EDITABLE_FIELDS.candidates),
   change("candidate.move", "Moves an idea one place up or down its list.", { id: id("The idea's id."), direction }, ["id", "direction"]),
   change("candidate.mustDo", "Marks an activity or restaurant Must do, or not.", { id: id("The idea's id."), mustDo: flag("Whether it is Must do.") }, ["id", "mustDo"]),
   change("candidate.include", "Includes an idea in the budget, or leaves it out. Including a hotel chooses it, leaving out the others.", { id: id("The idea's id."), included: flag("Whether it is included.") }, ["id", "included"]),
   change("candidate.delete", "Deletes an idea with its photos.", { id: id("The idea's id.") }, ["id"]),
-  change("destination.photos", "Changes a destination's photos and nothing else: adds photos from their addresses, removes saved ones, chooses the primary photo and puts them in order.", {
+  change("destination.photos", "Changes a destination's photos and nothing else: adds photos from their addresses, removes saved ones, chooses the primary photo and puts them in order. The primary photo is the destination's headline image, which its page shows first and its card in Destinations shows across its top. Removing it makes the first remaining photo primary, as in Travel's photo editor.", {
     id: id("The destination's id."), gallery: gallery("destination", MAX_DESTINATION_IMAGES, "primary", true),
   }, ["id", "gallery"]),
   change("candidate.photos", "Changes a hotel's, activity's or restaurant's photos and nothing else: adds photos from their addresses, removes saved ones and chooses the main photo. Its photos keep their saved order, with new photos last.", {
@@ -244,6 +254,9 @@ const CHANGES = [
   }, ["id", "coordinates"]),
 ];
 
+/** The properties each change an assistant can propose may have, by its type, as its schema lists them. The store refuses any other (TRA-174). */
+export const CHANGE_FIELDS: Record<string, string[]> = Object.fromEntries(CHANGES.map((schema) => [schema.title, Object.keys(schema.properties)]));
+
 const readOnly = { readOnlyHint: true, openWorldHint: false };
 const noInput = { type: "object", properties: {}, additionalProperties: false };
 const input = (properties: Record<string, unknown>) => ({ type: "object", properties, required: Object.keys(properties), additionalProperties: false });
@@ -255,7 +268,7 @@ export const TOOLS = [
   },
   {
     name: "get_trip", title: "Get a trip", annotations: readOnly, inputSchema: input({ trip_id: id("The trip's id.") }),
-    description: "One trip with everything on its page: its tagline, stays, travel between them with a flight's airline and flightNumber and each layover's plan in layoverPlans, At home items, the destinations it visits with their hotels, activities, restaurants, churches and research, and its estimated budget. Amounts are whole USD cents for the whole party; null is not estimated. Each idea's and church's coordinates are null, or place it on its destination's map, unless review is true: its address changed after they were saved, so the map doesn't use them.",
+    description: "One trip with everything on its page: its tagline, its headline image's version and crops in image, or null without one, which get_photo shows, stays, travel between them with a flight's airline and flightNumber and each layover's plan in layoverPlans, At home items, the destinations it visits with their hotels, activities, restaurants, churches and research, and its estimated budget. Amounts are whole USD cents for the whole party; null is not estimated. Each idea's and church's coordinates are null, or place it on its destination's map, unless review is true: its address changed after they were saved, so the map doesn't use them.",
   },
   {
     name: "list_destinations", title: "List destinations", annotations: readOnly, inputSchema: noInput,
@@ -263,7 +276,7 @@ export const TOOLS = [
   },
   {
     name: "get_destination", title: "Get a destination", annotations: readOnly, inputSchema: input({ destination_id: id("The destination's id.") }),
-    description: "One destination with everything on its page: its tagline, notes, budget amounts and methods, typical weather with its monthly climate averages, entry requirements, health and safety, photos, hotels, activities, restaurants, churches, and each trip's stay there. Amounts are whole USD cents for the whole party. Each idea's and church's coordinates are null, or place it on the destination's map, unless review is true: its address changed after they were saved, so the map doesn't use them. A place without usable coordinates is looked up by its address or name within 50 km of the destination.",
+    description: "One destination with everything on its page: its tagline, notes, budget amounts and methods, typical weather with its monthly climate averages, entry requirements, health and safety, photos with the primary one, its headline image, in mainImageId, hotels, activities, restaurants, churches, and each trip's stay there. Amounts are whole USD cents for the whole party. Each idea's and church's coordinates are null, or place it on the destination's map, unless review is true: its address changed after they were saved, so the map doesn't use them. A place without usable coordinates is looked up by its address or name within 50 km of the destination.",
   },
   {
     name: "list_accounts", title: "List accounts", annotations: readOnly, inputSchema: noInput,
@@ -271,8 +284,8 @@ export const TOOLS = [
   },
   {
     name: "get_photo", title: "Get a photo", annotations: readOnly,
-    inputSchema: input({ of: { type: "string", enum: ["destination", "idea", "church"], description: "What the photo is of." }, id: id("The destination's, idea's or church's id."), photo_id: id("The photo's id, from its images.") }),
-    description: "One photo of a destination, idea or church, as listed in its images.",
+    inputSchema: input({ of: { type: "string", enum: ["trip", "destination", "idea", "church"], description: "What the photo is of: a trip, for its headline image, or a destination, idea or church." }, id: id("The trip's, destination's, idea's or church's id."), photo_id: id("The photo's id, from its images, or a trip headline image's version, from its image.") }),
+    description: "One photo of a destination, idea or church, as listed in its images, or a trip's headline image.",
   },
   {
     name: "propose_changes", title: "Propose changes",
@@ -285,7 +298,7 @@ export const TOOLS = [
         changes: { type: "array", minItems: 1, maxItems: 50, items: { anyOf: CHANGES }, description: "The changes, at most 50, made in this order. A refusal names the change by its place in this list, from 1." },
       },
     },
-    description: `Proposes changes to Travel for its owner to approve. Nothing changes until they do. Changes may apply to any trip or destination, whoever owns it, including deleting trips and changing who they are shared with. Each change is checked by Travel's own rules as it is proposed, in order, and the reply lists every record each one adds, changes or deletes, before and after. Give the owner the reply's approve_at link: there they approve or reject every change at once, within 24 hours. Approving makes all of them exactly as shown, or none if Travel has changed since. Check what they decided with get_change_proposal. Records are named by the ids the read tools list. A change that adds a trip, idea, church or At home item gives it a new UUID as its id, with create: true, and later changes in the same proposal can name it by that id. Coordinates change only with candidate.coordinates and church.coordinates, and photos only with destination.photos, candidate.photos and church.photos. Travel downloads each new photo from its address as it is proposed and checks it as it does an upload: at most ${MAX_AI_PROPOSAL_PHOTOS} new photos and ${formatMegabytes(MAX_GALLERY_UPLOAD_BYTES)} in one proposal, downloaded within ${AI_PHOTO_DOWNLOAD_SECONDS} seconds, from public https:// addresses only. If any can't be downloaded or used, nothing is proposed, and the reply names its change and address. The owner sees every photo added, removed or rearranged before approving.`,
+    description: `Proposes changes to Travel for its owner to approve. Nothing changes until they do. Changes may apply to any trip or destination, whoever owns it, including deleting trips and changing who they are shared with. Each change is checked by Travel's own rules as it is proposed, in order, and the reply lists every record each one adds, changes or deletes, before and after. Give the owner the reply's approve_at link: there they approve or reject every change at once, within 24 hours. Approving makes all of them exactly as shown, or none if Travel has changed since. Check what they decided with get_change_proposal. Records are named by the ids the read tools list. A change that adds a trip, idea, church or At home item gives it a new UUID as its id, with create: true, and later changes in the same proposal can name it by that id. A change takes only the fields its schema lists. Coordinates change only with candidate.coordinates and church.coordinates, photos only with destination.photos, candidate.photos and church.photos, and a trip's headline image only with trip.image. Travel downloads each new photo and headline image from its address as it is proposed and checks it as it does an upload: at most ${MAX_AI_PROPOSAL_PHOTOS} new images and ${formatMegabytes(MAX_GALLERY_UPLOAD_BYTES)} in one proposal, downloaded within ${AI_PHOTO_DOWNLOAD_SECONDS} seconds, from public https:// addresses only. If any can't be downloaded or used, nothing is proposed, and the reply names its change and address. The owner sees every photo added, removed or rearranged, and each headline image's current and proposed images, before approving.`,
   },
   {
     name: "get_change_proposal", title: "Get a change proposal", annotations: readOnly, inputSchema: input({ proposal_id: id("The proposal_id propose_changes replied with.") }),

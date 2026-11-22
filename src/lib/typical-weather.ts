@@ -170,3 +170,20 @@ export function temperatureScale(months: readonly ClimateMonth[]): TemperatureSc
   const top = Math.max(Math.ceil(high / step), bottom + 1);
   return { min: bottom * step, max: top * step, ticks: Array.from({ length: top - bottom + 1 }, (_, index) => (bottom + index) * step) };
 }
+
+/** A chart's precipitation axis (TRA-164): its top in inches, from 0 at the bottom, and its gridlines, bottom first. */
+export interface PrecipitationScale { max: number; ticks: number[]; }
+/** Steps between gridlines in inches, smallest first. Within CLIMATE_LIMITS, 200 reaches the wettest month in one interval. */
+const PRECIPITATION_STEPS = [0.1, 0.2, 0.5, 1, 2, 5, 10, 20, 50, 100, 200];
+
+/**
+ * The precipitation axis beside a temperature axis of `intervals` gridline intervals: from 0 in as many intervals, so
+ * each of its gridlines is one of the temperature's, in the smallest step that reaches the wettest month.
+ */
+export function precipitationScale(months: readonly ClimateMonth[], intervals: number): PrecipitationScale {
+  const wettest = Math.max(...months.map((month) => month.precipitationIn));
+  const step = PRECIPITATION_STEPS.find((size) => size * intervals >= wettest)!;
+  // Rounded to tenths, so steps of 0.1 and 0.2 make ticks such as 0.3, not 0.30000000000000004.
+  const ticks = Array.from({ length: intervals + 1 }, (_, index) => Math.round(index * step * 10) / 10);
+  return { max: ticks[intervals], ticks };
+}

@@ -7,8 +7,8 @@ import * as budget from "../src/lib/budget.ts";
 import * as destinationLabel from "../src/lib/destination-label.ts";
 import * as money from "../src/lib/money.ts";
 import * as tripDates from "../src/lib/trip-dates.ts";
-import { addDestination, setup, tripInput } from "./budget-fixtures.mjs";
-import { cssRules } from "./css-rules.mjs";
+import { addDestination, destinationEdit, setup, tripInput } from "./budget-fixtures.mjs";
+import { cssRules, onlyRule } from "./css-rules.mjs";
 
 // TRA-51: the text beneath a location's image ranks the same way on every card that shows one: a destination's on a
 // trip's page and in Destinations, whose cards trips' cards on All trips share, and a hotel's, activity's, restaurant's
@@ -90,7 +90,7 @@ test("every detail beneath a location's image reaches 4.5:1 contrast with what i
   const color = (value) => /^#[0-9a-f]{6}$/i.test(value) ? value : only(globals, ":root", /^var\((--[a-z-]+)\)$/.exec(value)[1]);
   // Travel has one theme. Each card is --white behind its text, unless the text has a background of its own.
   const shown = [...primary, ...secondary.map(([file, selector, colorFrom]) => [file, selector, null, colorFrom]), ...placeholders,
-    ...labels.map(([file, selector, , colorFrom]) => [file, selector, null, colorFrom]), [globals, ".selection-tag.chosen"]];
+    ...labels.map(([file, selector, , colorFrom]) => [file, selector, null, colorFrom]), [globals, ".selection-tag.chosen"], [globals, ".destination-name p.tagline"]];
   for (const [file, selector, , colorFrom = selector] of shown) {
     const text = color(only(file, colorFrom, "color"));
     const background = color(only(file, selector, "background") ?? "var(--white)");
@@ -98,6 +98,17 @@ test("every detail beneath a location's image reaches 4.5:1 contrast with what i
   }
   // Every card's tone colors its trip or destination number.
   for (const tone of [".tone-1 .trip-card-top", ".tone-2 .trip-card-top"]) assert.ok(contrast(color(only(globals, tone, "color")), color("var(--white)")) >= 4.5, tone);
+});
+
+test("a destination's tagline on a trip's page is in the orange accent, smaller than its name, and wraps whole as the stay's notes do (TRA-166)", () => {
+  // Its one rule, the same at every width, changes only its color, so it has the stay's notes' size, spacing and wrapping.
+  assert.deepEqual(onlyRule(globals, ".destination-name p.tagline"), { color: "var(--orange)" });
+  // The name, which has no color of its own, and the stay's notes are in ink.
+  assert.deepEqual([only(globals, ".destination-name h3", "color"), only(globals, "body", "color"), only(globals, ".destination-name p", "color")], [undefined, "var(--ink)", "var(--ink)"]);
+  assert.ok(Math.min(...values(globals, ".destination-name h3", "font-size").map(px)) > px(only(globals, ".destination-name p", "font-size")), "the name leads");
+  // Nothing shortens it: a long tagline, or a long word in one, wraps onto more lines.
+  assert.equal(only(globals, ".destination-name p", "overflow-wrap"), "anywhere");
+  for (const property of ["white-space", "overflow", "text-overflow", "-webkit-line-clamp", "max-height"]) assert.equal(only(globals, ".destination-name p", property), undefined, property);
 });
 
 // A trip's page, rendered by the planner from what the store gives `/trips/<trip ID>`, as its page does, with each
@@ -123,7 +134,8 @@ const { default: PlannerApp } = load("../src/components/planner-app.tsx", (name)
 /** An element as the browser has it, each component and fragment rendered in its place. */
 function render(node) {
   if (Array.isArray(node)) return [...node].flatMap(render);
-  if (node === null || node === undefined || typeof node === "boolean") return [];
+  // React renders nothing for these, an empty string included.
+  if (node === null || node === undefined || typeof node === "boolean" || node === "") return [];
   if (typeof node !== "object") return [String(node)];
   if (typeof node.type === "function") return render(node.type(node.props));
   if (node.type === "fragment") return render(node.props.children);
@@ -134,15 +146,44 @@ const within = (node) => typeof node === "string" ? [] : [node, ...node.props.ch
 /** A rendered host element's text. */
 const text = (node) => typeof node === "string" ? node : node.props.children.map(text).join("");
 
+/** Each destination's name and what is below it on a trip's page as it loads now, in route order: each element's tag, class and text. */
+function destinationNames(store, tripId) {
+  const { data, access, library } = store.getTripSnapshot(tripId);
+  return render(PlannerApp({ initialData: data, access: { [tripId]: access }, library, tripId })).flatMap(within)
+    .filter((node) => node.props.className === "destination-name").map((name) => name.props.children.map((child) => [child.type, child.props.className, text(child)]));
+}
+
 test("a stay's notes show below its destination's name as saved, and without any the placeholder is marked to show muted (TRA-51)", (t) => {
   const { store, tripId } = setup(t, tripInput({ name: "Spring in Austria" }));
   addDestination(store, tripId, { city: "Vienna", stay: "Three nights near the Ringstrasse" });
   addDestination(store, tripId, { city: "Salzburg", stay: "" });
-  const { data, access, library } = store.getTripSnapshot(tripId);
-  const page = render(PlannerApp({ initialData: data, access: { [tripId]: access }, library, tripId })).flatMap(within);
-  // Each destination's name and what is below it, in route order: the text is as before, and only the placeholder has a class.
-  assert.deepEqual(page.filter((node) => node.props.className === "destination-name").map((name) => name.props.children.map((child) => [child.type, child.props.className, text(child)])), [
+  // The text is as before, and only the placeholder has a class.
+  assert.deepEqual(destinationNames(store, tripId), [
     [["h3", undefined, "Vienna"], ["p", undefined, "Three nights near the Ringstrasse"]],
     [["h3", undefined, "Salzburg"], ["p", "unknown", "Stay notes not added"]],
+  ]);
+});
+
+test("a destination's tagline shows whole, directly below its name on a trip's page, and one without a tagline shows nothing there (TRA-166)", (t) => {
+  const { store, tripId } = setup(t, tripInput({ name: "Spring in Austria" }));
+  // As long as a tagline can be.
+  const longest = "Red roofs below the Schlossberg, a clock tower above them, pumpkin seed oil on everything, and a steel island in the Mur";
+  assert.equal(longest.length, 120);
+  const vienna = addDestination(store, tripId, { city: "Vienna", stay: "Three nights near the Ringstrasse", tagline: "Where the Danube meets the Old Town" });
+  addDestination(store, tripId, { city: "Salzburg", stay: "" });
+  const graz = addDestination(store, tripId, { city: "Graz", stay: "", tagline: longest });
+  assert.deepEqual(destinationNames(store, tripId), [
+    [["h3", undefined, "Vienna"], ["p", "tagline", "Where the Danube meets the Old Town"], ["p", undefined, "Three nights near the Ringstrasse"]],
+    [["h3", undefined, "Salzburg"], ["p", "unknown", "Stay notes not added"]],
+    [["h3", undefined, "Graz"], ["p", "tagline", longest], ["p", "unknown", "Stay notes not added"]],
+  ]);
+  // The next load shows a changed tagline, and a cleared one leaves only the name and stay notes. Each moves with its destination.
+  store.applyMutation(destinationEdit(vienna, { tagline: "Coffee, cake and the opera" }));
+  store.applyMutation(destinationEdit(graz, { tagline: "" }));
+  store.applyMutation({ type: "stop.move", id: vienna, direction: "down" });
+  assert.deepEqual(destinationNames(store, tripId), [
+    [["h3", undefined, "Salzburg"], ["p", "unknown", "Stay notes not added"]],
+    [["h3", undefined, "Vienna"], ["p", "tagline", "Coffee, cake and the opera"], ["p", undefined, "Three nights near the Ringstrasse"]],
+    [["h3", undefined, "Graz"], ["p", "unknown", "Stay notes not added"]],
   ]);
 });

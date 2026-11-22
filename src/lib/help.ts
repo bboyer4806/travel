@@ -90,7 +90,7 @@ const HELP: { [Route in SignedInRoute]: Route extends `${string}/[category]` ? R
   "/trips/[tripId]": {
     title: "Trip",
     points: [
-      "Plan one trip: its route on the map, each stay with a map of its places, travel, arrangements at home and cost. Point or tab to a destination for its photo.",
+      "One trip's route on the map, each stay with its tagline and map of its places, travel, home arrangements and cost. Point or tab to a destination for its photo.",
       "Edit trip changes its name, tagline, dates, travelers, departing and return cities, and headline image. Tags under its details group it in All trips.",
       "Add destination adds a city last, a + between cards there, one In your library with its research. Card arrows move it, the pencil edits, the trash removes it.",
       "Each stay's nights set its dates, and Typical weather's chart opens on the month it begins. A destination's ideas, research and budget are shared by its trips.",

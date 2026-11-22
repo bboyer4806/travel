@@ -23,7 +23,8 @@ export interface HomeItem { id: string; tripId: string; name: string; notes: str
 /**
  * A city's research, ideas, selections and budget amounts, shared by every trip that visits it. Each owner has one per city.
  * `cityFromSuggestion` records that `city` is the label of a city suggestion chosen for it, the only city shown shorter (TRA-76).
- * `tagline` is the line its page shows above its name, saved as typed, or empty for the default heading (TRA-125).
+ * `tagline` is the line its page shows above its name, saved as typed, or empty for the default heading (TRA-125). Trips'
+ * pages show it below its name, or nothing there while it is empty (TRA-166).
  */
 export interface Destination extends TypicalWeather, DestinationPhotos { entryRequirements: EntryRequirements | null; healthSafety: HealthSafety | null; churchEnabled: boolean; id: string; city: string; cityFromSuggestion: boolean; tagline: string; miscDailyMinor: number | null; miscCurrency: string | null; hotelNightlyMinor: number | null; hotelCurrency: string | null; activitiesBudgetMode: ActivitiesBudgetMode; activitiesGeneralMinor: number | null; activitiesCurrency: string | null; foodBudgetMode: FoodBudgetMode; foodDailyMinor: number | null; foodCurrency: string | null; shoppingMinor: number | null; shoppingCurrency: string | null; notes: string; imageVersion: string | null; }
 /**

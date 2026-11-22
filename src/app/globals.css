@@ -789,6 +789,11 @@ button svg,a svg {
 .destination-name p.unknown {
   color:var(--muted)
 }
+/* TRA-166: a destination's tagline, when it has one, directly below its name on a trip's page and above the stay's
+   notes, in the orange accent, which sets it apart from the name and notes in ink. It wraps and is spaced as the notes. */
+.destination-name p.tagline {
+  color:var(--orange)
+}
 .destination-name h3 a:hover {
   color:var(--orange)
 }

@@ -81,12 +81,12 @@ Each trip can have one headline image of its own, apart from its destinations' p
 - **Upgrade.** Schema 34 adds the table for headline images, and every existing trip starts without one (see [deployment](docs/DEPLOYMENT.md#schema-34-trip-headline-images-tra-133)).
 
 ## Trip taglines
-A trip's page shows its tagline in capitals above its name, in place of AN ADVENTURE IN THE MAKING (TRA-134).
+A trip's page shows its tagline in capitals above its name, in place of AN ADVENTURE IN THE MAKING (TRA-134), and the trip's card on All trips shows it below its name (TRA-167).
 
 - **Entering.** Type it in **Tagline**, below **Trip name** in **Edit trip** or while creating a trip, from the trip's page or its card on All trips: one line of up to 120 characters. It's saved as typed, shown in capitals in the heading's style, and wraps onto more lines on narrow screens.
-- **Default.** A trip without one shows AN ADVENTURE IN THE MAKING, and clearing the field and saving shows it again.
+- **Default.** A trip without one shows AN ADVENTURE IN THE MAKING on its page, and clearing the field and saving shows it again.
 - **Saving.** **Save changes**, or **Create trip**, saves the tagline with the trip's other details, and **Cancel** discards it. A save that fails keeps the saved tagline, and the editor keeps what you typed. Saving any other change to the trip keeps it, and it stays after refreshing and reopening the trip.
-- **Where it shows.** Only at the top of the trip's page. Trip cards on All trips and destination taglines are unchanged.
+- **Where it shows.** At the top of the trip's page, and on the trip's card on All trips, directly below the trip's name (TRA-167). On the card it's shown as typed rather than in capitals, at 14 pixels in the orange accent, so the serif name still leads. It's always shown in full, wrapping onto more lines rather than being cut short, on desktop and phones. A trip without one shows nothing below its name, neither the default nor an empty line, so its card looks as it always has. A changed tagline shows on the card the next time All trips loads. Destination taglines are unchanged.
 - **Sharing.** Everyone a trip is shared with sees its tagline and can change it, as everything else in the trip. ChatGPT and Claude can propose a tagline with a trip's other details, and the proposal's page shows it.
 - **Upgrade.** Schema 35 starts every existing trip without one (see [deployment](docs/DEPLOYMENT.md#schema-35-trip-taglines-tra-134)).
 

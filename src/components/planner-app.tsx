@@ -580,7 +580,7 @@ export default function PlannerApp({ initialData, initialBudgets, access = {}, d
               const itemAccess = access[item.id];
               return <article className={"trip-card tone-" + (index % 3)} key={item.id} {...tripDrag.card(item.id)}>
                 <Link className="trip-card-main" href={"/trips/" + item.id}><TripImageView trip={item} frame="card" /><div className="trip-card-top"><span className="trip-number">TRIP {String(index + 1).padStart(2, "0")}</span><Compass size={38} strokeWidth={1} /></div>
-                  <h3>{item.name}</h3><p className="city-list"><MapPin size={15} />{places.length ? places.map((place) => formatSavedDestinationLabel(place)).join(" → ") : "Destinations to be decided"}</p>
+                  <h3>{item.name}</h3>{item.tagline && <p className="trip-tagline">{item.tagline}</p>}<p className="city-list"><MapPin size={15} />{places.length ? places.map((place) => formatSavedDestinationLabel(place)).join(" → ") : "Destinations to be decided"}</p>
                   <div className="trip-meta"><span><CalendarDays size={15} />{item.startDate ? formatCalendarDate(item.startDate) + " → " + formatCalendarDate(item.endDate) : item.dateLabel || "Whenever the time is right"}</span><span><Users size={15} />{item.travelers} {item.travelers === 1 ? "traveler" : "travelers"}</span>{itemAccess.role === "editor" && <span><Share2 size={15} />{"Shared by " + memberLabel(itemAccess.owner)}</span>}</div>
                   <TripTagList tags={item.tags} />
                   <div className="card-budget"><div><span className="small-label">ESTIMATED BUDGET</span><BudgetValue budget={estimate} /></div><span className="round-arrow"><ArrowRight size={19} /></span></div>

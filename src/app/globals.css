@@ -400,6 +400,14 @@ button svg,a svg {
   letter-spacing:-.5px;
   overflow-wrap:anywhere
 }
+/* TRA-167: a trip's saved tagline, directly below its name on its card on All trips, as typed, in the accent color the
+   trip's page shows it in, and wrapping in full. A trip without one shows nothing in its place. */
+.trip-tagline {
+  font-size:14px;
+  color:var(--orange);
+  margin-top:6px;
+  overflow-wrap:anywhere
+}
 /* TRA-51: the text beneath a location's image on its cards ranks the same way on every card. Its name leads; then what
    the place, stay or trip is, in ink (--ink); then further details, muted (--muted) and no smaller than 13px, except
    small labels and tags. Here, a trip's destinations or the trips that visit a destination, in two lines' room. */

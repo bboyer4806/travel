@@ -24,6 +24,8 @@
 .sourceHint { font-size: 13px; margin: 0 0 12px; }
 @media (max-width: 540px) {
   .panel { padding: 16px; }
+  /* TRA-156: in a trip's destination cards, 12px of padding and 12px apart. */
+  :global(.trip-page) .panel { padding: 12px; margin: 12px 0; }
   .schedule { grid-template-columns: 1fr; }
   .details { grid-template-columns: 1fr; }
 }

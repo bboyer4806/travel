@@ -114,7 +114,7 @@ const HELP: { [Route in SignedInRoute]: Route extends `${string}/[category]` ? R
     points: [
       "One city's research, shared by every trip that visits it: photos, notes, budget, ideas, entry requirements, health and safety, weather and churches.",
       "Edit destination changes its city, tagline, budget amounts, photos and notes. In Typical weather, select a month on the chart for its averages.",
-      "Its map shows its places, at their coordinates if saved; a dashed ring means approximate. Checkboxes choose places; select a marker for photos and View details.",
+      "Its map shows places at their address, or else coordinates; a dashed ring is approximate. Checkboxes choose places; select a marker for photos and View details.",
       "Hotels, Activities and Restaurants show its ideas, with what each is below its name. Select one for its details, or Manage to reorder, choose and delete them.",
       "Select a heading, such as Map or Budget, to show or hide it. Entry requirements, Health and safety and Typical weather show Edit and Clear only while open.",
       "In your trips lists each of your trips that visits it, with its nights and estimate. Its owner can delete it once no trip visits it.",

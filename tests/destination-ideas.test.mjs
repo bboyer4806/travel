@@ -51,7 +51,7 @@ const ideaModules = {
 const { DestinationIdeas, IdeaDetails } = load("../src/components/destination-ideas.tsx", ideaModules);
 const { default: CandidateList } = load("../src/components/candidate-list.tsx", ideaModules);
 const { RestaurantTypesField } = ideaModules["./restaurant-types"];
-const { DestinationBudget } = load("../src/components/destination-budget.tsx");
+const { DestinationBudget } = load("../src/components/destination-budget.tsx", { "@/components/focus-after": { useFocusFallback: () => null } });
 const { ChurchOptions } = load("../src/components/churches.tsx", { "./candidate-gallery": ideaModules["./candidate-gallery"], "./focus-after": load("../src/components/focus-after.ts"), "./place-location": ideaModules["./place-location"] });
 const { ChurchSundays } = load("../src/components/church-sundays.tsx");
 

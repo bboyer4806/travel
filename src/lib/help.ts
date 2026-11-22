@@ -95,7 +95,7 @@ const HELP: { [Route in SignedInRoute]: Route extends `${string}/[category]` ? R
       "Add destination adds a city last, a + between cards there, one In your library with its research. Card arrows move it, the pencil edits, the trash removes it.",
       "Each stay's nights set its dates, and Typical weather's chart opens on the month it begins. A destination's ideas, research and budget are shared by its trips.",
       "Between the places: Edit adds transportation, a flight's airline and flight number, price and layovers. Plan layover times what you'll do during a layover.",
-      "At home keeps arrangements such as pet care. The trip estimate adds up every cost in USD for the whole party. Only the owner can share or delete the trip.",
+      "The trip estimate adds every cost in USD for the whole party. Select Not set or Not estimated in a budget to add it. Only the owner shares or deletes the trip.",
     ],
   },
   "/trips/[tripId]/destinations/[stopId]/[category]": IDEA_PAGES,

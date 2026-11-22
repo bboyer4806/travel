@@ -400,6 +400,17 @@ button svg,a svg {
   letter-spacing:-.5px;
   overflow-wrap:anywhere
 }
+/* TRA-168: a trip's focus on its card, below its name, only when it has one: a further detail (TRA-51), ranked below
+   the name and what the trip is, its label in semibold, wrapping onto more lines rather than cut short. */
+.trip-focus {
+  margin-top:8px;
+  font-size:13px;
+  color:var(--muted);
+  overflow-wrap:anywhere
+}
+.trip-focus strong {
+  font-weight:600
+}
 /* TRA-51: the text beneath a location's image on its cards ranks the same way on every card. Its name leads; then what
    the place, stay or trip is, in ink (--ink); then further details, muted (--muted) and no smaller than 13px, except
    small labels and tags. Here, a trip's destinations or the trips that visit a destination, in two lines' room. */

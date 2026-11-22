@@ -79,8 +79,8 @@ const HELP: { [Route in SignedInRoute]: Route extends `${string}/[category]` ? R
   "/": {
     title: "All trips",
     points: [
-      "Your trips and the trips shared with you, in your own order, each with its destinations, dates and estimated budget.",
-      "New trip starts a trip with just a name. Select a trip's card to plan it, or Edit on the card to change its name, tagline, dates, cities and headline image.",
+      "Your trips and the trips shared with you, in your own order, each with its destinations, dates and estimated budget, and its focus if it has one.",
+      "New trip starts a trip with just a name. Select a trip's card to plan it, or Edit to change its name, tagline, focus, dates, cities and headline image.",
       "Drag a trip by its handle to a new place, or press Space on the handle, then the arrow keys, then Space. New trips go last.",
       "Search by trip or city, and select tags under Filter by tag to see only trips with every one. Trips move only while all of them show.",
       "Trips marked Shared by belong to someone else. You can change them, but only their owner can share or delete them.",
@@ -91,7 +91,7 @@ const HELP: { [Route in SignedInRoute]: Route extends `${string}/[category]` ? R
     title: "Trip",
     points: [
       "Plan one trip: its route on the map, each stay with a map of its places, travel, arrangements at home and cost. Point or tab to a destination for its photo.",
-      "Edit trip changes its name, tagline, dates, travelers, departing and return cities, and headline image. Tags under its details group it in All trips.",
+      "Edit trip changes its name, tagline, focus, dates, travelers, departing and return cities, and headline image. Tags under its details group it in All trips.",
       "Add destination adds a city last, a + between cards there, one In your library with its research. Card arrows move it, the pencil edits, the trash removes it.",
       "Each stay's nights set its dates, and Typical weather's chart opens on the month it begins. A destination's ideas, research and budget are shared by its trips.",
       "Between the places: Edit adds transportation, a flight's airline and flight number, price and layovers. Plan layover times what you'll do during a layover.",

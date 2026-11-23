@@ -189,6 +189,13 @@ Every page fits a phone's screen, upright or turned sideways, down to 320 pixels
 - **Tables scroll within themselves.** **Every month as a table** in [Typical weather](#typical-weather) scrolls sideways within its own box on a screen too narrow for its four columns, as maps and photo carousels move within theirs.
 - **Unchanged.** Desktop and tablet layouts, what each page shows, and saved data. No page hides what doesn't fit: each part that was wider than the screen now fits it.
 
+## Trip page spacing on phones
+On phones, up to 540 pixels wide, a trip's page keeps less room around and between its parts, so more of it shows on each screen (TRA-156):
+
+- **Boxes.** Every box has 12 pixels of padding: the destination cards and the panels in them, **Sundays during your stay** and each church, the **At home** items and **The trip estimate**. The panels in a card are 12 pixels apart, and a destination's budget lines up with the rest of its card. A card's text starts 31 pixels from the screen's edges, and its panels' text 44, instead of 35 and 52.
+- **Sections and headings.** The map, the destinations, **Between the places**, **At home** and **The trip estimate** are 28 pixels apart, with 16 pixels below their headings, and each heading in a destination's card has 16 pixels above it. The trip's heading has 20 pixels above and below it, and the lines between the connections in **Between the places** have 14 pixels on each side.
+- **Unchanged.** The page's 18-pixel margins, which the header and footer share on every page; fonts and text sizes; buttons, links and their tap targets; and the screen widths at which a destination's arrows, pencil and trash wrap below its name, now with 8 more pixels for the name. Other pages, and tablets, desktops and phones turned sideways wider than 540 pixels, look as before.
+
 ## Trip dates and nights
 Set the trip's optional **Start date**, then enter each destination's nonnegative whole number of **Nights** from the trip's page. Nights and stay notes belong to the trip, so a destination shared with other trips can have different nights in each. Arrival and departure dates, their weekdays, and the trip end date are calculated in destination order. A departure is the next destination's arrival; changing the start, nights, or order recalculates the route. A zero-night stop arrives and departs on the same day. Dates cannot be overridden individually. Travel-leg timing notes do not determine the schedule.
 

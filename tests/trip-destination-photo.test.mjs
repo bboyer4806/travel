@@ -9,7 +9,7 @@ import * as destinationLabel from "../src/lib/destination-label.ts";
 import * as money from "../src/lib/money.ts";
 import * as photoFocus from "../src/lib/photo-focus.ts";
 import * as tripDates from "../src/lib/trip-dates.ts";
-import { cssRules } from "./css-rules.mjs";
+import { MOUSE, TOUCH, styles } from "./css-rules.mjs";
 import { createOwnedStore } from "./owned-store.mjs";
 import { addDestination, prepared, tripInput } from "./budget-fixtures.mjs";
 
@@ -107,40 +107,20 @@ test("a trip's destination cards start with the main photo, in the trip's list o
   assert.deepEqual(mainPhoto(card), lisbonPhoto);
 });
 
-/** A mouse or trackpad, and a touchscreen, as media queries describe them. */
-const MOUSE = { pointer: "fine", hover: "hover" };
-const TOUCH = { pointer: "coarse", hover: "none" };
-/** Whether an at-rule holds on a screen `width` pixels wide used with `input`. These rules depend only on those. */
-function holds(atRule, width, input) {
-  if (atRule === null) return true;
-  const [, feature, value] = atRule.match(/^@media\(([a-z-]+):([a-z0-9]+)\)$/) ?? assert.fail("Unexpected at-rule " + atRule);
-  if (feature === "max-width" || feature === "min-width") {
-    const pixels = Number(value.match(/^(\d+)px$/)?.[1] ?? assert.fail("Unexpected width " + value));
-    return feature === "max-width" ? width <= pixels : width >= pixels;
-  }
-  assert.ok(feature in input, "Unexpected media feature " + feature);
-  return input[feature] === value;
-}
-/**
- * The declarations a CSS file, by its path from tests, gives an element matched by any of `selectors` on a screen
- * `width` pixels wide used with `input`, each rule over the ones before it, as these rules' specificities agree.
- */
-function styles(file, selectors, width, input = MOUSE) {
-  return Object.assign({}, ...cssRules(file).filter(([selector, , atRule]) => selector.split(",").some((part) => selectors.includes(part.trim())) && holds(atRule, width, input))
-    .map(([, declarations]) => declarations));
-}
 const GALLERY = "../src/components/destination-gallery.module.css";
 const GLOBALS = "../src/app/globals.css";
 /** The main photo's frame in a trip's destination card, and on a destination's page. */
 const TRIP_PHOTO = [".hero", ":global(.destination-list) .hero"];
 const PAGE_PHOTO = [".hero"];
+/** A trip's destination card, whose padding on phones is the trip page's own (TRA-156). */
+const TRIP_CARD = [".destination-card", ".trip-page .destination-card"];
 /** Phones, up to 540 pixels wide, and tablets and desktops. */
 const PHONES = [320, 360, 375, 390, 414, 430, 540];
 const WIDER = [541, 600, 744, 780, 834, 1024, 1080, 1440];
 
 test("on phones, a trip's destination card shows its main photo edge to edge across its top, inside its border, in the crop editor's 16:7 shape (TRA-155)", () => {
   for (const width of PHONES) {
-    const card = styles(GLOBALS, [".destination-card"], width);
+    const card = styles(GLOBALS, TRIP_CARD, width);
     assert.match(card.padding, /^\d+px$/, "the card's padding is the same on every side");
     const border = Number(card.border.match(/^(\d+)px solid /)[1]);
     const corner = parseInt(card["border-radius"]) - border;
@@ -151,7 +131,7 @@ test("on phones, a trip's destination card shows its main photo edge to edge acr
     assert.equal(framed["aspect-ratio"], styles(GALLERY, [".cropFrame"], width)["aspect-ratio"], "the crop editor's shape, so it shows the crop editor's crop");
   }
   assert.deepEqual(styles(GALLERY, TRIP_PHOTO, 390), {
-    position: "relative", overflow: "hidden", border: "0", "border-radius": "9px 9px 0 0", background: "var(--wash)", "aspect-ratio": "16 / 7", margin: "-16px -16px 0",
+    position: "relative", overflow: "hidden", border: "0", "border-radius": "9px 9px 0 0", background: "var(--wash)", "aspect-ratio": "16 / 7", margin: "-12px -12px 0",
   });
   assert.deepEqual(styles(GALLERY, [".image"], 390), { display: "block", width: "100%", height: "100%", "object-fit": "cover" }, "the photo covers its frame, cropped rather than stretched");
 });
@@ -171,7 +151,7 @@ test("each + between a trip's destination cards stays clear of their photos and 
     // TRA-153's + is centered in its row, between two cards, and reaches past the row into each by this much.
     const row = parseInt(styles(GLOBALS, [".stop-insertion"], width, input).height);
     const reach = Math.max(0, (parseInt(styles(GLOBALS, [".stop-insertion .button"], width, input).height) - row) / 2);
-    const card = styles(GLOBALS, [".destination-card"], width, input);
+    const card = styles(GLOBALS, TRIP_CARD, width, input);
     const edge = Number(card.border.match(/^(\d+)px solid /)[1]) + parseInt(card.padding);
     // The card below's photo starts inside its border and padding, less what the photo takes back on phones.
     const photo = edge + parseInt(styles(GALLERY, TRIP_PHOTO, width, input).margin ?? "0");

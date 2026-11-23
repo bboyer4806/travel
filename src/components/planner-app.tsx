@@ -560,8 +560,9 @@ export default function PlannerApp({ initialData, initialBudgets, access = {}, d
   /** Same-named cities can share a short label, so the list shows their full saved names. */
   const sharesLabel = (item: Destination) => data.destinations.some((other) => other.id !== item.id && formatSavedDestinationLabel(other) === formatSavedDestinationLabel(item));
 
+  // A trip's page is marked, so its spacing on phones changes without the pages that share its styles (TRA-156).
   return <div className="app-shell">
-    <main id="main-content" className="main-content">
+    <main id="main-content" className={trip && !stopId ? "main-content trip-page" : "main-content"}>
       {!tripId && !destinationId && !destinationList && <>
         <section className="home-hero"><div><p className="eyebrow">THE PLACES WE MIGHT GO</p><h1>Somewhere<br /><em>worth going.</em></h1><p className="hero-description">Big adventures, little escapes, and every possibility in between.<br className="desktop-break" /> Give your next idea a place to begin.</p>
           <button className="button primary" onClick={() => open({ kind: "trip" })}><Plus size={18} />New trip</button></div>

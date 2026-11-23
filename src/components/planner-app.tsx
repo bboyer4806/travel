@@ -11,7 +11,7 @@ import { EntryRequirementsPanel, EntryRequirementsEditor } from "@/components/en
 import { entryRequirementsFromForm } from "@/lib/entry-requirements";
 import { HealthSafetyPanel, HealthSafetyEditor } from "@/components/health-safety";
 import { healthSafetyFromForm, type EmergencyContact } from "@/lib/health-safety";
-import { ChurchOptions, ChurchEditor, ChurchDetails } from "@/components/churches";
+import { ChurchOptions, ChurchEditor, ChurchDetails, ChurchSection } from "@/components/churches";
 import { MonthlyClimateEditor, TypicalWeatherPanel, TypicalWeatherEditor } from "@/components/typical-weather";
 import { monthlyClimateFromForm } from "@/lib/typical-weather";
 import { DestinationCardPhoto, DestinationGallery, DestinationGalleryEditor } from "@/components/destination-gallery";
@@ -336,7 +336,7 @@ export default function PlannerApp({ initialData, initialBudgets, access = {}, d
     const cityFromSuggestion = fields.has("cityFromSuggestion") || undefined;
     switch (editor.kind) {
       case "delete": void perform(editor.mutation, "Removed from your notebook.", editor.redirect); break;
-      case "trip": void perform({ type: "trip.save", ...itemToSave(editor.item), name: text("name"), tagline: text("tagline"), startDate: text("startDate") || null, dateLabel: text("dateLabel"), homeCity: text("homeCity"), returnCity: fields.has("differentReturn") ? text("returnCity") : null, travelers: Number(text("travelers")), notes: text("notes") }, undefined, undefined, tripImageForm(tripImage, editor.item?.image ?? null)); break;
+      case "trip": void perform({ type: "trip.save", ...itemToSave(editor.item), name: text("name"), tagline: text("tagline"), focus: text("focus"), startDate: text("startDate") || null, dateLabel: text("dateLabel"), homeCity: text("homeCity"), returnCity: fields.has("differentReturn") ? text("returnCity") : null, travelers: Number(text("travelers")), notes: text("notes") }, undefined, undefined, tripImageForm(tripImage, editor.item?.image ?? null)); break;
       case "entryRequirements": {
         void perform({ type: "destination.entryRequirements", id: editor.item.id, requirements: entryRequirementsFromForm(fields, researchLinks) }, "Entry requirements saved.");
         break;
@@ -463,11 +463,12 @@ export default function PlannerApp({ initialData, initialBudgets, access = {}, d
     const findToggle = () => document.getElementById(toggle);
     const label = formatSavedDestinationLabel(place);
     if (!place.churchEnabled) return <div className="church-visibility"><p className="helper">Church is hidden. Saved churches and photos are kept.</p><button type="button" id={toggle} className="text-button" disabled={busy} onClick={(event) => saveFrom(event.currentTarget, { type: "destination.churchVisibility", id: place.id, enabled: true }, "Church shown.", findToggle)}>Show Church<span className="sr-only"> for {label}</span></button></div>;
-    // The Sundays and church headings are h5, below this h4 (TRA-95).
-    return <section className="destination-church" aria-label={"Church in " + label}><div className="budget-section-heading"><h4>Church</h4><div className="heading-actions"><button type="button" className="text-button" disabled={busy} onClick={() => open({ kind: "church", destinationId: place.id })}><Plus size={15} />Add church</button><button type="button" id={toggle} className="text-button" disabled={busy} onClick={(event) => saveFrom(event.currentTarget, { type: "destination.churchVisibility", id: place.id, enabled: false }, "Church hidden. Your churches and photos are saved.", findToggle)}>Hide Church</button></div></div>
+    // The Sundays and church headings are h5, below this h4 (TRA-95). On a destination's card its heading opens and closes
+    // them; on its Church page, where `church` is set, they are the page and always show (TRA-169).
+    return <ChurchSection label={label} collapsible={!church} actions={<div className="heading-actions"><button type="button" className="text-button" disabled={busy} onClick={() => open({ kind: "church", destinationId: place.id })}><Plus size={15} />Add church</button><button type="button" id={toggle} className="text-button" disabled={busy} onClick={(event) => saveFrom(event.currentTarget, { type: "destination.churchVisibility", id: place.id, enabled: false }, "Church hidden. Your churches and photos are saved.", findToggle)}>Hide Church</button></div>}>
       {stay && <ChurchSundays destination={stay} headingLevel={5} />}
       <ChurchOptions items={data.churches.filter((item) => item.destinationId === place.id)} headingLevel={5} photoFrame={photoFrame} busy={busy} onAdd={() => open({ kind: "church", destinationId: place.id })} onEdit={(item) => open({ kind: "church", item, destinationId: place.id })} onDelete={(item) => confirmDelete({ type: "church.delete", id: item.id, destinationId: place.id }, "Delete “" + item.name + "”?", "This church and its photos will be removed from this destination, in every trip that visits it.")} />
-    </section>;
+    </ChurchSection>;
   }
   /** A destination's Hotels, Activities, Restaurants or Church page, from a trip's stop or from Destinations. */
   function renderIdeas(place: Destination, stay: TripStop | undefined, back: { href: string; label: string }) {
@@ -581,7 +582,7 @@ export default function PlannerApp({ initialData, initialBudgets, access = {}, d
               const itemAccess = access[item.id];
               return <article className={"trip-card tone-" + (index % 3)} key={item.id} {...tripDrag.card(item.id)}>
                 <Link className="trip-card-main" href={"/trips/" + item.id}><TripImageView trip={item} frame="card" /><div className="trip-card-top"><span className="trip-number">TRIP {String(index + 1).padStart(2, "0")}</span><Compass size={38} strokeWidth={1} /></div>
-                  <h3>{item.name}</h3><p className="city-list"><MapPin size={15} />{places.length ? places.map((place) => formatSavedDestinationLabel(place)).join(" → ") : "Destinations to be decided"}</p>
+                  <h3>{item.name}</h3>{item.focus && <p className="trip-focus"><strong>Focus:</strong> {item.focus}</p>}<p className="city-list"><MapPin size={15} />{places.length ? places.map((place) => formatSavedDestinationLabel(place)).join(" → ") : "Destinations to be decided"}</p>
                   <div className="trip-meta"><span><CalendarDays size={15} />{item.startDate ? formatCalendarDate(item.startDate) + " → " + formatCalendarDate(item.endDate) : item.dateLabel || "Whenever the time is right"}</span><span><Users size={15} />{item.travelers} {item.travelers === 1 ? "traveler" : "travelers"}</span>{itemAccess.role === "editor" && <span><Share2 size={15} />{"Shared by " + memberLabel(itemAccess.owner)}</span>}</div>
                   <TripTagList tags={item.tags} />
                   <div className="card-budget"><div><span className="small-label">ESTIMATED BUDGET</span><BudgetValue budget={estimate} /></div><span className="round-arrow"><ArrowRight size={19} /></span></div>
@@ -667,6 +668,7 @@ export default function PlannerApp({ initialData, initialBudgets, access = {}, d
       {editor.kind === "trip" && <>
         <Field label="Trip name" wide><input name="name" defaultValue={editor.item?.name} required maxLength={120} placeholder="A long weekend in the mountains" /></Field>
         <Field label="Tagline" hint="Shown in capitals above the trip’s name on its page. Leave it blank for the default." wide><input name="tagline" defaultValue={editor.item?.tagline} maxLength={120} placeholder={DEFAULT_TRIP_TAGLINE} /></Field>
+        <Field label="Focus" hint="What the trip is mostly about, shown after “Focus:” on its card in All trips. Leave it blank to leave it off the card." wide><input name="focus" defaultValue={editor.item?.focus} maxLength={120} placeholder="History, architecture, local cuisine" /></Field>
         <Field label="General date" hint="Exact dates can wait."><input name="dateLabel" defaultValue={editor.item?.dateLabel} maxLength={120} placeholder="Spring 2027, or sometime soon" /></Field>
         <Field label="Trip start date" hint="Destination dates and the trip end are calculated from this date and each stay’s nights."><input name="startDate" type="date" min="0001-01-01" max="9999-12-31" defaultValue={editor.item?.startDate ?? ""} /></Field>
         <p className="helper wide">Trip end (calculated after saving): {formatCalendarDate(editor.item?.endDate)}</p>

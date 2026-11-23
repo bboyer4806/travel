@@ -42,7 +42,7 @@ const primary = [
   [globals, ".city-list", ".trip-card h3"],
 ];
 /** Further details, and the rule each takes its color from. */
-const secondary = [[globals, ".idea-address"], [globals, ".idea-notes"], [globals, ".destination-notes"], [globals, ".trip-card .trip-meta", ".trip-meta"], [globals, ".destination-full-name"]];
+const secondary = [[globals, ".idea-address"], [globals, ".idea-notes"], [globals, ".destination-notes"], [globals, ".trip-card .trip-meta", ".trip-meta"], [globals, ".destination-full-name"], [globals, ".trip-focus"]];
 /** What a card shows in place of a detail it doesn't have yet. */
 const placeholders = [[carousel, ".price.unknown"], [globals, ".destination-name p.unknown"]];
 /** Small labels and tags, the size each is at least, and the rule each takes its color from. */

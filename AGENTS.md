@@ -168,6 +168,12 @@ Repeat passing checks when subsequent changes affect their coverage or required 
   `GIVE_MEDICAL_PROVIDERS`. The editor holds `MedicalProviderDraft`s, their degrees as typed; the section lists them with
   `providersInOrder`, verified English first, and links with `telephoneHref` and `mapHref`. Travel never finds, checks,
   ranks or books providers.
+- A destination's local emergency number (TRA-173) is `emergencyNumber` in its health and safety record, apart from
+  `emergencyContacts`: an `EmergencyNumber` in `src/lib/health-safety.ts`, its phone, source URL and verified date always
+  together, so a number is never saved unverified, or null for none. Every record gives it: a save without it comes from a
+  page opened before TRA-173 and is refused with `PLANNER_UPDATED`, and `aiChange` refuses an assistant's with
+  `GIVE_EMERGENCY_NUMBER`. `HealthSafetyPanel` shows it first whether the section is open or closed, with a `telephoneHref`
+  Call link, or "Emergency number not verified". Travel never looks one up, reads one from emergency contacts or calls it.
 - Layover plans (TRA-45) are `layover_plans`, at most one per layover in a connection's `itineraryJson`, keyed by
   `legId` and `layoverId`, read as each leg's `layoverPlans` and changed only by `leg.layoverPlan` with a whole plan or
   null. `normalizeLayoverPlan` and `layoverSchedule` in `src/lib/layover-plan.ts` check a plan and work out its schedule:

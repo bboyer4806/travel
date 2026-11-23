@@ -9,7 +9,7 @@ import { backfillDates, sequenceDates } from "./trip-dates.ts";
 import { MAX_AMOUNT_CENTS, parseMinorAmount } from "./money.ts";
 import { formatMegabytes, LARGE_PHOTO_SIZE, MAX_CANDIDATE_IMAGES, MAX_DESTINATION_IMAGES, MAX_STORED_IMAGE_BYTES, MAX_STORED_LARGE_IMAGE_BYTES, PHOTO_SIZE } from "./image-limits.ts";
 import { ENTRY_REQUIREMENT_FIELDS, normalizeEntryRequirements } from "./entry-requirements.ts";
-import { GIVE_MEDICAL_PROVIDERS, GIVE_US_ADVISORY_LEVEL, normalizeHealthSafety } from "./health-safety.ts";
+import { GIVE_EMERGENCY_NUMBER, GIVE_MEDICAL_PROVIDERS, GIVE_US_ADVISORY_LEVEL, normalizeHealthSafety } from "./health-safety.ts";
 import { climateFromJson, climateJson, NAME_EACH_MONTH, normalizeMonthlyClimate } from "./typical-weather.ts";
 import { normalizeCoordinates } from "./coordinates.ts";
 import { MAX_LAYOVER_MINUTES, normalizeLayoverPlan } from "./layover-plan.ts";
@@ -453,10 +453,10 @@ function unnamedMonths(climate: unknown): boolean {
 }
 /**
  * Whether a health and safety record leaves out `key`, as the editor of a page opened before it had one does: its U.S.
- * travel advisory level (TRA-171) or its medical providers (TRA-172). Saving that record would clear what was chosen or
- * added since.
+ * travel advisory level (TRA-171), its medical providers (TRA-172) or its local emergency number (TRA-173). Saving that
+ * record would clear what was chosen or added since.
  */
-function leavesOut(healthSafety: unknown, key: "usAdvisoryLevel" | "medicalProviders"): boolean {
+function leavesOut(healthSafety: unknown, key: "usAdvisoryLevel" | "medicalProviders" | "emergencyNumber"): boolean {
   return !!healthSafety && typeof healthSafety === "object" && !Array.isArray(healthSafety) && !(key in healthSafety);
 }
 function validate(input: unknown): Mutation {
@@ -509,7 +509,7 @@ function validate(input: unknown): Mutation {
       return { type: value.type, id: idField(value), requirements };
     }
     case "destination.healthSafety": {
-      if (leavesOut(value.healthSafety, "usAdvisoryLevel") || leavesOut(value.healthSafety, "medicalProviders")) throw new ValidationError(PLANNER_UPDATED);
+      if (leavesOut(value.healthSafety, "usAdvisoryLevel") || leavesOut(value.healthSafety, "medicalProviders") || leavesOut(value.healthSafety, "emergencyNumber")) throw new ValidationError(PLANNER_UPDATED);
       let healthSafety: HealthSafety | null;
       try { healthSafety = normalizeHealthSafety(value.healthSafety); }
       catch (error) { throw new ValidationError(error instanceof Error ? error.message : "Enter valid health and safety information."); }
@@ -667,10 +667,11 @@ function proposedChange(value: Input, photos: ReadonlyMap<string, PreparedImage>
   if (value.type === "destination.save" && (value.create !== undefined || value.tripId !== undefined)) throw new ValidationError("Add a destination to a trip with stop.add, or outside any trip with destination.create.");
   // Assistants name each month (TRA-158). Only a person's page opened before months were named leaves their names out.
   if (value.type === "destination.climate" && unnamedMonths(value.climate)) throw new ValidationError(NAME_EACH_MONTH);
-  // Assistants give the U.S. travel advisory level, or null (TRA-171), and the medical providers, or none (TRA-172). Only
-  // a person's page opened before each leaves it out.
+  // Assistants give the U.S. travel advisory level, or null (TRA-171), the medical providers, or none (TRA-172), and the
+  // local emergency number, or null (TRA-173). Only a person's page opened before each leaves it out.
   if (value.type === "destination.healthSafety" && leavesOut(value.healthSafety, "usAdvisoryLevel")) throw new ValidationError(GIVE_US_ADVISORY_LEVEL);
   if (value.type === "destination.healthSafety" && leavesOut(value.healthSafety, "medicalProviders")) throw new ValidationError(GIVE_MEDICAL_PROVIDERS);
+  if (value.type === "destination.healthSafety" && leavesOut(value.healthSafety, "emergencyNumber")) throw new ValidationError(GIVE_EMERGENCY_NUMBER);
   if (["trip.save", "homeItem.save", "destination.save", "church.save", "candidate.save"].includes(value.type as string) && value.id === undefined) {
     throw new ValidationError("Give the id of the item to change, or a new UUID with create: true to add a trip, idea, church or At home item.");
   }
@@ -739,7 +740,7 @@ const LIVE: Make = { id: () => randomUUID(), now: () => new Date().toISOString()
  * The schema this build upgrades every database to, as SQLite's user_version. A schema change adds the next
  * upgrade in createStore and raises this to match; earlier upgrades keep their own numbers.
  */
-export const SCHEMA_VERSION = 46;
+export const SCHEMA_VERSION = 47;
 
 /** A destination as schema 20 saved it, inside one trip, with that trip's owner and name. */
 type TripDestinationRow = Omit<StoredDestination, "cityKey"> & Omit<TripStop, "destinationId"> & { tripName: string };
@@ -1495,6 +1496,17 @@ export function createStore(databasePath: string, ownerEmail: string) {
       // trip's estimate changes. A replay keeps saved amounts.
       if (!hasColumn("trips", "entryVisaFeesCents")) db.exec(`ALTER TABLE trips ADD COLUMN entryVisaFeesCents INTEGER CHECK(entryVisaFeesCents BETWEEN 0 AND ${MAX_AMOUNT_CENTS});`);
       db.exec("PRAGMA user_version = 46;");
+    }
+    if (version < 47) {
+      // Each destination's local emergency number (TRA-173), in its health and safety record apart from its emergency
+      // contacts: the number with its source and the date it was verified, or null while none is verified. Every saved
+      // record starts with none, since an emergency contact's number was never verified, and its research, emergency
+      // contacts included, is unchanged. A replay keeps each saved number.
+      db.exec(`
+        UPDATE destination_health_safety SET healthSafetyJson = json_set(healthSafetyJson, '$.emergencyNumber', NULL)
+          WHERE json_type(healthSafetyJson, '$.emergencyNumber') IS NULL;
+        PRAGMA user_version = 47;
+      `);
     }
     if (version < SCHEMA_VERSION && db.prepare("PRAGMA foreign_key_check").get()) {
       throw new Error("This upgrade would leave saved items without the trip or destination they belong to. Nothing was changed; review the database against a backup before upgrading.");

@@ -218,7 +218,7 @@ Prefer fixing forward. Rolling back an image does not reverse a database schema 
 
 ## Schema history
 
-The schema version is SQLite's `user_version`; the current schema is 46, `SCHEMA_VERSION` in `src/lib/store.ts`. At every start, `createStore` in `src/lib/store.ts` upgrades an older database in one transaction, through each version in turn. Each upgrade checks what already exists, so running it again on a database that already has its changes (a replay) keeps saved data. The notes below are in schema order. **Superseded** marks behavior that a later schema replaced; the current behavior is in [README.md](../README.md).
+The schema version is SQLite's `user_version`; the current schema is 47, `SCHEMA_VERSION` in `src/lib/store.ts`. At every start, `createStore` in `src/lib/store.ts` upgrades an older database in one transaction, through each version in turn. Each upgrade checks what already exists, so running it again on a database that already has its changes (a replay) keeps saved data. The notes below are in schema order. **Superseded** marks behavior that a later schema replaced; the current behavior is in [README.md](../README.md).
 
 ### Schema 1: first shared planner
 The first release creates the `trips`, `destinations`, `legs` and `candidates` tables, with prices in integer USD cents for the whole party. Anyone with the URL can view and edit every trip. The schema 1 build sets `user_version` to 1 at every start and does not refuse a newer database, so later upgrades check what already exists as well as the version: redeploying a newer build after a rollback to schema 1 cannot repeat an `ALTER TABLE` or replace saved links.
@@ -459,6 +459,11 @@ Restoring the pre-upgrade backup to run a schema 44 build again loses every medi
 Entry and visa fees upgrade the database to schema 46 in the startup transaction, adding `entryVisaFeesCents` to `trips`: a trip's entry and visa fees, one optional estimate in USD cents for the whole party and every destination, or NULL when not set. A check constraint keeps it between 0 and $100,000,000, as it does every price. Every existing trip starts at NULL, which adds no cost and is not a missing estimate, so no trip's estimate, total or completeness changes. Nothing else changes. The column is in the same online backups, and a replay keeps saved amounts.
 
 Restoring the pre-upgrade backup to run a schema 45 build again loses every trip's entry and visa fees, and that build's estimates leave them out.
+
+### Schema 47: local emergency number (TRA-173)
+The local emergency number upgrades the database to schema 47 in the startup transaction, adding `emergencyNumber` to each record's JSON in `destination_health_safety`: the destination's primary emergency number with its source's address and the date it was verified, or null while none is verified, which the store checks every record gives. Every existing record gets null, appended with SQLite's `json_set`, so every destination says its emergency number is not verified until someone enters one with its source, and its research, emergency contacts included, is unchanged: no number is taken from an emergency contact. Destinations without a record still have none, and nothing else changes. The records are in the same online backups, and a replay keeps each saved number.
+
+Restoring the pre-upgrade backup to run a schema 46 build again loses every local emergency number, and that build shows none.
 
 ## Feedback and release notes
 Configure server-only JIRA_URL (HTTPS Jira base URL), JIRA_EMAIL, and JIRA_API_TOKEN with permission to create Tasks in TRA. Use the host's secret configuration; never put credentials in source, image layers, client variables, or logs. Preserve the browser Host and Origin headers through the proxy; the feedback endpoint compares them and ignores forwarded-host claims. Its limits count per signed-in account. A failed send logs one line saying why, such as a missing setting's name, an invalid JIRA_URL, or Jira's HTTP status (401 for wrong credentials, 403 for missing permission), never the settings' values.

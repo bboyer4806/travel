@@ -2,7 +2,7 @@ import { COORDINATE_ACCURACIES } from "./coordinates.ts";
 import { EDITABLE_FIELDS } from "./editable-fields.ts";
 import { ENTRY_REQUIREMENT_FIELDS } from "./entry-requirements.ts";
 import { LAYOVER_BUFFERS, MAX_LAYOVER_ACTIVITIES, MAX_LAYOVER_MINUTES } from "./layover-plan.ts";
-import { EMERGENCY_CONTACT_MAX_LENGTH, HEALTH_SAFETY_FIELDS, MAX_EMERGENCY_CONTACTS, MAX_SOURCES, MEDICAL_PROVIDER_MAX_LENGTH, PROVIDER_CHECKS, SHORT_NOTICE_CARE, US_ADVISORY_LEVELS, usAdvisoryLabel } from "./health-safety.ts";
+import { EMERGENCY_CONTACT_MAX_LENGTH, EMERGENCY_NUMBER_MAX_LENGTH, HEALTH_SAFETY_FIELDS, MAX_EMERGENCY_CONTACTS, MAX_SOURCES, MEDICAL_PROVIDER_MAX_LENGTH, PROVIDER_CHECKS, SHORT_NOTICE_CARE, US_ADVISORY_LEVELS, usAdvisoryLabel } from "./health-safety.ts";
 import { AI_PHOTO_DOWNLOAD_SECONDS, formatMegabytes, MAX_AI_PROPOSAL_PHOTOS, MAX_CANDIDATE_IMAGES, MAX_DESTINATION_IMAGES, MAX_GALLERY_UPLOAD_BYTES, MAX_IMAGE_UPLOAD_BYTES } from "./image-limits.ts";
 import { MAX_TAG_LENGTH } from "./trip-tags.ts";
 import { CLIMATE_LIMITS, MONTHS } from "./typical-weather.ts";
@@ -140,10 +140,10 @@ const CHANGES = [
       description: "The whole record, or null to clear it.",
     },
   }, ["id", "requirements"]),
-  change("destination.healthSafety", "Replaces a destination's health and safety research, with its emergency contacts and its doctors and clinics for non-emergency care, or clears it with null.", {
+  change("destination.healthSafety", "Replaces a destination's health and safety research, with its local emergency number, its emergency contacts and its doctors and clinics for non-emergency care, or clears it with null.", {
     id: id("The destination's id."),
     healthSafety: {
-      type: ["object", "null"], additionalProperties: false, required: ["usAdvisoryLevel", "medicalProviders"],
+      type: ["object", "null"], additionalProperties: false, required: ["usAdvisoryLevel", "medicalProviders", "emergencyNumber"],
       properties: {
         usAdvisoryLevel: {
           type: ["integer", "null"], enum: [...US_ADVISORY_LEVELS, null],
@@ -183,6 +183,15 @@ const CHANGES = [
               lastVerifiedDate: { type: ["string", "null"], pattern: DATE, description: "When its details were last checked, YYYY-MM-DD, or null." },
             },
           },
+        },
+        emergencyNumber: {
+          type: ["object", "null"], additionalProperties: false, required: ["phone", "sourceUrl", "verifiedDate"],
+          properties: {
+            phone: text("The number to dial, such as 112 or 911: digits, spaces, +, (, ), - and . only.", EMERGENCY_NUMBER_MAX_LENGTH.phone),
+            sourceUrl: text("The https:// or http:// address of the official or reliable page you cite that gives this number for the destination.", EMERGENCY_NUMBER_MAX_LENGTH.sourceUrl),
+            verifiedDate: { type: "string", pattern: DATE, description: "When you verified the number on that page, YYYY-MM-DD." },
+          },
+          description: "The destination's primary local emergency number, which its section shows first with a button that calls it. Give it only from an official or reliable source you cite, such as a government, embassy or emergency service page covering the destination: never a guess, nor a number assumed to work everywhere. null when none is verified. Other emergency numbers belong in emergencyContacts. Always given: the saved one to keep it.",
         },
       },
       description: "The whole record, or null to clear it.",

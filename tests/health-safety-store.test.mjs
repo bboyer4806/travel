@@ -16,6 +16,7 @@ const details = () => ({
   sources: [{ id: randomUUID(), url: "https://example.gov/advisory", description: "Government travel advisory" }],
   lastCheckedDate: "2026-11-10",
   medicalProviders: [],
+  emergencyNumber: null,
 });
 const requirements = () => ({ passportNationality: "United States", travelPurpose: "Tourism", travelerCircumstances: "", visaRequirements: "None for short stays", passportValidity: "", requiredDocuments: "", transitRequirements: "", notes: "", sources: [], lastCheckedDate: "2026-11-03" });
 const destination = (snapshot, id) => snapshot.destinations.find((item) => item.id === id);

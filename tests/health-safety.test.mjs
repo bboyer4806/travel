@@ -5,8 +5,11 @@ import { HEALTH_SAFETY_FIELDS, MAX_EMERGENCY_CONTACTS, healthSafetyFromForm, nor
 
 const contact = (extra = {}) => ({ id: randomUUID(), name: "Emergency services", phone: "112", notes: "Police, fire and ambulance", ...extra });
 const source = (extra = {}) => ({ id: randomUUID(), url: "https://example.gov/advisory", description: "Government travel advisory", ...extra });
-/** A record with only `extra` given, besides the U.S. travel advisory level (TRA-171) and medical providers (TRA-172) every record gives. */
-const record = (extra = {}) => ({ usAdvisoryLevel: null, medicalProviders: [], ...extra });
+/**
+ * A record with only `extra` given, besides the U.S. travel advisory level (TRA-171), medical providers (TRA-172) and local
+ * emergency number (TRA-173) every record gives.
+ */
+const record = (extra = {}) => ({ usAdvisoryLevel: null, medicalProviders: [], emergencyNumber: null, ...extra });
 
 test("health and safety research normalizes manual fields without inventing information or a checked date", () => {
   assert.equal(normalizeHealthSafety(null), null);
@@ -19,7 +22,7 @@ test("health and safety research normalizes manual fields without inventing info
   assert.deepEqual(empty.medicalProviders, [], "no medical provider is assumed");
   const person = contact({ name: " Embassy ", phone: " +1 (202) 555-0100 ", notes: " Ask for the duty officer " });
   const link = source({ url: " https://example.gov ", description: " Official advisory " });
-  const input = { usAdvisoryLevel: 2, medicalProviders: [], advisoryLevel: " Level 2: Exercise increased caution ", localSafety: " Pickpockets on trams\nTaxi scams at the airport ", emergencyContacts: [person], sources: [link], lastCheckedDate: " 2028-02-29 " };
+  const input = { usAdvisoryLevel: 2, medicalProviders: [], emergencyNumber: null, advisoryLevel: " Level 2: Exercise increased caution ", localSafety: " Pickpockets on trams\nTaxi scams at the airport ", emergencyContacts: [person], sources: [link], lastCheckedDate: " 2028-02-29 " };
   assert.deepEqual(normalizeHealthSafety(input), {
     ...empty, usAdvisoryLevel: 2, advisoryLevel: "Level 2: Exercise increased caution", localSafety: "Pickpockets on trams\nTaxi scams at the airport",
     emergencyContacts: [{ ...person, name: "Embassy", phone: "+1 (202) 555-0100", notes: "Ask for the duty officer" }],

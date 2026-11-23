@@ -6,8 +6,8 @@ import { useFocusFallback } from "@/components/focus-after";
 import { ResearchLinks, ResearchLinksEditor } from "@/components/research-links";
 import { formatCoordinates } from "@/lib/coordinates";
 import {
-  CHECK_LABELS, EMERGENCY_CONTACT_MAX_LENGTH, HEALTH_SAFETY_FIELDS, MAX_EMERGENCY_CONTACTS, MEDICAL_PROVIDER_MAX_LENGTH, PROVIDER_CHECKS, SHORT_NOTICE_CARE, SHORT_NOTICE_LABELS, US_ADVISORY_LEVELS,
-  mapHref, newProviderDraft, providersInOrder, telephoneHref, usAdvisoryLabel, type EmergencyContact, type HealthSafety, type MedicalProvider, type MedicalProviderDraft, type ProviderCheck, type ShortNoticeCare,
+  CHECK_LABELS, EMERGENCY_CONTACT_MAX_LENGTH, EMERGENCY_NUMBER_MAX_LENGTH, HEALTH_SAFETY_FIELDS, MAX_EMERGENCY_CONTACTS, MEDICAL_PROVIDER_MAX_LENGTH, PROVIDER_CHECKS, SHORT_NOTICE_CARE, SHORT_NOTICE_LABELS, US_ADVISORY_LEVELS,
+  mapHref, newProviderDraft, providersInOrder, telephoneHref, usAdvisoryLabel, type EmergencyContact, type EmergencyNumber, type HealthSafety, type MedicalProvider, type MedicalProviderDraft, type ProviderCheck, type ShortNoticeCare,
 } from "@/lib/health-safety";
 import { formatCalendarDate } from "@/lib/trip-dates";
 import type { ResearchLink } from "@/lib/types";
@@ -31,6 +31,10 @@ const careHint = "Providers verified to offer consultations in English are liste
 const providersHint = "Add doctors, medical clinics, or outpatient facilities for routine illness or minor injuries, not emergency services. Prefer providers confirmed to offer consultations in English, starting with the U.S. embassy or consulate's list of medical providers, then the provider's own website and other reliable sources. Leave anything you have not verified Unconfirmed or blank. Appearing on an embassy list does not mean the U.S. government endorses a provider.";
 /** A provider's soonest visit as its section shows it: what a source confirmed, never a guarantee, or Unconfirmed. */
 const shortNoticeText = (value: ShortNoticeCare) => value === "unconfirmed" ? SHORT_NOTICE_LABELS.unconfirmed : `${SHORT_NOTICE_LABELS[value]} (verified, not guaranteed)`;
+// The local emergency number (TRA-173): one verified number, apart from the emergency contacts.
+const emergencyNumberHint = "The destination's primary emergency number, such as 112 in much of Europe or 911 in the United States, shown first in Health and safety with a button that calls it. Enter it only from an official or reliable source, with that page's address and the date you verified it there, or leave all three blank. Add other emergency numbers as emergency contacts.";
+/** A website's name in a link: its host, without www. */
+const siteName = (url: string) => new URL(url).hostname.replace(/^www\./, "");
 
 type PanelProps = {
   healthSafety: HealthSafety | null;
@@ -56,6 +60,8 @@ export function HealthSafetyPanel({ healthSafety, disabled, onEdit, onClear }: P
         {healthSafety && <button type="button" className="text-button" disabled={disabled} onClick={onClear}><Trash2 size={14} aria-hidden="true" />Clear</button>}
       </div>}
     </div>
+    {/* The local emergency number comes first, whether the section is open or closed (TRA-173). */}
+    <LocalEmergencyNumber emergencyNumber={healthSafety?.emergencyNumber ?? null} />
     <div id={contentId} className={styles.content} hidden={!expanded}>
       <p className={styles.reminder}>{reminder}</p>
       {!healthSafety ? <p className={styles.empty}>No health and safety information recorded. {missing}</p> : <>
@@ -76,6 +82,21 @@ export function HealthSafetyPanel({ healthSafety, disabled, onEdit, onClear }: P
       </>}
     </div>
   </section>;
+}
+
+/**
+ * The local emergency number (TRA-173): the verified number in large text, a link that opens the device's dialer with it,
+ * and where and when it was verified. Without one it says the number is not verified and offers nothing to call.
+ */
+function LocalEmergencyNumber({ emergencyNumber }: { emergencyNumber: EmergencyNumber | null }) {
+  return <div className={styles.emergency + (emergencyNumber ? "" : " " + styles.notVerified)}>
+    <h5>Local Emergency Number</h5>
+    {emergencyNumber ? <>
+      <p className={styles.emergencyNumber}>{emergencyNumber.phone}</p>
+      <a className={"button danger " + styles.call} href={telephoneHref(emergencyNumber.phone)}><Phone size={18} aria-hidden="true" />Call {emergencyNumber.phone}</a>
+      <p className={styles.emergencySource}>Verified {formatCalendarDate(emergencyNumber.verifiedDate)} from <a href={emergencyNumber.sourceUrl} target="_blank" rel="noopener noreferrer">{siteName(emergencyNumber.sourceUrl)}<span className="sr-only"> (opens in a new tab)</span></a></p>
+    </> : <p className={styles.emergencyNumberMissing}>Emergency number not verified</p>}
+  </div>;
 }
 
 /** Non-emergency medical care (TRA-172): the doctors and clinics recorded, those verified to offer consultations in English first. */
@@ -103,7 +124,7 @@ function MedicalProviderDetails({ provider }: { provider: MedicalProvider }) {
       <div><dt>Walk-in, same-day or short-notice visits</dt><dd>{shortNoticeText(provider.shortNotice)}</dd></div>
       <div><dt>Last verified</dt><dd>{lastVerifiedDate ? formatCalendarDate(lastVerifiedDate) : "Not verified"}</dd></div>
       <div><dt>Phone</dt><dd>{phone ? <a className={styles.contactLink} href={telephoneHref(phone)}><Phone size={14} aria-hidden="true" /><span>{phone}<span className="sr-only">, call {name}</span></span></a> : "Not recorded"}</dd></div>
-      <div><dt>Website</dt><dd>{website ? <a className={styles.contactLink} href={website} target="_blank" rel="noopener noreferrer"><ExternalLink size={14} aria-hidden="true" /><span>{new URL(website).hostname.replace(/^www\./, "")}{newTab}</span></a> : "Not recorded"}</dd></div>
+      <div><dt>Website</dt><dd>{website ? <a className={styles.contactLink} href={website} target="_blank" rel="noopener noreferrer"><ExternalLink size={14} aria-hidden="true" /><span>{siteName(website)}{newTab}</span></a> : "Not recorded"}</dd></div>
       <div className={styles.wide}><dt>Address and map location</dt><dd>{address || coordinates ? <>
         {address && <a className={styles.contactLink} href={mapHref(address)} target="_blank" rel="noopener noreferrer"><MapPin size={14} aria-hidden="true" /><span>{address}<span className="sr-only"> in Google Maps</span>{newTab}</span></a>}
         {coordinates && <a className={styles.contactLink} href={mapHref(`${coordinates.latitude},${coordinates.longitude}`)} target="_blank" rel="noopener noreferrer"><MapPin size={14} aria-hidden="true" /><span>{formatCoordinates(coordinates)}<span className="sr-only"> in Google Maps</span>{newTab}</span></a>}
@@ -146,10 +167,43 @@ export function HealthSafetyEditor({ healthSafety, contacts, onContactsChange, p
         <small>{fieldHints[field.name]}</small>
       </label>)}
     </div>
+    <EmergencyNumberEditor saved={healthSafety?.emergencyNumber ?? null} disabled={disabled} />
     <EmergencyContactsEditor contacts={contacts} onChange={onContactsChange} disabled={disabled} />
     <MedicalProvidersEditor providers={providers} onChange={onProvidersChange} disabled={disabled} />
     <p className={styles.sourceHint}>Add official government, embassy, or health agency source links and describe what each source covers.</p>
     <ResearchLinksEditor links={sources} onChange={onSourcesChange} disabled={disabled} />
+  </fieldset>;
+}
+
+/**
+ * The local emergency number (TRA-173), before the emergency contacts: the number, its source's address and the date it was
+ * verified there, all three or none, so once any is filled in, all three are required. Clearing all three removes it.
+ */
+function EmergencyNumberEditor({ saved, disabled }: { saved: EmergencyNumber | null; disabled: boolean }) {
+  const id = useId();
+  const [draft, setDraft] = useState<EmergencyNumber>(saved ?? { phone: "", sourceUrl: "", verifiedDate: "" });
+  const given = Object.values(draft).some((value) => value.trim() !== "");
+  /** A field's value, whether it is required, and its change. */
+  const field = (name: keyof EmergencyNumber) => ({
+    value: draft[name], required: given, onChange: (event: { target: { value: string } }) => setDraft((current) => ({ ...current, [name]: event.target.value })),
+  });
+  return <fieldset className={styles.contactsEditor + " " + styles.emergencyEditor} disabled={disabled} aria-describedby={`${id}-hint`}>
+    <legend>Local emergency number</legend>
+    <p className={styles.hint} id={`${id}-hint`}>{emergencyNumberHint}</p>
+    <div className={styles.contactRow}>
+      <label className="field"><span>Phone number</span>
+        <input name="emergencyPhone" type="tel" {...field("phone")} maxLength={EMERGENCY_NUMBER_MAX_LENGTH.phone} placeholder="e.g. 112" autoComplete="off" />
+      </label>
+      <label className="field"><span>Verified date</span>
+        <input name="emergencyVerifiedDate" type="date" min="0001-01-01" max="9999-12-31" {...field("verifiedDate")} />
+        <small>The date you checked the source. Saving does not set it.</small>
+      </label>
+      <label className="field wide"><span>Source</span>
+        <input name="emergencySourceUrl" type="url" inputMode="url" pattern="https?://.+" title="Enter a full website address beginning with https:// or http://." {...field("sourceUrl")}
+          maxLength={EMERGENCY_NUMBER_MAX_LENGTH.sourceUrl} placeholder="https://" autoComplete="off" autoCapitalize="none" spellCheck={false} />
+        <small>An official government, embassy or emergency service page that gives this number for the destination.</small>
+      </label>
+    </div>
   </fieldset>;
 }
 

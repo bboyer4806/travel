@@ -57,6 +57,10 @@
   .arrow { width: 32px; height: 32px; margin-top: -16px; }
   .previous { left: -16px; }
   .next { right: -16px; }
+  /* TRA-156: in a trip's destination cards, 12px of padding, 12px apart, and the arrows still within the padding. */
+  :global(.trip-page) .section { padding: 12px; margin: 12px 0; }
+  :global(.trip-page) .previous { left: -12px; }
+  :global(.trip-page) .next { right: -12px; }
 }
 @media (prefers-reduced-motion: reduce) {
   .track { scroll-behavior: auto; }

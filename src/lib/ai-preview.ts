@@ -56,7 +56,7 @@ const COORDINATE_COLUMNS: Record<string, [string, Format]> = {
  * which only the trip editor changes (TRA-133), and values worked out from another column. Hidden columns still count when approving: a proposal makes exactly the rows it previewed, or nothing.
  */
 export const PREVIEW_COLUMNS: Record<DataTable, Record<string, [string, Format] | null>> = {
-  trips: { id: null, name: ["Name", "text"], tagline: ["Tagline", "text"], dateLabel: ["Dates", "text"], homeCity: ["Departing city", "text"], travelers: ["Travelers", "number"], notes: ["Notes", "text"], createdAt: null, returnCity: ["Return city", "text"], startDate: ["Start date", "text"], ownerId: ["Owner", "account"] },
+  trips: { id: null, name: ["Name", "text"], tagline: ["Tagline", "text"], focus: ["Focus", "text"], dateLabel: ["Dates", "text"], homeCity: ["Departing city", "text"], travelers: ["Travelers", "number"], notes: ["Notes", "text"], createdAt: null, returnCity: ["Return city", "text"], startDate: ["Start date", "text"], ownerId: ["Owner", "account"] },
   trip_images: { tripId: null, version: null, cardFocusX: null, cardFocusY: null, cardZoom: null, bannerFocusX: null, bannerFocusY: null, bannerZoom: null },
   trip_shares: { tripId: null, accountId: null, sharedAt: null },
   trip_tags: { tripId: null, tagKey: null, name: null },

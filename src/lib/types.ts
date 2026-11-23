@@ -17,8 +17,9 @@ export interface TypicalWeather { weatherHighF: number | null; weatherLowF: numb
 /**
  * A trip, with its tags in alphabetical order, and its headline image, or null without one (TRA-133).
  * `tagline` is the line its page shows above its name, saved as typed, or empty for the default heading (TRA-134).
+ * `focus` is what the trip is mostly about, saved as typed and shown after Focus: on its card on All trips, or empty for none (TRA-168).
  */
-export interface Trip { startDate: string | null; endDate: string | null; id: string; name: string; tagline: string; dateLabel: string; homeCity: string; returnCity: string | null; travelers: number; notes: string; createdAt: string; tags: string[]; image: TripImage | null; }
+export interface Trip { startDate: string | null; endDate: string | null; id: string; name: string; tagline: string; focus: string; dateLabel: string; homeCity: string; returnCity: string | null; travelers: number; notes: string; createdAt: string; tags: string[]; image: TripImage | null; }
 export interface HomeItem { id: string; tripId: string; name: string; notes: string; priceCents: number | null; createdAt: string; }
 /**
  * A city's research, ideas, selections and budget amounts, shared by every trip that visits it. Each owner has one per city.
@@ -119,7 +120,8 @@ export interface StopFields { stay?: string; nights?: number | null }
 export type Mutation =
  // `image` changes the trip's headline image (TRA-133), only from an upload or the trip editor's crops. Left out, it keeps it.
  // `tagline` is the line the trip's page shows above its name (TRA-134). Left out, as a page opened before taglines does, it keeps the saved one.
- | { type: "trip.save"; id: string; create?: true; startDate?: string | null; name: string; tagline?: string; dateLabel: string; homeCity: string; returnCity?: string | null; travelers: number; notes: string; image?: TripImageUpdate }
+ // `focus` is the line its card on All trips shows after Focus: (TRA-168). Left out, as a page opened before Focus does, it keeps the saved one.
+ | { type: "trip.save"; id: string; create?: true; startDate?: string | null; name: string; tagline?: string; focus?: string; dateLabel: string; homeCity: string; returnCity?: string | null; travelers: number; notes: string; image?: TripImageUpdate }
  | { type: "trip.delete"; id: string }
  | { type: "trip.share"; tripId: string; email: string }
  | { type: "trip.unshare"; tripId: string; email: string }

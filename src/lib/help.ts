@@ -79,8 +79,8 @@ const HELP: { [Route in SignedInRoute]: Route extends `${string}/[category]` ? R
   "/": {
     title: "All trips",
     points: [
-      "Your trips and the trips shared with you, in your own order, each with its destinations, dates and estimated budget.",
-      "New trip starts a trip with just a name. Select a trip's card to plan it, or Edit on the card to change its name, tagline, dates, cities and headline image.",
+      "Your trips and the trips shared with you, in your own order, each with its destinations, dates and estimated budget, and its focus if it has one.",
+      "New trip starts a trip with just a name. Select a trip's card to plan it, or Edit to change its name, tagline, focus, dates, cities and headline image.",
       "Drag a trip by its handle to a new place, or press Space on the handle, then the arrow keys, then Space. New trips go last.",
       "Search by trip or city, and select tags under Filter by tag to see only trips with every one. Trips move only while all of them show.",
       "Trips marked Shared by belong to someone else. You can change them, but only their owner can share or delete them.",
@@ -91,7 +91,7 @@ const HELP: { [Route in SignedInRoute]: Route extends `${string}/[category]` ? R
     title: "Trip",
     points: [
       "Plan one trip: its route on the map, each stay with a map of its places, travel, arrangements at home and cost. Point or tab to a destination for its photo.",
-      "Edit trip changes its name, tagline, dates, travelers, departing and return cities, and headline image. Tags under its details group it in All trips.",
+      "Edit trip changes its name, tagline, focus, dates, travelers, departing and return cities, and headline image. Tags under its details group it in All trips.",
       "Add destination adds a city last, a + between cards there, one In your library with its research. Card arrows move it, the pencil edits, the trash removes it.",
       "Each stay's nights set its dates, and Typical weather opens on the month it begins. An activity's details step to the others with Previous, Next or a swipe.",
       "Between the places: Edit adds transportation, a flight's airline and flight number, price and layovers. Plan layover times what you'll do during a layover.",
@@ -116,7 +116,7 @@ const HELP: { [Route in SignedInRoute]: Route extends `${string}/[category]` ? R
       "Edit destination changes its city, tagline, budget amounts, photos and notes. In Typical weather, select a month on the chart for its averages.",
       "Its map shows its places, at their coordinates if saved; a dashed ring means approximate. Checkboxes choose places; select a marker for photos and View details.",
       "Select an idea in Hotels, Activities or Restaurants for details, where an activity's Previous, Next or a swipe shows others. Manage reorders, chooses, deletes.",
-      "Select a heading, such as Map or Budget, to show or hide it. Entry requirements, Health and safety and Typical weather show Edit and Clear only while open.",
+      "Select a heading, like Map, Budget or Church, to show or hide it. Entry requirements, Health and safety and Typical weather show Edit and Clear only when open.",
       "In your trips lists each of your trips that visits it, with its nights and estimate. Its owner can delete it once no trip visits it.",
     ],
   },

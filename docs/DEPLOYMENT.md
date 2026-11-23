@@ -218,7 +218,7 @@ Prefer fixing forward. Rolling back an image does not reverse a database schema 
 
 ## Schema history
 
-The schema version is SQLite's `user_version`; the current schema is 42, `SCHEMA_VERSION` in `src/lib/store.ts`. At every start, `createStore` in `src/lib/store.ts` upgrades an older database in one transaction, through each version in turn. Each upgrade checks what already exists, so running it again on a database that already has its changes (a replay) keeps saved data. The notes below are in schema order. **Superseded** marks behavior that a later schema replaced; the current behavior is in [README.md](../README.md).
+The schema version is SQLite's `user_version`; the current schema is 43, `SCHEMA_VERSION` in `src/lib/store.ts`. At every start, `createStore` in `src/lib/store.ts` upgrades an older database in one transaction, through each version in turn. Each upgrade checks what already exists, so running it again on a database that already has its changes (a replay) keeps saved data. The notes below are in schema order. **Superseded** marks behavior that a later schema replaced; the current behavior is in [README.md](../README.md).
 
 ### Schema 1: first shared planner
 The first release creates the `trips`, `destinations`, `legs` and `candidates` tables, with prices in integer USD cents for the whole party. Anyone with the URL can view and edit every trip. The schema 1 build sets `user_version` to 1 at every start and does not refuse a newer database, so later upgrades check what already exists as well as the version: redeploying a newer build after a rollback to schema 1 cannot repeat an `ALTER TABLE` or replace saved links.
@@ -439,6 +439,11 @@ Restoring the pre-upgrade backup to run a schema 40 build again loses every airl
 Trip focus upgrades the database to schema 42 in the startup transaction, adding `focus` to `trips`: what a trip is mostly about, saved as typed, up to 120 characters, which the store checks, and shown after Focus: on the trip's card on All trips. Every existing trip starts with an empty focus, which shows no Focus line, so no card looks different until one is entered. Nothing else changes, taglines included. The column is in the same online backups, and a replay keeps each saved focus.
 
 Restoring the pre-upgrade backup to run a schema 41 build again loses every trip's focus, and that build's cards show none.
+
+### Schema 43: estimated time for activities (TRA-170)
+Estimated time for activities upgrades the database to schema 43 in the startup transaction, adding `estimatedMinutes` to `candidates`: about how long an activity takes, in whole minutes, which the store checks are a whole number from 1 with no maximum but the largest JavaScript holds exactly, shown in hours and minutes in the activity's details and on its card on the Activities page. A `CHECK` keeps it empty or 1 or more, and empty for every hotel and restaurant. Every existing activity starts without one, which shows nothing, so nothing looks different until one is entered, and a time already written in what an activity is or its notes stays there. Nothing else changes. The column is in the same online backups, and a replay keeps each saved estimate.
+
+Restoring the pre-upgrade backup to run a schema 42 build again loses every activity's estimated time, and that build shows none.
 
 ## Feedback and release notes
 Configure server-only JIRA_URL (HTTPS Jira base URL), JIRA_EMAIL, and JIRA_API_TOKEN with permission to create Tasks in TRA. Use the host's secret configuration; never put credentials in source, image layers, client variables, or logs. Preserve the browser Host and Origin headers through the proxy; the feedback endpoint compares them and ignores forwarded-host claims. Its limits count per signed-in account. A failed send logs one line saying why, such as a missing setting's name, an invalid JIRA_URL, or Jira's HTTP status (401 for wrong credentials, 403 for missing permission), never the settings' values.

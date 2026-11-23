@@ -40,7 +40,7 @@ const IDEA_PAGES: Record<IdeaPage, PageHelp> = {
     title: "Activities",
     points: [
       "Things you'd like to do at this destination, with what each costs for the whole party.",
-      "Add activity saves one, with what it is, its price, address, coordinates, photos, links and notes. The pencil edits it and the trash can deletes it.",
+      "Add activity saves one: what it is, its price, estimated time, address, coordinates, photos, links and notes. The pencil edits it and the trash can deletes it.",
       "Edit activities budget chooses a general amount for the whole stay or itemized activity costs.",
       "With itemized costs, Include in budget adds an activity's price. Switching methods keeps your amounts and selections.",
       "Mark as must do flags a priority without changing the budget. Up and Down set the order of the list.",

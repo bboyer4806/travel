@@ -414,7 +414,9 @@ export default function PlannerApp({ initialData, initialBudgets, access = {}, d
         // A restaurant's editor sends every type checked, so unchecking them all clears them. Other ideas have none.
         const checkedTypes = fields.getAll("restaurantTypes");
         void perform({ type: "candidate.save", ...itemToSave(editor.item), destinationId: editor.destinationId, category: editor.category, name: text("name"), description: text("description"), price: text("price"), address: text("address"), url: researchLinks[0]?.url ?? "", links: researchLinks, notes: text("notes"), included: fields.has("included"), mustDo: fields.has("mustDo"), coordinates: coordinatesFromForm(fields, editor.item?.coordinates ?? null),
-          ...(editor.category === "restaurants" && { restaurantTypes: RESTAURANT_TYPES.filter((type) => checkedTypes.includes(type)) }) }, "Changes saved.", undefined, imageForm);
+          ...(editor.category === "restaurants" && { restaurantTypes: RESTAURANT_TYPES.filter((type) => checkedTypes.includes(type)) }),
+          // An activity's editor sends its estimated time, so clearing it removes it (TRA-170). Other ideas have none.
+          ...(editor.category === "activities" && { estimatedMinutes: text("estimatedMinutes") === "" ? null : Number(text("estimatedMinutes")) }) }, "Changes saved.", undefined, imageForm);
         break;
       }
     }
@@ -724,6 +726,7 @@ export default function PlannerApp({ initialData, initialBudgets, access = {}, d
         <Field label="What it is" hint={"Shown below the " + singular[editor.category] + "’s name on its cards. Leave it blank for none."} wide><input name="description" defaultValue={editor.item?.description} maxLength={120} placeholder={ideaExamples[editor.category]} /></Field>
         {editor.category === "restaurants" && <RestaurantTypesField types={editor.item?.restaurantTypes ?? []} disabled={busy} />}
         <Field label="Estimated price (USD)" wide hint={priceNotes[editor.category] + " Leave blank if unknown."}><input name="price" type="number" min="0" max={MAX_AMOUNT_DOLLARS} step="0.01" defaultValue={minorAmountValue(editor.item?.priceCents, "USD")} placeholder="Not estimated" /></Field>
+        {editor.category === "activities" && <Field label="Estimated time (minutes)" wide hint="About how long the activity takes, such as 90 for 1 hour 30 minutes. Leave blank if unknown."><input name="estimatedMinutes" type="number" inputMode="numeric" min="1" step="1" defaultValue={editor.item?.estimatedMinutes ?? undefined} placeholder="Not estimated" /></Field>}
         <PlaceLocationFields key={editor.item?.id ?? newId} label="Address or neighborhood" placeholder="Optional" address={editor.item?.address ?? ""} coordinates={editor.item?.coordinates ?? null} disabled={busy} />
         <CandidateGalleryEditor candidate={editor.item} subject={singular[editor.category]} draft={candidateGallery} onChange={setCandidateGallery} disabled={busy} />
         <ResearchLinksEditor links={researchLinks} onChange={setResearchLinks} disabled={busy} /><Notes value={editor.item?.notes} />

@@ -1,5 +1,5 @@
 import {
-  constants, copyFileSync, existsSync, mkdirSync, mkdtempSync, rmSync, rmdirSync,
+  constants, copyFileSync, existsSync, mkdirSync, mkdtempSync, rmSync,
 } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { backup, DatabaseSync } from "node:sqlite";
@@ -20,11 +20,10 @@ if (process.argv.length !== 3) {
   // readOnly refuses to create a new, empty source if the path is wrong.
   const database = new DatabaseSync(source, { readOnly: true, timeout: 5000 });
   let temporaryDirectory;
-  let temporaryFile;
   try {
     mkdirSync(dirname(destination), { recursive: true });
     temporaryDirectory = mkdtempSync(join(dirname(destination), ".travel-backup-"));
-    temporaryFile = join(temporaryDirectory, "snapshot.sqlite");
+    const temporaryFile = join(temporaryDirectory, "snapshot.sqlite");
     await backup(database, temporaryFile);
 
     const snapshot = new DatabaseSync(temporaryFile, { readOnly: true });
@@ -42,7 +41,8 @@ if (process.argv.length !== 3) {
     console.log(`Backup saved: ${destination}`);
   } finally {
     database.close();
-    if (temporaryFile) { for (const suffix of ["", "-wal", "-shm"]) rmSync(temporaryFile + suffix, { force: true }); }
-    if (temporaryDirectory) rmdirSync(temporaryDirectory);
+    // Remove the snapshot and whatever SQLite left beside it: the -wal and -shm of its check, or the
+    // rollback journal a failed write leaves (a full disk, for one), so SQLite's error is what's reported.
+    if (temporaryDirectory) rmSync(temporaryDirectory, { recursive: true, force: true });
   }
 }

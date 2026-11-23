@@ -153,6 +153,7 @@ sudo dokku run travel node scripts/backup.mjs /data/travel-backup-2026-10-07.sql
 ```
 
 Use a unique filename every time. The helper refuses overwrite, reads the configured source without creating an empty database, and validates the snapshot.
+It writes a temporary snapshot beside the backup, so the storage's disk needs free space for about twice the database, as does the [off-host backup](#travel-15-encrypted-off-host-backups-to-windows-11) for its snapshot and encrypted copy. A backup that fails, as on a full disk, reports SQLite's error, such as `database or disk is full`, and removes its temporary files. Releases built before this change report that failure only as `ENOTEMPTY: directory not empty, rmdir '/data/.offhost-…/.travel-backup-…'`; `dokku run`, the deployment workflow's backup included, runs the deployed release's helper.
 Copy successful backups to separate storage; backups on the same disk are insufficient for disk loss.
 
 ## Travel 1.5: encrypted off-host backups to Windows 11

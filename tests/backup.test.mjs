@@ -119,6 +119,25 @@ test("backup refuses overwrite, source replacement, and nonexistent source", (t)
   assert.deepEqual(readdirSync(directory).filter((name) => name.startsWith(".travel-backup-")), []);
 });
 
+test("a backup whose snapshot can't be written reports SQLite's error and leaves nothing behind", (t) => {
+  const { directory, source } = fixture(t);
+  // Larger than SQLite's 2 MB page cache, as every production database is, so the snapshot's pages are written while
+  // the backup copies them rather than all at its commit. A write that fails then leaves SQLite's rollback journal.
+  const db = new DatabaseSync(source);
+  db.exec("INSERT INTO notes VALUES(randomblob(4000000))");
+  db.close();
+  const target = join(directory, "backup.sqlite");
+  // Writing the snapshot fails partway, as on a full disk: past this 256 KiB file size limit, a write fails with
+  // EFBIG, since Node ignores SIGXFSZ.
+  const result = spawnSync("bash", ["-c", 'ulimit -f 256 && exec "$0" scripts/backup.mjs "$1"', process.execPath, target], {
+    cwd: process.cwd(), env: { ...process.env, TRAVEL_DATABASE_PATH: source }, encoding: "utf8",
+  });
+  assert.notEqual(result.status, 0);
+  assert.match(result.stderr, /disk I\/O error/);
+  assert.equal(existsSync(target), false);
+  assert.deepEqual(readdirSync(directory).filter((name) => name.startsWith(".travel-backup-")), []);
+});
+
 test("backup reads TRAVEL_DATABASE_PATH from the environment, then .env.local, then .env", (t) => {
   const directory = mkdtempSync(join(tmpdir(), "travel-backup-test-"));
   t.after(() => rmSync(directory, { recursive: true, force: true }));

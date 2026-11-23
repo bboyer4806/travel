@@ -570,6 +570,8 @@ This version runs one application instance with SQLite. Google Sign In requires 
 pnpm backup ./backups/travel-2026-10-07.sqlite
 ```
 The backup uses SQLite's online backup API, checks integrity, and refuses to overwrite an existing backup.
+It writes a temporary snapshot beside the new backup, so that disk needs free space for about twice the database.
+A backup that fails, as on a full disk, reports SQLite's error, such as `database or disk is full`, and leaves no temporary files.
 It reads `TRAVEL_DATABASE_PATH` from the environment, then `.env.local`, then `.env`, and otherwise backs up `data/travel.sqlite`.
 Store backups outside the repository and keep a copy off the server.
 

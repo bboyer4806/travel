@@ -79,7 +79,7 @@ const HELP: { [Route in SignedInRoute]: Route extends `${string}/[category]` ? R
   "/": {
     title: "All trips",
     points: [
-      "Your trips and the trips shared with you, in your own order, each with its destinations, dates and estimated budget, and its focus if it has one.",
+      "Your trips and the trips shared with you, in your own order, each with any tagline and focus below its name, and its destinations, dates and estimated budget.",
       "New trip starts a trip with just a name. Select a trip's card to plan it, or Edit to change its name, tagline, focus, dates, cities and headline image.",
       "Drag a trip by its handle to a new place, or press Space on the handle, then the arrow keys, then Space. New trips go last.",
       "Search by trip or city, and select tags under Filter by tag to see only trips with every one. Trips move only while all of them show.",

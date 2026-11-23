@@ -400,8 +400,17 @@ button svg,a svg {
   letter-spacing:-.5px;
   overflow-wrap:anywhere
 }
-/* TRA-168: a trip's focus on its card, below its name, only when it has one: a further detail (TRA-51), ranked below
-   the name and what the trip is, its label in semibold, wrapping onto more lines rather than cut short. */
+/* TRA-167: a trip's saved tagline, directly below its name on its card on All trips, as typed, in the accent color the
+   trip's page shows it in, and wrapping in full. A trip without one shows nothing in its place. */
+.trip-tagline {
+  font-size:14px;
+  color:var(--orange);
+  margin-top:6px;
+  overflow-wrap:anywhere
+}
+/* TRA-168: a trip's focus on its card, below its name and any tagline (TRA-167), only when it has one: a further detail
+   (TRA-51), ranked below the name and what the trip is, its label in semibold, wrapping onto more lines rather than cut
+   short. */
 .trip-focus {
   margin-top:8px;
   font-size:13px;

@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 import test from "node:test";
-import { destinationMapLayout, destinationPlaces, MAP_CATEGORIES, mapCoordinates, placeKey } from "../src/lib/destination-map.ts";
+import { destinationMapLayout, destinationPlaces, lookupText, MAP_CATEGORIES, mapCoordinates, placeKey } from "../src/lib/destination-map.ts";
 import { candidateInput, newItem, prepared, setup } from "./budget-fixtures.mjs";
 
 const churchInput = (destinationId, overrides = {}) => ({ type: "church.save", destinationId, name: "St. Mary's", address: "", denomination: "", url: "", massTimes: [], ...overrides, ...newItem(overrides) });
@@ -114,13 +114,14 @@ test("places found at one position share a marker, and places still being looked
   assert.deepEqual(destinationMapLayout(places, { hotel: sacher, cafe: sacher }, ["hotels"]).markers[0].places.map((place) => place.id), ["hotel"]);
 });
 
-// TRA-150: places with saved coordinates are on the map at once, wherever they are, and aren't looked up.
+// TRA-150: places can have saved coordinates. TRA-163: the map shows a place where its address is found, and at its
+// coordinates, wherever they are, only when its address isn't found or it has none.
 const SACHER = { latitude: 48.20406, longitude: 16.36949, accuracy: "exact" };
 const RENTAL = { latitude: 48.2167, longitude: 16.3958, accuracy: "approximate" };
 const MELK = { latitude: 48.22842, longitude: 15.33437, accuracy: "exact" };
 const coordinated = (coordinates, review = false) => ({ ...coordinates, review });
 
-test("saved coordinates place a place without a lookup, however far from its destination, ahead of any answer, and approximate ones say so", () => {
+test("a place shows where its address is found, even with coordinates, and at its coordinates, however far away, when its address isn't found or it has none (TRA-163)", () => {
   const places = [
     { id: "hotel", category: "hotels", name: "Hotel Sacher", address: "Philharmonikerstraße 4", coordinates: coordinated(SACHER) },
     { id: "rental", category: "hotels", name: "Leopoldstadt apartment", address: "Address withheld", coordinates: coordinated(RENTAL) },
@@ -129,21 +130,29 @@ test("saved coordinates place a place without a lookup, however far from its des
     { id: "cafe", category: "restaurants", name: "Café Central", address: "Herrengasse 14", coordinates: null },
     { id: "moved", category: "restaurants", name: "Figlmüller", address: "Bäckerstraße 6", coordinates: coordinated({ latitude: 48.20918, longitude: 16.37466, accuracy: "exact" }, true) },
     { id: "church", category: "churches", name: "St. Stephen's Cathedral", address: "Stephansplatz 3", coordinates: coordinated({ latitude: 48.20857, longitude: 16.37307, accuracy: "exact" }) },
+    { id: "chapel", category: "churches", name: "Peterskirche", address: "Petersplatz 1", coordinates: coordinated({ latitude: 48.20944, longitude: 16.36985, accuracy: "exact" }) },
   ];
-  // A lookup may still answer for a place with coordinates, as from a page opened before they were saved: they come first.
-  const answers = { hotel: found(48.2, 16.37, "Elsewhere"), museum: { status: "missing" }, cafe: found(48.21036, 16.36564, "Café Central, 14, Herrengasse"), moved: { status: "ambiguous" }, rental: { status: "pending" } };
+  const saved = structuredClone(places);
+  const answers = {
+    hotel: found(48.20409, 16.36952, "Hotel Sacher, 4, Philharmonikerstraße"), rental: { status: "missing" }, museum: { status: "missing" },
+    cafe: found(48.21036, 16.36564, "Café Central, 14, Herrengasse"), moved: { status: "ambiguous" }, church: { status: "ambiguous" }, chapel: { status: "unavailable" },
+  };
   const layout = destinationMapLayout(places, answers, MAP_CATEGORIES);
   assert.deepEqual(layout.markers.map((marker) => [marker.position, marker.places.map(({ id, found: shown, approximate }) => [id, shown, approximate])]), [
-    [[48.20406, 16.36949], [["hotel", null, false]]],
+    [[48.20409, 16.36952], [["hotel", "Hotel Sacher, 4, Philharmonikerstraße", false]]],
     [[48.2167, 16.3958], [["rental", null, true]]],
     [[48.22842, 15.33437], [["abbey", null, false]]],
     [[48.21036, 16.36564], [["cafe", "Café Central, 14, Herrengasse", false]]],
     [[48.20857, 16.37307], [["church", null, false]]],
-  ], "Melk Abbey, 80 km away, is where its coordinates are, not moved to Vienna");
-  // Coordinates waiting for review aren't used, so that place is looked up like any other, and listed when it isn't found.
+    [[48.20944, 16.36985], [["chapel", null, false]]],
+  ], "found at its address, the hotel is there rather than at its coordinates, and Melk Abbey, 80 km away without an address, is at its coordinates, not moved to Vienna");
+  // Coordinates waiting for review aren't used, so that place is listed when it isn't found, as one without coordinates is.
   assert.deepEqual(layout.unmapped.map((group) => [group.category, group.places.map(({ id, reason }) => [id, reason])]), [["activities", [["museum", "missing"]]], ["restaurants", [["moved", "ambiguous"]]]]);
   const ids = [...layout.markers.flatMap((marker) => marker.places), ...layout.unmapped.flatMap((group) => group.places)].map((place) => place.id);
   assert.deepEqual(ids.toSorted(), places.map((place) => place.id).toSorted(), "every place once, on one marker or in the list");
+  // What a lookup finds never replaces a place's saved address or coordinates.
+  assert.deepEqual(places, saved);
+  assert.deepEqual(layout.markers[0].places[0].coordinates, coordinated(SACHER));
   // Found where its coordinates were confirmed, the place that moved shows there once more.
   assert.deepEqual(destinationMapLayout(places, { ...answers, moved: found(48.20831, 16.37734, "Figlmüller, 6, Bäckerstraße") }, ["restaurants"]).markers.map((marker) => marker.places.map((place) => [place.id, place.found])), [[["cafe", "Café Central, 14, Herrengasse"]], [["moved", "Figlmüller, 6, Bäckerstraße"]]]);
   // The categories filter places with coordinates as they do every other.
@@ -151,6 +160,43 @@ test("saved coordinates place a place without a lookup, however far from its des
     const marked = destinationMapLayout(places, answers, shown).markers.flatMap((marker) => marker.places.map((place) => place.id));
     assert.deepEqual(marked, places.filter((place) => shown.includes(place.category) && (mapCoordinates(place) || answers[place.id]?.status === "found")).map((place) => place.id), "markers for " + shown);
   }
+});
+
+test("a place with coordinates waits for its address's answer, on neither the map nor the list, while one without an address shows at them at once (TRA-163)", () => {
+  const places = [
+    { id: "hotel", category: "hotels", name: "Hotel Sacher", address: "Philharmonikerstraße 4", coordinates: coordinated(SACHER) },
+    { id: "rental", category: "hotels", name: "Leopoldstadt apartment", address: "Address withheld", coordinates: coordinated(RENTAL) },
+    { id: "abbey", category: "activities", name: "Melk Abbey", address: " ", coordinates: coordinated(MELK) },
+  ];
+  // Before any answer, and while the lookups wait their turn, only the abbey shows, with no address to look up.
+  for (const answers of [{}, { hotel: { status: "pending" }, rental: { status: "pending" } }]) {
+    const layout = destinationMapLayout(places, answers, MAP_CATEGORIES);
+    assert.deepEqual(layout.markers.map((marker) => marker.places.map((place) => place.id)), [["abbey"]]);
+    assert.deepEqual(layout.unmapped, []);
+  }
+  // Once answered, the hotel is where its address was found, and the rental, whose address wasn't, at its coordinates.
+  const layout = destinationMapLayout(places, { hotel: found(48.20409, 16.36952), rental: { status: "missing" } }, MAP_CATEGORIES);
+  assert.deepEqual(layout.markers.map((marker) => [marker.position, marker.places.map((place) => [place.id, place.approximate])]), [
+    [[48.20409, 16.36952], [["hotel", false]]],
+    [[48.2167, 16.3958], [["rental", true]]],
+    [[48.22842, 15.33437], [["abbey", false]]],
+  ]);
+});
+
+test("a place with coordinates is looked up by its address alone, and not at all without one, so only adding or removing them looks it up again (TRA-163)", () => {
+  const hotel = { id: "hotel", category: "hotels", name: "Hotel Sacher", address: "Philharmonikerstraße 4", coordinates: null };
+  const placed = { ...hotel, coordinates: coordinated(SACHER) };
+  assert.deepEqual(lookupText(hotel), { address: "Philharmonikerstraße 4", name: "Hotel Sacher" });
+  assert.deepEqual(lookupText({ ...hotel, address: "" }), { address: "", name: "Hotel Sacher" }, "without coordinates or an address, its name");
+  assert.deepEqual(lookupText(placed), { address: "Philharmonikerstraße 4", name: "" }, "its coordinates, not its name, show it when its address isn't found");
+  assert.equal(lookupText({ ...placed, address: "" }), null);
+  assert.equal(lookupText({ ...placed, address: "   " }), null, "a blank address is none");
+  // Coordinates waiting for review aren't used, so the place is looked up as one without them.
+  assert.deepEqual(lookupText({ ...hotel, coordinates: coordinated(SACHER, true) }), lookupText(hotel));
+  assert.notEqual(placeKey("Vienna", placed), placeKey("Vienna", hotel), "saving coordinates looks it up again, by its address alone");
+  assert.equal(placeKey("Vienna", { ...placed, coordinates: coordinated(RENTAL) }), placeKey("Vienna", placed), "changing them doesn't");
+  assert.notEqual(placeKey("Vienna", { ...placed, address: "Kärntner Ring 1" }), placeKey("Vienna", placed), "a new address does");
+  assert.equal(placeKey("Vienna", { ...placed, name: "Hotel Sacher Wien" }), placeKey("Vienna", placed), "a new name doesn't, since it isn't looked up");
 });
 
 test("places at the same coordinates share one marker, whether saved or found there", () => {

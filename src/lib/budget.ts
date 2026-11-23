@@ -1,4 +1,4 @@
-import type { FoodBudgetMode, ActivitiesBudgetMode, Budget, Candidate, Destination, DestinationVisit, Snapshot, TripStop } from "./types";
+import type { FoodBudgetMode, ActivitiesBudgetMode, Budget, Candidate, Category, Destination, DestinationVisit, Snapshot, TravelLeg, TripStop } from "./types";
 import { nightsToBudgetDays } from "./destination-duration.ts";
 
 type MiscellaneousInput = Pick<DestinationVisit, "nights" | "miscDailyMinor" | "miscCurrency">;
@@ -145,6 +145,15 @@ export function tripVisits(snapshot: Snapshot, tripId: string): { stop: TripStop
   });
 }
 
+/**
+ * A trip's connections in route order, from the departing city through each of its `visits` to the return city: none
+ * without a stop. A connection the snapshot has no row for is undefined.
+ */
+function routeLegs(snapshot: Snapshot, tripId: string, visits: { stop: TripStop }[]): (TravelLeg | undefined)[] {
+  const route: (string | null)[] = visits.length ? [null, ...visits.map(({ stop }) => stop.id), null] : [];
+  return route.slice(1).map((toId, index) => snapshot.legs.find((item) => item.tripId === tripId && item.fromId === route[index] && item.toId === toId));
+}
+
 /** Currencies stay separate. Travel, miscellaneous spending in transit and at-home costs are always USD, so they are totaled in cents. */
 export function calculateBudget(snapshot: Snapshot, tripId: string): Budget {
   const budget: Budget = {
@@ -199,14 +208,10 @@ export function calculateBudget(snapshot: Snapshot, tripId: string): Budget {
     }
   }
 
-  if (visits.length) {
-    const route: (string | null)[] = [null, ...visits.map(({ stop }) => stop.id), null];
-    for (let index = 1; index < route.length; index += 1) {
-      const leg = snapshot.legs.find((item) => item.tripId === tripId && item.fromId === route[index - 1] && item.toId === route[index]);
-      add({ amount: leg?.priceCents ?? null, currency: "USD", category: "travel" });
-      // Miscellaneous spending on the way is optional: blank adds no cost and is not a missing estimate (TRA-26).
-      if (leg?.miscCents != null) add({ amount: leg.miscCents, currency: "USD", category: "transitMiscellaneous" });
-    }
+  for (const leg of routeLegs(snapshot, tripId, visits)) {
+    add({ amount: leg?.priceCents ?? null, currency: "USD", category: "travel" });
+    // Miscellaneous spending on the way is optional: blank adds no cost and is not a missing estimate (TRA-26).
+    if (leg?.miscCents != null) add({ amount: leg.miscCents, currency: "USD", category: "transitMiscellaneous" });
   }
   for (const { visit } of visits) {
     for (const cost of destinationCosts(snapshot, visit)) add(cost);
@@ -217,4 +222,72 @@ export function calculateBudget(snapshot: Snapshot, tripId: string): Budget {
   }
   budget.complete = budget.missingCount === 0;
   return budget;
+}
+
+/**
+ * The trip estimate's categories with amounts to enter in an editor (TRA-165). At home has none: a blank price there is a
+ * task without a cost, not an amount the estimate lacks.
+ */
+export type EstimateCategory = "travel" | "transitMiscellaneous" | "hotels" | "activities" | "food" | "shopping" | "miscellaneous";
+/** The categories of one stay's destination budget. */
+export type StayCategory = Exclude<EstimateCategory, "travel" | "transitMiscellaneous">;
+/**
+ * An amount an estimate shows as Not set or Not estimated, by what it belongs to and the field that enters it (TRA-165): a
+ * connection's price or miscellaneous spending, the price of a hotel, activity or restaurant chosen for the budget, or a
+ * stay's nights or one of its destination's amounts, for one of the stay's categories.
+ */
+export type UnsetAmount =
+  | { kind: "leg"; leg: TravelLeg; field: "price" | "miscAmount" }
+  | { kind: "idea"; idea: Candidate }
+  | { kind: "stay"; category: StayCategory; stop: TripStop; visit: DestinationVisit; field: "nights" | "hotelNightlyAmount" | "activitiesGeneralAmount" | "foodDailyAmount" | "shoppingAmount" | "miscDailyAmount" };
+
+/**
+ * What a stay's category lacks before the estimate has it, or null once it has it (TRA-165): the chosen hotel's price,
+ * which replaces the nightly estimate; in itemized mode, the first included idea without a price, in saved order; or else
+ * the category's amount, and once that is known, the stay's nights that multiply it. Shopping is optional, so it is unset
+ * rather than missing.
+ */
+export function unsetStayAmount(snapshot: Snapshot, stop: TripStop, visit: DestinationVisit, category: StayCategory): UnsetAmount | null {
+  const amount = (field: Extract<UnsetAmount, { kind: "stay" }>["field"]): UnsetAmount => ({ kind: "stay", category, stop, visit, field });
+  // A nightly or daily amount's subtotal is unknown until both the amount and the nights are.
+  const multiplied = (subtotal: number | null, rate: number | null, field: "hotelNightlyAmount" | "foodDailyAmount" | "miscDailyAmount") =>
+    subtotal !== null ? null : amount(rate !== null && visit.nights === null ? "nights" : field);
+  const unpriced = (ideas: Category): UnsetAmount | null => {
+    const idea = snapshot.candidates.find((item) => item.destinationId === visit.id && item.category === ideas && item.included && item.priceCents === null);
+    return idea ? { kind: "idea", idea } : null;
+  };
+  switch (category) {
+    case "hotels": {
+      const accommodation = calculateAccommodation(snapshot, visit);
+      if (accommodation.hotel) return accommodation.hotel.priceCents === null ? { kind: "idea", idea: accommodation.hotel } : null;
+      return multiplied(accommodation.totalMinor, visit.hotelNightlyMinor, "hotelNightlyAmount");
+    }
+    case "activities":
+      if (visit.activitiesBudgetMode !== "general") return unpriced("activities");
+      return visit.activitiesGeneralMinor === null ? amount("activitiesGeneralAmount") : null;
+    case "food":
+      if (visit.foodBudgetMode !== "daily") return unpriced("restaurants");
+      return multiplied(calculateFoodEstimate(visit).subtotalMinor, visit.foodDailyMinor, "foodDailyAmount");
+    case "shopping": return visit.shoppingMinor === null ? amount("shoppingAmount") : null;
+    case "miscellaneous": return multiplied(calculateMiscellaneous(visit).subtotalMinor, visit.miscDailyMinor, "miscDailyAmount");
+  }
+}
+
+/**
+ * The first amount a category of a trip's estimate lacks, in route order, or null when it has every one (TRA-165): the
+ * connections from the departing city to the return city, then each stay's as above. Shopping and miscellaneous spending
+ * in transit are optional, so theirs is the first stay or connection without one.
+ */
+export function unsetTripAmount(snapshot: Snapshot, tripId: string, category: EstimateCategory): UnsetAmount | null {
+  const visits = tripVisits(snapshot, tripId);
+  if (category === "travel" || category === "transitMiscellaneous") {
+    const field = category === "travel" ? "price" : "miscAmount";
+    const leg = routeLegs(snapshot, tripId, visits).find((item) => item && (field === "price" ? item.priceCents : item.miscCents) === null);
+    return leg ? { kind: "leg", leg, field } : null;
+  }
+  for (const { stop, visit } of visits) {
+    const unset = unsetStayAmount(snapshot, stop, visit, category);
+    if (unset) return unset;
+  }
+  return null;
 }

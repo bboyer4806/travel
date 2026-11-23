@@ -17,13 +17,15 @@ export interface TypicalWeather { weatherHighF: number | null; weatherLowF: numb
 /**
  * A trip, with its tags in alphabetical order, and its headline image, or null without one (TRA-133).
  * `tagline` is the line its page shows above its name, saved as typed, or empty for the default heading (TRA-134).
+ * `focus` is what the trip is mostly about, saved as typed and shown after Focus: on its card on All trips, or empty for none (TRA-168).
  */
-export interface Trip { startDate: string | null; endDate: string | null; id: string; name: string; tagline: string; dateLabel: string; homeCity: string; returnCity: string | null; travelers: number; notes: string; createdAt: string; tags: string[]; image: TripImage | null; }
+export interface Trip { startDate: string | null; endDate: string | null; id: string; name: string; tagline: string; focus: string; dateLabel: string; homeCity: string; returnCity: string | null; travelers: number; notes: string; createdAt: string; tags: string[]; image: TripImage | null; }
 export interface HomeItem { id: string; tripId: string; name: string; notes: string; priceCents: number | null; createdAt: string; }
 /**
  * A city's research, ideas, selections and budget amounts, shared by every trip that visits it. Each owner has one per city.
  * `cityFromSuggestion` records that `city` is the label of a city suggestion chosen for it, the only city shown shorter (TRA-76).
- * `tagline` is the line its page shows above its name, saved as typed, or empty for the default heading (TRA-125).
+ * `tagline` is the line its page shows above its name, saved as typed, or empty for the default heading (TRA-125). Trips'
+ * pages show it below its name, or nothing there while it is empty (TRA-166).
  */
 export interface Destination extends TypicalWeather, DestinationPhotos { entryRequirements: EntryRequirements | null; healthSafety: HealthSafety | null; churchEnabled: boolean; id: string; city: string; cityFromSuggestion: boolean; tagline: string; miscDailyMinor: number | null; miscCurrency: string | null; hotelNightlyMinor: number | null; hotelCurrency: string | null; activitiesBudgetMode: ActivitiesBudgetMode; activitiesGeneralMinor: number | null; activitiesCurrency: string | null; foodBudgetMode: FoodBudgetMode; foodDailyMinor: number | null; foodCurrency: string | null; shoppingMinor: number | null; shoppingCurrency: string | null; notes: string; imageVersion: string | null; }
 /**
@@ -96,11 +98,12 @@ export interface GalleryUpdate { add: ({ id: string } & PreparedImage)[]; remove
 /**
  * A hotel, activity or restaurant idea. `description` says what it is in a few words, such as "Boutique hotel", shown
  * below its name on its cards, or is empty without one (TRA-138). `restaurantTypes` is empty for hotels and activities,
- * and for a restaurant without any. `coordinates` place it on its destination's map without a lookup, or are null (TRA-150).
+ * and for a restaurant without any. `coordinates` place it on its destination's map when its address isn't found or it
+ * has none (TRA-163), or are null (TRA-150).
  */
 export interface Candidate { id: string; destinationId: string; category: Category; position: number; mustDo: boolean; name: string; description: string; priceCents: number | null; address: string; url: string; notes: string; included: boolean; links: ResearchLink[]; images: CandidateImage[]; mainImageId: string | null; restaurantTypes: RestaurantType[]; coordinates: SavedCoordinates | null; }
 export interface MassTime { id: string; day: string; time: string; }
-/** A church. `coordinates` place it on its destination's map without a lookup, or are null (TRA-150). */
+/** A church. `coordinates` place it on its destination's map when its address isn't found or it has none (TRA-163), or are null (TRA-150). */
 export interface Church { id: string; destinationId: string; name: string; address: string; denomination: string; url: string; massTimes: MassTime[]; images: CandidateImage[]; mainImageId: string | null; coordinates: SavedCoordinates | null; }
 /** `tags` is one spelling of each tag on the trips the account can open, in alphabetical order, for a trip's page to reuse and the trip list to filter by. Destinations pages leave it empty. */
 export interface Snapshot { churches: Church[]; trips: Trip[]; homeItems: HomeItem[]; stops: TripStop[]; destinations: Destination[]; legs: TravelLeg[]; candidates: Candidate[]; tags: string[]; }
@@ -119,7 +122,8 @@ export interface StopFields { stay?: string; nights?: number | null }
 export type Mutation =
  // `image` changes the trip's headline image (TRA-133), only from an upload or the trip editor's crops. Left out, it keeps it.
  // `tagline` is the line the trip's page shows above its name (TRA-134). Left out, as a page opened before taglines does, it keeps the saved one.
- | { type: "trip.save"; id: string; create?: true; startDate?: string | null; name: string; tagline?: string; dateLabel: string; homeCity: string; returnCity?: string | null; travelers: number; notes: string; image?: TripImageUpdate }
+ // `focus` is the line its card on All trips shows after Focus: (TRA-168). Left out, as a page opened before Focus does, it keeps the saved one.
+ | { type: "trip.save"; id: string; create?: true; startDate?: string | null; name: string; tagline?: string; focus?: string; dateLabel: string; homeCity: string; returnCity?: string | null; travelers: number; notes: string; image?: TripImageUpdate }
  | { type: "trip.delete"; id: string }
  | { type: "trip.share"; tripId: string; email: string }
  | { type: "trip.unshare"; tripId: string; email: string }
@@ -192,6 +196,14 @@ export interface TripMember { email: string; name: string | null; }
 export type TripAccess = { role: "owner"; owner: TripMember; sharedWith: TripMember[] } | { role: "editor"; owner: TripMember };
 /** What the signed-in account may do with a destination: one it owns, or one that a trip shared with it visits. */
 export type DestinationAccess = { role: "owner" } | { role: "editor"; owner: TripMember };
+/**
+ * A trip or destination on Access (TRA-162): the signed-in account's role in it, its owner, and who else can open it as
+ * far as the account may see. Its owner sees everyone; anyone else sees only themselves, since only an owner sees who
+ * else has access.
+ */
+export interface AccessEntry { id: string; role: "owner" | "editor"; owner: TripMember; sharedWith: TripMember[]; }
+/** Every trip and destination the signed-in account can open, each list in alphabetical order, for Access (TRA-162). */
+export interface AccessOverview { trips: (AccessEntry & Pick<Trip, "name">)[]; destinations: (AccessEntry & LibraryDestination)[]; }
 /** A ChatGPT or Claude connection the designated owner allowed (TRA-115). Times are milliseconds since the epoch. */
 export interface AiConnection { id: string; platform: AiPlatform; connectedAt: number; lastUsedAt: number; }
 /**

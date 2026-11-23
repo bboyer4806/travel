@@ -127,24 +127,55 @@ test("a destination's own map in Destinations needs no trip, and a destination t
   assert.deepEqual(await (await failing(vienna)).json(), { area: "unavailable", places: { [museum]: { key: destinationMap.placeKey("Vienna", { name: "Albertina", address: "" }), status: "unavailable" } } });
 });
 
-test("a place with saved coordinates is never looked up, while one whose coordinates wait for review is (TRA-150)", async (t) => {
+test("a place with coordinates is looked up by its address alone and shows where it is found, one without an address isn't looked up, and coordinates waiting for review are looked up as none (TRA-163)", async (t) => {
   const store = createStore(":memory:", "owner@example.com");
   t.after(() => store.close());
   const owner = store.authorizeAccount("owner@example.com");
   const vienna = store.applyMutation(owner.id, { type: "destination.create", city: "Vienna" }).id;
   const add = (input) => store.applyMutation(owner.id, input).id;
-  add(candidateInput(vienna, "activities", { name: "Melk Abbey", address: "Abt-Berthold-Dietmayr-Straße 1, Melk", coordinates: { latitude: 48.22842, longitude: 15.33437, accuracy: "exact" } }));
-  add(candidateInput(vienna, "hotels", { name: "Leopoldstadt apartment", address: "Address withheld", coordinates: { latitude: 48.2167, longitude: 16.3958, accuracy: "approximate" } }));
+  const SACHER = { latitude: 48.20406, longitude: 16.36949, accuracy: "exact" };
+  const sacher = add(candidateInput(vienna, "hotels", { name: "Hotel Sacher", address: "Philharmonikerstraße 4", included: false, coordinates: SACHER }));
+  const rental = add(candidateInput(vienna, "hotels", { name: "Leopoldstadt apartment", address: "Address withheld", coordinates: { latitude: 48.2167, longitude: 16.3958, accuracy: "approximate" } }));
+  const abbey = add(candidateInput(vienna, "activities", { name: "Melk Abbey", address: "Abt-Berthold-Dietmayr-Straße 1, Melk", coordinates: { latitude: 48.22842, longitude: 15.33437, accuracy: "exact" } }));
   const museum = add(candidateInput(vienna, "activities", { name: "Albertina" }));
-  const church = add(churchInput(vienna, { name: "St. Stephen's Cathedral", address: "Stephansplatz 3", coordinates: { latitude: 48.20857, longitude: 16.37307, accuracy: "exact" } }));
-  // The church's new address leaves its coordinates waiting for review, so it is looked up by that address.
-  store.applyMutation(owner.id, churchInput(vienna, { id: church, name: "St. Stephen's Cathedral", address: "Stephansplatz 3, Wien" }));
+  const village = add(candidateInput(vienna, "activities", { name: "Dürnstein", coordinates: { latitude: 48.39538, longitude: 15.52014, accuracy: "approximate" } }));
+  const cathedral = add(churchInput(vienna, { name: "St. Stephen's Cathedral", address: "Stephansplatz 3", coordinates: { latitude: 48.20857, longitude: 16.37307, accuracy: "exact" } }));
+  const chapel = add(churchInput(vienna, { name: "Peterskirche", address: "Petersplatz", coordinates: { latitude: 48.20944, longitude: 16.36985, accuracy: "exact" } }));
+  // The churches' new addresses leave their coordinates waiting for review, so they are looked up as places without any.
+  store.applyMutation(owner.id, churchInput(vienna, { id: cathedral, name: "St. Stephen's Cathedral", address: "Stephansplatz 3, Wien" }));
+  store.applyMutation(owner.id, churchInput(vienna, { id: chapel, name: "Peterskirche", address: "Petersplatz 1, Wien" }));
   const { fetcher, requests } = providers({
+    "Philharmonikerstraße 4": [poi("Hotel Sacher", 48.20409, 16.36952, { display_name: "Hotel Sacher, 4, Philharmonikerstraße, Vienna, Austria" })],
     "Albertina": [poi("Albertina", 48.20462, 16.36818)],
     "Stephansplatz 3, Wien": [poi("St. Stephen's Cathedral", 48.20857, 16.37307, { category: "amenity" })],
+    "Peterskirche": [poi("Peterskirche", 48.20944, 16.36985, { category: "amenity" })],
+    // Nominatim would find these too, by name, but places with coordinates to show them at are never looked up by name.
+    "Leopoldstadt apartment": [poi("Leopoldstadt apartment", 48.21, 16.39)],
+    "Melk Abbey": [poi("Melk Abbey", 48.2, 16.4)],
   });
   const answer = await (await route({ account: owner, store, fetcher })(vienna)).json();
-  assert.deepEqual(Object.keys(answer.places).sort(), [museum, church].sort(), "no answer for a place the map shows at its coordinates");
-  assert.equal(answer.places[church].status, "found");
-  assert.deepEqual(requests, ["city: Vienna", "place: Albertina", "place: Stephansplatz 3, Wien"], "Nominatim is never asked about Melk Abbey or the rental");
+  const places = destinationMap.destinationPlaces(store.getDestinationSnapshot(owner.id, vienna).data, vienna);
+  assert.deepEqual(Object.keys(answer.places).sort(), [sacher, rental, abbey, museum, cathedral, chapel].sort());
+  assert.equal(answer.places[village], undefined, "no answer for Dürnstein, which has coordinates and no address");
+  for (const place of places.filter((item) => item.id in answer.places)) assert.equal(answer.places[place.id].key, destinationMap.placeKey("Vienna", place), "keyed as the map keys " + place.name);
+  assert.deepEqual(Object.fromEntries(Object.entries(answer.places).map(([id, { status }]) => [id, status])), {
+    [sacher]: "found", [rental]: "missing", [abbey]: "missing", [museum]: "found", [cathedral]: "found", [chapel]: "found",
+  });
+  assert.deepEqual(requests.toSorted(), ["city: Vienna", "place: Abt-Berthold-Dietmayr-Straße 1, Melk", "place: Address withheld", "place: Albertina", "place: Peterskirche", "place: Petersplatz 1, Wien", "place: Philharmonikerstraße 4", "place: Stephansplatz 3, Wien"],
+    "Nominatim is asked for the rental's and the abbey's addresses, never their names, and nothing about Dürnstein");
+  // The hotel shows where its address was found, the rental and the abbey, whose addresses weren't, at their coordinates,
+  // and Dürnstein at its coordinates without a lookup.
+  const layout = destinationMap.destinationMapLayout(places, answer.places, destinationMap.MAP_CATEGORIES);
+  assert.deepEqual(layout.markers.map((marker) => [marker.position, marker.places.map((place) => place.name)]), [
+    [[48.20409, 16.36952], ["Hotel Sacher"]],
+    [[48.2167, 16.3958], ["Leopoldstadt apartment"]],
+    [[48.22842, 15.33437], ["Melk Abbey"]],
+    [[48.20462, 16.36818], ["Albertina"]],
+    [[48.39538, 15.52014], ["Dürnstein"]],
+    [[48.20944, 16.36985], ["Peterskirche"]],
+    [[48.20857, 16.37307], ["St. Stephen's Cathedral"]],
+  ]);
+  assert.deepEqual(layout.unmapped, []);
+  // Finding the hotel elsewhere saves nothing: its coordinates are as they were.
+  assert.deepEqual(store.getDestinationSnapshot(owner.id, vienna).data.candidates.find((item) => item.id === sacher).coordinates, { ...SACHER, review: false });
 });

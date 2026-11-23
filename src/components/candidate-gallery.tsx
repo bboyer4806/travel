@@ -9,7 +9,7 @@ import type { Candidate } from "@/lib/types";
 import { randomUuid } from "@/lib/uuid";
 import { useFocusAfter } from "./focus-after";
 import { AddImageByUrl } from "./image-by-url";
-import { neighborPhoto, PhotoArrows, usePhotoSwipe } from "./photo-browsing";
+import { neighborPhoto, PhotoArrows, useSwipe } from "./photo-browsing";
 import { usePhotoDrag } from "./photo-drag";
 import styles from "./candidate-gallery.module.css";
 
@@ -55,9 +55,10 @@ function GalleryView({ candidate, frame, imageKind, browse }: { candidate: Galle
   const index = candidate.images.findIndex((image) => image.id === selected.id);
   /** Shows the next (1) or previous (-1) photo in saved order, wrapping from the last photo to the first and the first to the last. */
   const step = (offset: -1 | 1) => setSelectedId(neighborPhoto(candidate.images, index, offset).id);
-  const swipe = usePhotoSwipe(step);
+  const swipe = useSwipe(step);
   const browsing = browse && candidate.images.length > 1;
-  return <div className={styles.gallery} role="group" aria-label={`Photos of ${candidate.name}`}>
+  // `data-photos` keeps sideways swipes here for the photos: swiping them never moves an activity's dialog to another activity (TRA-160).
+  return <div className={styles.gallery} role="group" aria-label={`Photos of ${candidate.name}`} data-photos>
     <div className={styles.hero} {...(browsing ? swipe : {})}>
       {/* Stored photos are resized and optimized on upload. */}
       {/* eslint-disable-next-line @next/next/no-img-element */}

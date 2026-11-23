@@ -31,3 +31,11 @@
 .panel p:last-child {
   margin-bottom: 0;
 }
+
+/* TRA-156: in a trip's destination cards on phones, 12px of padding and 12px above the church options. */
+@media (max-width: 540px) {
+  :global(.trip-page) .panel {
+    margin-bottom: 12px;
+    padding: 12px;
+  }
+}

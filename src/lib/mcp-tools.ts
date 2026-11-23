@@ -80,6 +80,7 @@ const CHANGES = [
   change("trip.save", "Adds a trip, owned by Travel's owner, or changes a saved one. Each field is saved as given. A new departing or return city clears the travel from or to it.", {
     id: id("The trip's id, or a new UUID with create."), create, name: text("Its name.", 120),
     tagline: text("A short line shown in capitals above the trip's name on its page, saved as written. Empty for Travel's default heading. Left out keeps the saved one.", 120),
+    focus: text("What the trip is mostly about, such as \"History, architecture, local cuisine\", shown after Focus: on its card on All trips, saved as written. Empty for none. Left out keeps the saved one.", 120),
     dateLabel: text("When, in words, such as \"Spring 2027\". Empty for none.", 120), homeCity: text("The departing city. Empty for none.", 120),
     returnCity: { type: ["string", "null"], maxLength: 120, description: "The return city, or null when it is the departing city. Left out keeps the saved one." },
     travelers: { type: "integer", minimum: 1, maximum: 999, description: "How many people travel." }, notes: text("Notes. Empty for none.", 8000),

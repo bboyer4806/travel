@@ -44,6 +44,8 @@
 .credit a { text-decoration: underline; }
 
 @media (max-width: 540px) {
+  /* TRA-156: as far above the next section as the trip page's sections are apart on phones. */
+  .section { margin-bottom: 28px; }
   .frame { height: 300px; }
   .preview { width: 160px; }
 }

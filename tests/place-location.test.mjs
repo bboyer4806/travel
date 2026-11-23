@@ -31,12 +31,15 @@ function load(state) {
   return exports;
 }
 
-/** The fields for a place saved with `address` and `saved` coordinates, rendered again after each change. */
-function fields(address, saved, disabled = false) {
+/**
+ * The fields for a place saved with `address` and `saved` coordinates, rendered again after each change, starting from
+ * an unsaved `draft` of its editor's form when there is one (TRA-160).
+ */
+function fields(address, saved, disabled = false, draft = undefined) {
   const state = { hooks: [], cursor: 0 };
   const { PlaceLocationFields } = load(state);
   let tree;
-  const render = () => { state.cursor = 0; tree = PlaceLocationFields({ label: "Address or neighborhood", placeholder: "Optional", address, coordinates: saved, disabled }); };
+  const render = () => { state.cursor = 0; tree = PlaceLocationFields({ label: "Address or neighborhood", placeholder: "Optional", address, coordinates: saved, draft, disabled }); };
   render();
   const input = (name, value) => nodes(tree).find((node) => node.type === "input" && node.props.name === name && (value === undefined || node.props.value === value));
   return {
@@ -96,6 +99,33 @@ test("a new address asks to confirm the saved coordinates for it, unless they ar
   assert.equal(editor.confirming(), false);
   // Coordinates already waiting for review ask at once.
   assert.equal(fields("Praterstraße 10, Wien", { ...RENTAL, review: true }).confirming(), true);
+});
+
+/** An editor's form as an unsaved draft left it: its fields' names and values, as the browser's form data has them. */
+function draftOf(values) {
+  const draft = new FormData();
+  for (const [name, value] of Object.entries(values)) draft.set(name, value);
+  return draft;
+}
+
+test("fields an activity's unsaved draft left start as it left them, checked against the saved address and coordinates (TRA-160)", () => {
+  const moved = fields("Address withheld", RENTAL, false, draftOf({ address: "Praterstraße 10, Wien", latitude: "48.2167", longitude: "16.3958", accuracy: "approximate", coordinatesConfirmed: "on" }));
+  assert.deepEqual(["address", "latitude", "longitude"].map((name) => moved.input(name).props.value), ["Praterstraße 10, Wien", "48.2167", "16.3958"]);
+  assert.deepEqual([moved.input("accuracy", "exact").props.checked, moved.input("accuracy", "approximate").props.checked], [false, true]);
+  // The draft's address isn't the saved one, so the saved coordinates still wait to be confirmed for it, as the draft did.
+  assert.equal(moved.confirming(), true);
+  assert.equal(moved.input("coordinatesConfirmed").props.defaultChecked, true);
+  moved.type("address", "Address withheld");
+  assert.equal(moved.confirming(), false, "the saved address needs no confirming");
+  // A draft that cleared the coordinates, or gave new ones, starts that way.
+  const cleared = fields("Address withheld", RENTAL, false, draftOf({ address: "Address withheld", latitude: "", longitude: "" }));
+  assert.deepEqual(["latitude", "longitude"].map((name) => cleared.input(name).props.value), ["", ""]);
+  assert.deepEqual([cleared.input("accuracy", "exact").props.checked, cleared.input("accuracy", "approximate").props.checked, cleared.input("latitude").props.required], [false, false, false]);
+  const changed = fields("", null, false, draftOf({ address: "Hofburg", latitude: "48.2066", longitude: "16.3655", accuracy: "exact" }));
+  assert.deepEqual([changed.input("address").props.value, changed.input("latitude").props.value, changed.input("accuracy", "exact").props.checked, changed.confirming()], ["Hofburg", "48.2066", true, false]);
+  // Without a draft, nothing is confirmed until it is checked.
+  const saved = fields("Praterstraße 10, Wien", { ...RENTAL, review: true });
+  assert.equal(saved.input("coordinatesConfirmed").props.defaultChecked, undefined);
 });
 
 test("a place's details show its coordinates, latitude first, with their accuracy, and say when they wait for review", () => {

@@ -28,7 +28,7 @@ import type { HealthSafety } from "./health-safety.ts";
 import type { LayoverActivity, LayoverPlan, SavedLayoverPlan } from "./layover-plan.ts";
 import type { MonthlyClimate } from "./typical-weather.ts";
 import type { AiConnection, AiPhotoToAdd, AiProposal, DestinationFields, GalleryUpdate, LargePhoto, PhotoCrop, PhotoWidths, PreparedImage, StoredThumbnail, TripImage, TripImageUpdate } from "./types";
-import type { AuthorizedAccount, DestinationAccess, GoogleIdentity, LibraryDestination, TripAccess, TripMember, TripStop } from "./types";
+import type { AccessEntry, AccessOverview, AuthorizedAccount, DestinationAccess, GoogleIdentity, LibraryDestination, TripAccess, TripMember, TripStop } from "./types";
 import type { FoodBudgetMode, ActivitiesBudgetMode, Candidate, CandidateImage, Category, Church, MassTime, Destination, DestinationImage, HomeItem, StoredImage, ItineraryStop, Mutation, ResearchLink, RestaurantType, Snapshot, TravelLeg, Trip } from "./types";
 
 type StoredDestination = Omit<Destination, "churchEnabled" | "cityFromSuggestion" | "images" | "entryRequirements" | "healthSafety" | "climate" | "mainImageId" | "imageVersion"> & { churchEnabled: number; cityFromSuggestion: number; ownerId: string; cityKey: string };
@@ -48,7 +48,7 @@ const VISIBLE_TRIPS = "SELECT id FROM trips WHERE ownerId = ? UNION SELECT tripI
 /** The destinations an account owns or that a trip it can open visits, as SQL binding the account's ID three times. */
 const VISIBLE_DESTINATIONS = `SELECT id FROM destinations WHERE ownerId = ? UNION SELECT destinationId FROM trip_stops WHERE tripId IN (${VISIBLE_TRIPS})`;
 /** Every trip column but the owner's account ID, which stays on the server. */
-const TRIP_COLUMNS = "id, name, tagline, dateLabel, homeCity, returnCity, travelers, notes, createdAt, startDate";
+const TRIP_COLUMNS = "id, name, tagline, focus, dateLabel, homeCity, returnCity, travelers, notes, createdAt, startDate";
 /** Every destination column but its owner's account ID and its city key, which stay on the server. */
 const DESTINATION_COLUMNS = ["id", "city", "cityFromSuggestion", "tagline", "notes", "miscDailyMinor", "miscCurrency", "hotelNightlyMinor", "hotelCurrency", "activitiesBudgetMode", "activitiesGeneralMinor", "activitiesCurrency", "foodBudgetMode", "foodDailyMinor", "foodCurrency", "shoppingMinor", "shoppingCurrency", "weatherHighF", "weatherLowF", "weatherRainfall", "weatherPeriod", "weatherSource", "churchEnabled"]
   .map((column) => "destinations." + column).join(", ");
@@ -465,7 +465,7 @@ function validate(input: unknown): Mutation {
       if (typeof value.travelers !== "number" || !Number.isInteger(value.travelers) || value.travelers < 1 || value.travelers > 999) {
         throw new ValidationError("Number of travelers must be a whole number between 1 and 999.");
       }
-      return { type: value.type, id: saveIdField(value), create: createField(value), name: textField(value, "name", 120, true), tagline: value.tagline === undefined ? undefined : textField(value, "tagline", 120), startDate: destinationDateField(value, "startDate"), dateLabel: textField(value, "dateLabel", 120), homeCity: textField(value, "homeCity", 120), returnCity: returnCityField(value), travelers: value.travelers, notes: textField(value, "notes", 8000), image: tripImageField(value) };
+      return { type: value.type, id: saveIdField(value), create: createField(value), name: textField(value, "name", 120, true), tagline: value.tagline === undefined ? undefined : textField(value, "tagline", 120), focus: value.focus === undefined ? undefined : textField(value, "focus", 120), startDate: destinationDateField(value, "startDate"), dateLabel: textField(value, "dateLabel", 120), homeCity: textField(value, "homeCity", 120), returnCity: returnCityField(value), travelers: value.travelers, notes: textField(value, "notes", 8000), image: tripImageField(value) };
     }
     case "trip.delete":
     case "stop.remove":
@@ -686,7 +686,7 @@ const LIVE: Make = { id: () => randomUUID(), now: () => new Date().toISOString()
  * The schema this build upgrades every database to, as SQLite's user_version. A schema change adds the next
  * upgrade in createStore and raises this to match; earlier upgrades keep their own numbers.
  */
-export const SCHEMA_VERSION = 41;
+export const SCHEMA_VERSION = 42;
 
 /** A destination as schema 20 saved it, inside one trip, with that trip's owner and name. */
 type TripDestinationRow = Omit<StoredDestination, "cityKey"> & Omit<TripStop, "destinationId"> & { tripName: string };
@@ -1404,6 +1404,12 @@ export function createStore(databasePath: string, ownerEmail: string) {
       if (!hasColumn("legs", "flightNumber")) db.exec("ALTER TABLE legs ADD COLUMN flightNumber TEXT NOT NULL DEFAULT '';");
       db.exec("PRAGMA user_version = 41;");
     }
+    if (version < 42) {
+      // Each trip's focus (TRA-168): what it is mostly about, saved as typed and shown after Focus: on its card on All
+      // trips. Every saved trip starts without one, so no card looks different. A replay keeps each saved focus.
+      if (!hasColumn("trips", "focus")) db.exec("ALTER TABLE trips ADD COLUMN focus TEXT NOT NULL DEFAULT '';");
+      db.exec("PRAGMA user_version = 42;");
+    }
     if (version < SCHEMA_VERSION && db.prepare("PRAGMA foreign_key_check").get()) {
       throw new Error("This upgrade would leave saved items without the trip or destination they belong to. Nothing was changed; review the database against a backup before upgrading.");
     }
@@ -1638,6 +1644,37 @@ export function createStore(databasePath: string, ownerEmail: string) {
       data: { trips: readTrips([...new Set(stops.map((stop) => stop.tripId))]), stops, destinations: readDestinations([destinationId]), legs: [], candidates: readCandidates([destinationId]), churches: readChurches([destinationId]), homeItems: [], tags: [] },
       access,
     };
+  }
+  /**
+   * Every trip and destination the account can open, in alphabetical order, with its owner and who else can open it, as
+   * the account may see (TRA-162): everyone for its own, and only itself for anyone else's, since only an owner sees who
+   * else has access. A destination is open to its owner and to everyone a trip visiting it is shared with, and trips
+   * visit only their owner's destinations, so its owner sees every trip that opens it to someone.
+   */
+  function getAccessOverview(accountId: string): AccessOverview {
+    const self = member(db.prepare("SELECT email, name FROM accounts WHERE id = ?").get(accountId)!);
+    const tripShares = membersBy(db.prepare(`SELECT trip_shares.tripId AS id, accounts.email, accounts.name FROM trip_shares
+      JOIN trips ON trips.id = trip_shares.tripId JOIN accounts ON accounts.id = trip_shares.accountId WHERE trips.ownerId = ? ORDER BY accounts.email`).all(accountId));
+    const destinationShares = membersBy(db.prepare(`SELECT DISTINCT trip_stops.destinationId AS id, accounts.email, accounts.name FROM trip_stops
+      JOIN destinations ON destinations.id = trip_stops.destinationId JOIN trip_shares ON trip_shares.tripId = trip_stops.tripId JOIN accounts ON accounts.id = trip_shares.accountId
+      WHERE destinations.ownerId = ? ORDER BY accounts.email`).all(accountId));
+    const entry = (row: Record<string, unknown>, shares: Map<string, TripMember[]>): AccessEntry => row.ownerId === accountId
+      ? { id: row.id as string, role: "owner", owner: self, sharedWith: shares.get(row.id as string) ?? [] }
+      : { id: row.id as string, role: "editor", owner: member({ email: row.ownerEmail, name: row.ownerName }), sharedWith: [self] };
+    return {
+      trips: db.prepare(`SELECT trips.id, trips.name, trips.ownerId, accounts.email AS ownerEmail, accounts.name AS ownerName FROM trips JOIN accounts ON accounts.id = trips.ownerId
+        WHERE trips.id IN (${VISIBLE_TRIPS}) ORDER BY trips.name COLLATE NOCASE, trips.id`).all(accountId, accountId)
+        .map((row) => ({ ...entry(row, tripShares), name: row.name as string })),
+      destinations: db.prepare(`SELECT destinations.id, destinations.city, destinations.cityFromSuggestion, destinations.ownerId, accounts.email AS ownerEmail, accounts.name AS ownerName FROM destinations
+        JOIN accounts ON accounts.id = destinations.ownerId WHERE destinations.id IN (${VISIBLE_DESTINATIONS}) ORDER BY destinations.city COLLATE NOCASE, destinations.id`).all(accountId, accountId, accountId)
+        .map((row) => ({ ...entry(row, destinationShares), city: row.city as string, cityFromSuggestion: row.cityFromSuggestion === 1 })),
+    };
+  }
+  /** The people in rows of an ID, an email and a name, by ID, in the rows' order. An ID without rows has no entry. */
+  function membersBy(rows: Record<string, unknown>[]): Map<string, TripMember[]> {
+    const members = new Map<string, TripMember[]>();
+    for (const row of rows) members.set(row.id as string, [...(members.get(row.id as string) ?? []), member(row)]);
+    return members;
   }
   function getTripName(accountId: string, id: string): string | undefined {
     if (!tripRole(accountId, id)) return undefined;
@@ -2060,14 +2097,14 @@ export function createStore(databasePath: string, ownerEmail: string) {
         if (changesSaved("trips", input)) {
           const before = existing<Trip>("trips", id);
           const returnCity = input.returnCity === undefined ? before.returnCity : input.returnCity;
-          db.prepare("UPDATE trips SET name = ?, tagline = ?, dateLabel = ?, homeCity = ?, returnCity = ?, travelers = ?, notes = ? WHERE id = ?").run(input.name, input.tagline ?? before.tagline, input.dateLabel, input.homeCity, returnCity, input.travelers, input.notes, id);
+          db.prepare("UPDATE trips SET name = ?, tagline = ?, focus = ?, dateLabel = ?, homeCity = ?, returnCity = ?, travelers = ?, notes = ? WHERE id = ?").run(input.name, input.tagline ?? before.tagline, input.focus ?? before.focus, input.dateLabel, input.homeCity, returnCity, input.travelers, input.notes, id);
           const departingChanged = before.homeCity !== input.homeCity;
           const returningChanged = (before.returnCity ?? before.homeCity) !== (returnCity ?? input.homeCity);
           const affectedLegs = db.prepare("SELECT id FROM legs WHERE tripId = ? AND ((? AND fromId IS NULL) OR (? AND toId IS NULL))").all(id, Number(departingChanged), Number(returningChanged));
           for (const leg of affectedLegs) clearLeg(leg.id as string);
         } else {
           // A new trip belongs to the account that creates it.
-          db.prepare("INSERT INTO trips(id,name,tagline,dateLabel,homeCity,returnCity,travelers,notes,createdAt,ownerId) VALUES(?,?,?,?,?,?,?,?,?,?)").run(id, input.name, input.tagline ?? "", input.dateLabel, input.homeCity, input.returnCity ?? null, input.travelers, input.notes, make.now(), accountId);
+          db.prepare("INSERT INTO trips(id,name,tagline,focus,dateLabel,homeCity,returnCity,travelers,notes,createdAt,ownerId) VALUES(?,?,?,?,?,?,?,?,?,?,?)").run(id, input.name, input.tagline ?? "", input.focus ?? "", input.dateLabel, input.homeCity, input.returnCity ?? null, input.travelers, input.notes, make.now(), accountId);
         }
         if (input.startDate !== undefined) db.prepare("UPDATE trips SET startDate = ? WHERE id = ?").run(input.startDate, id);
         saveTripImage(id, input.image, make);
@@ -2821,7 +2858,7 @@ export function createStore(databasePath: string, ownerEmail: string) {
   // getSnapshot reads everything, for checks and tests. Everything the app shows or changes takes the signed-in account,
   // or an AI connection of the designated owner's.
   return {
-    getSnapshot, getHomeOverview, getTripSnapshot, getDestinationsOverview, getDestinationSnapshot, getTripName, getStopName, getDestinationName, checkHealth, getTripImage, getDestinationImage, getDestinationPhoto, getCandidatePhoto, getChurchPhoto, getDestinationThumbnail, getCandidateThumbnail, getChurchThumbnail, getTripLargeImage, getDestinationLargePhoto, getCandidateLargePhoto, getChurchLargePhoto, applyMutation, authorizeAccount, getAccountByGoogleSubject, authorizeGoogleSignIn, createSession, readSession, deleteSession,
+    getSnapshot, getHomeOverview, getTripSnapshot, getDestinationsOverview, getDestinationSnapshot, getAccessOverview, getTripName, getStopName, getDestinationName, checkHealth, getTripImage, getDestinationImage, getDestinationPhoto, getCandidatePhoto, getChurchPhoto, getDestinationThumbnail, getCandidateThumbnail, getChurchThumbnail, getTripLargeImage, getDestinationLargePhoto, getCandidateLargePhoto, getChurchLargePhoto, applyMutation, authorizeAccount, getAccountByGoogleSubject, authorizeGoogleSignIn, createSession, readSession, deleteSession,
     isAiOwner, aiAccounts, aiTrips, aiTrip, aiDestinations, aiDestination, aiPhoto, proposeAiChanges, getAiProposal, getAiProposalPhoto, decideAiProposal, aiOverview,
     registerAiClient, aiClientPlatform, allowAiConnection, exchangeAiCode, refreshAiTokens, readAiConnection, revokeAiConnection,
     close: () => db.close(),
@@ -2891,6 +2928,7 @@ export function getTripSnapshot(accountId: string, tripId: string, stopId?: stri
 export function getHomeOverview(accountId: string) { return defaultStore().getHomeOverview(accountId); }
 export function getDestinationsOverview(accountId: string) { return defaultStore().getDestinationsOverview(accountId); }
 export function getDestinationSnapshot(accountId: string, destinationId: string) { return defaultStore().getDestinationSnapshot(accountId, destinationId); }
+export function getAccessOverview(accountId: string) { return defaultStore().getAccessOverview(accountId); }
 export function getTripName(accountId: string, id: string) { return defaultStore().getTripName(accountId, id); }
 export function getStopName(accountId: string, tripId: string, stopId: string) { return defaultStore().getStopName(accountId, tripId, stopId); }
 export function getDestinationName(accountId: string, destinationId: string) { return defaultStore().getDestinationName(accountId, destinationId); }

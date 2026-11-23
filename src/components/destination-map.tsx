@@ -4,7 +4,7 @@ import dynamic from "next/dynamic";
 import { useEffect, useId, useMemo, useState } from "react";
 import { ChevronDown } from "lucide-react";
 import { formatSavedDestinationLabel } from "@/lib/destination-label";
-import { destinationMapLayout, MAP_CATEGORIES, MAP_CATEGORY_LABELS, mapCoordinates, placeKey, type DestinationMapAnswer, type DestinationMapLayout, type MapCategory, type SavedPlace, type UnmappedPlace } from "@/lib/destination-map";
+import { destinationMapLayout, lookupText, MAP_CATEGORIES, MAP_CATEGORY_LABELS, placeKey, type DestinationMapAnswer, type DestinationMapLayout, type MapCategory, type SavedPlace, type UnmappedPlace } from "@/lib/destination-map";
 import type { PlaceAnswer } from "@/lib/place-search";
 import type { Destination } from "@/lib/types";
 import { PlaceSymbol } from "./destination-map-symbols";
@@ -33,18 +33,19 @@ function reason(place: UnmappedPlace, areaMissing: boolean): string {
 /**
  * A destination's Map section (TRA-130), open until it is closed: its saved hotels, activities, restaurants and churches,
  * selected or not, on a map, with the places it can't show listed below it by category. Checkboxes choose the categories
- * both show. A place with saved coordinates shows there at once, marked when they are approximate, and isn't looked up
- * (TRA-150). Other places are looked up by their saved addresses and names whenever those or the destination's city
- * change, so the map follows every saved change; places already found stay while new ones are looked up. Places waiting
- * their turn are asked for again until every one is answered. View details opens a place's details.
+ * both show. Places are looked up by their saved addresses and names whenever those or the destination's city change,
+ * so the map follows every saved change; places already found stay while new ones are looked up. A place with saved
+ * coordinates is looked up by its address alone, and shows at its coordinates, marked when they are approximate, when its
+ * address isn't found, or at once without an address (TRA-163). Places waiting their turn are asked for again until every
+ * one is answered. View details opens a place's details.
  */
 export default function DestinationMap({ destination, places, onView }: { destination: Pick<Destination, "id" | "city" | "cityFromSuggestion">; places: SavedPlace[]; onView: (place: SavedPlace) => void }) {
   const [expanded, setExpanded] = useState(true);
   const contentId = useId();
   const [shown, setShown] = useState<readonly MapCategory[]>(MAP_CATEGORIES);
   const city = formatSavedDestinationLabel(destination);
-  // Only places without coordinates to show are looked up.
-  const lookups = places.filter((place) => !mapCoordinates(place));
+  // Every place but one with coordinates to show it at and no address is looked up (TRA-163).
+  const lookups = places.filter((place) => lookupText(place) !== null);
   const keysJson = JSON.stringify(lookups.map((place) => [place.id, placeKey(destination.city, place)]));
   // Try again, and each request for places still waiting their turn.
   const [attempt, setAttempt] = useState(0);

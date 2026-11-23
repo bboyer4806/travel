@@ -121,13 +121,14 @@ test("the trip estimate ends with its note, without a paragraph about what it in
   store.applyMutation({ type: "homeItem.save", ...newItem(), tripId, name: "Pet sitter", price: "300", notes: "" });
 
   const panel = estimate(tripPage(store, tripId));
-  // Everything the estimate shows, in order: the amounts the trip's page showed before TRA-151, then the note, last.
+  // Everything the estimate shows, in order: the amounts the trip's page showed before TRA-151, then the note, last. Each
+  // count of what isn't estimated links to the first one, which screen readers also hear (TRA-165).
   assert.deepEqual(panel.props.children.map((child) => [child.props.className ?? child.type, text(child)]), [
     ["budget-symbol", ""],
     ["h2", "The trip estimate"],
     ["budget-total", "$3,355Partial estimate"],
     ["budget-caption", "Total for all 2 travelers"],
-    ["budget-breakdown", "Travel1 not estimated$1,490Transit miscellaneous$60Hotels1 not estimated$540Activities$65Food$560Shopping$150At home$300Miscellaneous$190"],
+    ["budget-breakdown", "Travel1 not estimated: add the price of travel from Salzburg to Boston$1,490Transit miscellaneous$60Hotels1 not estimated: add the nightly hotel amount for Salzburg$540Activities$65Food$560Shopping$150At home$300Miscellaneous$190"],
     ["budget-note", "2 details still need an estimate or a choice."],
   ]);
   assert.deepEqual(within(panel).filter((node) => node.props.className === "helper"), [], "no explanation follows the note");

@@ -1,7 +1,8 @@
 /**
- * Coordinates saved for a hotel, activity, restaurant or church (TRA-150): where its destination's map shows it without
- * looking it up, and whether they mark the place itself or only roughly where it is. People enter them in the place's
- * editor, or approve them from ChatGPT or Claude. Travel never looks them up, estimates them or checks them.
+ * Coordinates saved for a hotel, activity, restaurant or church (TRA-150): where its destination's map shows it when it
+ * can't find its address, or it has none (TRA-163), and whether they mark the place itself or only roughly where it is.
+ * People enter them in the place's editor, or approve them from ChatGPT or Claude. Travel never looks them up, estimates
+ * them or checks them.
  */
 
 /** Whether coordinates mark the place itself, or only roughly where it is, as for a rental whose address is withheld. */

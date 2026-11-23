@@ -2,13 +2,17 @@
 
 import { ChevronDown } from "lucide-react";
 import { formatCalendarDate, sequenceDates } from "@/lib/trip-dates";
-import { useId, useState, type ReactNode } from "react";
+import { useId, useRef, useState, type ReactNode } from "react";
+import { useFocusFallback } from "@/components/focus-after";
 import type { FoodBudgetMode, ActivitiesBudgetMode, Candidate, Destination, DestinationVisit, Snapshot, Trip, TripStop } from "@/lib/types";
-import { calculateFoodBudget, calculateFoodEstimate, calculateActivitiesBudget, calculateAccommodation, calculateDestinationBudget, calculateHotelEstimate, calculateMiscellaneous } from "@/lib/budget";
+import { calculateFoodBudget, calculateFoodEstimate, calculateActivitiesBudget, calculateAccommodation, calculateDestinationBudget, calculateHotelEstimate, calculateMiscellaneous, type StayCategory } from "@/lib/budget";
 import { formatCurrency, MAX_AMOUNT_DOLLARS, minorAmountValue, parseMinorAmount } from "@/lib/money";
 import { formatSavedDestinationLabel } from "@/lib/destination-label";
 
-export function CurrencyTotals({ totals, empty = "Not estimated" }: { totals: Record<string, number>; empty?: string }) {
+/** Keeps keyboard focus near a control a save removes, from `useFocusFallback`. */
+export type KeepFocus = ReturnType<typeof useFocusFallback>;
+
+export function CurrencyTotals({ totals, empty = "Not estimated" }: { totals: Record<string, number>; empty?: ReactNode }) {
   const entries = Object.entries(totals).sort(([a], [b]) => a.localeCompare(b));
   return entries.length ? <span className="currency-totals">{entries.map(([currency, minor]) =>
     <span key={currency}>{formatCurrency(minor, currency)}</span>)}</span> : <>{empty}</>;
@@ -145,25 +149,30 @@ function BudgetCategory({ name, amount, partial = false, action }: { name: strin
  * the duration-based subtotals and the destination estimate wait for one. Dates, each category's amount with any
  * editor, and the destination estimate always show. The Budget heading shows or hides the breakdowns, which start
  * hidden on every page load; toggling saves nothing.
+ * In a trip, `renderUnset` shows each category's Not set or Not estimated amount as a link to the editor that enters it
+ * (TRA-165). If a save replaces the link while it has keyboard focus, the Budget heading takes focus.
  */
-export function DestinationBudget({ snapshot, visit, stop, onShoppingEdit, onMiscellaneousEdit }: { snapshot: Snapshot; visit: DestinationVisit; stop?: TripStop; onShoppingEdit: () => void; onMiscellaneousEdit: () => void }) {
+export function DestinationBudget({ snapshot, visit, stop, onShoppingEdit, onMiscellaneousEdit, renderUnset }: { snapshot: Snapshot; visit: DestinationVisit; stop?: TripStop; onShoppingEdit: () => void; onMiscellaneousEdit: () => void; renderUnset?: (category: StayCategory, text: string, keepFocus: KeepFocus) => ReactNode }) {
   const [expanded, setExpanded] = useState(false);
   const detailsId = useId();
+  const toggle = useRef<HTMLButtonElement>(null);
+  const keepFocus = useFocusFallback(toggle);
+  const unset = (category: StayCategory, text: string) => renderUnset ? renderUnset(category, text, keepFocus) : text;
   const accommodation = calculateAccommodation(snapshot, visit);
   const activities = calculateActivitiesBudget(snapshot, visit);
   const food = calculateFoodBudget(snapshot, visit);
   const misc = calculateMiscellaneous(visit);
   const estimate = calculateDestinationBudget(snapshot, visit);
-  const shopping = visit.shoppingMinor !== null && visit.shoppingCurrency ? formatCurrency(visit.shoppingMinor, visit.shoppingCurrency) : "Not set";
+  const shopping = visit.shoppingMinor !== null && visit.shoppingCurrency ? formatCurrency(visit.shoppingMinor, visit.shoppingCurrency) : null;
   return <div className="destination-budget">
     {stop ? <DestinationDates stop={stop} /> : <p className="helper">Nights and dates belong to each trip, so stay totals appear on each trip&apos;s page. Budget amounts, methods and selections here are shared by every trip that visits this destination.</p>}
-    <div className="budget-section-heading"><h4><button type="button" className="budget-toggle" aria-expanded={expanded} aria-controls={detailsId} onClick={() => setExpanded((open) => !open)}>Budget<ChevronDown size={18} aria-hidden="true" /></button></h4></div>
+    <div className="budget-section-heading"><h4><button ref={toggle} type="button" className="budget-toggle" aria-expanded={expanded} aria-controls={detailsId} onClick={() => setExpanded((open) => !open)}>Budget<ChevronDown size={18} aria-hidden="true" /></button></h4></div>
     <dl className="budget-categories">
-      <BudgetCategory name="Accommodation" amount={accommodation.totalMinor !== null && accommodation.currency ? formatCurrency(accommodation.totalMinor, accommodation.currency) : "Not estimated"} />
-      <BudgetCategory name="Activities" amount={<CurrencyTotals totals={activities.totalsByCurrency} empty={activities.complete ? "$0" : "Not estimated"} />} partial={!activities.complete && activities.knownCount > 0} />
-      <BudgetCategory name="Food" amount={<CurrencyTotals totals={food.totalsByCurrency} empty={food.complete ? "$0" : "Not estimated"} />} partial={!food.complete && food.knownCount > 0} />
-      <BudgetCategory name="Shopping" amount={shopping} action={<button type="button" className="text-button" onClick={onShoppingEdit}>Edit shopping budget<span className="sr-only"> for {formatSavedDestinationLabel(visit)}</span></button>} />
-      <BudgetCategory name="Miscellaneous" amount={misc.subtotalMinor !== null && misc.currency ? formatCurrency(misc.subtotalMinor, misc.currency) : "Not estimated"} action={<button type="button" className="text-button" onClick={onMiscellaneousEdit}>Edit miscellaneous budget<span className="sr-only"> for {formatSavedDestinationLabel(visit)}</span></button>} />
+      <BudgetCategory name="Accommodation" amount={accommodation.totalMinor !== null && accommodation.currency ? formatCurrency(accommodation.totalMinor, accommodation.currency) : unset("hotels", "Not estimated")} />
+      <BudgetCategory name="Activities" amount={<CurrencyTotals totals={activities.totalsByCurrency} empty={activities.complete ? "$0" : unset("activities", "Not estimated")} />} partial={!activities.complete && activities.knownCount > 0} />
+      <BudgetCategory name="Food" amount={<CurrencyTotals totals={food.totalsByCurrency} empty={food.complete ? "$0" : unset("food", "Not estimated")} />} partial={!food.complete && food.knownCount > 0} />
+      <BudgetCategory name="Shopping" amount={shopping ?? unset("shopping", "Not set")} action={<button type="button" className="text-button" onClick={onShoppingEdit}>Edit shopping budget<span className="sr-only"> for {formatSavedDestinationLabel(visit)}</span></button>} />
+      <BudgetCategory name="Miscellaneous" amount={misc.subtotalMinor !== null && misc.currency ? formatCurrency(misc.subtotalMinor, misc.currency) : unset("miscellaneous", "Not estimated")} action={<button type="button" className="text-button" onClick={onMiscellaneousEdit}>Edit miscellaneous budget<span className="sr-only"> for {formatSavedDestinationLabel(visit)}</span></button>} />
     </dl>
     {stop && <div className="destination-budget-total"><span>Destination {estimate.complete ? "estimate" : "partial estimate"}<small>Accommodation, activities, food, shopping, and miscellaneous · whole party</small></span><strong><CurrencyTotals totals={estimate.totalsByCurrency} /></strong></div>}
     <div id={detailsId} className="destination-budget-details" hidden={!expanded}>
@@ -174,7 +183,7 @@ export function DestinationBudget({ snapshot, visit, stop, onShoppingEdit, onMis
       <h5>Food</h5>
       <FoodSummary snapshot={snapshot} destination={visit} />
       <h5>Shopping</h5>
-      <div className="destination-budget-total"><span>Shopping<small>Optional · whole party, entire stay</small></span><strong>{shopping}</strong></div>
+      <div className="destination-budget-total"><span>Shopping<small>Optional · whole party, entire stay</small></span><strong>{shopping ?? "Not set"}</strong></div>
       <h5>Miscellaneous</h5>
       <MiscellaneousSummary destination={visit} />
     </div>

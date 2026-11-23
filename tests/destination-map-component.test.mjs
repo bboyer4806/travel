@@ -360,7 +360,8 @@ test("the map frames its markers when their positions change, and leaves zoom an
   assert.equal(map.markers.length, 1, "markers from before are cleared");
 });
 
-// TRA-150: places with saved coordinates, exact or approximate.
+// TRA-150: places with saved coordinates, exact or approximate. TRA-163: the map shows them there when their addresses
+// aren't found, or they have none.
 const coordinated = (latitude, longitude, accuracy = "exact", review = false) => ({ latitude, longitude, accuracy, review });
 const placed = [
   { id: "h1", category: "hotels", name: "Hotel Sacher", address: "Philharmonikerstraße 4", coordinates: coordinated(48.20406, 16.36949) },
@@ -370,14 +371,16 @@ const placed = [
   { id: "c1", category: "churches", name: "St. Stephen's Cathedral", address: "Stephansplatz 1", coordinates: coordinated(48.20857, 16.37307, "exact", true) },
 ];
 
-test("places with saved coordinates show at once, only the others are looked up, and coordinates waiting for review say why a place isn't shown", async () => {
-  const map = destinationMapSection(() => ["found", { a1: found(48.2046, 16.3682), c1: { status: "missing" } }], placed);
-  // Before the answer, the places with coordinates are already on the map, and the rest are being found.
-  assert.deepEqual(map.markers(), [["h1"], ["h2"], ["a2"]]);
+test("a place with coordinates waits for its address's answer and shows where it is found, or else at its coordinates, while one without an address shows at them at once (TRA-163)", async () => {
+  const map = destinationMapSection(() => ["found", { h1: found(48.2041, 16.3695), h2: { status: "missing" }, a1: found(48.2046, 16.3682), c1: { status: "missing" } }], placed);
+  // Before the answer, only Melk Abbey, with coordinates and no address, is on the map, and the rest are being found.
+  assert.deepEqual(map.markers(), [["a2"]]);
   assert.equal(map.status(), "Finding places on the map…");
   await map.update();
   assert.equal(map.requests.length, 1);
   assert.deepEqual(map.markers(), [["h1"], ["h2"], ["a1"], ["a2"]]);
+  assert.deepEqual(map.position(0), [48.2041, 16.3695], "the hotel where its address was found, not at its coordinates");
+  assert.deepEqual(map.position(1), [48.2167, 16.3958], "the rental, whose address wasn't found, at its coordinates");
   assert.deepEqual(map.position(3), [48.22842, 15.33437], "Melk Abbey, beyond 50 km, where its coordinates are");
   assert.deepEqual(map.unmapped(), ["Churches", "St. Stephen's CathedralIts address changed after its coordinates were saved, so they wait to be checked in its editor. No place nearby has its address or name.View details for St. Stephen's Cathedral"]);
   // The approximate rental's dashed ring is explained below the map.
@@ -389,20 +392,38 @@ test("places with saved coordinates show at once, only the others are looked up,
   assert.deepEqual(map.markers(), [["a1"], ["a2"]]);
   assert.deepEqual(notes(), [], "with no approximate place shown, nothing explains the ring");
   assert.equal(map.requests.length, 1, "filtering looks nothing up");
+  map.checkbox("Hotels").props.onChange();
+  // New coordinates for the hotel look nothing up, and it stays where its address was found.
+  await map.update({ places: placed.map((place) => place.id === "h1" ? { ...place, coordinates: coordinated(48.2, 16.37) } : place) });
+  assert.equal(map.requests.length, 1);
+  assert.deepEqual(map.position(0), [48.2041, 16.3695]);
+  // Removing them looks it up again, by its address and name.
+  await map.update({ places: placed.map((place) => place.id === "h1" ? { ...place, coordinates: null } : place) });
+  assert.equal(map.requests.length, 2);
+  assert.deepEqual(map.position(0), [48.2041, 16.3695]);
 });
 
-test("a destination whose places all have coordinates asks for no lookup, and places them even where the destination can't be found", async () => {
-  const all = destinationMapSection(() => { throw new Error("Nothing to ask for"); }, placed.filter((place) => place.coordinates && !place.coordinates.review));
+test("a destination whose places with coordinates have no addresses asks for no lookup, and places with coordinates show at them where the destination or their addresses can't be found (TRA-163)", async () => {
+  const unaddressed = placed.filter((place) => place.coordinates && !place.coordinates.review).map((place) => ({ ...place, address: "" }));
+  const all = destinationMapSection(() => { throw new Error("Nothing to ask for"); }, unaddressed);
   await all.update();
   assert.deepEqual(all.requests, []);
   assert.deepEqual(all.markers(), [["h1"], ["h2"], ["a2"]]);
   assert.equal(all.status(), "");
   assert.deepEqual(all.unmapped(), []);
-  // Where the destination itself can't be found, the others are listed without reasons of their own, but coordinates waiting for review still say so.
-  const nowhere = destinationMapSection(() => ["missing", { a1: { status: "missing" }, c1: { status: "missing" } }], placed);
+  // Where the destination itself can't be found, places with coordinates are at them, and the others are listed without
+  // reasons of their own, though coordinates waiting for review still say so.
+  const nowhere = destinationMapSection(() => ["missing", Object.fromEntries(["h1", "h2", "a1", "c1"].map((id) => [id, { status: "missing" }]))], placed);
   await nowhere.update();
   assert.deepEqual(nowhere.markers(), [["h1"], ["h2"], ["a2"]]);
+  assert.deepEqual(nowhere.position(0), [48.20406, 16.36949]);
   assert.deepEqual(nowhere.unmapped(), ["Activities", "AlbertinaView details for Albertina", "Churches", "St. Stephen's CathedralIts address changed after its coordinates were saved, so they wait to be checked in its editor.View details for St. Stephen's Cathedral"]);
+  // When the lookups can't be made, places with coordinates are at them too, and the others wait for Try again.
+  const offline = destinationMapSection(() => { throw new Error("Offline"); }, placed);
+  await offline.update();
+  assert.deepEqual(offline.markers(), [["h1"], ["h2"], ["a2"]]);
+  assert.deepEqual(offline.unmapped(), ["Activities", "AlbertinaCouldn't be looked up right now.View details for Albertina", "Churches", "St. Stephen's CathedralIts address changed after its coordinates were saved, so they wait to be checked in its editor. Couldn't be looked up right now.View details for St. Stephen's Cathedral"]);
+  assert.equal(offline.button("Try again").length, 1);
 });
 
 test("an approximate place's marker, tooltip and popup say it is approximate, and never name an address", () => {

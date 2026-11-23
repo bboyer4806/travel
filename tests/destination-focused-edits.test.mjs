@@ -122,6 +122,8 @@ runInNewContext(ts.transpileModule(readFileSync(new URL("../src/components/desti
       "react/jsx-runtime": { jsx: element, jsxs: element, Fragment: "fragment" },
       "next/link": { default: "a" }, "lucide-react": { ChevronDown: "icon" },
       "@/lib/trip-dates": tripDates, "@/lib/budget": budget, "@/lib/money": money, "@/lib/destination-label": destinationLabel,
+      // Only the destination budget, which these tests don't render, keeps focus with it (TRA-165).
+      "@/components/focus-after": { useFocusFallback() {} },
     };
     if (!(name in modules)) throw new Error("Unexpected component import: " + name);
     return modules[name];

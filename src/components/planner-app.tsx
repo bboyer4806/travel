@@ -336,7 +336,7 @@ export default function PlannerApp({ initialData, initialBudgets, access = {}, d
     const cityFromSuggestion = fields.has("cityFromSuggestion") || undefined;
     switch (editor.kind) {
       case "delete": void perform(editor.mutation, "Removed from your notebook.", editor.redirect); break;
-      case "trip": void perform({ type: "trip.save", ...itemToSave(editor.item), name: text("name"), tagline: text("tagline"), startDate: text("startDate") || null, dateLabel: text("dateLabel"), homeCity: text("homeCity"), returnCity: fields.has("differentReturn") ? text("returnCity") : null, travelers: Number(text("travelers")), notes: text("notes") }, undefined, undefined, tripImageForm(tripImage, editor.item?.image ?? null)); break;
+      case "trip": void perform({ type: "trip.save", ...itemToSave(editor.item), name: text("name"), tagline: text("tagline"), focus: text("focus"), startDate: text("startDate") || null, dateLabel: text("dateLabel"), homeCity: text("homeCity"), returnCity: fields.has("differentReturn") ? text("returnCity") : null, travelers: Number(text("travelers")), notes: text("notes") }, undefined, undefined, tripImageForm(tripImage, editor.item?.image ?? null)); break;
       case "entryRequirements": {
         void perform({ type: "destination.entryRequirements", id: editor.item.id, requirements: entryRequirementsFromForm(fields, researchLinks) }, "Entry requirements saved.");
         break;
@@ -580,7 +580,7 @@ export default function PlannerApp({ initialData, initialBudgets, access = {}, d
               const itemAccess = access[item.id];
               return <article className={"trip-card tone-" + (index % 3)} key={item.id} {...tripDrag.card(item.id)}>
                 <Link className="trip-card-main" href={"/trips/" + item.id}><TripImageView trip={item} frame="card" /><div className="trip-card-top"><span className="trip-number">TRIP {String(index + 1).padStart(2, "0")}</span><Compass size={38} strokeWidth={1} /></div>
-                  <h3>{item.name}</h3><p className="city-list"><MapPin size={15} />{places.length ? places.map((place) => formatSavedDestinationLabel(place)).join(" → ") : "Destinations to be decided"}</p>
+                  <h3>{item.name}</h3>{item.focus && <p className="trip-focus"><strong>Focus:</strong> {item.focus}</p>}<p className="city-list"><MapPin size={15} />{places.length ? places.map((place) => formatSavedDestinationLabel(place)).join(" → ") : "Destinations to be decided"}</p>
                   <div className="trip-meta"><span><CalendarDays size={15} />{item.startDate ? formatCalendarDate(item.startDate) + " → " + formatCalendarDate(item.endDate) : item.dateLabel || "Whenever the time is right"}</span><span><Users size={15} />{item.travelers} {item.travelers === 1 ? "traveler" : "travelers"}</span>{itemAccess.role === "editor" && <span><Share2 size={15} />{"Shared by " + memberLabel(itemAccess.owner)}</span>}</div>
                   <TripTagList tags={item.tags} />
                   <div className="card-budget"><div><span className="small-label">ESTIMATED BUDGET</span><BudgetValue budget={estimate} /></div><span className="round-arrow"><ArrowRight size={19} /></span></div>
@@ -666,6 +666,7 @@ export default function PlannerApp({ initialData, initialBudgets, access = {}, d
       {editor.kind === "trip" && <>
         <Field label="Trip name" wide><input name="name" defaultValue={editor.item?.name} required maxLength={120} placeholder="A long weekend in the mountains" /></Field>
         <Field label="Tagline" hint="Shown in capitals above the trip’s name on its page. Leave it blank for the default." wide><input name="tagline" defaultValue={editor.item?.tagline} maxLength={120} placeholder={DEFAULT_TRIP_TAGLINE} /></Field>
+        <Field label="Focus" hint="What the trip is mostly about, shown after “Focus:” on its card in All trips. Leave it blank to leave it off the card." wide><input name="focus" defaultValue={editor.item?.focus} maxLength={120} placeholder="History, architecture, local cuisine" /></Field>
         <Field label="General date" hint="Exact dates can wait."><input name="dateLabel" defaultValue={editor.item?.dateLabel} maxLength={120} placeholder="Spring 2027, or sometime soon" /></Field>
         <Field label="Trip start date" hint="Destination dates and the trip end are calculated from this date and each stay’s nights."><input name="startDate" type="date" min="0001-01-01" max="9999-12-31" defaultValue={editor.item?.startDate ?? ""} /></Field>
         <p className="helper wide">Trip end (calculated after saving): {formatCalendarDate(editor.item?.endDate)}</p>

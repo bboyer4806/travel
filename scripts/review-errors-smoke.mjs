@@ -150,7 +150,7 @@ for (const [label, firstPath] of [
     assert.equal((await server.mutation({ type: "trip.delete", id: saved.id })).ok, true);
 
     if (label === "page-first") {
-      const validPaths = ["/", `/trips/${tripId}`, `/trips/${tripId}/destinations/${destinationId}/hotels`, "/destinations", `/destinations/${destinationId}`, `/destinations/${destinationId}/hotels`];
+      const validPaths = ["/", `/trips/${tripId}`, `/trips/${tripId}/destinations/${destinationId}/hotels`, "/destinations", `/destinations/${destinationId}`, `/destinations/${destinationId}/hotels`, "/access"];
       for (const path of validPaths) assert.equal((await server.request(path)).status, 200, path);
       for (const path of [
         `/trips/${missingId}`,

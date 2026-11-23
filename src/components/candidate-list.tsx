@@ -1,7 +1,8 @@
-import { ArrowDown, ArrowUp, Binoculars, Check, MapPin, Pencil, Plus, Star, Trash2 } from "lucide-react";
+import { ArrowDown, ArrowUp, Binoculars, Check, Clock, MapPin, Pencil, Plus, Star, Trash2 } from "lucide-react";
 import { CandidateGallery, GalleryPlaceholder } from "./candidate-gallery";
 import { ResearchLinks } from "./research-links";
 import { RestaurantTypeTags } from "./restaurant-types";
+import { formatEstimatedTime } from "@/lib/estimated-time";
 import { formatCurrency } from "@/lib/money";
 import { HALF_PAGE } from "@/lib/photo-sizes";
 import type { Candidate, Category, Destination, Mutation } from "@/lib/types";
@@ -43,6 +44,8 @@ export default function CandidateList({ items, category, destination, busy, onEd
           onClick={(event) => onMutate({ type: "candidate.mustDo", id: item.id, mustDo: !item.mustDo }, item.mustDo ? "Must do removed." : "Marked as must do.", event.currentTarget)}>
           <Star size={15} fill={item.mustDo ? "currentColor" : "none"} />{item.mustDo ? "Must do" : "Mark as must do"}<span className="sr-only"> for {item.name}</span>
         </button>}
+        {/* An activity's estimated time, only when it has one (TRA-170). */}
+        {item.estimatedMinutes !== null && <p className="idea-time"><Clock size={15} aria-hidden="true" /><span className="sr-only">Estimated time: </span>{formatEstimatedTime(item.estimatedMinutes)}</p>}
         {item.address && <p className="idea-address"><MapPin size={15} />{item.address}</p>}
         {item.notes && <p className="idea-notes">{item.notes}</p>}
         <ResearchLinks links={item.links ?? []} />

@@ -28,5 +28,7 @@
 .months input { display: block; width: 100%; min-width: 0; min-height: 40px; padding: 8px; border: 1px solid #ccd6c7; border-radius: 5px; background: #fffffc; color: var(--ink); font-size: 13px; }
 @media (max-width: 540px) {
   .panel { padding: 16px; }
+  /* TRA-156: in a trip's destination cards, 12px of padding and 12px apart. */
+  :global(.trip-page) .panel { padding: 12px; margin: 12px 0; }
   .months input { font-size: 16px; }
 }

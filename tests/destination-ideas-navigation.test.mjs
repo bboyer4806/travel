@@ -5,6 +5,7 @@ import test from "node:test";
 import { runInNewContext } from "node:vm";
 import ts from "typescript";
 import * as coordinates from "../src/lib/coordinates.ts";
+import * as estimatedTime from "../src/lib/estimated-time.ts";
 import * as galleryDraft from "../src/lib/gallery-draft.ts";
 import * as imageLimits from "../src/lib/image-limits.ts";
 import * as photoSizes from "../src/lib/photo-sizes.ts";
@@ -74,7 +75,7 @@ function harness(ideas, width) {
     "next/link": { default: "a" }, "lucide-react": new Proxy({}, { get: (_, name) => "icon:" + String(name) }),
     // Add image by URL (TRA-139), tested in image-by-url.test.mjs, stands in as an element showing what the editor gives it.
     "./image-by-url": { AddImageByUrl: (props) => ({ type: "AddImageByUrl", props }) },
-    "@/lib/coordinates": coordinates, "@/lib/gallery-draft": galleryDraft, "@/lib/image-limits": imageLimits, "@/lib/photo-sizes": photoSizes, "@/lib/money": money, "@/lib/types": types, "@/lib/uuid": uuid,
+    "@/lib/coordinates": coordinates, "@/lib/estimated-time": estimatedTime, "@/lib/gallery-draft": galleryDraft, "@/lib/image-limits": imageLimits, "@/lib/photo-sizes": photoSizes, "@/lib/money": money, "@/lib/types": types, "@/lib/uuid": uuid,
   };
   const require = (name) => {
     // A CSS module's class names are their own names.

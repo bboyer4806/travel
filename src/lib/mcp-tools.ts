@@ -36,7 +36,7 @@ const lastChecked = { type: ["string", "null"], pattern: DATE, description: "Whe
 const LOCAL_TIME = "^\\d{4}-(0[1-9]|1[0-2])-(0[1-9]|[12]\\d|3[01])T([01]\\d|2[0-3]):[0-5]\\d$";
 const minutes = (description: string) => ({ type: "integer", minimum: 0, maximum: MAX_LAYOVER_MINUTES, description });
 
-/** A hotel's, activity's, restaurant's or church's coordinates for its destination's map (TRA-150), or null to remove them. */
+/** A hotel's, activity's, restaurant's or church's coordinates for its destination's map (TRA-150, TRA-163), or null to remove them. */
 const coordinates = {
   type: ["object", "null"], additionalProperties: false, required: ["latitude", "longitude", "accuracy"],
   properties: {
@@ -44,7 +44,7 @@ const coordinates = {
     longitude: { type: "number", minimum: -180, maximum: 180, description: "Degrees east, negative for west, such as 15.3343." },
     accuracy: { type: "string", enum: COORDINATE_ACCURACIES, description: "exact when they mark the place itself; approximate when they only mark roughly where it is, as for a rental whose address is withheld. The map says a place is approximate, and never shows it as at an address." },
   },
-  description: "Where the place is, or null to remove its coordinates. Its destination's map shows it there instead of looking it up by its address or name, however far it is from the destination. Give only coordinates from a source you can name, never guesses.",
+  description: "Where the place is, or null to remove its coordinates. Its destination's map looks the place up by its address first, and shows it at these coordinates, however far it is from the destination, when no one place has its address or it has none. Give only coordinates from a source you can name, never guesses.",
 };
 
 function change(type: string, description: string, properties: Record<string, unknown>, required: string[]) {
@@ -59,7 +59,7 @@ function fieldSchema(field: EditableField): Record<string, unknown> {
     case "url": return text(description, 2048);
     case "amount": return amount(description);
     case "boolean": return flag(description);
-    case "whole": return { type: field.nullable ? ["integer", "null"] : "integer", minimum: field.min, maximum: field.max, description };
+    case "whole": return { type: field.nullable ? ["integer", "null"] : "integer", minimum: field.min, ...(field.max !== undefined && { maximum: field.max }), description };
     case "number": return { type: ["number", "null"], description };
     case "choice": return { type: "string", enum: field.values, description };
     case "date": return { type: ["string", "null"], pattern: DATE, description };
@@ -268,7 +268,7 @@ export const TOOLS = [
   },
   {
     name: "get_trip", title: "Get a trip", annotations: readOnly, inputSchema: input({ trip_id: id("The trip's id.") }),
-    description: "One trip with everything on its page: its tagline, its headline image's version and crops in image, or null without one, which get_photo shows, stays, travel between them with a flight's airline and flightNumber and each layover's plan in layoverPlans, At home items, the destinations it visits with their hotels, activities, restaurants, churches and research, and its estimated budget. Amounts are whole USD cents for the whole party; null is not estimated. Each idea's and church's coordinates are null, or place it on its destination's map, unless review is true: its address changed after they were saved, so the map doesn't use them.",
+    description: "One trip with everything on its page: its tagline, its headline image's version and crops in image, or null without one, which get_photo shows, stays, travel between them with a flight's airline and flightNumber and each layover's plan in layoverPlans, At home items, the destinations it visits with their hotels, activities, restaurants, churches and research, and its estimated budget. Amounts are whole USD cents for the whole party; null is not estimated. Each idea's and church's coordinates are null, or place it on its destination's map when its address isn't found or it has none, unless review is true: its address changed after they were saved, so the map doesn't use them.",
   },
   {
     name: "list_destinations", title: "List destinations", annotations: readOnly, inputSchema: noInput,
@@ -276,7 +276,7 @@ export const TOOLS = [
   },
   {
     name: "get_destination", title: "Get a destination", annotations: readOnly, inputSchema: input({ destination_id: id("The destination's id.") }),
-    description: "One destination with everything on its page: its tagline, notes, budget amounts and methods, typical weather with its monthly climate averages, entry requirements, health and safety, photos with the primary one, its headline image, in mainImageId, hotels, activities, restaurants, churches, and each trip's stay there. Amounts are whole USD cents for the whole party. Each idea's and church's coordinates are null, or place it on the destination's map, unless review is true: its address changed after they were saved, so the map doesn't use them. A place without usable coordinates is looked up by its address or name within 50 km of the destination.",
+    description: "One destination with everything on its page: its tagline, notes, budget amounts and methods, typical weather with its monthly climate averages, entry requirements, health and safety, photos with the primary one, its headline image, in mainImageId, hotels, activities, restaurants, churches, and each trip's stay there. Amounts are whole USD cents for the whole party. Each idea's and church's coordinates are null, or place it on the destination's map when its address isn't found or it has none, unless review is true: its address changed after they were saved, so the map doesn't use them. The map looks each place up by its address within 50 km of the destination, and one without usable coordinates by its name too.",
   },
   {
     name: "list_accounts", title: "List accounts", annotations: readOnly, inputSchema: noInput,

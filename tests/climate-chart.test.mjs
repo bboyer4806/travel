@@ -5,10 +5,11 @@ import { runInNewContext } from "node:vm";
 import ts from "typescript";
 import * as typicalWeather from "../src/lib/typical-weather.ts";
 import { aiSetup } from "./ai-fixtures.mjs";
+import { cssRules, onlyRule } from "./css-rules.mjs";
 
 // TRA-135: the monthly Typical weather chart, its section and its editor, run with a small hook harness: no browser or
 // server is involved. Where the chart's labels and columns sit is the CSS module's, checked at the end.
-const { MONTHS, climateMonthText, temperatureScale } = typicalWeather;
+const { MONTHS, climateMonthText, precipitationScale, temperatureScale } = typicalWeather;
 const compile = (path) => ts.transpileModule(readFileSync(new URL(path, import.meta.url), "utf8"), {
   compilerOptions: { module: ts.ModuleKind.CommonJS, jsx: ts.JsxEmit.ReactJSX, target: ts.ScriptTarget.ES2022 },
 }).outputText;
@@ -75,7 +76,16 @@ function chart(props) {
     readout: () => text(find((node) => has(node, "readout"))[0]),
     legend: () => copy(find((node) => has(node, "legend"))[0].props.children.filter(Boolean).map(text)),
     lines: () => Object.fromEntries(find((node) => node.type === "polyline").map((node) => [node.props.className, node.props.points])),
-    ticks: () => copy(find((node) => has(node, "axis"))[0].props.children.map(text)),
+    ticks: () => copy(find((node) => has(node, "axis") && !has(node, "precipitationAxis"))[0].props.children.map(text)),
+    /** The inches axis at the right (TRA-164): each tick's label and its distance from the top of the plot. */
+    precipitationTicks: () => copy(find((node) => has(node, "precipitationAxis"))[0].props.children.map((tick) => [text(tick), tick.props.style.top])),
+    /** Each axis's ticks' distances from the top of the plot, in percent, so the two can be compared. */
+    tickTops: () => find((node) => has(node, "axis")).map((axis) => axis.props.children.map((tick) => Number.parseFloat(tick.props.style.top))),
+    /** Each month's precipitation bar: where it is across the plot and how tall. */
+    bars: () => copy(find((node) => has(node, "bar")).map((node) => [node.props.style.left, node.props.style.height])),
+    /** What the plot draws, back to front. */
+    layers: () => [area().props.children].flat().filter(Boolean).map((child) => has(child, "bars") ? "bars" : nodes(child).some((node) => node.type === "polyline") ? "lines"
+      : nodes(child).some((node) => has(node, "grid")) ? "gridlines" : String(child.props.className)),
     crosshair: () => find((node) => has(node, "crosshair"))[0]?.props.x1,
     band: () => find((node) => has(node, "band"))[0]?.props.style.left,
     shownPoints: () => find((node) => has(node, "shownPoint")).map((node) => node.props.style.left),
@@ -96,7 +106,7 @@ const values = (index) => {
   return `Average high${highF} °FAverage low${lowF} °FPrecipitation${precipitationIn} in`;
 };
 
-test("the chart draws every month's average high and low as two lines on one °F axis, with a legend, its source and a table", () => {
+test("the chart draws every month's average high and low as two lines on a °F axis over its precipitation as bars on an inches axis, with a legend, its source and a table", () => {
   const view = chart({ climate: climate(), startMonth: null });
   // January to December, each a radio button named with its averages, shown by its abbreviation or initial.
   assert.deepEqual(view.labels().map((label) => nodes(label).filter((node) => has(node, "abbreviation") || has(node, "initial")).map(text)), MONTHS.map((month) => [month.slice(0, 3), month[0]]));
@@ -108,12 +118,39 @@ test("the chart draws every month's average high and low as two lines on one °F
   const points = (key) => climate().months.map((month, index) => `${index + 0.5},${(scale.max - month[key]) / (scale.max - scale.min) * 100}`).join(" ");
   assert.deepEqual(view.lines(), { high: points("highF"), low: points("lowF") });
   assert.deepEqual(view.ticks(), ["20°", "30°", "40°", "50°", "60°", "70°", "80°"]);
-  assert.deepEqual(view.legend(), ["Average high (°F)", "Average low (°F)"]);
+  // TRA-164: each month's precipitation is a bar at the middle of its column, as tall as its share of the inches axis at
+  // the right, which rises from 0 in the °F axis's intervals, so the two axes share every gridline.
+  assert.deepEqual(precipitationScale(climate().months, 6), { max: 3, ticks: [0, 0.5, 1, 1.5, 2, 2.5, 3] });
+  assert.deepEqual(view.bars(), climate().months.map((month, index) => [left(index), month.precipitationIn / 3 * 100 + "%"]));
+  assert.deepEqual(view.precipitationTicks().map(([label]) => label), ["0 in", "0.5 in", "1 in", "1.5 in", "2 in", "2.5 in", "3 in"]);
+  const [temperatureTops, precipitationTops] = view.tickTops();
+  assert.deepEqual(precipitationTops.map((top) => top.toFixed(6)), temperatureTops.map((top) => top.toFixed(6)));
+  assert.deepEqual(view.layers(), ["gridlines", "bars", "lines", "points", "months"], "the bars sit over the gridlines and under the lines");
+  assert.deepEqual(view.legend(), ["Average high (°F)", "Average low (°F)", "Precipitation (in)"]);
   assert.equal(text(view.source()), "Historical averages for 1991–2020 from Test climate normals. These are typical conditions from past years, not a forecast.");
   assert.deepEqual(view.rows(), [["Month", "Average high", "Average low", "Precipitation"], ...climate().months.map((month, index) => [MONTHS[index], `${month.highF} °F`, `${month.lowF} °F`, `${month.precipitationIn} in`])]);
   // A source given as a link opens in a new tab.
   const linked = chart({ climate: climate("https://example.com/normals"), startMonth: null }).source();
   assert.deepEqual(nodes(linked).filter((node) => node.type === "a").map((node) => [node.props.href, node.props.target, node.props.rel]), [["https://example.com/normals", "_blank", "noopener noreferrer"]]);
+});
+
+test("a month without precipitation charts no bar and reads 0 in, as does a year without any (TRA-164)", () => {
+  const recorded = (totals) => ({ ...climate(), months: climate().months.map((month, index) => ({ ...month, precipitationIn: totals[index] })) });
+  // A little rain in winter and none in summer: the axis rises in tenths to reach the wettest month.
+  const winter = [0.2, 0.1, 0.1, 0, 0, 0, 0, 0, 0, 0, 0.1, 0.2];
+  const view = chart({ climate: recorded(winter), startMonth: null });
+  assert.deepEqual(view.precipitationTicks().map(([label]) => label), ["0 in", "0.1 in", "0.2 in", "0.3 in", "0.4 in", "0.5 in", "0.6 in"]);
+  assert.deepEqual(view.bars().map(([, height]) => height), winter.map((total) => total / 0.6 * 100 + "%"));
+  assert.equal(view.bars()[6][1], "0%");
+  view.choose(6);
+  assert.equal(view.readout(), "JulyAverage high79 °FAverage low61 °FPrecipitation0 in");
+  assert.deepEqual(view.rows()[7], ["July", "79 °F", "61 °F", "0 in"]);
+  assert.match(text(view.labels()[6]), /July: average high 79 °F, average low 61 °F, precipitation 0 in$/);
+  // A year without precipitation keeps its axis and draws every bar at 0.
+  const dry = chart({ climate: recorded(MONTHS.map(() => 0)), startMonth: 0 });
+  assert.deepEqual(dry.precipitationTicks().map(([label]) => label), ["0 in", "0.1 in", "0.2 in", "0.3 in", "0.4 in", "0.5 in", "0.6 in"]);
+  assert.deepEqual(dry.bars().map(([, height]) => height), MONTHS.map(() => "0%"));
+  assert.equal(dry.readout(), "JanuaryYour stay beginsAverage high37 °FAverage low27 °FPrecipitation0 in");
 });
 
 test("without a trip's dates no month is chosen, and choosing one shows its averages without changing them", () => {
@@ -136,7 +173,7 @@ test("in a trip, the month the stay begins is chosen at first and stays marked a
   const view = chart({ climate: climate(), startMonth: 4 });
   assert.equal(view.chosen(), 4);
   assert.equal(view.readout(), "MayYour stay begins" + values(4));
-  assert.deepEqual(view.legend(), ["Average high (°F)", "Average low (°F)", "Your stay begins"]);
+  assert.deepEqual(view.legend(), ["Average high (°F)", "Average low (°F)", "Precipitation (in)", "Your stay begins"]);
   const stayMarks = () => view.labels().map((label) => nodes(label).some((node) => has(node, "stayMonth")));
   assert.deepEqual(stayMarks(), MONTHS.map((_, index) => index === 4));
   assert.match(text(view.labels()[4]), /May: average high 69 °F, average low 51 °F, precipitation 2\.8 in\. Your stay begins this month\.$/);
@@ -262,6 +299,16 @@ test("narrow charts show each month's initial, every month fills an equal full-h
   assert.match(narrow, /\.abbreviation \{ display: none; \}/);
   assert.match(narrow, /\.initial \{ display: inline; \}/);
   assert.match(rule(".initial"), /display: none/);
+});
+
+test("bars rise from the bottom of the plot, half a month wide and at most 24px, beside an inches axis that fits its labels at every width (TRA-164)", () => {
+  const file = "../src/components/climate-chart.module.css";
+  const bar = onlyRule(file, ".bar");
+  assert.deepEqual([bar.position, bar.bottom, bar.width, bar["border-radius"], bar.transform], ["absolute", "0", "min(24px, 100% / 24)", "4px 4px 0 0", "translateX(-50%)"]);
+  // The °F axis at the left and the inches axis at the right, 38px wide for its widest label, 300 in, on every width.
+  const plots = cssRules(file).filter(([selector]) => selector === ".plot").map(([, declarations, atRule]) => [atRule, declarations["grid-template-columns"]]);
+  assert.deepEqual(plots, [[null, "34px minmax(0, 1fr) 38px"], ["@container(max-width:400px)", "30px minmax(0, 1fr) 38px"]]);
+  assert.deepEqual(onlyRule(file, ".precipitationAxis span"), { right: "auto", left: "8px", "white-space": "nowrap" });
 });
 
 test("a table too wide for a phone scrolls sideways within its own box, below its summary, never past its panel (TRA-157)", () => {

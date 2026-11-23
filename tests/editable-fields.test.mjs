@@ -151,7 +151,10 @@ test("a field added to the contract is described to assistants, checked and show
   assert.deepEqual([required.includes("packingNotes"), required.includes("rooms")], [false, true], "assistants know which a save may leave out");
 
   const trip = { name: "Lisbon", dateLabel: "", homeCity: "Boston", travelers: 2, notes: "", rooms: 1 };
-  assert.deepEqual(readFields(fields, { ...trip, packingNotes: "  Raincoat  ", rooms: 2 }), { name: "Lisbon", tagline: undefined, startDate: undefined, dateLabel: "", homeCity: "Boston", returnCity: undefined, travelers: 2, notes: "", packingNotes: "Raincoat", rooms: 2 });
+  const read = readFields(fields, { ...trip, packingNotes: "  Raincoat  ", rooms: 2 });
+  assert.deepEqual([read.packingNotes, read.rooms], ["Raincoat", 2], "the store checks them by their kinds' rules");
+  const others = Object.fromEntries(Object.entries(read).filter(([name]) => name !== "packingNotes" && name !== "rooms"));
+  assert.deepEqual(others, readFields(EDITABLE_FIELDS.trips, trip), "and reads the trip's own fields as before");
   assert.equal(readFields(fields, trip).packingNotes, undefined, "left out, the saved value stays");
   for (const [values, message] of [
     [{ ...trip, packingNotes: 5 }, "packingNotes must be text."],

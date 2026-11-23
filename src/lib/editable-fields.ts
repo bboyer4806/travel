@@ -34,8 +34,9 @@ export type EditableField = Field & (
   // A USD amount as text, such as "125.50", or empty when unknown, checked by money.ts's rules, whose messages call it `noun`.
   | { kind: "amount"; noun: string }
   | { kind: "boolean" }
-  // A whole number from min to max, or with `nullable` null when unknown.
-  | { kind: "whole"; min: number; max: number; nullable?: true; invalid: string }
+  // A whole number from min, up to max when it has one, else the largest JavaScript holds exactly, or with `nullable` null
+  // when unknown.
+  | { kind: "whole"; min: number; max?: number; nullable?: true; invalid: string }
   // Any finite number, or null when unknown.
   | { kind: "number"; invalid: string }
   | { kind: "choice"; values: readonly string[]; invalid: string }
@@ -48,6 +49,7 @@ export const EDITABLE_FIELDS = {
   trips: {
     name: { kind: "text", maxLength: 120, filled: true, label: "Name", description: "Its name." },
     tagline: { kind: "text", maxLength: 120, keep: true, label: "Tagline", description: "A short line shown in capitals above the trip's name on its page, saved as written. Empty for Travel's default heading. Left out keeps the saved one." },
+    focus: { kind: "text", maxLength: 120, keep: true, label: "Focus", description: "What the trip is mostly about, such as \"History, architecture, local cuisine\", shown after Focus: on its card on All trips, saved as written. Empty for none. Left out keeps the saved one." },
     startDate: { kind: "date", keep: true, invalid: "Enter a valid trip start date in YYYY-MM-DD format.", label: "Start date", description: "The first day, YYYY-MM-DD, or null for none. Each stay's dates follow from it and the nights before it. Left out keeps the saved one." },
     dateLabel: { kind: "text", maxLength: 120, label: "Dates", description: "When, in words, such as \"Spring 2027\". Empty for none." },
     homeCity: { kind: "text", maxLength: 120, label: "Departing city", description: "The departing city. Empty for none." },
@@ -113,6 +115,11 @@ export const EDITABLE_FIELDS = {
       description: "What it is, in a few words, such as \"Boutique hotel\", \"Historic cathedral\" or \"Traditional Italian restaurant\", shown below its name on its cards. Empty for none. Left out keeps the saved one.",
     },
     price: { kind: "amount", noun: "Estimated price", column: "priceCents", label: "Price", description: "Its cost for the whole party: a hotel's for the whole stay." },
+    // An activity's alone (TRA-170): its save refuses one for a hotel or restaurant.
+    estimatedMinutes: {
+      kind: "whole", min: 1, nullable: true, keep: true, invalid: "Estimated time must be a whole number of minutes, 1 or more, or left blank.", label: "Estimated time (minutes)",
+      description: "For activities only: about how long it takes, in whole minutes, such as 90 for an hour and a half, with no maximum, or null for none. Left out keeps the saved one.",
+    },
     address: { kind: "text", maxLength: 500, label: "Address", description: "Its address. Empty for none." },
     // Its first research link, which the proposal's page shows with the others.
     url: { kind: "url", label: null, description: "A website, https:// or http://. Empty for none." },

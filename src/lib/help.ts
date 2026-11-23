@@ -40,7 +40,7 @@ const IDEA_PAGES: Record<IdeaPage, PageHelp> = {
     title: "Activities",
     points: [
       "Things you'd like to do at this destination, with what each costs for the whole party.",
-      "Add activity saves one, with what it is, its price, address, coordinates, photos, links and notes. The pencil edits it and the trash can deletes it.",
+      "Add activity saves one: what it is, its price, estimated time, address, coordinates, photos, links and notes. The pencil edits it and the trash can deletes it.",
       "Edit activities budget chooses a general amount for the whole stay or itemized activity costs.",
       "With itemized costs, Include in budget adds an activity's price. Switching methods keeps your amounts and selections.",
       "Mark as must do flags a priority without changing the budget. Up and Down set the order of the list.",
@@ -79,8 +79,8 @@ const HELP: { [Route in SignedInRoute]: Route extends `${string}/[category]` ? R
   "/": {
     title: "All trips",
     points: [
-      "Your trips and the trips shared with you, in your own order, each with its destinations, dates and estimated budget.",
-      "New trip starts a trip with just a name. Select a trip's card to plan it, or Edit on the card to change its name, tagline, dates, cities and headline image.",
+      "Your trips and the trips shared with you, in your own order, each with any tagline and focus below its name, and its destinations, dates and estimated budget.",
+      "New trip starts a trip with just a name. Select a trip's card to plan it, or Edit to change its name, tagline, focus, dates, cities and headline image.",
       "Drag a trip by its handle to a new place, or press Space on the handle, then the arrow keys, then Space. New trips go last.",
       "Search by trip or city, and select tags under Filter by tag to see only trips with every one. Trips move only while all of them show.",
       "Trips marked Shared by belong to someone else. You can change them, but only their owner can share or delete them.",
@@ -90,12 +90,12 @@ const HELP: { [Route in SignedInRoute]: Route extends `${string}/[category]` ? R
   "/trips/[tripId]": {
     title: "Trip",
     points: [
-      "Plan one trip: its route on the map, each stay with a map of its places, travel, arrangements at home and cost. Point or tab to a destination for its photo.",
-      "Edit trip changes its name, tagline, dates, travelers, departing and return cities, and headline image. Tags under its details group it in All trips.",
+      "One trip's route on the map, each stay with its tagline and map of its places, travel, home arrangements and cost. Point or tab to a destination for its photo.",
+      "Edit trip changes its name, tagline, focus, dates, travelers, departing and return cities, and headline image. Tags under its details group it in All trips.",
       "Add destination adds a city last, a + between cards there, one In your library with its research. Card arrows move it, the pencil edits, the trash removes it.",
-      "Each stay's nights set its dates, and Typical weather's chart opens on the month it begins. A destination's ideas, research and budget are shared by its trips.",
+      "Each stay's nights set its dates; Typical weather opens on its month. An activity's star marks it Must do; its details step with Previous, Next or a swipe.",
       "Between the places: Edit adds transportation, a flight's airline and flight number, price and layovers. Plan layover times what you'll do during a layover.",
-      "At home keeps arrangements such as pet care. The trip estimate adds up every cost in USD for the whole party. Only the owner can share or delete the trip.",
+      "The trip estimate adds every cost in USD for the whole party. Select Not set or Not estimated in a budget to add it. Only the owner shares or deletes the trip.",
     ],
   },
   "/trips/[tripId]/destinations/[stopId]/[category]": IDEA_PAGES,
@@ -114,13 +114,24 @@ const HELP: { [Route in SignedInRoute]: Route extends `${string}/[category]` ? R
     points: [
       "One city's research, shared by every trip that visits it: photos, notes, budget, ideas, entry requirements, health and safety, weather and churches.",
       "Edit destination changes its city, tagline, budget amounts, photos and notes. In Typical weather, select a month on the chart for its averages.",
-      "Its map shows its places, at their coordinates if saved; a dashed ring means approximate. Checkboxes choose places; select a marker for photos and View details.",
-      "Hotels, Activities and Restaurants show its ideas, with what each is below its name. Select one for its details, or Manage to reorder, choose and delete them.",
-      "Select a heading, such as Map or Budget, to show or hide it. Entry requirements, Health and safety and Typical weather show Edit and Clear only while open.",
+      "Its map shows places at their address, or else coordinates; a dashed ring is approximate. Checkboxes choose places; select a marker for photos and View details.",
+      "Select an idea for details, where Previous, Next or a swipe shows other activities; an activity's star marks it Must do. Manage reorders, chooses, deletes.",
+      "Select a heading, like Map, Budget or Church, to show or hide it. Entry requirements, Health and safety and Typical weather show Edit and Clear only when open.",
       "In your trips lists each of your trips that visits it, with its nights and estimate. Its owner can delete it once no trip visits it.",
     ],
   },
   "/destinations/[destinationId]/[category]": IDEA_PAGES,
+  "/access": {
+    title: "Access",
+    points: [
+      "Who can open each trip and destination you can, each person by name and email, or by email until they first sign in.",
+      "You see everyone with access to your own trips and destinations. For one shared with you, you see its owner and yourself.",
+      "A destination is open to its owner and to everyone a trip that visits it is shared with. Each destination is listed once.",
+      "Search either table by name. Select Trip or Destination at the top of its first column to sort it A to Z or Z to A.",
+      "Select a name to open its page. Only a trip's owner changes who has access, with Share on the trip's page.",
+      "It shows access as it was when the page opened. Refresh to see changes.",
+    ],
+  },
   "/whats-new": {
     title: "What's new",
     points: [

@@ -10,7 +10,7 @@ import { addCity, addDestination, candidateInput, fileDatabase, newItem, prepare
 import { createOwnedStore, OWNER_EMAIL } from "./owned-store.mjs";
 
 // TRA-150: coordinates for each hotel, activity, restaurant and church, exact or approximate, which place it on its
-// destination's map without a lookup.
+// destination's map when its address isn't found or it has none (TRA-163).
 
 const SACHER = { latitude: 48.20406, longitude: 16.36949, accuracy: "exact" };
 /** A rental whose address is withheld, roughly where it is in Leopoldstadt. */

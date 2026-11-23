@@ -62,6 +62,7 @@ test("Help is found by the page's route, the same for a destination's idea pages
     "/destinations/d1": "Destination",
     "/destinations/d1/hotels": "Hotels",
     "/destinations/d1/church": "Church",
+    "/access": "Access",
     "/whats-new": "What's new",
     "/ai": "AI assistants",
     "/ai/authorize": "Connect an AI assistant",
@@ -74,7 +75,7 @@ test("Help is found by the page's route, the same for a destination's idea pages
 
 test("an address no page has is the not-found page", () => {
   for (const address of ["/trips", "/trip/t1", "/trips/t1/destinations/s1", "/trips/t1/destinations/s1/spa", "/destinations/d1/constructor",
-    "/destinations/d1/__proto__", "/destinations/d1/hotels/extra", "/ai/proposals", "/whats-new/1", "/login/help"]) {
+    "/destinations/d1/__proto__", "/destinations/d1/hotels/extra", "/ai/proposals", "/whats-new/1", "/access/t1", "/login/help"]) {
     assert.equal(pageHelp(address), NOT_FOUND_HELP, address);
   }
 });

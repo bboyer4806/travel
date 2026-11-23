@@ -20,3 +20,36 @@ export function onlyRule(file, selector) {
   assert.equal(rules.length, 1, selector);
   return rules[0][1];
 }
+
+/** A mouse or trackpad, and a touchscreen, as media queries describe them. */
+export const MOUSE = { pointer: "fine", hover: "hover" };
+export const TOUCH = { pointer: "coarse", hover: "none" };
+/** Whether an at-rule holds on a screen `width` pixels wide used with `input`. These rules depend only on those. */
+export function holds(atRule, width, input) {
+  if (atRule === null) return true;
+  const [, feature, value] = atRule.match(/^@media\(([a-z-]+):([a-z0-9]+)\)$/) ?? assert.fail("Unexpected at-rule " + atRule);
+  if (feature === "max-width" || feature === "min-width") {
+    const pixels = Number(value.match(/^(\d+)px$/)?.[1] ?? assert.fail("Unexpected width " + value));
+    return feature === "max-width" ? width <= pixels : width >= pixels;
+  }
+  assert.ok(feature in input, "Unexpected media feature " + feature);
+  return input[feature] === value;
+}
+/**
+ * The declarations a CSS file, by its path from tests, gives an element matched by any of `selectors` on a screen
+ * `width` pixels wide used with `input`, each rule over the ones before it, as these rules' specificities agree.
+ */
+export function styles(file, selectors, width, input = MOUSE) {
+  return Object.assign({}, ...cssRules(file).filter(([selector, , atRule]) => selector.split(",").some((part) => selectors.includes(part.trim())) && holds(atRule, width, input))
+    .map(([, declarations]) => declarations));
+}
+
+/** WCAG's contrast between two colors written as #rrggbb. */
+export function contrast(first, second) {
+  const luminance = (hex) => {
+    const [r, g, b] = [1, 3, 5].map((start) => parseInt(hex.slice(start, start + 2), 16) / 255).map((value) => value <= 0.03928 ? value / 12.92 : ((value + 0.055) / 1.055) ** 2.4);
+    return 0.2126 * r + 0.7152 * g + 0.0722 * b;
+  };
+  const [lighter, darker] = [luminance(first), luminance(second)].sort((a, b) => b - a);
+  return (lighter + 0.05) / (darker + 0.05);
+}

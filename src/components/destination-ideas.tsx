@@ -2,11 +2,12 @@
 
 import Link from "next/link";
 import { useEffect, useId, useRef, useState } from "react";
-import { BedDouble, Binoculars, Check, ChevronDown, ChevronLeft, ChevronRight, Pencil, Plus, Utensils } from "lucide-react";
+import { BedDouble, Binoculars, Check, ChevronDown, ChevronLeft, ChevronRight, Pencil, Plus, Star, Utensils } from "lucide-react";
 import { CandidateGallery, largeUrl, photoUrl } from "./candidate-gallery";
 import { CoordinatesDetail } from "./place-location";
 import { ResearchLinks } from "./research-links";
 import { RestaurantTypeTags } from "./restaurant-types";
+import { formatEstimatedTime } from "@/lib/estimated-time";
 import { formatCurrency } from "@/lib/money";
 import { CAROUSEL_CARD, DIALOG, photoSizes } from "@/lib/photo-sizes";
 import type { Candidate, Category } from "@/lib/types";
@@ -34,12 +35,21 @@ export const selectionLabels = {
 const price = (item: Candidate) => item.priceCents === null ? "Not estimated" : formatCurrency(item.priceCents, "USD");
 
 /**
+ * Ideas in the order a destination's carousels show them: those chosen for the budget first, then the rest, each group in
+ * its saved order (TRA-120). An activity's dialog steps through its destination's activities in this order (TRA-160).
+ */
+export function carouselOrder(ideas: Candidate[]): Candidate[] {
+  return [...ideas.filter((item) => item.included), ...ideas.filter((item) => !item.included)];
+}
+
+/**
  * A destination's Hotels, Activities and Restaurants, below its budget (TRA-120). Each section starts expanded on every
  * page load and opens and closes on its own; toggling saves nothing. Its carousel shows the ideas chosen for the budget
- * first, then the rest, each group in its saved order. Selecting a card shows that idea's details. Each section edits
- * its category's budget, adds an idea, and links to its full page under `pages`, where ideas are reordered and deleted.
+ * first, then the rest, each group in its saved order. Selecting a card shows that idea's details, and an activity's
+ * star marks it Must do, or not (TRA-161). Each section edits its category's budget, adds an idea, and links to its full
+ * page under `pages`, where ideas are reordered and deleted.
  */
-export function DestinationIdeas({ ideas, city, pages, busy, onView, onAdd, onBudgetEdit }: {
+export function DestinationIdeas({ ideas, city, pages, busy, onView, onAdd, onBudgetEdit, onMustDo }: {
   /** The destination's ideas, in their saved order. */
   ideas: Candidate[];
   /** The destination's name, for screen readers. */
@@ -49,12 +59,14 @@ export function DestinationIdeas({ ideas, city, pages, busy, onView, onAdd, onBu
   onView: (item: Candidate) => void;
   onAdd: (category: Category) => void;
   onBudgetEdit: (category: Category) => void;
+  /** Saves an activity as Must do, or not, from its star, `control`. */
+  onMustDo: (item: Candidate, control: HTMLButtonElement) => void;
 }) {
   return <>{categories.map((category) => <IdeaSection key={category} category={category} ideas={ideas.filter((item) => item.category === category)} city={city} href={pages + "/" + category} busy={busy}
-    onView={onView} onAdd={() => onAdd(category)} onBudgetEdit={() => onBudgetEdit(category)} />)}</>;
+    onView={onView} onAdd={() => onAdd(category)} onBudgetEdit={() => onBudgetEdit(category)} onMustDo={onMustDo} />)}</>;
 }
 
-function IdeaSection({ category, ideas, city, href, busy, onView, onAdd, onBudgetEdit }: { category: Category; ideas: Candidate[]; city: string; href: string; busy: boolean; onView: (item: Candidate) => void; onAdd: () => void; onBudgetEdit: () => void }) {
+function IdeaSection({ category, ideas, city, href, busy, onView, onAdd, onBudgetEdit, onMustDo }: { category: Category; ideas: Candidate[]; city: string; href: string; busy: boolean; onView: (item: Candidate) => void; onAdd: () => void; onBudgetEdit: () => void; onMustDo: (item: Candidate, control: HTMLButtonElement) => void }) {
   const [expanded, setExpanded] = useState(true);
   const contentId = useId();
   const name = labels[category];
@@ -67,7 +79,7 @@ function IdeaSection({ category, ideas, city, href, busy, onView, onAdd, onBudge
       </div>
     </div>
     <div id={contentId} className={styles.content} hidden={!expanded}>
-      {ideas.length ? <Carousel category={category} ideas={[...ideas.filter((item) => item.included), ...ideas.filter((item) => !item.included)]} onView={onView} />
+      {ideas.length ? <Carousel category={category} ideas={carouselOrder(ideas)} busy={busy} onView={onView} onMustDo={onMustDo} />
         : <p className={styles.empty}>No {name.toLowerCase()} saved yet.</p>}
       <Link className={"text-button " + styles.manage} href={href}>Manage {name.toLowerCase()}<span className="sr-only"> in {city}</span></Link>
     </div>
@@ -76,9 +88,11 @@ function IdeaSection({ category, ideas, city, href, busy, onView, onAdd, onBudge
 
 /**
  * One card per idea, scrolled sideways by its arrows, or by swiping or scrolling. The arrows loop (TRA-127): Next at the
- * end returns to the start, and Previous at the start goes to the end. Swiping and scrolling stop at either end.
+ * end returns to the start, and Previous at the start goes to the end. Swiping and scrolling stop at either end. Each
+ * activity's star sits over its card's photo, beside the card rather than in it, so selecting the star saves its Must do
+ * without showing the activity's details (TRA-161). It shows what is saved: filled for Must do, outlined otherwise.
  */
-function Carousel({ category, ideas, onView }: { category: Category; ideas: Candidate[]; onView: (item: Candidate) => void }) {
+function Carousel({ category, ideas, busy, onView, onMustDo }: { category: Category; ideas: Candidate[]; busy: boolean; onView: (item: Candidate) => void; onMustDo: (item: Candidate, control: HTMLButtonElement) => void }) {
   const track = useRef<HTMLUListElement>(null);
   // Both arrows work while the cards overflow the list, at either end too. Until the list is measured, neither does.
   const [overflows, setOverflows] = useState(false);
@@ -117,20 +131,27 @@ function Carousel({ category, ideas, onView }: { category: Category; ideas: Cand
           <RestaurantTypeTags types={item.restaurantTypes} className={styles.types} />
           <span className={item.priceCents === null ? styles.price + " " + styles.unknown : styles.price}>{price(item)}</span>
           {item.included && <span className={"selection-tag chosen " + styles.chosen}><Check size={12} aria-hidden="true" />{chosen[category]}</span>}
-        </button></li>;
+        </button>
+        {category === "activities" && <button type="button" className={styles.star} aria-label={"Must do for " + item.name} aria-pressed={item.mustDo} disabled={busy}
+          onClick={(event) => onMustDo(item, event.currentTarget)}><Star size={18} fill={item.mustDo ? "currentColor" : "none"} aria-hidden="true" /></button>}
+        </li>;
       })}
     </ul>
     <button type="button" className={styles.arrow + " " + styles.next} aria-label={"Next " + name} disabled={!overflows} onClick={() => scroll(1)}><ChevronRight size={20} aria-hidden="true" /></button>
   </div>;
 }
 
-/** An idea's details, read only, in its editor's order and words. Its name is the dialog's title. */
+/**
+ * An idea's details, read only, in its editor's order and words. Its name is the dialog's title. An activity's estimated
+ * time shows only when it has one, without a placeholder (TRA-170).
+ */
 export function IdeaDetails({ item }: { item: Candidate }) {
   const category = item.category;
   return <dl className={styles.details}>
     <div><dt>What it is</dt><dd>{item.description || "Not added"}</dd></div>
     {item.restaurantTypes.length > 0 && <div><dt>Restaurant types</dt><dd><RestaurantTypeTags types={item.restaurantTypes} /></dd></div>}
     <div><dt>Estimated price (USD)</dt><dd>{price(item)}<small>{priceNotes[category]}</small></dd></div>
+    {item.estimatedMinutes !== null && <div><dt>Estimated time</dt><dd>{formatEstimatedTime(item.estimatedMinutes)}</dd></div>}
     <div><dt>Address or neighborhood</dt><dd>{item.address || "Not added"}</dd></div>
     <div><dt>Coordinates</dt><dd><CoordinatesDetail coordinates={item.coordinates} /></dd></div>
     <div><dt>{subjects[category]} photos</dt><dd>{item.images.length ? <CandidateGallery candidate={item} frame={DIALOG} /> : "Not added"}</dd></div>

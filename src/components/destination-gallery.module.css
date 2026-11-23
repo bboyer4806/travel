@@ -115,11 +115,11 @@
 .status { color: var(--muted); }
 
 /* TRA-155: on phones, a trip's destination cards show the main photo edge to edge across the top of the card, inside its
-   border. It takes back the card's 16px padding on phones (.destination-card in globals.css), and its top corners follow
-   the card's 10px corners inside its 1px border. It stays 16:7, so it shows the crop editor's crop. Destination
-   pages, and wider screens, keep the photo inside the card's padding. */
+   border. It takes back the card's 12px padding on a trip's page on phones (.trip-page .destination-card in globals.css,
+   TRA-156), and its top corners follow the card's 10px corners inside its 1px border. It stays 16:7, so it shows the
+   crop editor's crop. Destination pages, and wider screens, keep the photo inside the card's padding. */
 @media (max-width: 540px) {
-  :global(.destination-list) .hero { margin: -16px -16px 0; border: 0; border-radius: 9px 9px 0 0; }
+  :global(.destination-list) .hero { margin: -12px -12px 0; border: 0; border-radius: 9px 9px 0 0; }
 }
 
 @media (max-width: 440px) {

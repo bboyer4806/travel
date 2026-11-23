@@ -7,6 +7,7 @@ import ts from "typescript";
 import * as budget from "../src/lib/budget.ts";
 import * as coordinates from "../src/lib/coordinates.ts";
 import * as destinationLabel from "../src/lib/destination-label.ts";
+import * as estimatedTime from "../src/lib/estimated-time.ts";
 import * as galleryDraft from "../src/lib/gallery-draft.ts";
 import * as imageLimits from "../src/lib/image-limits.ts";
 import * as photoSizes from "../src/lib/photo-sizes.ts";
@@ -23,7 +24,7 @@ const shared = {
   "react": { useId: () => "id", useState: (initial) => [initial, () => {}], useRef: (current) => ({ current }), useEffect: () => {} },
   "react/jsx-runtime": { jsx: element, jsxs: element, Fragment: "fragment" },
   "next/link": { default: "a" }, "lucide-react": new Proxy({}, { get: (_, name) => "icon:" + String(name) }),
-  "@/lib/budget": budget, "@/lib/coordinates": coordinates, "@/lib/destination-label": destinationLabel, "@/lib/gallery-draft": galleryDraft, "@/lib/image-limits": imageLimits, "@/lib/photo-sizes": photoSizes, "@/lib/money": money, "@/lib/trip-dates": tripDates, "@/lib/types": types, "@/lib/uuid": uuid,
+  "@/lib/budget": budget, "@/lib/coordinates": coordinates, "@/lib/destination-label": destinationLabel, "@/lib/estimated-time": estimatedTime, "@/lib/gallery-draft": galleryDraft, "@/lib/image-limits": imageLimits, "@/lib/photo-sizes": photoSizes, "@/lib/money": money, "@/lib/trip-dates": tripDates, "@/lib/types": types, "@/lib/uuid": uuid,
 };
 /** A component module, given the components it imports. A CSS module's class names are their own names. */
 function load(file, modules = {}) {
@@ -51,7 +52,7 @@ const ideaModules = {
 const { DestinationIdeas, IdeaDetails } = load("../src/components/destination-ideas.tsx", ideaModules);
 const { default: CandidateList } = load("../src/components/candidate-list.tsx", ideaModules);
 const { RestaurantTypesField } = ideaModules["./restaurant-types"];
-const { DestinationBudget } = load("../src/components/destination-budget.tsx");
+const { DestinationBudget } = load("../src/components/destination-budget.tsx", { "@/components/focus-after": { useFocusFallback: () => null } });
 const { ChurchOptions } = load("../src/components/churches.tsx", { "./candidate-gallery": ideaModules["./candidate-gallery"], "./focus-after": load("../src/components/focus-after.ts"), "./place-location": ideaModules["./place-location"] });
 const { ChurchSundays } = load("../src/components/church-sundays.tsx");
 
@@ -102,6 +103,7 @@ function render(t) {
   const tree = { type: DestinationIdeas, props: {
     ideas: snapshot.candidates.filter((item) => item.destinationId === id), city: "Vienna", pages: "/trips/trip/destinations/stop", busy: false,
     onView: (item) => calls.push(["view", item.id]), onAdd: (category) => calls.push(["add", category]), onBudgetEdit: (category) => calls.push(["budget", category]),
+    onMustDo: (item) => calls.push(["mustDo", item.id]),
   } };
   const sections = hosts(tree).filter((node) => node.type === "section");
   return { snapshot, ideas, calls, sections: Object.fromEntries(sections.map((section) => [section.props["aria-label"], hosts(section)])), order: sections.map((section) => section.props["aria-label"]) };
@@ -147,7 +149,8 @@ test("cards show details, and each section edits its budget, adds an idea and li
     assert.deepEqual(sections[name].filter((node) => node.type === "a").map((link) => [link.props.href, text(link)]), [["/trips/trip/destinations/stop/" + category, "Manage " + category + " in Vienna"]]);
   }
   assert.deepEqual(calls, [["view", ideas.chosen], ["budget", "hotels"], ["add", "hotels"], ["budget", "activities"], ["add", "activities"], ["budget", "restaurants"], ["add", "restaurants"]]);
-  assert.deepEqual(sections.Activities.filter((node) => node.type === "button" && !byClass([node], "card").length && !byClass([node], "arrow").length).map(text),
+  // Each activity's Must do star, beside its card, is tested in must-do-star.test.mjs (TRA-161).
+  assert.deepEqual(sections.Activities.filter((node) => node.type === "button" && !byClass([node], "card").length && !byClass([node], "arrow").length && !byClass([node], "star").length).map(text),
     ["Activities(3)", "Edit budget for activities in Vienna", "Add activity in Vienna"]);
 });
 

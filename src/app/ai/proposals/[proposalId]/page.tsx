@@ -4,6 +4,7 @@ import type { Metadata } from "next";
 import { requireAccount } from "@/auth";
 import AiProposalDecision from "@/components/ai-proposal-decision";
 import { getAiProposal } from "@/lib/store";
+import type { PreviewRecord } from "@/lib/ai-preview";
 import type { AiProposal } from "@/lib/types";
 import styles from "../../ai.module.css";
 import { formatMoment } from "../../time";
@@ -12,6 +13,8 @@ export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 
 const PHOTO_ALT = { Adds: "The photo it adds", Changes: "The photo it changes", Deletes: "The photo it deletes" } as const;
+/** A trip's headline image before and after a change (TRA-174). */
+const HEADLINE = { before: { caption: "Current", alt: "The current headline image" }, after: { caption: "Proposed", alt: "The proposed headline image" } } as const;
 
 export async function generateMetadata({ params }: { params: Promise<{ proposalId: string }> }): Promise<Metadata> {
   const { proposalId } = await params;
@@ -42,6 +45,7 @@ export default async function ProposalPage({ params }: { params: Promise<{ propo
           {/* Each photo it adds, changes or deletes, while there is still a decision to make. Stored photos are already resized. */}
           {/* eslint-disable-next-line @next/next/no-img-element */}
           {record.photo && proposal.status === "pending" && <img className={styles.photo} src={`/api/ai-proposal-images/${proposal.id}/${record.photo}`} alt={PHOTO_ALT[record.action]} loading="lazy" decoding="async" width={240} height={160} />}
+          {record.headline && proposal.status === "pending" && <HeadlineImages proposalId={proposal.id} headline={record.headline} />}
           {record.fields.length > 0 && <table className={styles.fields}>
             <thead><tr><th scope="col">Field</th><th scope="col">Before</th><th scope="col">After</th></tr></thead>
             <tbody>{record.fields.map((field) => <tr key={field.name}><th scope="row">{field.name}</th><FieldValue label="Before" value={field.before} /><FieldValue label="After" value={field.after} /></tr>)}</tbody>
@@ -51,6 +55,20 @@ export default async function ProposalPage({ params }: { params: Promise<{ propo
     </ol>
     {proposal.status === "pending" && <AiProposalDecision proposalId={proposal.id} digest={proposal.digest} />}
   </main>;
+}
+
+/**
+ * A trip's headline image as it is and as the change leaves it, side by side, while there is still a decision to make
+ * (TRA-174). Stored images are already resized.
+ */
+function HeadlineImages({ proposalId, headline }: { proposalId: string; headline: NonNullable<PreviewRecord["headline"]> }) {
+  return <div className={styles.headline}>
+    {(["before", "after"] as const).map((when) => headline[when] && <figure key={when}>
+      {/* eslint-disable-next-line @next/next/no-img-element */}
+      <img className={styles.photo} src={`/api/ai-proposal-images/${proposalId}/${headline[when]}`} alt={HEADLINE[when].alt} loading="lazy" decoding="async" width={240} height={160} />
+      <figcaption>{HEADLINE[when].caption}</figcaption>
+    </figure>)}
+  </div>;
 }
 
 /**

@@ -51,7 +51,7 @@ const VISIBLE_TRIPS = "SELECT id FROM trips WHERE ownerId = ? UNION SELECT tripI
 /** The destinations an account owns or that a trip it can open visits, as SQL binding the account's ID three times. */
 const VISIBLE_DESTINATIONS = `SELECT id FROM destinations WHERE ownerId = ? UNION SELECT destinationId FROM trip_stops WHERE tripId IN (${VISIBLE_TRIPS})`;
 /** Every trip column but the owner's account ID, which stays on the server. */
-const TRIP_COLUMNS = "id, name, tagline, focus, dateLabel, homeCity, returnCity, travelers, notes, createdAt, startDate";
+const TRIP_COLUMNS = "id, name, tagline, focus, dateLabel, homeCity, returnCity, travelers, entryVisaFeesCents, notes, createdAt, startDate";
 /** Every destination column but its owner's account ID and its city key, which stay on the server. */
 const DESTINATION_COLUMNS = ["id", "city", "cityFromSuggestion", "tagline", "notes", "miscDailyMinor", "miscCurrency", "hotelNightlyMinor", "hotelCurrency", "activitiesBudgetMode", "activitiesGeneralMinor", "activitiesCurrency", "foodBudgetMode", "foodDailyMinor", "foodCurrency", "shoppingMinor", "shoppingCurrency", "weatherHighF", "weatherLowF", "weatherRainfall", "weatherPeriod", "weatherSource", "churchEnabled"]
   .map((column) => "destinations." + column).join(", ");
@@ -185,6 +185,10 @@ function destinationAmount(entered: string | undefined, label: string, savedMino
 /** A connection's miscellaneous spending on the way in cents, or null when blank (TRA-26). */
 function miscCents(value: string): number | null {
   return amountCents(value, "Miscellaneous spending");
+}
+/** A trip's entry and visa fees in cents after a save, or null when blank (TRA-159). A save that leaves them out keeps `saved`. */
+function entryVisaFeesCents(entered: string | undefined, saved: number | null): number | null {
+  return entered === undefined ? saved : amountCents(entered, EDITABLE_FIELDS.trips.entryVisaFeesAmount.noun);
 }
 /**
  * A save's values for its record's editable fields (TRA-174), each checked by its kind's rules, whether a person's editor
@@ -735,7 +739,7 @@ const LIVE: Make = { id: () => randomUUID(), now: () => new Date().toISOString()
  * The schema this build upgrades every database to, as SQLite's user_version. A schema change adds the next
  * upgrade in createStore and raises this to match; earlier upgrades keep their own numbers.
  */
-export const SCHEMA_VERSION = 45;
+export const SCHEMA_VERSION = 46;
 
 /** A destination as schema 20 saved it, inside one trip, with that trip's owner and name. */
 type TripDestinationRow = Omit<StoredDestination, "cityKey"> & Omit<TripStop, "destinationId"> & { tripName: string };
@@ -1485,6 +1489,13 @@ export function createStore(databasePath: string, ownerEmail: string) {
         PRAGMA user_version = 45;
       `);
     }
+    if (version < 46) {
+      // Each trip's entry and visa fees (TRA-159): one optional estimate for the whole party and the whole trip, such as
+      // visa applications, electronic travel authorizations and entry fees. Every saved trip starts without one, so no
+      // trip's estimate changes. A replay keeps saved amounts.
+      if (!hasColumn("trips", "entryVisaFeesCents")) db.exec(`ALTER TABLE trips ADD COLUMN entryVisaFeesCents INTEGER CHECK(entryVisaFeesCents BETWEEN 0 AND ${MAX_AMOUNT_CENTS});`);
+      db.exec("PRAGMA user_version = 46;");
+    }
     if (version < SCHEMA_VERSION && db.prepare("PRAGMA foreign_key_check").get()) {
       throw new Error("This upgrade would leave saved items without the trip or destination they belong to. Nothing was changed; review the database against a backup before upgrading.");
     }
@@ -2173,14 +2184,14 @@ export function createStore(databasePath: string, ownerEmail: string) {
         if (changesSaved("trips", input)) {
           const before = existing<Trip>("trips", id);
           const returnCity = input.returnCity === undefined ? before.returnCity : input.returnCity;
-          db.prepare("UPDATE trips SET name = ?, tagline = ?, focus = ?, dateLabel = ?, homeCity = ?, returnCity = ?, travelers = ?, notes = ? WHERE id = ?").run(input.name, input.tagline ?? before.tagline, input.focus ?? before.focus, input.dateLabel, input.homeCity, returnCity, input.travelers, input.notes, id);
+          db.prepare("UPDATE trips SET name = ?, tagline = ?, focus = ?, dateLabel = ?, homeCity = ?, returnCity = ?, travelers = ?, entryVisaFeesCents = ?, notes = ? WHERE id = ?").run(input.name, input.tagline ?? before.tagline, input.focus ?? before.focus, input.dateLabel, input.homeCity, returnCity, input.travelers, entryVisaFeesCents(input.entryVisaFeesAmount, before.entryVisaFeesCents), input.notes, id);
           const departingChanged = before.homeCity !== input.homeCity;
           const returningChanged = (before.returnCity ?? before.homeCity) !== (returnCity ?? input.homeCity);
           const affectedLegs = db.prepare("SELECT id FROM legs WHERE tripId = ? AND ((? AND fromId IS NULL) OR (? AND toId IS NULL))").all(id, Number(departingChanged), Number(returningChanged));
           for (const leg of affectedLegs) clearLeg(leg.id as string);
         } else {
           // A new trip belongs to the account that creates it.
-          db.prepare("INSERT INTO trips(id,name,tagline,focus,dateLabel,homeCity,returnCity,travelers,notes,createdAt,ownerId) VALUES(?,?,?,?,?,?,?,?,?,?,?)").run(id, input.name, input.tagline ?? "", input.focus ?? "", input.dateLabel, input.homeCity, input.returnCity ?? null, input.travelers, input.notes, make.now(), accountId);
+          db.prepare("INSERT INTO trips(id,name,tagline,focus,dateLabel,homeCity,returnCity,travelers,entryVisaFeesCents,notes,createdAt,ownerId) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)").run(id, input.name, input.tagline ?? "", input.focus ?? "", input.dateLabel, input.homeCity, input.returnCity ?? null, input.travelers, entryVisaFeesCents(input.entryVisaFeesAmount, null), input.notes, make.now(), accountId);
         }
         if (input.startDate !== undefined) db.prepare("UPDATE trips SET startDate = ? WHERE id = ?").run(input.startDate, id);
         saveTripImage(id, input.image, make);

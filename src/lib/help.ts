@@ -91,7 +91,7 @@ const HELP: { [Route in SignedInRoute]: Route extends `${string}/[category]` ? R
     title: "Trip",
     points: [
       "One trip's route on the map, each stay with its tagline and map of its places, travel, home arrangements and cost. Point or tab to a destination for its photo.",
-      "Edit trip changes its name, tagline, focus, dates, travelers, departing and return cities, and headline image. Tags under its details group it in All trips.",
+      "Edit trip changes its name, tagline, focus, dates, travelers, entry and visa fees, cities and headline image. Tags under its details group it in All trips.",
       "Add destination adds a city last, a + between cards there, one In your library with its research. Card arrows move it, the pencil edits, the trash removes it.",
       "Each stay's nights set its dates; Typical weather opens on its month. An activity's star marks it Must do; its details step with Previous, Next or a swipe.",
       "Between the places: Edit adds transportation, a flight's airline and flight number, price and layovers. Plan layover times what you'll do during a layover.",

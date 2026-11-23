@@ -320,11 +320,13 @@ export default function PlannerApp({ initialData, initialBudgets, access = {}, d
     }
   };
   /**
-   * Opens the editor that enters an unset amount, focused on its field (TRA-165): a connection's, an idea's, or a stay's
-   * budget editor for its category. A stay's nights are in Accommodation's editor, and otherwise in their own.
+   * Opens the editor that enters an unset amount, focused on its field (TRA-165): a connection's, the trip's for its entry
+   * and visa fees (TRA-159), an idea's, or a stay's budget editor for its category. A stay's nights are in Accommodation's
+   * editor, and otherwise in their own.
    */
   const enter = (unset: UnsetAmount) => {
     if (unset.kind === "leg") return open({ kind: "leg", item: unset.leg }, unset.field);
+    if (unset.kind === "trip") return open({ kind: "trip", item: unset.trip }, unset.field);
     if (unset.kind === "idea") return open({ kind: "candidate", destinationId: unset.idea.destinationId, category: unset.idea.category, item: unset.idea }, "price");
     const { category, stop: stay, visit, field } = unset;
     open(category === "hotels" ? { kind: "accommodationBudget", item: visit, stop: stay }
@@ -337,6 +339,7 @@ export default function PlannerApp({ initialData, initialBudgets, access = {}, d
   /** What an unset amount's link adds, for screen readers, as its editor's field names it (TRA-165). */
   const unsetDescription = (unset: UnsetAmount) => {
     if (unset.kind === "leg") return (unset.field === "price" ? "the price of travel from " : "miscellaneous spending from ") + legName(unset.leg.fromId, "from") + " to " + legName(unset.leg.toId, "to");
+    if (unset.kind === "trip") return "the trip's entry and visa fees";
     if (unset.kind === "idea") return "the price of " + unset.idea.name;
     const fields = { nights: "nights in ", hotelNightlyAmount: "the nightly hotel amount for ", activitiesGeneralAmount: "the general activities amount for ", foodDailyAmount: "the daily food amount for ", shoppingAmount: "the shopping amount for ", miscDailyAmount: "the daily miscellaneous amount for " };
     return fields[unset.field] + formatSavedDestinationLabel(unset.visit);
@@ -432,7 +435,7 @@ export default function PlannerApp({ initialData, initialBudgets, access = {}, d
     const cityFromSuggestion = fields.has("cityFromSuggestion") || undefined;
     switch (editor.kind) {
       case "delete": void perform(editor.mutation, "Removed from your notebook.", editor.redirect); break;
-      case "trip": void perform({ type: "trip.save", ...itemToSave(editor.item), name: text("name"), tagline: text("tagline"), focus: text("focus"), startDate: text("startDate") || null, dateLabel: text("dateLabel"), homeCity: text("homeCity"), returnCity: fields.has("differentReturn") ? text("returnCity") : null, travelers: Number(text("travelers")), notes: text("notes") }, undefined, undefined, tripImageForm(tripImage, editor.item?.image ?? null)); break;
+      case "trip": void perform({ type: "trip.save", ...itemToSave(editor.item), name: text("name"), tagline: text("tagline"), focus: text("focus"), startDate: text("startDate") || null, dateLabel: text("dateLabel"), homeCity: text("homeCity"), returnCity: fields.has("differentReturn") ? text("returnCity") : null, travelers: Number(text("travelers")), entryVisaFeesAmount: text("entryVisaFeesAmount"), notes: text("notes") }, undefined, undefined, tripImageForm(tripImage, editor.item?.image ?? null)); break;
       case "entryRequirements": {
         void perform({ type: "destination.entryRequirements", id: editor.item.id, requirements: entryRequirementsFromForm(fields, researchLinks) }, "Entry requirements saved.");
         break;
@@ -736,7 +739,7 @@ export default function PlannerApp({ initialData, initialBudgets, access = {}, d
             onEdit={(item) => open({ kind: "homeItem", item })}
             onDelete={(item) => confirmDelete({ type: "homeItem.delete", id: item.id, tripId: trip.id }, "Delete “" + item.name + "”?", "This removes the item and any cost from the trip estimate.")} />
         </div>
-        {budget && <aside className="budget-panel"><span className="budget-symbol"><Wallet size={23} strokeWidth={1.4} /></span><h2 ref={estimateHeading} tabIndex={-1}>The trip estimate</h2><div className="budget-total"><BudgetValue budget={budget} /></div><p className="budget-caption">Total for {trip.travelers === 1 ? "1 traveler" : "all " + trip.travelers + " travelers"}</p><dl className="budget-breakdown"><div><dt>Travel{missingCount("travel", budget.travelMissingCount)}</dt><dd>{tripLegs.some((leg) => leg.priceCents !== null) ? formatCurrency(budget.travelCents, "USD") : estimateUnset("travel", "Not estimated")}</dd></div><div><dt>Transit miscellaneous</dt><dd>{budget.transitMiscCents === null ? estimateUnset("transitMiscellaneous", "Not set") : formatCurrency(budget.transitMiscCents, "USD")}</dd></div><div><dt>Hotels{missingCount("hotels", budget.hotelMissingCount)}</dt><dd><CurrencyTotals totals={budget.hotelsByCurrency} empty={estimateUnset("hotels", "Not estimated")} /></dd></div><div><dt>Activities{missingCount("activities", budget.activitiesMissingCount)}</dt><dd><CurrencyTotals totals={budget.activitiesByCurrency} empty={budget.activitiesMissingCount ? estimateUnset("activities", "Not estimated") : "$0"} /></dd></div><div><dt>Food{missingCount("food", budget.foodMissingCount)}</dt><dd><CurrencyTotals totals={budget.foodByCurrency} empty={budget.foodMissingCount ? estimateUnset("food", "Not estimated") : "$0"} /></dd></div><div><dt>Shopping</dt><dd><CurrencyTotals totals={budget.shoppingByCurrency} empty={estimateUnset("shopping", "Not set")} /></dd></div><div><dt>At home</dt><dd>{formatCurrency(budget.homeCents, "USD")}</dd></div><div><dt>Miscellaneous{missingCount("miscellaneous", budget.miscMissingCount)}</dt><dd><CurrencyTotals totals={budget.miscellaneousByCurrency} empty={estimateUnset("miscellaneous", "Not estimated")} /></dd></div></dl><div className="budget-note">{budget.complete ? <CheckCircle2 size={17} /> : <MoreHorizontal size={20} />}<p>{budget.complete ? "All required estimates are added." : budget.missingCount + " " + (budget.missingCount === 1 ? "detail still needs" : "details still need") + " an estimate or a choice."}</p></div></aside>}
+        {budget && <aside className="budget-panel"><span className="budget-symbol"><Wallet size={23} strokeWidth={1.4} /></span><h2 ref={estimateHeading} tabIndex={-1}>The trip estimate</h2><div className="budget-total"><BudgetValue budget={budget} /></div><p className="budget-caption">Total for {trip.travelers === 1 ? "1 traveler" : "all " + trip.travelers + " travelers"}</p><dl className="budget-breakdown"><div><dt>Travel{missingCount("travel", budget.travelMissingCount)}</dt><dd>{tripLegs.some((leg) => leg.priceCents !== null) ? formatCurrency(budget.travelCents, "USD") : estimateUnset("travel", "Not estimated")}</dd></div><div><dt>Transit miscellaneous</dt><dd>{budget.transitMiscCents === null ? estimateUnset("transitMiscellaneous", "Not set") : formatCurrency(budget.transitMiscCents, "USD")}</dd></div><div><dt>Entry / visa fees</dt><dd>{budget.entryVisaFeesCents === null ? estimateUnset("entryVisaFees", "Not set") : formatCurrency(budget.entryVisaFeesCents, "USD")}</dd></div><div><dt>Hotels{missingCount("hotels", budget.hotelMissingCount)}</dt><dd><CurrencyTotals totals={budget.hotelsByCurrency} empty={estimateUnset("hotels", "Not estimated")} /></dd></div><div><dt>Activities{missingCount("activities", budget.activitiesMissingCount)}</dt><dd><CurrencyTotals totals={budget.activitiesByCurrency} empty={budget.activitiesMissingCount ? estimateUnset("activities", "Not estimated") : "$0"} /></dd></div><div><dt>Food{missingCount("food", budget.foodMissingCount)}</dt><dd><CurrencyTotals totals={budget.foodByCurrency} empty={budget.foodMissingCount ? estimateUnset("food", "Not estimated") : "$0"} /></dd></div><div><dt>Shopping</dt><dd><CurrencyTotals totals={budget.shoppingByCurrency} empty={estimateUnset("shopping", "Not set")} /></dd></div><div><dt>At home</dt><dd>{formatCurrency(budget.homeCents, "USD")}</dd></div><div><dt>Miscellaneous{missingCount("miscellaneous", budget.miscMissingCount)}</dt><dd><CurrencyTotals totals={budget.miscellaneousByCurrency} empty={estimateUnset("miscellaneous", "Not estimated")} /></dd></div></dl><div className="budget-note">{budget.complete ? <CheckCircle2 size={17} /> : <MoreHorizontal size={20} />}<p>{budget.complete ? "All required estimates are added." : budget.missingCount + " " + (budget.missingCount === 1 ? "detail still needs" : "details still need") + " an estimate or a choice."}</p></div></aside>}
         </div>
       </>}
 
@@ -785,6 +788,8 @@ export default function PlannerApp({ initialData, initialBudgets, access = {}, d
         <Field label="Trip start date" hint="Destination dates and the trip end are calculated from this date and each stay’s nights."><input name="startDate" type="date" min="0001-01-01" max="9999-12-31" defaultValue={editor.item?.startDate ?? ""} /></Field>
         <p className="helper wide">Trip end (calculated after saving): {formatCalendarDate(editor.item?.endDate)}</p>
         <Field label="Travelers"><input name="travelers" type="number" min="1" max="999" step="1" required defaultValue={editor.item?.travelers ?? 2} /></Field>
+        {/* The trip's entry and visa fees (TRA-159), beside Travelers on wider screens, which the trip estimate's Not set opens. */}
+        <Field label="Entry / visa fees (USD, optional)" hint="Visas, electronic travel authorizations and entry fees: one total for the whole party and every destination. Zero is accepted; leave blank to add no cost."><input name="entryVisaFeesAmount" type="number" className="no-spin-buttons" min="0" max={MAX_AMOUNT_DOLLARS} step="0.01" defaultValue={minorAmountValue(editor.item?.entryVisaFeesCents, "USD")} placeholder="Not set" /></Field>
         <TripRouteFields trip={editor.item} disabled={busy} />
         <TripImageEditor trip={editor.item} draft={tripImage} onChange={setTripImage} disabled={busy} />
         <Notes value={editor.item?.notes} />

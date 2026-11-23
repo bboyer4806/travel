@@ -53,13 +53,13 @@ const within = (node) => typeof node === "string" ? [] : [node, ...node.props.ch
 const text = (node) => typeof node === "string" ? node : node.props.children.map(text).join("");
 
 /**
- * A trip for two to Vienna and Salzburg with every estimate added: flights with spending in transit, each stay's
- * hotel, activities, food, shopping and miscellaneous, and an At home cost.
+ * A trip for two to Vienna and Salzburg with every estimate added: flights with spending in transit, entry and visa
+ * fees (TRA-159), each stay's hotel, activities, food, shopping and miscellaneous, and an At home cost.
  */
 function plan(t) {
   const store = createOwnedStore(":memory:");
   t.after(() => store.close());
-  const tripId = store.applyMutation(tripInput({ name: "Spring in Austria", travelers: 2 })).id;
+  const tripId = store.applyMutation(tripInput({ name: "Spring in Austria", travelers: 2, entryVisaFeesAmount: "40" })).id;
   addDestination(store, tripId, { city: "Vienna", nights: 4, hotelNightlyAmount: "240", activitiesBudgetMode: "general", activitiesGeneralAmount: "350", foodBudgetMode: "daily", foodDailyAmount: "120", shoppingAmount: "300", miscDailyAmount: "40" });
   addDestination(store, tripId, { city: "Salzburg", nights: 3, hotelNightlyAmount: "190", activitiesBudgetMode: "general", activitiesGeneralAmount: "200", foodBudgetMode: "daily", foodDailyAmount: "100", miscDailyAmount: "30" });
   for (const leg of store.getTripSnapshot(tripId).data.legs) {
@@ -100,10 +100,10 @@ test("the trip estimate still shows the trip's total and each category's amount 
   const { store, tripId } = plan(t);
   const panel = estimate(tripPage(store, tripId));
   const part = (className) => panel.props.children.find((child) => child.props.className === className);
-  assert.deepEqual(part("budget-total").props.children.map(text), ["$6,640", "Estimated total"]);
+  assert.deepEqual(part("budget-total").props.children.map(text), ["$6,680", "Estimated total"]);
   assert.equal(text(part("budget-caption")), "Total for all 2 travelers");
   assert.deepEqual(part("budget-breakdown").props.children.map((row) => row.props.children.map(text)), [
-    ["Travel", "$2,700"], ["Transit miscellaneous", "$180"], ["Hotels", "$1,530"], ["Activities", "$550"],
+    ["Travel", "$2,700"], ["Transit miscellaneous", "$180"], ["Entry / visa fees", "$40"], ["Hotels", "$1,530"], ["Activities", "$550"],
     ["Food", "$780"], ["Shopping", "$300"], ["At home", "$350"], ["Miscellaneous", "$250"],
   ]);
   assert.equal(text(part("budget-note")), "All required estimates are added.");
@@ -122,13 +122,14 @@ test("the trip estimate ends with its note, without a paragraph about what it in
 
   const panel = estimate(tripPage(store, tripId));
   // Everything the estimate shows, in order: the amounts the trip's page showed before TRA-151, then the note, last. Each
-  // count of what isn't estimated links to the first one, which screen readers also hear (TRA-165).
+  // count of what isn't estimated links to the first one, which screen readers also hear (TRA-165). Entry and visa fees
+  // that aren't set link to the trip's editor, and aren't among the details still needed (TRA-159).
   assert.deepEqual(panel.props.children.map((child) => [child.props.className ?? child.type, text(child)]), [
     ["budget-symbol", ""],
     ["h2", "The trip estimate"],
     ["budget-total", "$3,355Partial estimate"],
     ["budget-caption", "Total for all 2 travelers"],
-    ["budget-breakdown", "Travel1 not estimated: add the price of travel from Salzburg to Boston$1,490Transit miscellaneous$60Hotels1 not estimated: add the nightly hotel amount for Salzburg$540Activities$65Food$560Shopping$150At home$300Miscellaneous$190"],
+    ["budget-breakdown", "Travel1 not estimated: add the price of travel from Salzburg to Boston$1,490Transit miscellaneous$60Entry / visa feesNot set: add the trip's entry and visa feesHotels1 not estimated: add the nightly hotel amount for Salzburg$540Activities$65Food$560Shopping$150At home$300Miscellaneous$190"],
     ["budget-note", "2 details still need an estimate or a choice."],
   ]);
   assert.deepEqual(within(panel).filter((node) => node.props.className === "helper"), [], "no explanation follows the note");

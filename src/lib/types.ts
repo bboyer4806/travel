@@ -22,8 +22,10 @@ export interface TypicalWeather { weatherHighF: number | null; weatherLowF: numb
  * A trip, with its tags in alphabetical order, and its headline image, or null without one (TRA-133).
  * `tagline` is the line its page shows above its name, saved as typed, or empty for the default heading (TRA-134).
  * `focus` is what the trip is mostly about, saved as typed and shown after Focus: on its card on All trips, or empty for none (TRA-168).
+ * `entryVisaFeesCents` is the whole party's entry and visa fees for the whole trip, one estimate in USD cents, or null while
+ * not set (TRA-159).
  */
-export interface Trip { startDate: string | null; endDate: string | null; id: string; name: string; tagline: string; focus: string; dateLabel: string; homeCity: string; returnCity: string | null; travelers: number; notes: string; createdAt: string; tags: string[]; image: TripImage | null; }
+export interface Trip { startDate: string | null; endDate: string | null; id: string; name: string; tagline: string; focus: string; dateLabel: string; homeCity: string; returnCity: string | null; travelers: number; entryVisaFeesCents: number | null; notes: string; createdAt: string; tags: string[]; image: TripImage | null; }
 export interface HomeItem { id: string; tripId: string; name: string; notes: string; priceCents: number | null; createdAt: string; }
 /**
  * A city's research, ideas, selections and budget amounts, shared by every trip that visits it. Each owner has one per city.
@@ -227,5 +229,8 @@ export interface AiConnection { id: string; platform: AiPlatform; connectedAt: n
 export interface AiProposal { id: string; platform: AiPlatform; summary: string; preview: PreviewChange[]; status: "pending" | "applied" | "rejected" | "failed" | "expired"; createdAt: number; expiresAt: number; decidedAt: number | null; error: string | null; digest: string; }
 /** A photo a ChatGPT or Claude proposal adds, before Travel downloads it (TRA-122): its change's place in the proposal, from 1, its new ID, and its address. */
 export interface AiPhotoToAdd { change: number; id: string; url: string; }
-/** `transitMiscCents` totals the connections' miscellaneous spending, and is null when none has an amount (TRA-26). */
-export interface Budget { shoppingByCurrency: Record<string, number>; travelMissingCount: number; foodByCurrency: Record<string, number>; foodMissingCount: number; activitiesByCurrency: Record<string, number>; activitiesMissingCount: number; hotelsByCurrency: Record<string, number>; hotelMissingCount: number; totalsByCurrency: Record<string, number>; miscellaneousByCurrency: Record<string, number>; miscMissingCount: number; homeCents: number; travelCents: number; transitMiscCents: number | null; knownCount: number; missingCount: number; complete: boolean; }
+/**
+ * `transitMiscCents` totals the connections' miscellaneous spending, and is null when none has an amount (TRA-26).
+ * `entryVisaFeesCents` is the trip's entry and visa fees, and is null while not set (TRA-159).
+ */
+export interface Budget { shoppingByCurrency: Record<string, number>; travelMissingCount: number; foodByCurrency: Record<string, number>; foodMissingCount: number; activitiesByCurrency: Record<string, number>; activitiesMissingCount: number; hotelsByCurrency: Record<string, number>; hotelMissingCount: number; totalsByCurrency: Record<string, number>; miscellaneousByCurrency: Record<string, number>; miscMissingCount: number; homeCents: number; travelCents: number; transitMiscCents: number | null; entryVisaFeesCents: number | null; knownCount: number; missingCount: number; complete: boolean; }

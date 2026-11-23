@@ -6,7 +6,7 @@ import { calculateBudget, calculateDestinationBudget } from "../src/lib/budget.t
 import { TOOLS } from "../src/lib/mcp-tools.ts";
 import { PLANNER_UPDATED } from "../src/lib/planner-updated.ts";
 import { createStore, SCHEMA_VERSION, ValidationError } from "../src/lib/store.ts";
-import { CLIMATE_LIMITS, MONTHS, NAME_EACH_MONTH, climateAveragesText, climateMonthText, formatReferenceYears, monthOf, monthlyClimateFromForm, normalizeMonthlyClimate, sourceHref, temperatureScale } from "../src/lib/typical-weather.ts";
+import { CLIMATE_LIMITS, MONTHS, NAME_EACH_MONTH, climateAveragesText, climateMonthText, formatInches, formatReferenceYears, monthOf, monthlyClimateFromForm, normalizeMonthlyClimate, precipitationScale, sourceHref, temperatureScale } from "../src/lib/typical-weather.ts";
 import { aiSetup, GUEST, NOW, OWNER } from "./ai-fixtures.mjs";
 import { addCity, candidateInput, destination, destinationEdit, fileDatabase, newItem, prepared, setup, stop, stopEdit, tripInput } from "./budget-fixtures.mjs";
 import { createOwnedStore } from "./owned-store.mjs";
@@ -115,6 +115,25 @@ test("months, years, sources and the temperature axis read as the chart and a pr
   assert.deepEqual(scale([[70, 70]]), { min: 70, max: 75, ticks: [70, 75] }, "a flat year still has an interval");
   assert.deepEqual(scale([[10, -30], [55, 20]]), { min: -40, max: 60, ticks: [-40, -20, 0, 20, 40, 60] });
   assert.deepEqual(scale([[CLIMATE_LIMITS.maxF, CLIMATE_LIMITS.minF]]), { min: -150, max: 150, ticks: [-150, -100, -50, 0, 50, 100, 150] }, "every allowed record fits");
+});
+
+test("the precipitation axis rises from 0 in the temperature axis's intervals, by the smallest step that reaches the wettest month (TRA-164)", () => {
+  const axis = (totals, intervals) => precipitationScale(totals.map((precipitationIn) => ({ highF: 70, lowF: 60, precipitationIn })), intervals);
+  assert.deepEqual(axis([1.5, 2.9, 0.3], 6), { max: 3, ticks: [0, 0.5, 1, 1.5, 2, 2.5, 3] });
+  assert.deepEqual(axis([9.2, 12.5, 4.5], 3), { max: 15, ticks: [0, 5, 10, 15] });
+  assert.deepEqual(axis([0.3, 0.1], 3), { max: 0.3, ticks: [0, 0.1, 0.2, 0.3] }, "tenths stay tenths, as 0.3 rather than 0.30000000000000004");
+  assert.deepEqual(axis([120, 0.4], 6), { max: 120, ticks: [0, 20, 40, 60, 80, 100, 120] });
+  assert.deepEqual(axis([0, 0], 1), { max: 0.1, ticks: [0, 0.1] }, "a year without precipitation still has an interval");
+  assert.deepEqual(axis([CLIMATE_LIMITS.maxPrecipitationIn], 1), { max: 200, ticks: [0, 200] }, "every allowed record fits");
+  // For every allowed wettest month in tenths and every temperature axis, the axis reaches it in clean, even steps, and
+  // its widest label, as 300 in, has at most six characters.
+  for (let intervals = 1; intervals <= 6; intervals++) {
+    for (let tenths = 0; tenths <= CLIMATE_LIMITS.maxPrecipitationIn * 10; tenths++) {
+      const { max, ticks } = axis([tenths / 10], intervals);
+      assert.ok(ticks.length === intervals + 1 && ticks[0] === 0 && max === ticks[intervals] && max >= tenths / 10, `${tenths / 10} in over ${intervals}`);
+      assert.ok(ticks.every((tick, index) => tick === Math.round(index * ticks[1] * 10) / 10 && formatInches(tick).length <= 6), `${tenths / 10} in over ${intervals}`);
+    }
+  }
 });
 
 test("monthly averages save, replace and clear apart from typical weather, and survive reopening", (t) => {

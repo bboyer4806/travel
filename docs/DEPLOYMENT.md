@@ -218,7 +218,7 @@ Prefer fixing forward. Rolling back an image does not reverse a database schema 
 
 ## Schema history
 
-The schema version is SQLite's `user_version`; the current schema is 41, `SCHEMA_VERSION` in `src/lib/store.ts`. At every start, `createStore` in `src/lib/store.ts` upgrades an older database in one transaction, through each version in turn. Each upgrade checks what already exists, so running it again on a database that already has its changes (a replay) keeps saved data. The notes below are in schema order. **Superseded** marks behavior that a later schema replaced; the current behavior is in [README.md](../README.md).
+The schema version is SQLite's `user_version`; the current schema is 42, `SCHEMA_VERSION` in `src/lib/store.ts`. At every start, `createStore` in `src/lib/store.ts` upgrades an older database in one transaction, through each version in turn. Each upgrade checks what already exists, so running it again on a database that already has its changes (a replay) keeps saved data. The notes below are in schema order. **Superseded** marks behavior that a later schema replaced; the current behavior is in [README.md](../README.md).
 
 ### Schema 1: first shared planner
 The first release creates the `trips`, `destinations`, `legs` and `candidates` tables, with prices in integer USD cents for the whole party. Anyone with the URL can view and edit every trip. The schema 1 build sets `user_version` to 1 at every start and does not refuse a newer database, so later upgrades check what already exists as well as the version: redeploying a newer build after a rollback to schema 1 cannot repeat an `ALTER TABLE` or replace saved links.
@@ -434,6 +434,11 @@ Restoring the pre-upgrade backup to run a schema 39 build again loses every larg
 Airline and flight number upgrade the database to schema 41 in the startup transaction, adding `airline` and `flightNumber` to `legs`: a travel connection's airline and flight number, saved as typed, up to 120 characters each, which the store checks. Trip pages show them only while the connection's transportation names an airplane, and keep them saved when it doesn't. Every existing connection starts with both empty, so no trip looks different until they are entered. Nothing else changes. The columns are in the same online backups, and a replay keeps saved airlines and flight numbers.
 
 Restoring the pre-upgrade backup to run a schema 40 build again loses every airline and flight number, and that build shows none.
+
+### Schema 42: trip focus (TRA-168)
+Trip focus upgrades the database to schema 42 in the startup transaction, adding `focus` to `trips`: what a trip is mostly about, saved as typed, up to 120 characters, which the store checks, and shown after Focus: on the trip's card on All trips. Every existing trip starts with an empty focus, which shows no Focus line, so no card looks different until one is entered. Nothing else changes, taglines included. The column is in the same online backups, and a replay keeps each saved focus.
+
+Restoring the pre-upgrade backup to run a schema 41 build again loses every trip's focus, and that build's cards show none.
 
 ## Feedback and release notes
 Configure server-only JIRA_URL (HTTPS Jira base URL), JIRA_EMAIL, and JIRA_API_TOKEN with permission to create Tasks in TRA. Use the host's secret configuration; never put credentials in source, image layers, client variables, or logs. Preserve the browser Host and Origin headers through the proxy; the feedback endpoint compares them and ignores forwarded-host claims. Its limits count per signed-in account. A failed send logs one line saying why, such as a missing setting's name, an invalid JIRA_URL, or Jira's HTTP status (401 for wrong credentials, 403 for missing permission), never the settings' values.

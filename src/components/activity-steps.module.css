@@ -1,0 +1,12 @@
+/* TRA-160: Previous and Next below an activity's dialog title, with its place among its destination's activities between
+   them. They stay in view while the details or editor scroll beneath them, with the heading's sides at every width. */
+.steps { flex: none; display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 10px 27px; border-bottom: 1px solid var(--line); }
+.place { margin: 0; color: var(--muted); font-size: 12px; text-align: center; }
+
+@media (max-width: 540px) {
+  .steps { padding: 10px 20px; }
+}
+/* On touchscreens each is a 44px-tall target. */
+@media (pointer: coarse) {
+  .steps :global(.button) { min-height: 44px; }
+}

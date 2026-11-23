@@ -97,11 +97,12 @@ export interface GalleryUpdate { add: ({ id: string } & PreparedImage)[]; remove
 /**
  * A hotel, activity or restaurant idea. `description` says what it is in a few words, such as "Boutique hotel", shown
  * below its name on its cards, or is empty without one (TRA-138). `restaurantTypes` is empty for hotels and activities,
- * and for a restaurant without any. `coordinates` place it on its destination's map without a lookup, or are null (TRA-150).
+ * and for a restaurant without any. `coordinates` place it on its destination's map when its address isn't found or it
+ * has none (TRA-163), or are null (TRA-150).
  */
 export interface Candidate { id: string; destinationId: string; category: Category; position: number; mustDo: boolean; name: string; description: string; priceCents: number | null; address: string; url: string; notes: string; included: boolean; links: ResearchLink[]; images: CandidateImage[]; mainImageId: string | null; restaurantTypes: RestaurantType[]; coordinates: SavedCoordinates | null; }
 export interface MassTime { id: string; day: string; time: string; }
-/** A church. `coordinates` place it on its destination's map without a lookup, or are null (TRA-150). */
+/** A church. `coordinates` place it on its destination's map when its address isn't found or it has none (TRA-163), or are null (TRA-150). */
 export interface Church { id: string; destinationId: string; name: string; address: string; denomination: string; url: string; massTimes: MassTime[]; images: CandidateImage[]; mainImageId: string | null; coordinates: SavedCoordinates | null; }
 /** `tags` is one spelling of each tag on the trips the account can open, in alphabetical order, for a trip's page to reuse and the trip list to filter by. Destinations pages leave it empty. */
 export interface Snapshot { churches: Church[]; trips: Trip[]; homeItems: HomeItem[]; stops: TripStop[]; destinations: Destination[]; legs: TravelLeg[]; candidates: Candidate[]; tags: string[]; }

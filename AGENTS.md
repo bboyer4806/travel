@@ -125,8 +125,10 @@ Repeat passing checks when subsequent changes affect their coverage or required 
   from `PlaceLocationFields` in each place's editor, read by `coordinatesFromForm`; left out they are kept, and a save
   that changes the address leaves them waiting for review until a save gives them again or removes them. Only proposals
   make `candidate.coordinates` and `church.coordinates`, which change nothing else, and `aiChange` refuses coordinates in
-  a proposal's save. `mapCoordinates` in `src/lib/destination-map.ts` decides which places the map shows at their
-  coordinates, however far away; the route never looks those up. Travel never looks coordinates up or checks them.
+  a proposal's save. The address comes first (TRA-163): `lookupText` in `src/lib/destination-map.ts` decides what the
+  route looks up, a place's address alone when it has coordinates the map can use (`mapCoordinates`) and nothing without
+  an address, and `destinationMapLayout` shows each place where its lookup found it, or else at those coordinates,
+  however far away. Travel never looks coordinates up, checks them or saves what a lookup finds.
 - Airports (TRA-132) are OurAirports' public-domain list in `src/lib/airports.json`, written only by
   `node scripts/update-airports.mjs` and found only by `airportByCode` in `src/lib/airports.ts`. City suggestions
   offer the airport for a three-letter IATA code in any letter case, except in destination fields, and the trip map

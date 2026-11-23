@@ -15,7 +15,7 @@ export type PlaceMatch =
 /** A saved place's answer so far: its match, or `pending` while its lookup waits its turn. */
 export type PlaceAnswer = PlaceMatch | { status: "pending" };
 
-/** What a saved place is looked up by: its saved address, empty without one, and its name. */
+/** What a saved place is looked up by: its saved address, empty without one, and its name, empty to look it up by its address alone. */
 export interface PlaceText { address: string; name: string }
 
 /** Where a destination is, as the trip map finds it, which its places are looked up around. */

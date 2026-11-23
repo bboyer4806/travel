@@ -40,10 +40,12 @@ const research = (overrides = {}) => ({
   advisoryLevel: "Level 2: Exercise increased caution", advisoryWarnings: "Demonstrations possible in the capital", healthPrecautions: "Routine vaccines", localSafety: "Pickpockets on trams",
   emergencyContacts: [{ id: randomUUID(), name: "Emergency services", phone: "112", notes: "Police, fire and ambulance" }],
   sources: [{ id: randomUUID(), url: "https://example.gov/advisory", description: "U.S. travel advisory" }],
-  lastCheckedDate: "2026-11-10", usAdvisoryLevel: 2, medicalProviders: [provider(), bare()], ...overrides,
+  lastCheckedDate: "2026-11-10", usAdvisoryLevel: 2, medicalProviders: [provider(), bare()], emergencyNumber: null, ...overrides,
 });
 /** A record without its medical providers, as the editor of a page opened before them saves it. */
 const withoutProviders = (record) => Object.fromEntries(Object.entries(record).filter(([key]) => key !== "medicalProviders"));
+/** A record as schema 44 saved it, before its medical providers and its local emergency number (TRA-173). */
+const asSchema44 = (record) => Object.fromEntries(Object.entries(record).filter(([key]) => key !== "medicalProviders" && key !== "emergencyNumber"));
 const save = (id, record) => ({ type: "destination.healthSafety", id, healthSafety: record });
 const saved = (store, id) => store.getSnapshot().destinations.find((item) => item.id === id).healthSafety;
 /** A record with one of its providers changed by `change`, as the editor saves it. */
@@ -213,18 +215,18 @@ test("schema 44 research upgrades with no providers and keeps everything recorde
     // A schema 44 database: research as TRA-171 saved it, without medical providers.
     let db = new DatabaseSync(path);
     const json = (id) => db.prepare("SELECT healthSafetyJson FROM destination_health_safety WHERE destinationId = ?").get(id).healthSafetyJson;
-    const old = withoutProviders(JSON.parse(json(upgraded)));
+    const old = asSchema44(JSON.parse(json(upgraded)));
     db.prepare("UPDATE destination_health_safety SET healthSafetyJson = ? WHERE destinationId = ?").run(JSON.stringify(old), upgraded);
     db.exec("PRAGMA user_version = 44;");
     db.close();
     store = createOwnedStore(path);
-    assert.deepEqual(saved(store, upgraded), { ...old, medicalProviders: [] }, "no provider is assumed, and its emergency contacts, level, research, sources and last checked date are as recorded");
+    assert.deepEqual(saved(store, upgraded), { ...old, medicalProviders: [], emergencyNumber: null }, "no provider is assumed, and its emergency contacts, level, research, sources and last checked date are as recorded");
     assert.equal(saved(store, empty), null, "a destination without research still has none");
     store.close(); store = null;
     db = new DatabaseSync(path, { readOnly: true });
     try { assert.equal(json(upgraded), json(edited), "stored as a save stores it, the providers last"); } finally { db.close(); }
     store = createOwnedStore(path);
-    store.applyMutation(save(upgraded, { ...old, medicalProviders: [provider()] }));
+    store.applyMutation(save(upgraded, { ...old, medicalProviders: [provider()], emergencyNumber: null }));
     const later = store.getSnapshot();
     // A replay of schema 45, also after the schema 1 build resets the schema version, keeps them.
     for (const version of [44, 1]) {
@@ -348,7 +350,7 @@ test("the section shows Non-emergency medical care after the emergency contacts,
   const record = normalizeHealthSafety(research({ medicalProviders: [bare(), provider({ shortNotice: "walk-in" })] }));
   const shown = panel(record);
   const headings = shown.filter((node) => node.type === "h5").map(text);
-  assert.deepEqual(headings, ["Emergency contacts", "Non-emergency medical care", "Sources"], "its own subsection, between the emergency contacts and the sources");
+  assert.deepEqual(headings, ["Local Emergency Number", "Emergency contacts", "Non-emergency medical care", "Sources"], "its own subsection, between the emergency contacts and the sources");
   const section = care(shown);
   const inside = hosts(section.props.children);
   assert.match(text(section), /For routine illness or minor injuries, not emergencies\. In an emergency, call local emergency services or the emergency contacts above\./);
@@ -393,7 +395,7 @@ test("the editor adds, edits and removes providers among the rest of the researc
   } });
   const shown = render(drafts);
   const legends = shown.filter((node) => node.type === "legend").map(text);
-  assert.deepEqual(legends.slice(0, 3), ["Health and safety research", "Emergency contacts", "Non-emergency medical care"], "it follows the emergency contacts");
+  assert.deepEqual(legends.slice(0, 4), ["Health and safety research", "Local emergency number", "Emergency contacts", "Non-emergency medical care"], "it follows the emergency contacts");
   const rows = shown.filter((node) => node.props.role === "group");
   assert.equal(rows.length, 2);
   const field = (row, label) => hosts(row.props.children).find((node) => ["input", "select", "textarea"].includes(node.type) && node.props["aria-label"] === label);

@@ -66,10 +66,27 @@ export function usAdvisoryLabel(level: UsAdvisoryLevel): string {
 }
 
 /**
+ * The destination's primary local emergency number, such as 112 or 911, as someone verified it (TRA-173): the number, the
+ * website address of the official or reliable source that gives it, and the date it was verified there, always all three.
+ * Travel never looks one up, assumes one from the country or checks it.
+ */
+export interface EmergencyNumber {
+  phone: string;
+  sourceUrl: string;
+  verifiedDate: string;
+}
+/** The longest a local emergency number and its source's address can be (TRA-173). */
+export const EMERGENCY_NUMBER_MAX_LENGTH = { phone: 40, sourceUrl: 2048 } as const;
+/** Why a record's local emergency number is refused: every record gives it, null when none is verified. */
+export const GIVE_EMERGENCY_NUMBER = "Give emergencyNumber, the destination's local emergency number with its source and verified date: the saved one to keep it, or null when none is verified.";
+
+/**
  * A destination's health and safety research. People record and update all of it; Travel never retrieves or changes it.
  * `usAdvisoryLevel` is the U.S. State Department's travel advisory level someone chose, or null while none is chosen
  * (TRA-171). It is apart from `advisoryLevel`, the advisory level as typed, and Travel never reads one from the other.
  * `medicalProviders` are doctors and clinics for non-emergency care, apart from `emergencyContacts` (TRA-172).
+ * `emergencyNumber` is the verified local emergency number, or null while none is verified (TRA-173), apart from
+ * `emergencyContacts`, and Travel never reads one from the other.
  */
 export interface HealthSafety {
   advisoryLevel: string;
@@ -81,6 +98,7 @@ export interface HealthSafety {
   lastCheckedDate: string | null;
   usAdvisoryLevel: UsAdvisoryLevel | null;
   medicalProviders: MedicalProvider[];
+  emergencyNumber: EmergencyNumber | null;
 }
 
 export const HEALTH_SAFETY_FIELDS = [
@@ -224,6 +242,24 @@ function normalizeUsAdvisoryLevel(value: unknown): UsAdvisoryLevel | null {
   return value as UsAdvisoryLevel;
 }
 
+/**
+ * The local emergency number (TRA-173): its phone number, its source's website address and the date it was verified there,
+ * all three, or null for none. A number without its source or date is refused rather than saved unverified, as is anything
+ * else, a number left out included.
+ */
+function normalizeEmergencyNumber(value: unknown): EmergencyNumber | null {
+  if (value === null) return null;
+  if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error(GIVE_EMERGENCY_NUMBER);
+  const input = value as Record<string, unknown>;
+  const phone = text(input.phone, "Local emergency number", EMERGENCY_NUMBER_MAX_LENGTH.phone);
+  if (!phone) throw new Error("Enter the local emergency number, or clear its source and verified date.");
+  const sourceUrl = text(input.sourceUrl, "Local emergency number source", EMERGENCY_NUMBER_MAX_LENGTH.sourceUrl);
+  if (!sourceUrl) throw new Error("Enter the website address of the source that verifies the local emergency number.");
+  const verifiedDate = calendarDate(input.verifiedDate, "Emergency number verified date");
+  if (!verifiedDate) throw new Error("Enter the date the local emergency number was verified.");
+  return { phone: checkPhone(phone), sourceUrl: webAddress(sourceUrl, "Enter the local emergency number's source starting with https:// or http://, without a username or password."), verifiedDate };
+}
+
 /** Validate the complete replacement record. A null value explicitly clears it. */
 export function normalizeHealthSafety(value: unknown): HealthSafety | null {
   if (value === null) return null;
@@ -231,18 +267,27 @@ export function normalizeHealthSafety(value: unknown): HealthSafety | null {
   const input = value as Record<string, unknown>;
   const fields = Object.fromEntries(HEALTH_SAFETY_FIELDS.map((field) => [field.name, text(input[field.name], field.label, field.maxLength)])) as HealthSafetyText;
   const lastCheckedDate = calendarDate(input.lastCheckedDate, "Last checked date");
-  // The level and the medical providers come last, where schemas 44 and 45 added them to the records saved before them.
+  // The level, the medical providers and the emergency number come last, where schemas 44, 45 and 47 added them to the
+  // records saved before them.
   return {
     ...fields, emergencyContacts: normalizeContacts(input.emergencyContacts), sources: normalizeSources(input.sources, `You can save up to ${MAX_SOURCES} health and safety sources.`),
     lastCheckedDate, usAdvisoryLevel: normalizeUsAdvisoryLevel(input.usAdvisoryLevel), medicalProviders: normalizeProviders(input.medicalProviders),
+    emergencyNumber: normalizeEmergencyNumber(input.emergencyNumber),
   };
 }
 
-/** Extract the editor draft; the store validates it before writing. Not set, the dropdown's empty choice, is null. */
+/**
+ * Extract the editor draft; the store validates it before writing. Not set, the dropdown's empty choice, is null, as is a
+ * local emergency number whose three fields are all blank.
+ */
 export function healthSafetyFromForm(fields: FormData, emergencyContacts: EmergencyContact[], sources: ResearchLink[], medicalProviders: MedicalProviderDraft[]): HealthSafety {
   const values = Object.fromEntries(HEALTH_SAFETY_FIELDS.map((field) => [field.name, String(fields.get(field.name) ?? "")])) as HealthSafetyText;
   const level = String(fields.get("usAdvisoryLevel") ?? "");
-  return { ...values, emergencyContacts, sources, lastCheckedDate: String(fields.get("lastCheckedDate") ?? "") || null, usAdvisoryLevel: level === "" ? null : Number(level) as UsAdvisoryLevel, medicalProviders: medicalProviders.map(providerFromDraft) };
+  const emergencyNumber: EmergencyNumber = { phone: String(fields.get("emergencyPhone") ?? ""), sourceUrl: String(fields.get("emergencySourceUrl") ?? ""), verifiedDate: String(fields.get("emergencyVerifiedDate") ?? "") };
+  return {
+    ...values, emergencyContacts, sources, lastCheckedDate: String(fields.get("lastCheckedDate") ?? "") || null, usAdvisoryLevel: level === "" ? null : Number(level) as UsAdvisoryLevel, medicalProviders: medicalProviders.map(providerFromDraft),
+    emergencyNumber: Object.values(emergencyNumber).every((entered) => entered.trim() === "") ? null : emergencyNumber,
+  };
 }
 
 /** A new medical provider as its editor starts it (TRA-172): nothing recorded, and nothing verified. */

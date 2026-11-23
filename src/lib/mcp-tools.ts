@@ -2,7 +2,7 @@ import { COORDINATE_ACCURACIES } from "./coordinates.ts";
 import { EDITABLE_FIELDS } from "./editable-fields.ts";
 import { ENTRY_REQUIREMENT_FIELDS } from "./entry-requirements.ts";
 import { LAYOVER_BUFFERS, MAX_LAYOVER_ACTIVITIES, MAX_LAYOVER_MINUTES } from "./layover-plan.ts";
-import { EMERGENCY_CONTACT_MAX_LENGTH, HEALTH_SAFETY_FIELDS, MAX_EMERGENCY_CONTACTS } from "./health-safety.ts";
+import { EMERGENCY_CONTACT_MAX_LENGTH, HEALTH_SAFETY_FIELDS, MAX_EMERGENCY_CONTACTS, US_ADVISORY_LEVELS, usAdvisoryLabel } from "./health-safety.ts";
 import { AI_PHOTO_DOWNLOAD_SECONDS, formatMegabytes, MAX_AI_PROPOSAL_PHOTOS, MAX_CANDIDATE_IMAGES, MAX_DESTINATION_IMAGES, MAX_GALLERY_UPLOAD_BYTES, MAX_IMAGE_UPLOAD_BYTES } from "./image-limits.ts";
 import { MAX_TAG_LENGTH } from "./trip-tags.ts";
 import { CLIMATE_LIMITS, MONTHS } from "./typical-weather.ts";
@@ -143,8 +143,12 @@ const CHANGES = [
   change("destination.healthSafety", "Replaces a destination's health and safety research, or clears it with null.", {
     id: id("The destination's id."),
     healthSafety: {
-      type: ["object", "null"], additionalProperties: false,
+      type: ["object", "null"], additionalProperties: false, required: ["usAdvisoryLevel"],
       properties: {
+        usAdvisoryLevel: {
+          type: ["integer", "null"], enum: [...US_ADVISORY_LEVELS, null],
+          description: `The U.S. State Department's travel advisory level for the destination: ${US_ADVISORY_LEVELS.map(usAdvisoryLabel).join("; ")}. null when none is set, or it hasn't been checked against the State Department's current advisory: never a guess. Always given, the saved one to keep it. Apart from advisoryLevel, which stays as written.`,
+        },
         ...Object.fromEntries(HEALTH_SAFETY_FIELDS.map((field) => [field.name, text(`${field.label}. Empty for none.`, field.maxLength)])),
         emergencyContacts: {
           type: "array", maxItems: MAX_EMERGENCY_CONTACTS, description: "Emergency services, embassies and other contacts.",

@@ -10,7 +10,7 @@ import { addCity, fileDatabase, newItem } from "./budget-fixtures.mjs";
 import { createOwnedStore } from "./owned-store.mjs";
 
 const details = () => ({
-  advisoryLevel: "Level 2: Exercise increased caution", advisoryWarnings: "Demonstrations possible in the capital",
+  usAdvisoryLevel: 2, advisoryLevel: "Level 2: Exercise increased caution", advisoryWarnings: "Demonstrations possible in the capital",
   healthPrecautions: "Routine vaccines; hepatitis A recommended", localSafety: "Pickpockets on trams; taxi scams at the airport",
   emergencyContacts: [{ id: randomUUID(), name: "Emergency services", phone: "112", notes: "Police, fire and ambulance" }, { id: randomUUID(), name: "Embassy", phone: "+1 202 555 0100", notes: "" }],
   sources: [{ id: randomUUID(), url: "https://example.gov/advisory", description: "Government travel advisory" }],

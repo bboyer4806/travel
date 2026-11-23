@@ -11,7 +11,14 @@
 .reminder { font-size: 13px; color: var(--ink); line-height: 1.6; }
 .hint { font-size: 12px; color: var(--muted); margin-top: 10px; }
 .details { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; margin: 20px 0 0; font-size: 13px; }
-.details > div:nth-child(n+3) { grid-column: 1 / -1; }
+/* TRA-171: the U.S. travel advisory level has the first row to itself, and the advisory level as typed shares the next with the last checked date. */
+.details > .usAdvisory, .details > div:nth-child(n+4) { grid-column: 1 / -1; }
+/* TRA-171: each U.S. travel advisory level in its color, its number and description at least 4.5:1 against it. */
+.advisoryLevel { display: inline-block; padding: 4px 10px; border-radius: 4px; font-size: 14px; font-weight: 600; line-height: 1.4; }
+.level1 { background: #2e7d32; color: #ffffff; }
+.level2 { background: #fdd835; color: #212121; }
+.level3 { background: #f57c00; color: #212121; }
+.level4 { background: #c62828; color: #ffffff; }
 .details dt { color: var(--muted); margin-bottom: 4px; }
 .details dd { margin: 0; overflow-wrap: anywhere; white-space: pre-wrap; }
 .empty { margin: 16px 0 0; font-size: 13px; }
@@ -23,6 +30,9 @@
 .editor { min-width: 0; border: 0; padding: 0; margin: 0; }
 .editor legend { color: var(--green); font-size: 14px; font-weight: 600; margin-bottom: 12px; }
 .editor :global(.form-grid) { padding: 12px 0 18px; }
+/* TRA-171: the U.S. travel advisory level's dropdown, styled as the editor's text fields. */
+.editor select { display: block; width: 100%; min-height: 42px; padding: 10px 12px; color: var(--ink); border: 1px solid #ccd6c7; border-radius: 5px; background: #fffffc; font-weight: 400; font-size: 13px; }
+.editor select:focus { outline: 2px solid #719683; outline-offset: 1px; }
 .contactsEditor { min-width: 0; margin: 0; padding: 0; border: 0; }
 .contactsEditor legend { margin-bottom: 6px; padding: 0; font-size: 12px; font-weight: 600; }
 .contactsEditor .hint { margin: 0 0 12px; }
@@ -40,4 +50,6 @@
   :global(.trip-page) .panel { padding: 12px; margin: 12px 0; }
   .details { grid-template-columns: 1fr; }
   .contactRow { grid-template-columns: 1fr; }
+  /* As the editor's text fields, so phones don't zoom in on it. */
+  .editor select { font-size: 16px; }
 }

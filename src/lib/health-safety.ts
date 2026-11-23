@@ -9,7 +9,24 @@ export interface EmergencyContact {
   notes: string;
 }
 
-/** A destination's health and safety research. People record and update all of it; Travel never retrieves or changes it. */
+/** The U.S. State Department's travel advisory levels (TRA-171). */
+export const US_ADVISORY_LEVELS = [1, 2, 3, 4] as const;
+export type UsAdvisoryLevel = typeof US_ADVISORY_LEVELS[number];
+/** Each level's official description, as the State Department writes it. */
+const US_ADVISORY_DESCRIPTIONS: Record<UsAdvisoryLevel, string> = { 1: "Exercise Normal Precautions", 2: "Exercise Increased Caution", 3: "Reconsider Travel", 4: "Do Not Travel" };
+/** Why a record's U.S. travel advisory level is refused: every record gives it, as one of the levels or null for none. */
+export const GIVE_US_ADVISORY_LEVEL = "Give the U.S. travel advisory level as 1, 2, 3 or 4, or null when it isn't set.";
+
+/** A level with its official description, such as "Level 2: Exercise Increased Caution". */
+export function usAdvisoryLabel(level: UsAdvisoryLevel): string {
+  return `Level ${level}: ${US_ADVISORY_DESCRIPTIONS[level]}`;
+}
+
+/**
+ * A destination's health and safety research. People record and update all of it; Travel never retrieves or changes it.
+ * `usAdvisoryLevel` is the U.S. State Department's travel advisory level someone chose, or null while none is chosen
+ * (TRA-171). It is apart from `advisoryLevel`, the advisory level as typed, and Travel never reads one from the other.
+ */
 export interface HealthSafety {
   advisoryLevel: string;
   advisoryWarnings: string;
@@ -18,6 +35,7 @@ export interface HealthSafety {
   emergencyContacts: EmergencyContact[];
   sources: ResearchLink[];
   lastCheckedDate: string | null;
+  usAdvisoryLevel: UsAdvisoryLevel | null;
 }
 
 export const HEALTH_SAFETY_FIELDS = [
@@ -87,6 +105,13 @@ function normalizeSources(value: unknown): ResearchLink[] {
   });
 }
 
+/** A U.S. travel advisory level: exactly one of the levels, as a number, or null for none. Anything else is refused, a missing level included. */
+function normalizeUsAdvisoryLevel(value: unknown): UsAdvisoryLevel | null {
+  if (value === null) return null;
+  if (!US_ADVISORY_LEVELS.includes(value as UsAdvisoryLevel)) throw new Error(GIVE_US_ADVISORY_LEVEL);
+  return value as UsAdvisoryLevel;
+}
+
 /** Validate the complete replacement record. A null value explicitly clears it. */
 export function normalizeHealthSafety(value: unknown): HealthSafety | null {
   if (value === null) return null;
@@ -95,11 +120,13 @@ export function normalizeHealthSafety(value: unknown): HealthSafety | null {
   const fields = Object.fromEntries(HEALTH_SAFETY_FIELDS.map((field) => [field.name, text(input[field.name], field.label, field.maxLength)])) as HealthSafetyText;
   const lastCheckedDate = input.lastCheckedDate == null ? null : text(input.lastCheckedDate, "Last checked date", 10) || null;
   if (lastCheckedDate !== null && !isValidDate(lastCheckedDate)) throw new Error("Enter a valid last checked date in YYYY-MM-DD format.");
-  return { ...fields, emergencyContacts: normalizeContacts(input.emergencyContacts), sources: normalizeSources(input.sources), lastCheckedDate };
+  // The level comes last, where schema 44 added it to the records saved before it.
+  return { ...fields, emergencyContacts: normalizeContacts(input.emergencyContacts), sources: normalizeSources(input.sources), lastCheckedDate, usAdvisoryLevel: normalizeUsAdvisoryLevel(input.usAdvisoryLevel) };
 }
 
-/** Extract the editor draft; the store validates it before writing. */
+/** Extract the editor draft; the store validates it before writing. Not set, the dropdown's empty choice, is null. */
 export function healthSafetyFromForm(fields: FormData, emergencyContacts: EmergencyContact[], sources: ResearchLink[]): HealthSafety {
   const values = Object.fromEntries(HEALTH_SAFETY_FIELDS.map((field) => [field.name, String(fields.get(field.name) ?? "")])) as HealthSafetyText;
-  return { ...values, emergencyContacts, sources, lastCheckedDate: String(fields.get("lastCheckedDate") ?? "") || null };
+  const level = String(fields.get("usAdvisoryLevel") ?? "");
+  return { ...values, emergencyContacts, sources, lastCheckedDate: String(fields.get("lastCheckedDate") ?? "") || null, usAdvisoryLevel: level === "" ? null : Number(level) as UsAdvisoryLevel };
 }

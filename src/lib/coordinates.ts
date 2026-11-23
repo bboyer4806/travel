@@ -10,8 +10,11 @@ export const COORDINATE_ACCURACIES = ["exact", "approximate"] as const;
 export type CoordinatesAccuracy = typeof COORDINATE_ACCURACIES[number];
 export const ACCURACY_LABELS: Record<CoordinatesAccuracy, string> = { exact: "Exact", approximate: "Approximate" };
 
-/** A place's latitude and longitude in degrees, north and east positive, and how exactly they place it. */
-export interface Coordinates { latitude: number; longitude: number; accuracy: CoordinatesAccuracy; }
+/** A latitude and longitude in degrees, north and east positive. */
+export interface LatLng { latitude: number; longitude: number; }
+
+/** A place's latitude and longitude, and how exactly they place it. */
+export interface Coordinates extends LatLng { accuracy: CoordinatesAccuracy; }
 
 /**
  * Coordinates as saved. `review` is true once the place's address changed after they were saved: the map doesn't use
@@ -28,18 +31,29 @@ export function normalizeCoordinates(value: unknown): Coordinates | null {
   if (value === null) return null;
   if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error("Enter coordinates as a latitude, a longitude and their accuracy, or remove them.");
   const { latitude, longitude, accuracy } = value as Record<string, unknown>;
+  const point = normalizeLatLng(latitude, longitude);
+  if (!COORDINATE_ACCURACIES.includes(accuracy as CoordinatesAccuracy)) throw new Error("Choose whether the coordinates are exact or approximate.");
+  return { ...point, accuracy: accuracy as CoordinatesAccuracy };
+}
+
+/** A latitude and a longitude a change gives, checked: both together, each within range, as a place's coordinates and a medical provider's map location (TRA-172) give them. */
+export function normalizeLatLng(latitude: unknown, longitude: unknown): LatLng {
   if (latitude === undefined || latitude === null || longitude === undefined || longitude === null) throw new Error("Enter both a latitude and a longitude, or remove the coordinates.");
   if (!degrees(latitude, 90)) throw new Error("Latitude must be a number from -90 to 90.");
   if (!degrees(longitude, 180)) throw new Error("Longitude must be a number from -180 to 180.");
-  if (!COORDINATE_ACCURACIES.includes(accuracy as CoordinatesAccuracy)) throw new Error("Choose whether the coordinates are exact or approximate.");
   // Adding 0 saves -0 as 0, which SQLite reads back.
-  return { latitude: latitude + 0, longitude: longitude + 0, accuracy: accuracy as CoordinatesAccuracy };
+  return { latitude: latitude + 0, longitude: longitude + 0 };
 }
 
 /** Coordinates as an editor's fields hold them. A blank latitude or longitude is no number, rather than 0. */
 export function enteredCoordinates(latitude: string, longitude: string, accuracy: string): Coordinates {
+  return { ...enteredLatLng(latitude, longitude), accuracy: accuracy as CoordinatesAccuracy };
+}
+
+/** A latitude and longitude as an editor's fields hold them. A blank one is no number, rather than 0. */
+export function enteredLatLng(latitude: string, longitude: string): LatLng {
   const degrees = (text: string) => text.trim() === "" ? NaN : Number(text);
-  return { latitude: degrees(latitude), longitude: degrees(longitude), accuracy: accuracy as CoordinatesAccuracy };
+  return { latitude: degrees(latitude), longitude: degrees(longitude) };
 }
 
 /**
@@ -61,6 +75,6 @@ export function sameCoordinates(a: Coordinates, b: Coordinates): boolean {
 }
 
 /** Coordinates as people read them, latitude first, as a map search takes them: 48.20849, 16.37208. */
-export function formatCoordinates({ latitude, longitude }: Coordinates): string {
+export function formatCoordinates({ latitude, longitude }: LatLng): string {
   return latitude + ", " + longitude;
 }

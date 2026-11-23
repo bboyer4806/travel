@@ -159,6 +159,15 @@ Repeat passing checks when subsequent changes affect their coverage or required 
   record gives it: a save without it comes from a page opened before TRA-171 and is refused with `PLANNER_UPDATED`, and
   `aiChange` refuses an assistant's with `GIVE_US_ADVISORY_LEVEL`. It is apart from the typed `advisoryLevel`, and Travel
   never reads a level from research or looks one up.
+- A destination's doctors and clinics for non-emergency care (TRA-172) are `medicalProviders` in its health and safety
+  record, apart from `emergencyContacts`: `MedicalProvider`s in `src/lib/health-safety.ts`, with no limit on how many,
+  checked by `normalizeHealthSafety`. Each check is `verified` or `unconfirmed` (`PROVIDER_CHECKS`) and the soonest visit
+  one of `SHORT_NOTICE_CARE`, always given and never inferred; a map location is a latitude and longitude, checked by
+  `normalizeLatLng` in `src/lib/coordinates.ts`. Every record gives the list: a save without it comes from a page opened
+  before TRA-172 and is refused with `PLANNER_UPDATED`, and `aiChange` refuses an assistant's with
+  `GIVE_MEDICAL_PROVIDERS`. The editor holds `MedicalProviderDraft`s, their degrees as typed; the section lists them with
+  `providersInOrder`, verified English first, and links with `telephoneHref` and `mapHref`. Travel never finds, checks,
+  ranks or books providers.
 - Layover plans (TRA-45) are `layover_plans`, at most one per layover in a connection's `itineraryJson`, keyed by
   `legId` and `layoverId`, read as each leg's `layoverPlans` and changed only by `leg.layoverPlan` with a whole plan or
   null. `normalizeLayoverPlan` and `layoverSchedule` in `src/lib/layover-plan.ts` check a plan and work out its schedule:

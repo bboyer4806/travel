@@ -10,7 +10,7 @@ import { ChurchSundays } from "@/components/church-sundays";
 import { EntryRequirementsPanel, EntryRequirementsEditor } from "@/components/entry-requirements";
 import { entryRequirementsFromForm } from "@/lib/entry-requirements";
 import { HealthSafetyPanel, HealthSafetyEditor } from "@/components/health-safety";
-import { healthSafetyFromForm, type EmergencyContact } from "@/lib/health-safety";
+import { healthSafetyFromForm, providerDraft, type EmergencyContact, type MedicalProviderDraft } from "@/lib/health-safety";
 import { ChurchOptions, ChurchEditor, ChurchDetails, ChurchSection } from "@/components/churches";
 import { MonthlyClimateEditor, TypicalWeatherPanel, TypicalWeatherEditor } from "@/components/typical-weather";
 import { monthlyClimateFromForm } from "@/lib/typical-weather";
@@ -186,6 +186,8 @@ export default function PlannerApp({ initialData, initialBudgets, access = {}, d
   const [massTimes, setMassTimes] = useState<MassTime[]>([]);
   const [researchLinks, setResearchLinks] = useState<ResearchLink[]>([]);
   const [emergencyContacts, setEmergencyContacts] = useState<EmergencyContact[]>([]);
+  // The Health and safety editor's doctors and clinics for non-emergency care (TRA-172).
+  const [medicalProviders, setMedicalProviders] = useState<MedicalProviderDraft[]>([]);
   const [destinationGallery, setDestinationGallery] = useState<GalleryDraft>(() => createGalleryDraft());
   const [candidateGallery, setCandidateGallery] = useState<GalleryDraft>(() => createGalleryDraft());
   // The trip editor's headline image and its crops (TRA-133), saved with the trip.
@@ -247,7 +249,7 @@ export default function PlannerApp({ initialData, initialBudgets, access = {}, d
     if (value.kind === "layover") setLayoverDraft(layoverPlanDraft(value.leg.layoverPlans.find((plan) => plan.layoverId === value.layover.id)));
     if (value.kind === "leg" || value.kind === "candidate") setResearchLinks(draft?.links ?? value.item?.links ?? []);
     if (value.kind === "entryRequirements") setResearchLinks(value.item.entryRequirements?.sources ?? []);
-    if (value.kind === "healthSafety") { setResearchLinks(value.item.healthSafety?.sources ?? []); setEmergencyContacts(value.item.healthSafety?.emergencyContacts ?? []); }
+    if (value.kind === "healthSafety") { setResearchLinks(value.item.healthSafety?.sources ?? []); setEmergencyContacts(value.item.healthSafety?.emergencyContacts ?? []); setMedicalProviders((value.item.healthSafety?.medicalProviders ?? []).map(providerDraft)); }
     if (value.kind === "church") setMassTimes(value.item?.massTimes ?? []);
     setDestinationGallery(createGalleryDraft(value.kind === "destination" ? value.item : undefined));
     setCandidateGallery(draft?.gallery ?? createGalleryDraft(value.kind === "candidate" || value.kind === "church" ? value.item : undefined));
@@ -436,7 +438,7 @@ export default function PlannerApp({ initialData, initialBudgets, access = {}, d
         break;
       }
       case "healthSafety": {
-        void perform({ type: "destination.healthSafety", id: editor.item.id, healthSafety: healthSafetyFromForm(fields, emergencyContacts, researchLinks) }, "Health and safety saved.");
+        void perform({ type: "destination.healthSafety", id: editor.item.id, healthSafety: healthSafetyFromForm(fields, emergencyContacts, researchLinks, medicalProviders) }, "Health and safety saved.");
         break;
       }
       case "weather": {
@@ -639,7 +641,7 @@ export default function PlannerApp({ initialData, initialBudgets, access = {}, d
           <DestinationBudget snapshot={data} visit={{ ...place, nights: null }} onShoppingEdit={() => open({ kind: "shoppingBudget", item: place })} onMiscellaneousEdit={() => open({ kind: "miscellaneousBudget", item: place, nights: null })} />
           {renderIdeaSections(place)}
           <EntryRequirementsPanel requirements={place.entryRequirements} disabled={busy} onEdit={() => open({ kind: "entryRequirements", item: place })} onClear={() => confirmDelete({ type: "destination.entryRequirements", id: place.id, requirements: null }, "Clear entry requirements?", "This removes the recorded requirements, sources, and last checked date for " + label + ", in every trip that visits it.")} />
-          <HealthSafetyPanel healthSafety={place.healthSafety} disabled={busy} onEdit={() => open({ kind: "healthSafety", item: place })} onClear={() => confirmDelete({ type: "destination.healthSafety", id: place.id, healthSafety: null }, "Clear health and safety?", "This removes the recorded advisories, precautions, safety guidance, emergency contacts, sources, and last checked date for " + label + ", in every trip that visits it.")} />
+          <HealthSafetyPanel healthSafety={place.healthSafety} disabled={busy} onEdit={() => open({ kind: "healthSafety", item: place })} onClear={() => confirmDelete({ type: "destination.healthSafety", id: place.id, healthSafety: null }, "Clear health and safety?", "This removes the recorded advisories, precautions, safety guidance, emergency contacts, non-emergency medical providers, sources, and last checked date for " + label + ", in every trip that visits it.")} />
           <TypicalWeatherPanel weather={place} disabled={busy} onEdit={() => open({ kind: "weather", item: place })} onEditClimate={() => open({ kind: "climate", item: place })} onClearClimate={() => confirmDelete({ type: "destination.climate", id: place.id, climate: null }, "Clear monthly averages?", climateClearing(label))} />
           {renderChurch(place, MAIN_COLUMN)}
         </article>
@@ -719,7 +721,7 @@ export default function PlannerApp({ initialData, initialBudgets, access = {}, d
                 <DestinationBudget snapshot={data} visit={visit} stop={visitStop} onShoppingEdit={() => open({ kind: "shoppingBudget", item: visit })} onMiscellaneousEdit={() => open({ kind: "miscellaneousBudget", item: visit, nights: visit.nights })} renderUnset={(category, text, keepFocus) => unsetControl(unsetStayAmount(data, visitStop, visit, category), text, keepFocus)} />
                 {renderIdeaSections(visit, visitStop)}
                 <EntryRequirementsPanel requirements={visit.entryRequirements} stay={visitStop} disabled={busy} onEdit={() => open({ kind: "entryRequirements", item: visit })} onClear={() => confirmDelete({ type: "destination.entryRequirements", id: visit.id, requirements: null }, "Clear entry requirements?", "This removes the recorded requirements, sources, and last checked date for " + label + ", in every trip that visits it.")} />
-                <HealthSafetyPanel healthSafety={visit.healthSafety} disabled={busy} onEdit={() => open({ kind: "healthSafety", item: visit })} onClear={() => confirmDelete({ type: "destination.healthSafety", id: visit.id, healthSafety: null }, "Clear health and safety?", "This removes the recorded advisories, precautions, safety guidance, emergency contacts, sources, and last checked date for " + label + ", in every trip that visits it.")} />
+                <HealthSafetyPanel healthSafety={visit.healthSafety} disabled={busy} onEdit={() => open({ kind: "healthSafety", item: visit })} onClear={() => confirmDelete({ type: "destination.healthSafety", id: visit.id, healthSafety: null }, "Clear health and safety?", "This removes the recorded advisories, precautions, safety guidance, emergency contacts, non-emergency medical providers, sources, and last checked date for " + label + ", in every trip that visits it.")} />
                 <TypicalWeatherPanel weather={visit} stay={visitStop} disabled={busy} onEdit={() => open({ kind: "weather", item: visit })} onEditClimate={() => open({ kind: "climate", item: visit })} onClearClimate={() => confirmDelete({ type: "destination.climate", id: visit.id, climate: null }, "Clear monthly averages?", climateClearing(label))} />
                 {renderChurch(visit, MAIN_COLUMN, visitStop)}
               </article>]; })}{renderStopInsertion(visits.length)}</div>}
@@ -801,7 +803,7 @@ export default function PlannerApp({ initialData, initialBudgets, access = {}, d
       {editor.kind === "newDestination" && <LocationField compactDestination label="City or destination" name="city" required disabled={busy} placeholder="Start typing a city, e.g. Vienna" helpText="Choose a suggestion or enter any destination." hint="If you already have this destination, its page opens instead." />}
       {editor.kind === "church" && <ChurchEditor item={editor.item} massTimes={massTimes} onTimesChange={setMassTimes} gallery={candidateGallery} onGalleryChange={setCandidateGallery} busy={busy} />}
       {editor.kind === "entryRequirements" && <EntryRequirementsEditor requirements={editor.item.entryRequirements} sources={researchLinks} onSourcesChange={setResearchLinks} disabled={busy} />}
-      {editor.kind === "healthSafety" && <HealthSafetyEditor healthSafety={editor.item.healthSafety} contacts={emergencyContacts} onContactsChange={setEmergencyContacts} sources={researchLinks} onSourcesChange={setResearchLinks} disabled={busy} />}
+      {editor.kind === "healthSafety" && <HealthSafetyEditor healthSafety={editor.item.healthSafety} contacts={emergencyContacts} onContactsChange={setEmergencyContacts} providers={medicalProviders} onProvidersChange={setMedicalProviders} sources={researchLinks} onSourcesChange={setResearchLinks} disabled={busy} />}
       {editor.kind === "weather" && <TypicalWeatherEditor weather={editor.item} disabled={busy} />}
       {editor.kind === "climate" && <MonthlyClimateEditor climate={editor.item.climate} disabled={busy} />}
       {editor.kind === "shoppingBudget" && <ShoppingBudgetEditor destination={editor.item} disabled={busy} />}

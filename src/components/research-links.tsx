@@ -12,9 +12,14 @@ type EditorProps = {
   links: ResearchLink[];
   onChange: (links: ResearchLink[]) => void;
   disabled?: boolean;
+  /** What the links are and how they help, and what one is called, such as a medical provider's sources (TRA-172). */
+  legend?: string;
+  hint?: string;
+  noun?: "link" | "source";
 };
 
-export function ResearchLinksEditor({ links, onChange, disabled = false }: EditorProps) {
+export function ResearchLinksEditor({ links, onChange, disabled = false, legend = "Website and research links", hint = "Save booking pages, guides, or other useful references with a short description.", noun = "link" }: EditorProps) {
+  const name = noun === "link" ? "Link" : "Source";
   const id = useId();
   const inputs = useRef(new Map<string, HTMLInputElement>());
   const addButton = useRef<HTMLButtonElement>(null);
@@ -45,13 +50,13 @@ export function ResearchLinksEditor({ links, onChange, disabled = false }: Edito
   }
 
   return <fieldset className={styles.editor} disabled={disabled} aria-describedby={`${id}-hint`}>
-    <legend>Website and research links</legend>
-    <p className={styles.hint} id={`${id}-hint`}>Save booking pages, guides, or other useful references with a short description.</p>
+    <legend>{legend}</legend>
+    <p className={styles.hint} id={`${id}-hint`}>{hint}</p>
     {links.length > 0 && <div className={styles.rows}>
       {links.map((link, index) => <div className={styles.row} key={link.id}>
         <div className={styles.rowHeading}>
-          <span>Link {index + 1}</span>
-          <button type="button" className={styles.remove} disabled={disabled} onClick={() => remove(index)} aria-label={`Remove link ${index + 1}`}>
+          <span>{name} {index + 1}</span>
+          <button type="button" className={styles.remove} disabled={disabled} onClick={() => remove(index)} aria-label={`Remove ${noun} ${index + 1}`}>
             <Trash2 size={14} aria-hidden="true" />Remove
           </button>
         </div>
@@ -60,19 +65,19 @@ export function ResearchLinksEditor({ links, onChange, disabled = false }: Edito
           <input id={`${id}-${link.id}-url`} ref={(input) => { if (input) inputs.current.set(link.id, input); else inputs.current.delete(link.id); }}
             type="url" inputMode="url" required maxLength={2048} pattern="https?://.+" title="Enter a full website address beginning with https:// or http://."
             value={link.url} onChange={(event) => update(link.id, "url", event.target.value)} placeholder="https://" autoComplete="off" autoCapitalize="none" spellCheck={false}
-            aria-label={`Link ${index + 1} website URL`} />
+            aria-label={`${name} ${index + 1} website URL`} />
         </label>
         <label className={styles.field} htmlFor={`${id}-${link.id}-description`}>
           <span>Short description <span className={styles.optional}>(optional)</span></span>
           <input id={`${id}-${link.id}-description`} value={link.description} onChange={(event) => update(link.id, "description", event.target.value)}
-            maxLength={160} placeholder="e.g. Booking options or a helpful guide" aria-label={`Link ${index + 1} short description`} />
+            maxLength={160} placeholder={noun === "link" ? "e.g. Booking options or a helpful guide" : "e.g. What this source covers"} aria-label={`${name} ${index + 1} short description`} />
         </label>
       </div>)}
     </div>}
     <button type="button" ref={addButton} className="button secondary small" disabled={disabled || links.length >= MAX_LINKS} onClick={add}>
-      <Plus size={15} aria-hidden="true" />Add link
+      <Plus size={15} aria-hidden="true" />Add {noun}
     </button>
-    {links.length >= MAX_LINKS && <p className={styles.hint}>You can save up to {MAX_LINKS} links.</p>}
+    {links.length >= MAX_LINKS && <p className={styles.hint}>You can save up to {MAX_LINKS} {noun}s.</p>}
   </fieldset>;
 }
 

@@ -1,10 +1,14 @@
 "use client";
 
 import { useEffect, useId, useRef, useState } from "react";
-import { ChevronDown, Pencil, Plus, Trash2 } from "lucide-react";
+import { ChevronDown, ExternalLink, MapPin, Pencil, Phone, Plus, Trash2 } from "lucide-react";
 import { useFocusFallback } from "@/components/focus-after";
 import { ResearchLinks, ResearchLinksEditor } from "@/components/research-links";
-import { EMERGENCY_CONTACT_MAX_LENGTH, HEALTH_SAFETY_FIELDS, MAX_EMERGENCY_CONTACTS, US_ADVISORY_LEVELS, usAdvisoryLabel, type EmergencyContact, type HealthSafety } from "@/lib/health-safety";
+import { formatCoordinates } from "@/lib/coordinates";
+import {
+  CHECK_LABELS, EMERGENCY_CONTACT_MAX_LENGTH, HEALTH_SAFETY_FIELDS, MAX_EMERGENCY_CONTACTS, MEDICAL_PROVIDER_MAX_LENGTH, PROVIDER_CHECKS, SHORT_NOTICE_CARE, SHORT_NOTICE_LABELS, US_ADVISORY_LEVELS,
+  mapHref, newProviderDraft, providersInOrder, telephoneHref, usAdvisoryLabel, type EmergencyContact, type HealthSafety, type MedicalProvider, type MedicalProviderDraft, type ProviderCheck, type ShortNoticeCare,
+} from "@/lib/health-safety";
 import { formatCalendarDate } from "@/lib/trip-dates";
 import type { ResearchLink } from "@/lib/types";
 import { randomUuid } from "@/lib/uuid";
@@ -21,6 +25,12 @@ const fieldHints = {
   healthPrecautions: "Recommended vaccinations, medical precautions, and other health considerations.",
   localSafety: "Safety concerns, common scams, areas to avoid, and general safety guidance.",
 } as const;
+// Non-emergency medical care (TRA-172): doctors and clinics, apart from the emergency contacts, which it follows.
+const careNote = "For routine illness or minor injuries, not emergencies. In an emergency, call local emergency services or the emergency contacts above.";
+const careHint = "Providers verified to offer consultations in English are listed first. Verified means a source confirmed it when the provider was last verified; call ahead, since no appointment or availability is guaranteed. Appearing on a U.S. embassy or consulate list of medical providers does not mean the U.S. government endorses or guarantees a provider.";
+const providersHint = "Add doctors, medical clinics, or outpatient facilities for routine illness or minor injuries, not emergency services. Prefer providers confirmed to offer consultations in English, starting with the U.S. embassy or consulate's list of medical providers, then the provider's own website and other reliable sources. Leave anything you have not verified Unconfirmed or blank. Appearing on an embassy list does not mean the U.S. government endorses a provider.";
+/** A provider's soonest visit as its section shows it: what a source confirmed, never a guarantee, or Unconfirmed. */
+const shortNoticeText = (value: ShortNoticeCare) => value === "unconfirmed" ? SHORT_NOTICE_LABELS.unconfirmed : `${SHORT_NOTICE_LABELS[value]} (verified, not guaranteed)`;
 
 type PanelProps = {
   healthSafety: HealthSafety | null;
@@ -60,6 +70,7 @@ export function HealthSafetyPanel({ healthSafety, disabled, onEdit, onClear }: P
         <div className={styles.list}><h5>Emergency contacts</h5>{healthSafety.emergencyContacts.length ? <ul className={styles.contacts}>
           {healthSafety.emergencyContacts.map((contact) => <li key={contact.id}><strong>{contact.name}</strong><span>{contact.phone}</span>{contact.notes && <span className={styles.contactNotes}>{contact.notes}</span>}</li>)}
         </ul> : <p>Not recorded</p>}</div>
+        <MedicalCare providers={healthSafety.medicalProviders} />
         <div className={styles.list}><h5>Sources</h5>{healthSafety.sources.length ? <ResearchLinks links={healthSafety.sources} /> : <p>Not recorded</p>}</div>
         <p className={styles.hint}>{missing}</p>
       </>}
@@ -67,16 +78,54 @@ export function HealthSafetyPanel({ healthSafety, disabled, onEdit, onClear }: P
   </section>;
 }
 
+/** Non-emergency medical care (TRA-172): the doctors and clinics recorded, those verified to offer consultations in English first. */
+function MedicalCare({ providers }: { providers: MedicalProvider[] }) {
+  return <div className={styles.list}>
+    <h5>Non-emergency medical care</h5>
+    <p className={styles.careNote}>{careNote}</p>
+    {providers.length ? <ul className={styles.providers}>
+      {providersInOrder(providers).map((provider) => <li className={styles.provider} key={provider.id}><MedicalProviderDetails provider={provider} /></li>)}
+    </ul> : <p>Not recorded</p>}
+    <p className={styles.hint}>{careHint}</p>
+  </div>;
+}
+
+/** One provider: what it offers, what a source confirmed, and links that call it, open its website and show it on a map. */
+function MedicalProviderDetails({ provider }: { provider: MedicalProvider }) {
+  const { name, services, phone, website, address, coordinates, notes, sources, lastVerifiedDate } = provider;
+  const newTab = <span className="sr-only"> (opens in a new tab)</span>;
+  return <>
+    <h6 className={styles.providerName}>{name}</h6>
+    {services && <p className={styles.services}>{services}</p>}
+    <dl className={styles.providerDetails}>
+      <div><dt>Consultations in English</dt><dd>{CHECK_LABELS[provider.englishConsultations]}</dd></div>
+      <div><dt>Sees visiting American patients</dt><dd>{CHECK_LABELS[provider.visitingAmericans]}</dd></div>
+      <div><dt>Walk-in, same-day or short-notice visits</dt><dd>{shortNoticeText(provider.shortNotice)}</dd></div>
+      <div><dt>Last verified</dt><dd>{lastVerifiedDate ? formatCalendarDate(lastVerifiedDate) : "Not verified"}</dd></div>
+      <div><dt>Phone</dt><dd>{phone ? <a className={styles.contactLink} href={telephoneHref(phone)}><Phone size={14} aria-hidden="true" /><span>{phone}<span className="sr-only">, call {name}</span></span></a> : "Not recorded"}</dd></div>
+      <div><dt>Website</dt><dd>{website ? <a className={styles.contactLink} href={website} target="_blank" rel="noopener noreferrer"><ExternalLink size={14} aria-hidden="true" /><span>{new URL(website).hostname.replace(/^www\./, "")}{newTab}</span></a> : "Not recorded"}</dd></div>
+      <div className={styles.wide}><dt>Address and map location</dt><dd>{address || coordinates ? <>
+        {address && <a className={styles.contactLink} href={mapHref(address)} target="_blank" rel="noopener noreferrer"><MapPin size={14} aria-hidden="true" /><span>{address}<span className="sr-only"> in Google Maps</span>{newTab}</span></a>}
+        {coordinates && <a className={styles.contactLink} href={mapHref(`${coordinates.latitude},${coordinates.longitude}`)} target="_blank" rel="noopener noreferrer"><MapPin size={14} aria-hidden="true" /><span>{formatCoordinates(coordinates)}<span className="sr-only"> in Google Maps</span>{newTab}</span></a>}
+      </> : "Not recorded"}</dd></div>
+      {notes && <div className={styles.wide}><dt>Notes</dt><dd>{notes}</dd></div>}
+      <div className={styles.wide}><dt>Sources</dt><dd>{sources.length ? <ResearchLinks links={sources} /> : "Not recorded"}</dd></div>
+    </dl>
+  </>;
+}
+
 type EditorProps = {
   healthSafety: HealthSafety | null;
   contacts: EmergencyContact[];
   onContactsChange: (contacts: EmergencyContact[]) => void;
+  providers: MedicalProviderDraft[];
+  onProvidersChange: (providers: MedicalProviderDraft[]) => void;
   sources: ResearchLink[];
   onSourcesChange: (sources: ResearchLink[]) => void;
   disabled: boolean;
 };
 
-export function HealthSafetyEditor({ healthSafety, contacts, onContactsChange, sources, onSourcesChange, disabled }: EditorProps) {
+export function HealthSafetyEditor({ healthSafety, contacts, onContactsChange, providers, onProvidersChange, sources, onSourcesChange, disabled }: EditorProps) {
   return <fieldset className={styles.editor + " wide"} disabled={disabled}>
     <legend>Health and safety research</legend>
     <p className={styles.reminder}>{reminder}</p>
@@ -98,6 +147,7 @@ export function HealthSafetyEditor({ healthSafety, contacts, onContactsChange, s
       </label>)}
     </div>
     <EmergencyContactsEditor contacts={contacts} onChange={onContactsChange} disabled={disabled} />
+    <MedicalProvidersEditor providers={providers} onChange={onProvidersChange} disabled={disabled} />
     <p className={styles.sourceHint}>Add official government, embassy, or health agency source links and describe what each source covers.</p>
     <ResearchLinksEditor links={sources} onChange={onSourcesChange} disabled={disabled} />
   </fieldset>;
@@ -166,3 +216,111 @@ function EmergencyContactsEditor({ contacts, onChange, disabled }: { contacts: E
     {contacts.length >= MAX_EMERGENCY_CONTACTS && <p className={styles.hint}>You can save up to {MAX_EMERGENCY_CONTACTS} emergency contacts.</p>}
   </fieldset>;
 }
+
+/**
+ * Doctors and clinics for non-emergency care (TRA-172), as many as are worth keeping. Each needs a name; everything else is
+ * optional, and what a source confirmed starts Unconfirmed. A new provider's name, or after a removal the next provider's
+ * name or Add provider, takes focus.
+ */
+function MedicalProvidersEditor({ providers, onChange, disabled }: { providers: MedicalProviderDraft[]; onChange: (providers: MedicalProviderDraft[]) => void; disabled: boolean }) {
+  const id = useId();
+  const nameInputs = useRef(new Map<string, HTMLInputElement>());
+  const addButton = useRef<HTMLButtonElement>(null);
+  const pendingFocus = useRef<string | null>(null);
+
+  useEffect(() => {
+    if (pendingFocus.current === null) return;
+    if (pendingFocus.current === "add") addButton.current?.focus();
+    else nameInputs.current.get(pendingFocus.current)?.focus();
+    pendingFocus.current = null;
+  }, [providers]);
+
+  function update<K extends keyof MedicalProviderDraft>(providerId: string, field: K, value: MedicalProviderDraft[K]) {
+    onChange(providers.map((provider) => provider.id === providerId ? { ...provider, [field]: value } : provider));
+  }
+
+  function add() {
+    if (disabled) return;
+    const providerId = randomUuid();
+    pendingFocus.current = providerId;
+    onChange([...providers, newProviderDraft(providerId)]);
+  }
+
+  function remove(index: number) {
+    if (disabled) return;
+    pendingFocus.current = providers[index + 1]?.id ?? providers[index - 1]?.id ?? "add";
+    onChange(providers.filter((_, position) => position !== index));
+  }
+
+  const optional = <span className={styles.optional}>(optional)</span>;
+  return <fieldset className={styles.contactsEditor} disabled={disabled} aria-describedby={`${id}-providers-hint`}>
+    <legend>Non-emergency medical care</legend>
+    <p className={styles.hint} id={`${id}-providers-hint`}>{providersHint}</p>
+    {providers.length > 0 && <div className={styles.contactRows}>
+      {providers.map((provider, index) => {
+        const label = `Provider ${index + 1}`;
+        // A latitude or longitude needs the other, as a place's coordinates do.
+        const located = provider.latitude.trim() !== "" || provider.longitude.trim() !== "";
+        /** A text field's value, its limit, its name for screen readers and its change. */
+        const text = (field: keyof typeof fieldNames) => ({
+          value: provider[field], maxLength: MEDICAL_PROVIDER_MAX_LENGTH[field], "aria-label": `${label} ${fieldNames[field]}`,
+          onChange: (event: { target: { value: string } }) => update(provider.id, field, event.target.value),
+        });
+        return <div className={styles.contactRow} key={provider.id} role="group" aria-labelledby={`${id}-${provider.id}`}>
+          <div className={styles.rowHeading}>
+            <span id={`${id}-${provider.id}`}>{label}</span>
+            <button type="button" className={styles.remove} disabled={disabled} onClick={() => remove(index)} aria-label={`Remove provider ${index + 1}`}>
+              <Trash2 size={14} aria-hidden="true" />Remove
+            </button>
+          </div>
+          <label className="field wide"><span>Name</span>
+            <input ref={(input) => { if (input) nameInputs.current.set(provider.id, input); else nameInputs.current.delete(provider.id); }} {...text("name")} required placeholder="e.g. International medical clinic, or a doctor's name" />
+          </label>
+          <label className="field wide"><span>Medical specialty or services {optional}</span><input {...text("services")} placeholder="e.g. General practice, pediatrics" /></label>
+          <label className="field"><span>Phone number {optional}</span><input type="tel" {...text("phone")} placeholder="e.g. +351 21 000 0000" autoComplete="off" /></label>
+          <label className="field"><span>Website {optional}</span>
+            <input type="url" inputMode="url" pattern="https?://.+" title="Enter a full website address beginning with https:// or http://." {...text("website")} placeholder="https://" autoComplete="off" autoCapitalize="none" spellCheck={false} />
+          </label>
+          <label className="field wide"><span>Address {optional}</span><input {...text("address")} placeholder="Street address, city" /></label>
+          <label className="field"><span>Latitude {optional}</span>
+            <input type="number" className="no-spin-buttons" min="-90" max="90" step="any" required={located} value={provider.latitude} onChange={(event) => update(provider.id, "latitude", event.target.value)} aria-label={`${label} latitude`} />
+            <small>Its map location, with the longitude: from −90 to 90, negative south of the equator.</small>
+          </label>
+          <label className="field"><span>Longitude {optional}</span>
+            <input type="number" className="no-spin-buttons" min="-180" max="180" step="any" required={located} value={provider.longitude} onChange={(event) => update(provider.id, "longitude", event.target.value)} aria-label={`${label} longitude`} />
+            <small>From −180 to 180, negative west of Greenwich.</small>
+          </label>
+          <label className="field"><span>Consultations in English</span>
+            <select value={provider.englishConsultations} onChange={(event) => update(provider.id, "englishConsultations", event.target.value as ProviderCheck)} aria-label={`${label} consultations in English`}>
+              {PROVIDER_CHECKS.map((check) => <option key={check} value={check}>{CHECK_LABELS[check]}</option>)}
+            </select>
+          </label>
+          <label className="field"><span>Sees visiting American patients</span>
+            <select value={provider.visitingAmericans} onChange={(event) => update(provider.id, "visitingAmericans", event.target.value as ProviderCheck)} aria-label={`${label} sees visiting American patients`}>
+              {PROVIDER_CHECKS.map((check) => <option key={check} value={check}>{CHECK_LABELS[check]}</option>)}
+            </select>
+          </label>
+          <label className="field"><span>Walk-in, same-day or short-notice visits</span>
+            <select value={provider.shortNotice} onChange={(event) => update(provider.id, "shortNotice", event.target.value as ShortNoticeCare)} aria-label={`${label} walk-in, same-day or short-notice visits`}>
+              {SHORT_NOTICE_CARE.map((value) => <option key={value} value={value}>{SHORT_NOTICE_LABELS[value]}</option>)}
+            </select>
+            <small>Choose a visit only when a source confirms it. It is never a guarantee.</small>
+          </label>
+          <label className="field"><span>Last verified date {optional}</span>
+            <input type="date" min="0001-01-01" max="9999-12-31" value={provider.lastVerifiedDate ?? ""} onChange={(event) => update(provider.id, "lastVerifiedDate", event.target.value || null)} aria-label={`${label} last verified date`} />
+            <small>The date you checked its details. Saving does not set it.</small>
+          </label>
+          <label className="field wide"><span>Notes {optional}</span><textarea {...text("notes")} rows={2} placeholder="e.g. Hours, how to book, or payment" /></label>
+          <ResearchLinksEditor links={provider.sources} onChange={(sources) => update(provider.id, "sources", sources)} disabled={disabled} noun="source"
+            legend="Sources" hint="Links supporting this provider's details, such as the embassy's list or its own website." />
+        </div>;
+      })}
+    </div>}
+    <button type="button" ref={addButton} className="button secondary small" disabled={disabled} onClick={add}>
+      <Plus size={15} aria-hidden="true" />Add provider
+    </button>
+  </fieldset>;
+}
+
+/** Each provider text field's name, after its provider's, for screen readers. */
+const fieldNames = { name: "name", services: "medical specialty or services", phone: "phone number", website: "website", address: "address", notes: "notes" } as const;

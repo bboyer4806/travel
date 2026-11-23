@@ -179,11 +179,11 @@ test("a schema 33 database upgrades with no headline images, and a replay keeps 
   }
 });
 
-test("ChatGPT and Claude can't change a trip's headline image, and see what deleting a trip deletes with it", (t) => {
+test("ChatGPT and Claude change a trip's headline image only with trip.image (TRA-174), and see what deleting a trip deletes with it", (t) => {
   const { store, owner, ownerTrip, propose, decide } = aiSetup(t);
   store.applyMutation(owner, tripEdit(ownerTrip, { data: webp, large: null, card, banner }, { name: "Owner trip" }));
   for (const image of [null, { version: store.getTripImage(owner, ownerTrip).version, card: UNCROPPED, banner }]) {
-    assert.throws(() => propose([tripEdit(ownerTrip, image, { name: "Owner trip" })]), { name: "ValidationError", message: "Change 1: A trip's headline image can only be chosen in Travel." });
+    assert.throws(() => propose([tripEdit(ownerTrip, image, { name: "Owner trip" })]), { name: "ValidationError", message: "Change 1: Change a trip's headline image with trip.image." });
   }
   const proposal = propose([{ type: "trip.delete", id: ownerTrip }]);
   assert.ok(proposal.preview[0].records.some((record) => record.action === "Deletes" && record.record === `Trip “Owner trip” (${AI_OWNER}): headline image`), "the owner sees the image deleted with the trip");

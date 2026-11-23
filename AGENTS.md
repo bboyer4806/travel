@@ -41,7 +41,7 @@ not verify those.
 After building, CI runs `node scripts/review-errors-smoke.mjs` against disposable databases and
 fixture sessions to check production HTTP errors, recovery, cross-bundle save validation,
 connecting Claude through OAuth, MCP and the owner's Server Actions, proposing, showing,
-approving and rejecting photo changes, serving trips' headline images and their large versions only to accounts that can open them, and
+approving and rejecting photo changes, proposing, showing and approving trips' headline images (TRA-174), serving trips' headline images and their large versions only to accounts that can open them, and
 Add image by URL's refusals.
 Fix regressions caused by your change; report unrelated baseline failures and blocked checks.
 Repeat passing checks when subsequent changes affect their coverage or required gates demand it.
@@ -94,7 +94,16 @@ Repeat passing checks when subsequent changes affect their coverage or required 
   rows (`src/lib/ai-preview.ts`); `decideAiProposal` makes them through `execute`, without
   `authorize`, in one transaction, only when they make exactly the rows previewed. Rows a change adds
   take their IDs and time from the `Make` it is given, so a proposal replays exactly. A new table or
-  column needs a label in `PREVIEW_COLUMNS`, or a place among the integration's own tables; tests check.
+  column needs a label in `PREVIEW_COLUMNS`, or in `EDITABLE_FIELDS` for an editable field, or a place among the
+  integration's own tables; tests check. `aiChange` refuses any property a change's schema doesn't list (`CHANGE_FIELDS`
+  in `src/lib/mcp-tools.ts`).
+- Editable fields (TRA-174): each record's ordinary fields, single values a save checks on its own and writes to one
+  column, are declared once in `EDITABLE_FIELDS` in `src/lib/editable-fields.ts`, with their kind, limits, label and
+  description. `validate` reads them with `readFields`, `propose_changes` describes each save's fields from them, previews
+  label their columns from them, and the save types in `src/lib/types.ts` follow from them. A new ordinary field goes there,
+  with its column, the read that gives it and the save that writes it, and needs no code for assistants;
+  `tests/editable-fields.test.mjs` proposes, previews, approves and reads back every field. Lists, records of their own,
+  IDs and photos keep explicit validation and schemas.
 - Photo changes (`destination.photos`, `candidate.photos`, `church.photos`, TRA-122) are only
   proposals': `validate` refuses them, so people change photos only through each item's save with
   uploaded files. Before a proposal is checked against Travel's data, `checkAiProposal` lists the photos
@@ -102,7 +111,8 @@ Repeat passing checks when subsequent changes affect their coverage or required 
   `src/lib/image-download.ts`, HTTPS to public addresses only, and prepares them with `prepareImage`;
   `aiChange` then takes each change's photos from those, never from what the assistant sent. A
   proposal's photos wait in `ai_proposal_photos`, never in `changesJson`, until it is decided or expires,
-  and the owner sees them through `/api/ai-proposal-images`.
+  and the owner sees them through `/api/ai-proposal-images`. `trip.image` (TRA-174), a trip's headline image, works the
+  same way, and a destination's headline image is its primary photo, which `destination.photos` changes.
 - Add image by URL (TRA-139) is `src/components/image-by-url.tsx`, in the destination, idea, church and trip image
   editors. `/api/image-url` downloads the image with `downloadImageByUrl` in `src/lib/image-url.ts`, through
   `src/lib/image-download.ts` over HTTP or HTTPS (proposals' photos stay HTTPS only), checks it with `prepareImage` and
@@ -156,7 +166,8 @@ Repeat passing checks when subsequent changes affect their coverage or required 
   estimate, starting at 0. Travel suggests no activities and supplies no estimates. A `leg.save` whose itinerary drops a
   layover or makes it a stop, and `clearLeg`, delete its plan, and deleting the leg cascades.
 - Application writes go through `mutatePlanner` in `src/app/actions.ts`, into `applyMutation`
-  in `src/lib/store.ts`, or come from an approved AI proposal. A new operation adds a `Mutation`
+  in `src/lib/store.ts`, or come from an approved AI proposal. A new ordinary field of an existing save goes in
+  `EDITABLE_FIELDS` instead (TRA-174). A new operation adds a `Mutation`
   variant in `src/lib/types.ts`, a case in `validate` (or, for a change only proposals make, in
   `aiChange`), `mutationScope` and `mutate` in the store, a schema in `src/lib/mcp-tools.ts` and a
   title in `operationTitle`. `mutationScope` finds the trip or
@@ -200,10 +211,12 @@ Repeat passing checks when subsequent changes affect their coverage or required 
   as before.
 - A trip's optional headline image (TRA-133) is its one row of `trip_images`, deleted with the trip, with its own
   crop for the trip's card on All trips and for its page's banner: a `PhotoCrop`, a focal point and a zoom, shown with
-  `cropStyle` and dragged with `draggedFocus` from `src/lib/photo-focus.ts`. Only `trip.save` changes it, with `image`,
-  which `mutatePlanner` always builds from the trip editor's form with `prepareTripImage` in
-  `src/lib/trip-image-upload.ts`, so no mutation supplies it, and `aiChange` refuses it. New crops name the version of the
-  image they were chosen for. `src/components/trip-image.tsx` shows it only when a trip has one, and edits it.
+  `cropStyle` and dragged with `draggedFocus` from `src/lib/photo-focus.ts`. People change it only with `trip.save`'s
+  `image`, which `mutatePlanner` always builds from the trip editor's form with `prepareTripImage` in
+  `src/lib/trip-image-upload.ts`, so no mutation supplies it, and `aiChange` refuses it there. ChatGPT and Claude propose it
+  only with `trip.image` (TRA-174), whose new image starts uncropped; the proposal's page shows the current and proposed
+  images from `PreviewRecord.headline`. New crops name the version of the image they were chosen for.
+  `src/components/trip-image.tsx` shows it only when a trip has one, and edits it.
 - A trip's page has its own spacing on phones (TRA-156): the planner marks its main content `trip-page`, and rules under
   it, in `globals.css` and in components' styles as `:global(.trip-page)`, change only spacing, up to 540px wide. What
   depends on a padding follows it: a card's photo takes it back, a carousel's arrows stay within it, and a destination's

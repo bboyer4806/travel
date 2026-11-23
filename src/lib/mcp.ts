@@ -14,7 +14,7 @@ import type { AiProposal } from "./types";
 
 /** The MCP versions Travel speaks, newest first. A client asking for another is offered the newest. */
 const PROTOCOL_VERSIONS = ["2025-11-25", "2025-06-18", "2025-03-26"];
-const INSTRUCTIONS = "Travel is a shared trip planner: trips with ordered stays at destinations, travel between them, hotel, activity and restaurant ideas, churches, research, At home items and estimated budgets. Every trip and destination can be read, whoever owns it. To change anything, call propose_changes: nothing changes until Travel's owner approves the proposal on Travel's own page, so give them its approve_at link, then check what they decided with get_change_proposal. Amounts are read as whole USD cents for the whole party and written as dollar text, such as \"125.50\". Photos are added from the https:// addresses of image files, which Travel downloads when they are proposed.";
+const INSTRUCTIONS = "Travel is a shared trip planner: trips with ordered stays at destinations, travel between them, hotel, activity and restaurant ideas, churches, research, At home items and estimated budgets. Every trip and destination can be read, whoever owns it. To change anything, call propose_changes: nothing changes until Travel's owner approves the proposal on Travel's own page, so give them its approve_at link, then check what they decided with get_change_proposal. Amounts are read as whole USD cents for the whole party and written as dollar text, such as \"125.50\". Photos and trips' headline images are added from the https:// addresses of image files, which Travel downloads when they are proposed.";
 const NO_STORE = { "Cache-Control": "no-store" };
 
 type Connection = NonNullable<ReturnType<typeof readAiConnection>>;
@@ -79,9 +79,10 @@ async function callTool(connection: Connection, params: Record<string, unknown>,
       case "list_accounts": return json({ accounts: aiAccounts() });
       case "get_photo": {
         const of = text("of");
-        if (of !== "destination" && of !== "idea" && of !== "church") return refusal("Choose a photo of a destination, idea or church.");
+        if (of !== "trip" && of !== "destination" && of !== "idea" && of !== "church") return refusal("Choose a trip's headline image, or a photo of a destination, idea or church.");
         const photo = aiPhoto(of, text("id"), text("photo_id"));
-        return photo ? { content: [{ type: "image", data: Buffer.from(photo.data).toString("base64"), mimeType: "image/webp" }] } : refusal(`Travel has no such photo of this ${of}.`);
+        if (photo) return { content: [{ type: "image", data: Buffer.from(photo.data).toString("base64"), mimeType: "image/webp" }] };
+        return refusal(of === "trip" ? "Travel has no such headline image of this trip." : `Travel has no such photo of this ${of}.`);
       }
       case "propose_changes": {
         // The photos the changes add are downloaded and prepared first (TRA-122), once the rest of the proposal checks out.

@@ -5,7 +5,7 @@ import { dirname, resolve } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { containsSunday, isValidDate, nightsToBudgetDays } from "./destination-duration.ts";
 import { destinationKey, formatSavedDestinationLabel, hasSuggestionLabelShape } from "./destination-label.ts";
-import { backfillDates, MAX_NIGHTS, sequenceDates } from "./trip-dates.ts";
+import { backfillDates, sequenceDates } from "./trip-dates.ts";
 import { MAX_AMOUNT_CENTS, parseMinorAmount } from "./money.ts";
 import { formatMegabytes, LARGE_PHOTO_SIZE, MAX_CANDIDATE_IMAGES, MAX_DESTINATION_IMAGES, MAX_STORED_IMAGE_BYTES, MAX_STORED_LARGE_IMAGE_BYTES, PHOTO_SIZE } from "./image-limits.ts";
 import { ENTRY_REQUIREMENT_FIELDS, normalizeEntryRequirements } from "./entry-requirements.ts";
@@ -13,23 +13,26 @@ import { GIVE_US_ADVISORY_LEVEL, normalizeHealthSafety } from "./health-safety.t
 import { climateFromJson, climateJson, NAME_EACH_MONTH, normalizeMonthlyClimate } from "./typical-weather.ts";
 import { normalizeCoordinates } from "./coordinates.ts";
 import { MAX_LAYOVER_MINUTES, normalizeLayoverPlan } from "./layover-plan.ts";
-import { MAX_PHOTO_ZOOM } from "./photo-focus.ts";
+import { MAX_PHOTO_ZOOM, UNCROPPED } from "./photo-focus.ts";
 import { SESSION_DAYS } from "./session-cookie.ts";
 import { alreadyTagged, cleanTagName, MAX_TAG_LENGTH, tagKey } from "./trip-tags.ts";
 import { PLANNER_UPDATED } from "./planner-updated.ts";
 import { RESTAURANT_TYPES } from "./types.ts";
 import { ACCESS_TOKEN_MS, AUTHORIZATION_CODE_MS, CONNECTION_MS, PROPOSAL_MS, aiPlatform, isPkceChallenge, pkceMatches } from "./ai-auth.ts";
 import { DATA_TABLES, PHOTO_TABLES, UNREAD_COLUMNS, effectsBetween, previewChange } from "./ai-preview.ts";
+import { EDITABLE_FIELDS } from "./editable-fields.ts";
+import { CHANGE_FIELDS } from "./mcp-tools.ts";
 import type { AiPlatform } from "./ai-auth.ts";
 import type { Coordinates, CoordinatesAccuracy, SavedCoordinates } from "./coordinates.ts";
 import type { Effect, PreviewChange, Row, Tables } from "./ai-preview.ts";
+import type { EditableField, FieldValues } from "./editable-fields.ts";
 import type { EntryRequirements } from "./entry-requirements.ts";
 import type { HealthSafety } from "./health-safety.ts";
 import type { LayoverActivity, LayoverPlan, SavedLayoverPlan } from "./layover-plan.ts";
 import type { MonthlyClimate } from "./typical-weather.ts";
 import type { AiConnection, AiPhotoToAdd, AiProposal, DestinationFields, GalleryUpdate, LargePhoto, PhotoCrop, PhotoWidths, PreparedImage, StoredThumbnail, TripImage, TripImageUpdate } from "./types";
 import type { AccessEntry, AccessOverview, AuthorizedAccount, DestinationAccess, GoogleIdentity, LibraryDestination, TripAccess, TripMember, TripStop } from "./types";
-import type { FoodBudgetMode, ActivitiesBudgetMode, Candidate, CandidateImage, Category, Church, MassTime, Destination, DestinationImage, HomeItem, StoredImage, ItineraryStop, Mutation, ResearchLink, RestaurantType, Snapshot, TravelLeg, Trip } from "./types";
+import type { Candidate, CandidateImage, Category, Church, MassTime, Destination, DestinationImage, HomeItem, StoredImage, ItineraryStop, Mutation, ResearchLink, RestaurantType, Snapshot, TravelLeg, Trip } from "./types";
 
 type StoredDestination = Omit<Destination, "churchEnabled" | "cityFromSuggestion" | "images" | "entryRequirements" | "healthSafety" | "climate" | "mainImageId" | "imageVersion"> & { churchEnabled: number; cityFromSuggestion: number; ownerId: string; cityKey: string };
 /** A hotel's, activity's, restaurant's or church's coordinate columns (TRA-150): latitude, longitude and accuracy all set, or all empty with review 0. */
@@ -90,12 +93,13 @@ export function isValidationError(error: unknown): error is ValidationError {
 }
 
 type Input = Record<string, unknown>;
-function textField(input: Input, key: string, max: number, required = false): string {
+/** Trimmed text. `messages` replace the usual refusals: `invalid` of anything but text, or blank text where it is required. */
+function textField(input: Input, key: string, max: number, required = false, messages: { invalid?: string; tooLong?: string } = {}): string {
   const value = input[key];
-  if (typeof value !== "string") throw new ValidationError(`${key} must be text.`);
+  if (typeof value !== "string") throw new ValidationError(messages.invalid ?? `${key} must be text.`);
   const trimmed = value.trim();
-  if (required && !trimmed) throw new ValidationError(`Please enter ${key}.`);
-  if (trimmed.length > max) throw new ValidationError(`${key} must be ${max} characters or fewer.`);
+  if (required && !trimmed) throw new ValidationError(messages.invalid ?? `Please enter ${key}.`);
+  if (trimmed.length > max) throw new ValidationError(messages.tooLong ?? `${key} must be ${max} characters or fewer.`);
   return trimmed;
 }
 function idField(input: Input, key = "id"): string {
@@ -146,8 +150,8 @@ function categoryField(input: Input): Category {
   if (!CATEGORIES.includes(input.category as Category)) throw new ValidationError("Choose hotels, activities, or restaurants.");
   return input.category as Category;
 }
-function urlField(input: Input, required = false): string {
-  const value = textField(input, "url", 2048, required);
+function urlField(input: Input, required = false, key = "url"): string {
+  const value = textField(input, key, 2048, required);
   if (!value) return "";
   try {
     const url = new URL(value);
@@ -178,76 +182,51 @@ function destinationAmount(entered: string | undefined, label: string, savedMino
   if (entered === undefined) return { minor: savedMinor ?? null, currency: savedCurrency ?? null };
   return { minor: amountCents(entered, label), currency: "USD" };
 }
-function priceField(input: Input): string {
-  const value = textField(input, "price", 32);
-  priceCents(value);
-  return value;
-}
 /** A connection's miscellaneous spending on the way in cents, or null when blank (TRA-26). */
 function miscCents(value: string): number | null {
   return amountCents(value, "Miscellaneous spending");
 }
-/** A connection's miscellaneous spending as a save sends it, checked, or undefined to keep the saved amount (TRA-26). */
-function miscAmountField(input: Input): string | undefined {
-  if (input.miscAmount === undefined) return undefined;
-  const value = textField(input, "miscAmount", 32);
-  miscCents(value);
-  return value;
-}
-function temperatureField(input: Input, key: "weatherHighF" | "weatherLowF"): number | null | undefined {
-  const value = input[key];
-  if (value === undefined || value === null) return value;
-  if (typeof value !== "number" || !Number.isFinite(value)) {
-    throw new ValidationError("Typical " + (key === "weatherHighF" ? "high" : "low") + " must be a number in °F, or left blank.");
-  }
-  return value;
-}
-function destinationDateField(input: Input, key: "startDate"): string | null | undefined {
-  if (input[key] === undefined || input[key] === null) return input[key];
-  const value = textField(input, key, 10);
-  if (!value) return null;
-  if (!isValidDate(value)) throw new ValidationError("Enter a valid trip start date in YYYY-MM-DD format.");
-  return value;
-}
-function nightsField(input: Input): number | null | undefined {
-  const value = input.nights;
-  if (value === undefined || value === null) return value;
-  if (typeof value !== "number" || !Number.isInteger(value) || value < 0 || value > MAX_NIGHTS) {
-    throw new ValidationError(`Nights must be a whole number between 0 and ${MAX_NIGHTS}, or left blank.`);
-  }
-  return value;
-}
 /**
- * An activity's estimated time in minutes as a save sends it (TRA-170): a whole number from 1, null to remove it, or
- * undefined to keep the saved one. It has no maximum but the largest whole number JavaScript holds exactly.
+ * A save's values for its record's editable fields (TRA-174), each checked by its kind's rules, whether a person's editor
+ * or an assistant's proposal sent them. A field the save may leave out is undefined when it does, keeping the saved value.
  */
-function estimatedMinutesField(input: Input): number | null | undefined {
-  const value = input.estimatedMinutes;
-  if (value === undefined || value === null) return value;
-  if (typeof value !== "number" || !Number.isSafeInteger(value) || value < 1) {
-    throw new ValidationError("Estimated time must be a whole number of minutes, 1 or more, or left blank.");
-  }
-  return value;
+export function readFields<T extends Record<string, EditableField>>(fields: T, input: Input): FieldValues<T> {
+  return Object.fromEntries(Object.entries(fields).map(([name, field]) => [name, field.keep && input[name] === undefined ? undefined : fieldValue(input, name, field)])) as FieldValues<T>;
 }
-function activitiesModeField(input: Input): ActivitiesBudgetMode | undefined {
-  if (input.activitiesBudgetMode === undefined) return undefined;
-  if (input.activitiesBudgetMode !== "itemized" && input.activitiesBudgetMode !== "general") {
-    throw new ValidationError("Choose General budget or Itemized activity costs.");
+/** One editable field's value, checked by its kind's rules and messages. */
+function fieldValue(input: Input, name: string, field: EditableField): string | number | boolean | null {
+  const value = input[name];
+  switch (field.kind) {
+    case "text":
+      return value === null && field.nullable ? null : textField(input, name, field.maxLength, field.filled, field);
+    case "url":
+      return urlField(input, false, name);
+    case "amount": {
+      const amount = textField(input, name, 32);
+      amountCents(amount, field.noun);
+      return amount;
+    }
+    case "boolean":
+      return booleanField(input, name);
+    case "whole":
+      if (value === null && field.nullable) return null;
+      if (typeof value !== "number" || !Number.isSafeInteger(value) || value < field.min || (field.max !== undefined && value > field.max)) throw new ValidationError(field.invalid);
+      return value;
+    case "number":
+      if (value === null) return null;
+      if (typeof value !== "number" || !Number.isFinite(value)) throw new ValidationError(field.invalid);
+      return value;
+    case "choice":
+      if (typeof value !== "string" || !field.values.includes(value)) throw new ValidationError(field.invalid);
+      return value;
+    case "date": {
+      if (value === null) return null;
+      const date = textField(input, name, 10);
+      if (!date) return null;
+      if (!isValidDate(date)) throw new ValidationError(field.invalid);
+      return date;
+    }
   }
-  return input.activitiesBudgetMode;
-}
-function foodModeField(input: Input): FoodBudgetMode | undefined {
-  if (input.foodBudgetMode === undefined) return undefined;
-  if (input.foodBudgetMode !== "itemized" && input.foodBudgetMode !== "daily") {
-    throw new ValidationError("Choose Daily food budget or Itemized restaurant costs.");
-  }
-  return input.foodBudgetMode;
-}
-function returnCityField(input: Input): string | null | undefined {
-  if (input.returnCity === undefined || input.returnCity === null) return input.returnCity;
-  if (typeof input.returnCity !== "string" || !input.returnCity.trim()) throw new ValidationError("Enter a return city, or use the departing city for your return.");
-  if (input.returnCity.trim().length > 120) throw new ValidationError("Return city must be 120 characters or fewer.");
-  return input.returnCity.trim();
 }
 function itineraryField(input: Input): ItineraryStop[] | undefined {
   if (input.itinerary === undefined) return undefined;
@@ -479,13 +458,9 @@ function validate(input: unknown): Mutation {
   if (!input || typeof input !== "object" || Array.isArray(input)) throw new ValidationError("The submitted information is invalid.");
   const value = input as Input;
   switch (value.type) {
-    case "trip.save": {
+    case "trip.save":
       if (value.endDate !== undefined) throw new ValidationError("The trip end date is calculated from the start date and destination nights.");
-      if (typeof value.travelers !== "number" || !Number.isInteger(value.travelers) || value.travelers < 1 || value.travelers > 999) {
-        throw new ValidationError("Number of travelers must be a whole number between 1 and 999.");
-      }
-      return { type: value.type, id: saveIdField(value), create: createField(value), name: textField(value, "name", 120, true), tagline: value.tagline === undefined ? undefined : textField(value, "tagline", 120), focus: value.focus === undefined ? undefined : textField(value, "focus", 120), startDate: destinationDateField(value, "startDate"), dateLabel: textField(value, "dateLabel", 120), homeCity: textField(value, "homeCity", 120), returnCity: returnCityField(value), travelers: value.travelers, notes: textField(value, "notes", 8000), image: tripImageField(value) };
-    }
+      return { type: value.type, id: saveIdField(value), create: createField(value), ...readFields(EDITABLE_FIELDS.trips, value), image: tripImageField(value) };
     case "trip.delete":
     case "stop.remove":
     case "candidate.delete":
@@ -505,7 +480,7 @@ function validate(input: unknown): Mutation {
       return { type: value.type, tripIds };
     }
     case "homeItem.save":
-      return { type: value.type, id: saveIdField(value), create: createField(value), tripId: idField(value, "tripId"), name: textField(value, "name", 160, true), price: priceField(value), notes: textField(value, "notes", 8000) };
+      return { type: value.type, id: saveIdField(value), create: createField(value), tripId: idField(value, "tripId"), ...readFields(EDITABLE_FIELDS.home_items, value) };
     case "homeItem.delete":
       return { type: value.type, id: idField(value), tripId: idField(value, "tripId") };
     case "destination.save": {
@@ -513,7 +488,7 @@ function validate(input: unknown): Mutation {
       if (value.create !== undefined || value.tripId !== undefined) throw new ValidationError(PLANNER_UPDATED);
       if (value.arrivalDate !== undefined || value.departureDate !== undefined) throw new ValidationError("Destination dates are calculated. Edit the trip start date or destination nights instead.");
       const id = saveIdField(value);
-      const fields = { city: value.city === undefined ? undefined : textField(value, "city", 120, true), cityFromSuggestion: cityFromSuggestionField(value), tagline: value.tagline === undefined ? undefined : textField(value, "tagline", 120), stay: value.stay === undefined ? undefined : textField(value, "stay", 120), nights: nightsField(value), miscDailyAmount: value.miscDailyAmount === undefined ? undefined : textField(value, "miscDailyAmount", 32), hotelNightlyAmount: value.hotelNightlyAmount === undefined ? undefined : textField(value, "hotelNightlyAmount", 32), activitiesBudgetMode: activitiesModeField(value), activitiesGeneralAmount: value.activitiesGeneralAmount === undefined ? undefined : textField(value, "activitiesGeneralAmount", 32), foodBudgetMode: foodModeField(value), foodDailyAmount: value.foodDailyAmount === undefined ? undefined : textField(value, "foodDailyAmount", 32), shoppingAmount: value.shoppingAmount === undefined ? undefined : textField(value, "shoppingAmount", 32), weatherHighF: temperatureField(value, "weatherHighF"), weatherLowF: temperatureField(value, "weatherLowF"), weatherRainfall: value.weatherRainfall === undefined ? undefined : textField(value, "weatherRainfall", 4000), weatherPeriod: value.weatherPeriod === undefined ? undefined : textField(value, "weatherPeriod", 120), weatherSource: value.weatherSource === undefined ? undefined : textField(value, "weatherSource", 2048), notes: value.notes === undefined ? undefined : textField(value, "notes", 8000), image: imageField(value), gallery: galleryField(value, "Destination") };
+      const fields = { ...readFields(EDITABLE_FIELDS.destinations, value), cityFromSuggestion: cityFromSuggestionField(value), ...readFields(EDITABLE_FIELDS.trip_stops, value), image: imageField(value), gallery: galleryField(value, "Destination") };
       // A destination is changed by its own ID, and only a trip's stop has stay notes and nights, so a save that
       // changes them names that stop.
       const stopId = value.stopId === undefined ? undefined : idField(value, "stopId");
@@ -545,7 +520,7 @@ function validate(input: unknown): Mutation {
     case "destination.churchVisibility":
       return { type: value.type, id: idField(value), enabled: booleanField(value, "enabled") };
     case "church.save":
-      return { type: value.type, id: saveIdField(value), create: createField(value), destinationId: idField(value, "destinationId"), name: textField(value, "name", 160, true), address: textField(value, "address", 500), denomination: textField(value, "denomination", 160), url: urlField(value), massTimes: massTimesField(value), coordinates: coordinatesField(value), gallery: galleryField(value, "Church") };
+      return { type: value.type, id: saveIdField(value), create: createField(value), destinationId: idField(value, "destinationId"), ...readFields(EDITABLE_FIELDS.churches, value), massTimes: massTimesField(value), coordinates: coordinatesField(value), gallery: galleryField(value, "Church") };
     case "church.delete":
       return { type: value.type, id: idField(value), destinationId: idField(value, "destinationId") };
     case "stop.add":
@@ -556,7 +531,7 @@ function validate(input: unknown): Mutation {
       if (value.direction !== "up" && value.direction !== "down") throw new ValidationError("Choose a valid direction for this destination.");
       return { type: value.type, id: idField(value), direction: value.direction };
     case "leg.save":
-      return { type: value.type, id: idField(value), method: textField(value, "method", 120), airline: value.airline === undefined ? undefined : textField(value, "airline", 120), flightNumber: value.flightNumber === undefined ? undefined : textField(value, "flightNumber", 120), price: priceField(value), miscAmount: miscAmountField(value), departure: textField(value, "departure", 120), arrival: textField(value, "arrival", 120), url: urlField(value), notes: textField(value, "notes", 8000), itinerary: itineraryField(value), links: linksField(value) };
+      return { type: value.type, id: idField(value), ...readFields(EDITABLE_FIELDS.legs, value), itinerary: itineraryField(value), links: linksField(value) };
     case "leg.layoverPlan": {
       let plan: LayoverPlan | null;
       try { plan = normalizeLayoverPlan(value.plan); }
@@ -564,7 +539,7 @@ function validate(input: unknown): Mutation {
       return { type: value.type, id: idField(value), layoverId: idField(value, "layoverId"), plan };
     }
     case "candidate.save":
-      return { type: value.type, id: saveIdField(value), create: createField(value), destinationId: idField(value, "destinationId"), category: categoryField(value), name: textField(value, "name", 160, true), description: value.description === undefined ? undefined : textField(value, "description", 120), price: priceField(value), estimatedMinutes: estimatedMinutesField(value), address: textField(value, "address", 500), url: urlField(value), notes: textField(value, "notes", 8000), included: booleanField(value, "included"), mustDo: value.mustDo === undefined ? undefined : booleanField(value, "mustDo"), restaurantTypes: restaurantTypesField(value), links: linksField(value), coordinates: coordinatesField(value), gallery: galleryField(value) };
+      return { type: value.type, id: saveIdField(value), create: createField(value), destinationId: idField(value, "destinationId"), category: categoryField(value), ...readFields(EDITABLE_FIELDS.candidates, value), restaurantTypes: restaurantTypesField(value), links: linksField(value), coordinates: coordinatesField(value), gallery: galleryField(value) };
     case "candidate.move":
       if (value.direction !== "up" && value.direction !== "down") throw new ValidationError("Choose a valid direction for this idea.");
       return { type: value.type, id: idField(value), direction: value.direction };
@@ -634,14 +609,45 @@ function photoChange(value: Input & { type: PhotoChange["type"] }, photos: Reado
     case "church.photos": return { type: value.type, id, gallery: galleryField({ gallery }, "Church")! };
   }
 }
+/** A trip's headline image as proposed (TRA-174): the trip's ID, and the new image, named by its new ID, or null to remove it. */
+function proposedTripImage(value: Input): { id: string; image: Input | null } {
+  const id = idField(value);
+  if (value.image === null) return { id, image: null };
+  if (!value.image || typeof value.image !== "object" || Array.isArray(value.image)) throw new ValidationError("Give the headline image as image, with its new id and url, or null to remove it.");
+  return { id, image: value.image as Input };
+}
+/** A headline image change, with the image it adds from `photos`, which Travel downloaded and prepared for its proposal. */
+function tripImageChange(value: Input, photos: ReadonlyMap<string, PreparedImage>): Extract<Mutation, { type: "trip.image" }> {
+  const { id, image } = proposedTripImage(value);
+  if (image === null) return { type: "trip.image", id, image: null };
+  const imageId = idField(image);
+  const prepared = photos.get(imageId);
+  if (!prepared) throw new ValidationError("This proposal's new photos are no longer available. Ask the assistant to propose them again.");
+  return { type: "trip.image", id, image: { id: imageId, ...preparedImage(prepared, "Headline") } };
+}
 /**
- * An AI change, checked by the planner's rules. A photo change takes the photos it adds from `photos` by their IDs;
- * nothing an assistant sends is ever saved as a photo.
+ * Refuses any property of an assistant's change that its schema doesn't offer (TRA-174), so assistants change only the
+ * fields Travel offers them, never a column the planner's checks would pass over, such as an owner or a calculated date.
+ */
+function offeredFields(value: Input, type: string): void {
+  const other = Object.keys(value).find((name) => !CHANGE_FIELDS[type].includes(name));
+  if (other !== undefined) throw new ValidationError(`${type} has no field ${other}.`);
+}
+/**
+ * An AI change, checked by the planner's rules, with only the fields its schema offers. A photo or headline image change
+ * takes the photos it adds from `photos` by their IDs; nothing an assistant sends is ever saved as a photo.
  */
 function aiChange(input: unknown, photos: ReadonlyMap<string, PreparedImage>): Mutation {
   if (!input || typeof input !== "object" || Array.isArray(input)) throw new ValidationError("Each change must be an object.");
   const value = input as Input;
+  const change = proposedChange(value, photos);
+  offeredFields(value, change.type);
+  return change;
+}
+/** An AI change as the planner's rules check it. */
+function proposedChange(value: Input, photos: ReadonlyMap<string, PreparedImage>): Mutation {
   if (isPhotoChange(value.type)) return photoChange(value as Input & { type: PhotoChange["type"] }, photos);
+  if (value.type === "trip.image") return tripImageChange(value, photos);
   // Coordinates change only with these, which change nothing else, so a proposal never resends a place's other details (TRA-150).
   if (value.type === "candidate.coordinates" || value.type === "church.coordinates") {
     if (value.coordinates === undefined) throw new ValidationError("Give the coordinates, or null to remove them.");
@@ -650,8 +656,8 @@ function aiChange(input: unknown, photos: ReadonlyMap<string, PreparedImage>): M
   if ((value.type === "candidate.save" || value.type === "church.save") && "coordinates" in value) throw new ValidationError("Change coordinates with candidate.coordinates or church.coordinates.");
   // Each person arranges their own trips on All trips (TRA-16), an order assistants can't read.
   if (value.type === "trip.order") throw new ValidationError("Each person puts their own trips in order on All trips, so trip order can't be proposed.");
-  // A trip's headline image comes only from a person's device, in its editor (TRA-133).
-  if (value.type === "trip.save" && "image" in value) throw new ValidationError("A trip's headline image can only be chosen in Travel.");
+  // An assistant's headline image is one Travel downloads for trip.image, never one sent with the trip's details (TRA-174).
+  if (value.type === "trip.save" && "image" in value) throw new ValidationError("Change a trip's headline image with trip.image.");
   if ("image" in value || "gallery" in value) throw new ValidationError("Change photos with destination.photos, candidate.photos or church.photos.");
   if (value.type === "destination.save" && (value.create !== undefined || value.tripId !== undefined)) throw new ValidationError("Add a destination to a trip with stop.add, or outside any trip with destination.create.");
   // Assistants name each month (TRA-158). Only a person's page opened before months were named leaves their names out.
@@ -661,15 +667,25 @@ function aiChange(input: unknown, photos: ReadonlyMap<string, PreparedImage>): M
   if (["trip.save", "homeItem.save", "destination.save", "church.save", "candidate.save"].includes(value.type as string) && value.id === undefined) {
     throw new ValidationError("Give the id of the item to change, or a new UUID with create: true to add a trip, idea, church or At home item.");
   }
-  return validate(input);
+  return validate(value);
 }
 /** A change as its proposal records it: the photos it adds by their IDs alone, as their bytes are kept beside the proposal. */
 function recorded(change: Mutation): unknown {
   switch (change.type) {
     case "destination.photos": case "candidate.photos": case "church.photos":
       return { ...change, gallery: { ...change.gallery, add: change.gallery.add.map(({ id }) => ({ id })) } };
+    case "trip.image":
+      return { ...change, image: change.image && { id: change.image.id } };
     default:
       return change;
+  }
+}
+/** The photos a change adds, which its proposal keeps beside it until it is decided: a gallery's new photos, or a new headline image. */
+function addedPhotos(change: Mutation): ({ id: string } & PreparedImage)[] {
+  switch (change.type) {
+    case "destination.photos": case "candidate.photos": case "church.photos": return change.gallery.add;
+    case "trip.image": return change.image ? [change.image] : [];
+    default: return [];
   }
 }
 /** A proposal's summary, and its changes before each is checked. */
@@ -680,22 +696,30 @@ function proposalChanges(input: Input): { summary: string; changes: unknown[] } 
 }
 /**
  * Checks everything about an AI proposal that Travel's data doesn't decide, and returns the photos its changes add, for
- * Travel to download before proposing it (TRA-122): each with a new ID, given once, and the address to download it from.
- * Each change is checked again, against Travel's data, when it is proposed.
+ * Travel to download before proposing it (TRA-122): each with a new ID, given once, and the address to download it from,
+ * a trip's new headline image among them (TRA-174). Each change is checked again, against Travel's data, when it is proposed.
  */
 export function checkAiProposal(input: Input): AiPhotoToAdd[] {
   const ids = new Set<string>();
+  const toDownload = (index: number, photos: Input[]) => photos.map((photo) => {
+    const id = idField(photo);
+    if (ids.has(id.toLowerCase())) throw new ValidationError("Give each new photo its own id.");
+    ids.add(id.toLowerCase());
+    return { change: index + 1, id, url: textField(photo, "url", 2048, true) };
+  });
   return proposalChanges(input).changes.flatMap((change, index) => numbered(index, () => {
-    if (!change || typeof change !== "object" || Array.isArray(change) || !isPhotoChange((change as Input).type)) {
-      aiChange(change, new Map());
-      return [];
+    const value = change && typeof change === "object" && !Array.isArray(change) ? change as Input : undefined;
+    if (value && isPhotoChange(value.type)) {
+      offeredFields(value, value.type);
+      return toDownload(index, proposedPhotoChange(value as Input & { type: PhotoChange["type"] }).gallery.add);
     }
-    return proposedPhotoChange(change as Input & { type: PhotoChange["type"] }).gallery.add.map((photo) => {
-      const id = idField(photo);
-      if (ids.has(id.toLowerCase())) throw new ValidationError("Give each new photo its own id.");
-      ids.add(id.toLowerCase());
-      return { change: index + 1, id, url: textField(photo, "url", 2048, true) };
-    });
+    if (value?.type === "trip.image") {
+      offeredFields(value, value.type);
+      const { image } = proposedTripImage(value);
+      return image ? toDownload(index, [image]) : [];
+    }
+    aiChange(change, new Map());
+    return [];
   }));
 }
 
@@ -2023,11 +2047,12 @@ export function createStore(databasePath: string, ownerEmail: string) {
   type DestinationSave = Extract<Mutation, { type: "destination.save" }>;
   /** A destination's columns after a save: the fields it sends, and the saved values of the rest. */
   function destinationColumns(input: DestinationFields, before?: StoredDestination) {
-    const misc = destinationAmount(input.miscDailyAmount, "Daily miscellaneous amount", before?.miscDailyMinor, before?.miscCurrency);
-    const hotel = destinationAmount(input.hotelNightlyAmount, "Nightly hotel amount", before?.hotelNightlyMinor, before?.hotelCurrency);
-    const activities = destinationAmount(input.activitiesGeneralAmount, "General activities amount", before?.activitiesGeneralMinor, before?.activitiesCurrency);
-    const food = destinationAmount(input.foodDailyAmount, "Daily food amount", before?.foodDailyMinor, before?.foodCurrency);
-    const shopping = destinationAmount(input.shoppingAmount, "Shopping amount", before?.shoppingMinor, before?.shoppingCurrency);
+    const fields = EDITABLE_FIELDS.destinations;
+    const misc = destinationAmount(input.miscDailyAmount, fields.miscDailyAmount.noun, before?.miscDailyMinor, before?.miscCurrency);
+    const hotel = destinationAmount(input.hotelNightlyAmount, fields.hotelNightlyAmount.noun, before?.hotelNightlyMinor, before?.hotelCurrency);
+    const activities = destinationAmount(input.activitiesGeneralAmount, fields.activitiesGeneralAmount.noun, before?.activitiesGeneralMinor, before?.activitiesCurrency);
+    const food = destinationAmount(input.foodDailyAmount, fields.foodDailyAmount.noun, before?.foodDailyMinor, before?.foodCurrency);
+    const shopping = destinationAmount(input.shoppingAmount, fields.shoppingAmount.noun, before?.shoppingMinor, before?.shoppingCurrency);
     const weatherHighF = input.weatherHighF === undefined ? before?.weatherHighF ?? null : input.weatherHighF;
     const weatherLowF = input.weatherLowF === undefined ? before?.weatherLowF ?? null : input.weatherLowF;
     if (weatherHighF !== null && weatherLowF !== null && weatherHighF < weatherLowF) {
@@ -2152,6 +2177,12 @@ export function createStore(databasePath: string, ownerEmail: string) {
         existing<Trip>("trips", input.id);
         db.prepare("DELETE FROM trips WHERE id = ?").run(input.id);
         return;
+      // Only the headline image changes (TRA-174): a new one replaces any saved one, uncropped in both frames, as the trip
+      // editor starts every new image, and null removes it.
+      case "trip.image":
+        existing<Trip>("trips", input.id);
+        saveTripImage(input.id, input.image && { data: input.image.data, large: input.image.large, card: UNCROPPED, banner: UNCROPPED }, make);
+        return input.id;
       case "trip.share": {
         // Sharing authorizes the email to sign in, even before that person ever has. Nothing is sent to them.
         const recipient = authorizeAccount(input.email, make);
@@ -2419,7 +2450,7 @@ export function createStore(databasePath: string, ownerEmail: string) {
    */
   function mutationScope(input: Mutation): { trip: string | undefined } | { destination: string | undefined } {
     switch (input.type) {
-      case "trip.save": case "trip.delete": return { trip: tripOf("trips", input.id) };
+      case "trip.save": case "trip.delete": case "trip.image": return { trip: tripOf("trips", input.id) };
       // Adding a saved destination to a trip is a change to the trip. `authorize` also checks the account can open the destination.
       case "trip.share": case "trip.unshare": case "trip.tag": case "trip.untag": case "stop.add": case "stop.visit": return { trip: tripOf("trips", input.tripId) };
       // An account's own trip order names every trip it can open, not one, so nothing places it; authorize lets each
@@ -2568,10 +2599,13 @@ export function createStore(databasePath: string, ownerEmail: string) {
     const owner = member(db.prepare("SELECT accounts.email, accounts.name FROM destinations JOIN accounts ON accounts.id = destinations.ownerId WHERE destinations.id = ?").get(destinationId)!);
     return { destination, owner, visits: visitsOf([destinationId]), ideas: readCandidates([destinationId]), churches: readChurches([destinationId]) };
   }
-  /** One of a destination's, idea's or church's photos. Undefined when it has no such photo. */
-  function aiPhoto(kind: "destination" | "idea" | "church", ownerId: string, photoId: string): StoredImage | undefined {
-    const [table, column] = { destination: ["destination_images", "destinationId"], idea: ["candidate_images", "candidateId"], church: ["church_images", "churchId"] }[kind];
-    const row = db.prepare(`SELECT version, data FROM ${table} WHERE ${column} = ? AND id = ?`).get(ownerId, photoId);
+  /**
+   * One of a destination's, idea's or church's photos, by its ID, or a trip's headline image, by its version (TRA-174).
+   * Undefined when there is no such photo.
+   */
+  function aiPhoto(kind: "trip" | "destination" | "idea" | "church", ownerId: string, photoId: string): StoredImage | undefined {
+    const [table, column, key] = { trip: ["trip_images", "tripId", "version"], destination: ["destination_images", "destinationId", "id"], idea: ["candidate_images", "candidateId", "id"], church: ["church_images", "churchId", "id"] }[kind];
+    const row = db.prepare(`SELECT version, data FROM ${table} WHERE ${column} = ? AND ${key} = ?`).get(ownerId, photoId);
     return row ? { version: row.version as string, data: new Uint8Array(row.data as Uint8Array) } : undefined;
   }
 
@@ -2674,11 +2708,7 @@ export function createStore(databasePath: string, ownerEmail: string) {
       db.prepare("INSERT INTO ai_proposals(id, connectionId, summary, changesJson, previewJson, effectsJson, createdAt, expiresAt) VALUES(?, ?, ?, ?, ?, ?, ?, ?)")
         .run(id, connectionId, summary, JSON.stringify(changes.map(recorded)), JSON.stringify(rehearsal.preview), JSON.stringify(rehearsal.effects), now, now + PROPOSAL_MS);
       const keep = db.prepare("INSERT INTO ai_proposal_photos(proposalId, id, data, thumbnail, large, photoWidth, largeWidth) VALUES(?, ?, ?, ?, ?, ?, ?)");
-      for (const change of changes) {
-        if (change.type === "destination.photos" || change.type === "candidate.photos" || change.type === "church.photos") {
-          for (const photo of change.gallery.add) keep.run(id, photo.id, photo.data, photo.thumbnail, ...largeColumns(photo.large));
-        }
-      }
+      for (const photo of changes.flatMap(addedPhotos)) keep.run(id, photo.id, photo.data, photo.thumbnail, ...largeColumns(photo.large));
     });
     return proposalOf(db.prepare(`${PROPOSALS} WHERE ai_proposals.id = ?`).get(id) as unknown as StoredProposal, now);
   }
@@ -2696,17 +2726,19 @@ export function createStore(databasePath: string, ownerEmail: string) {
       .map((row) => [row.id as string, { data: new Uint8Array(row.data as Uint8Array), thumbnail: new Uint8Array(row.thumbnail as Uint8Array), large: storedLarge(row) }]));
   }
   /**
-   * A photo the designated owner sees while deciding a proposal (TRA-122): one it adds, or a saved photo it changes or
-   * deletes. Undefined for anyone else, once the proposal is decided or expired, and for any photo it doesn't change.
+   * A photo the designated owner sees while deciding a proposal (TRA-122): one it adds, a saved photo it changes or
+   * deletes, or, by its version, a trip's saved headline image it replaces or removes (TRA-174). Undefined for anyone
+   * else, once the proposal is decided or expired, and for any photo it doesn't change.
    */
   function getAiProposalPhoto(accountId: string, proposalId: string, photoId: string, now: number): StoredImage | undefined {
     if (getAiProposal(accountId, proposalId, now)?.status !== "pending") return undefined;
     const added = db.prepare("SELECT data FROM ai_proposal_photos WHERE proposalId = ? AND id = ?").get(proposalId, photoId);
     if (added) return { version: photoId, data: new Uint8Array(added.data as Uint8Array) };
     const effects = (JSON.parse(db.prepare("SELECT effectsJson FROM ai_proposals WHERE id = ?").get(proposalId)!.effectsJson as string) as Effect[][]).flat();
-    const table = effects.find((effect) => PHOTO_TABLES.includes(effect.table) && effect.key === JSON.stringify([photoId]))?.table;
-    if (!table) return undefined;
-    const row = db.prepare(`SELECT version, data FROM ${table} WHERE id = ?`).get(photoId);
+    const photo = effects.find((effect) => PHOTO_TABLES.includes(effect.table) && effect.key === JSON.stringify([photoId]));
+    const headline = effects.find((effect) => effect.table === "trip_images" && effect.before?.version === photoId);
+    const row = photo ? db.prepare(`SELECT version, data FROM ${photo.table} WHERE id = ?`).get(photoId)
+      : headline && db.prepare("SELECT version, data FROM trip_images WHERE tripId = ? AND version = ?").get((JSON.parse(headline.key) as string[])[0], photoId);
     return row ? { version: row.version as string, data: new Uint8Array(row.data as Uint8Array) } : undefined;
   }
   /** A proposal and what has become of it. Undefined when there is no such proposal, or the account isn't the designated owner. */
@@ -2986,7 +3018,7 @@ export function aiTrips() { return defaultStore().aiTrips(); }
 export function aiTrip(tripId: string) { return defaultStore().aiTrip(tripId); }
 export function aiDestinations() { return defaultStore().aiDestinations(); }
 export function aiDestination(destinationId: string) { return defaultStore().aiDestination(destinationId); }
-export function aiPhoto(kind: "destination" | "idea" | "church", ownerId: string, photoId: string) { return defaultStore().aiPhoto(kind, ownerId, photoId); }
+export function aiPhoto(kind: "trip" | "destination" | "idea" | "church", ownerId: string, photoId: string) { return defaultStore().aiPhoto(kind, ownerId, photoId); }
 export function proposeAiChanges(connectionId: string, input: Record<string, unknown>, photos: ReadonlyMap<string, PreparedImage>) { return defaultStore().proposeAiChanges(connectionId, input, photos, Date.now()); }
 export function getAiProposalPhoto(accountId: string, proposalId: string, photoId: string) { return defaultStore().getAiProposalPhoto(accountId, proposalId, photoId, Date.now()); }
 export function getAiProposal(accountId: string, proposalId: string) { return defaultStore().getAiProposal(accountId, proposalId, Date.now()); }

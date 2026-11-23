@@ -11,7 +11,7 @@ import { EntryRequirementsPanel, EntryRequirementsEditor } from "@/components/en
 import { entryRequirementsFromForm } from "@/lib/entry-requirements";
 import { HealthSafetyPanel, HealthSafetyEditor } from "@/components/health-safety";
 import { healthSafetyFromForm, type EmergencyContact } from "@/lib/health-safety";
-import { ChurchOptions, ChurchEditor, ChurchDetails } from "@/components/churches";
+import { ChurchOptions, ChurchEditor, ChurchDetails, ChurchSection } from "@/components/churches";
 import { MonthlyClimateEditor, TypicalWeatherPanel, TypicalWeatherEditor } from "@/components/typical-weather";
 import { monthlyClimateFromForm } from "@/lib/typical-weather";
 import { DestinationCardPhoto, DestinationGallery, DestinationGalleryEditor } from "@/components/destination-gallery";
@@ -465,11 +465,12 @@ export default function PlannerApp({ initialData, initialBudgets, access = {}, d
     const findToggle = () => document.getElementById(toggle);
     const label = formatSavedDestinationLabel(place);
     if (!place.churchEnabled) return <div className="church-visibility"><p className="helper">Church is hidden. Saved churches and photos are kept.</p><button type="button" id={toggle} className="text-button" disabled={busy} onClick={(event) => saveFrom(event.currentTarget, { type: "destination.churchVisibility", id: place.id, enabled: true }, "Church shown.", findToggle)}>Show Church<span className="sr-only"> for {label}</span></button></div>;
-    // The Sundays and church headings are h5, below this h4 (TRA-95).
-    return <section className="destination-church" aria-label={"Church in " + label}><div className="budget-section-heading"><h4>Church</h4><div className="heading-actions"><button type="button" className="text-button" disabled={busy} onClick={() => open({ kind: "church", destinationId: place.id })}><Plus size={15} />Add church</button><button type="button" id={toggle} className="text-button" disabled={busy} onClick={(event) => saveFrom(event.currentTarget, { type: "destination.churchVisibility", id: place.id, enabled: false }, "Church hidden. Your churches and photos are saved.", findToggle)}>Hide Church</button></div></div>
+    // The Sundays and church headings are h5, below this h4 (TRA-95). On a destination's card its heading opens and closes
+    // them; on its Church page, where `church` is set, they are the page and always show (TRA-169).
+    return <ChurchSection label={label} collapsible={!church} actions={<div className="heading-actions"><button type="button" className="text-button" disabled={busy} onClick={() => open({ kind: "church", destinationId: place.id })}><Plus size={15} />Add church</button><button type="button" id={toggle} className="text-button" disabled={busy} onClick={(event) => saveFrom(event.currentTarget, { type: "destination.churchVisibility", id: place.id, enabled: false }, "Church hidden. Your churches and photos are saved.", findToggle)}>Hide Church</button></div>}>
       {stay && <ChurchSundays destination={stay} headingLevel={5} />}
       <ChurchOptions items={data.churches.filter((item) => item.destinationId === place.id)} headingLevel={5} photoFrame={photoFrame} busy={busy} onAdd={() => open({ kind: "church", destinationId: place.id })} onEdit={(item) => open({ kind: "church", item, destinationId: place.id })} onDelete={(item) => confirmDelete({ type: "church.delete", id: item.id, destinationId: place.id }, "Delete “" + item.name + "”?", "This church and its photos will be removed from this destination, in every trip that visits it.")} />
-    </section>;
+    </ChurchSection>;
   }
   /** A destination's Hotels, Activities, Restaurants or Church page, from a trip's stop or from Destinations. */
   function renderIdeas(place: Destination, stay: TripStop | undefined, back: { href: string; label: string }) {

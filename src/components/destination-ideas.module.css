@@ -17,7 +17,7 @@
 /* Its width comes from the section, never its cards, so a long list scrolls instead of widening the page. */
 .track { display: flex; gap: 14px; margin: 0; padding: 0; list-style: none; contain: inline-size; overflow-x: auto; overscroll-behavior-x: contain; scroll-snap-type: x mandatory; scroll-behavior: smooth; scrollbar-width: none; }
 .track::-webkit-scrollbar { display: none; }
-.track > li { display: flex; flex: 0 0 200px; min-width: 0; scroll-snap-align: start; }
+.track > li { position: relative; display: flex; flex: 0 0 200px; min-width: 0; scroll-snap-align: start; }
 .arrow { position: absolute; top: 50%; z-index: 1; display: grid; place-items: center; width: 36px; height: 36px; margin-top: -18px; padding: 0; border: 1px solid #d4dbcd; border-radius: 50%; background: var(--white); color: var(--green); box-shadow: 0 4px 12px #233d351f; }
 .arrow:hover:not(:disabled) { background: #eef1e8; }
 /* A disabled arrow stays solid over the photo beneath it, and lets a tap through to that card. */
@@ -43,6 +43,11 @@
 .price { margin: 10px 14px 14px; font-size: 14px; font-weight: 600; color: var(--green); }
 .price.unknown { color: var(--muted); font-weight: 400; }
 .chosen { position: absolute; top: 8px; left: 8px; }
+/* TRA-161: an activity's Must do star, at the top right of its card's photo, opposite In the plan. Its circle keeps it
+   clear on any photo, as the arrows' does, and Must do fills its star in orange. Touchscreens get a 44-pixel target. */
+.star { position: absolute; top: 8px; right: 8px; display: grid; place-items: center; width: 36px; height: 36px; padding: 0; border: 1px solid #d4dbcd; border-radius: 50%; background: var(--white); color: var(--muted); box-shadow: 0 4px 12px #233d351f; }
+.star:hover:not(:disabled) { background: #eef1e8; }
+.star[aria-pressed="true"] { color: var(--orange); }
 
 /* One column as wide as the dialog, so an idea with many photos scrolls their thumbnails within it instead of widening
    every detail past the dialog's edge, where they'd scroll sideways and its swipes would compete with them (TRA-160). */
@@ -61,6 +66,9 @@
   :global(.trip-page) .section { padding: 12px; margin: 12px 0; }
   :global(.trip-page) .previous { left: -12px; }
   :global(.trip-page) .next { right: -12px; }
+}
+@media (pointer: coarse) {
+  .star { width: 44px; height: 44px; }
 }
 @media (prefers-reduced-motion: reduce) {
   .track { scroll-behavior: auto; }

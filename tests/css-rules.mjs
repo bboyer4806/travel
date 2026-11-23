@@ -43,3 +43,13 @@ export function styles(file, selectors, width, input = MOUSE) {
   return Object.assign({}, ...cssRules(file).filter(([selector, , atRule]) => selector.split(",").some((part) => selectors.includes(part.trim())) && holds(atRule, width, input))
     .map(([, declarations]) => declarations));
 }
+
+/** WCAG's contrast between two colors written as #rrggbb. */
+export function contrast(first, second) {
+  const luminance = (hex) => {
+    const [r, g, b] = [1, 3, 5].map((start) => parseInt(hex.slice(start, start + 2), 16) / 255).map((value) => value <= 0.03928 ? value / 12.92 : ((value + 0.055) / 1.055) ** 2.4);
+    return 0.2126 * r + 0.7152 * g + 0.0722 * b;
+  };
+  const [lighter, darker] = [luminance(first), luminance(second)].sort((a, b) => b - a);
+  return (lighter + 0.05) / (darker + 0.05);
+}

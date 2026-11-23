@@ -2146,6 +2146,11 @@ button svg,a svg {
 .destination-budget-total { display: flex; justify-content: space-between; gap: 16px; border-top: 1px solid var(--line); padding-top: 12px; font-size: 13px; }
 .destination-budget-total strong { text-align: right; }
 .destination-budget-total small, .budget-breakdown dt small, .budget-category dt small { display: block; color: var(--muted); font-size: 10px; line-height: 1.5; margin-top: 4px; overflow-wrap: anywhere; }
+/* TRA-165: a budget's Not set and Not estimated amounts, and the trip estimate's counts of them, open the editor that
+   enters them. Each keeps its text's size and place, underlined in green as research links are, since Travel's ink is
+   nearly its green, and on touchscreens is 44 pixels tall. */
+.unset-amount { padding: 0; font-size: inherit; text-decoration: underline; text-underline-offset: 3px; }
+@media (pointer: coarse) { .unset-amount { min-height: 44px; } }
 /* TRA-109: each category's amount and page or editor stay in view; the Budget heading shows or hides the breakdowns. */
 .budget-toggle { display: inline-flex; align-items: center; gap: 8px; padding: 0; border: 0; background: none; color: inherit; }
 .budget-toggle:hover { color: var(--orange); }

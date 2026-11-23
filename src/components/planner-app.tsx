@@ -33,7 +33,7 @@ import { layoverPlanDraft, layoverPlanFromDraft, type LayoverPlanDraft } from "@
 import { ResearchLinks, ResearchLinksEditor } from "@/components/research-links";
 import { unstable_isUnrecognizedActionError, useRouter } from "next/navigation";
 import { useEffect, useId, useRef, useState, useTransition, type FormEvent, type ReactNode } from "react";
-import { controlOrNeighbor, useFocusAfter } from "@/components/focus-after";
+import { controlOrNeighbor, useFocusAfter, useFocusFallback } from "@/components/focus-after";
 import { ArrowDown, ArrowLeft, ArrowRight, ArrowUp, BedDouble, Binoculars, CalendarDays, CheckCircle2, CircleAlert, CircleHelp, Compass, GripVertical, MapPin, MoreHorizontal, Pencil, Plane, Plus, Search, Share2, Trash2, UserPlus, Users, Utensils, Wallet, X } from "lucide-react";
 import TripSharing, { memberLabel } from "@/components/trip-sharing";
 import { TripTagFilter, TripTagList, TripTagsEditor } from "@/components/trip-tags";
@@ -49,9 +49,9 @@ import { connectionTarget, tripJourney } from "@/lib/trip-map";
 import DestinationMap from "@/components/destination-map";
 import { destinationPlaces, type SavedPlace } from "@/lib/destination-map";
 import { MAIN_COLUMN, PAGE, type FrameWidths } from "@/lib/photo-sizes";
-import { calculateBudget, calculateDestinationBudget, tripVisits } from "@/lib/budget";
+import { calculateBudget, calculateDestinationBudget, tripVisits, unsetStayAmount, unsetTripAmount, type EstimateCategory, type UnsetAmount } from "@/lib/budget";
 import { formatCurrency, MAX_AMOUNT_DOLLARS, minorAmountValue } from "@/lib/money";
-import { ShoppingBudgetEditor, FoodBudgetEditor, FoodSummary, ActivitiesBudgetEditor, ActivitiesSummary, AccommodationBudgetEditor, AccommodationSummary, CurrencyTotals, DestinationBudget, DestinationBudgetEditor, MiscellaneousBudgetEditor, StayNightsEditor } from "@/components/destination-budget";
+import { ShoppingBudgetEditor, FoodBudgetEditor, FoodSummary, ActivitiesBudgetEditor, ActivitiesSummary, AccommodationBudgetEditor, AccommodationSummary, CurrencyTotals, DestinationBudget, DestinationBudgetEditor, MiscellaneousBudgetEditor, StayNightsEditor, type KeepFocus } from "@/components/destination-budget";
 import { RESTAURANT_TYPES } from "@/lib/types";
 import type { FoodBudgetMode, ActivitiesBudgetMode, Budget, Candidate, Church, MassTime, Category, Destination, DestinationAccess, DestinationVisit, HomeItem, ItineraryStop, LibraryDestination, Mutation, ResearchLink, Snapshot, TravelLeg, Trip, TripAccess, TripStop } from "@/lib/types";
 
@@ -128,8 +128,9 @@ function Notes({ name = "notes", value = "" }: { name?: string; value?: string }
 /**
  * An editor: the title and X at the top, then `children`, a form whose fields scroll above its Cancel and Save footer.
  * Opening it focuses its first field, or without one, the control marked `data-autofocus`. So does a new `view`, as
- * when an idea's details open its editor and saving returns to them. Editors don't use `autoFocus`: React runs it
- * before `showModal()`, while the fields can't take focus.
+ * when an idea's details open its editor and saving returns to them. An editor opened to enter a budget's Not set or
+ * Not estimated amount focuses that amount's field, named `focus`, instead (TRA-165). Editors don't use `autoFocus`:
+ * React runs it before `showModal()`, while the fields can't take focus.
  * Send feedback is inside the dialog so it shows above the backdrop; opening it leaves this editor and its draft open.
  * So does Help, beside the X, which describes the page beneath rather than the editor (TRA-3).
  * A confirmation (`confirm`) is centered over a darker backdrop, and its title and message scroll together above its
@@ -137,11 +138,11 @@ function Notes({ name = "notes", value = "" }: { name?: string; value?: string }
  * Help, the X and Escape wait while saving, and then the X and Escape call `onClose`. Chrome closes a dialog anyway
  * after repeated Escapes or Android's back button, so `onClosed` follows the browser even while saving (TRA-81).
  */
-function Dialog({ title, view, confirm, children, busy, onClose, onClosed }: { title: string; view: string; confirm: boolean; children: ReactNode; busy: boolean; onClose: () => void; onClosed: () => void }) {
+function Dialog({ title, view, focus, confirm, children, busy, onClose, onClosed }: { title: string; view: string; focus?: string; confirm: boolean; children: ReactNode; busy: boolean; onClose: () => void; onClosed: () => void }) {
   const ref = useRef<HTMLDialogElement>(null);
   const titleId = useId();
   useEffect(() => { const dialog = ref.current; const opener = document.activeElement instanceof HTMLElement ? document.activeElement : null; dialog?.showModal(); return () => { dialog?.close(); if (opener?.isConnected) opener.focus(); }; }, []);
-  useEffect(() => { ref.current?.querySelector<HTMLElement>("input:not([type=hidden]), select, textarea, [data-autofocus]")?.focus(); }, [view]);
+  useEffect(() => { ref.current?.querySelector<HTMLElement>(focus ? `[name="${focus}"]` : "input:not([type=hidden]), select, textarea, [data-autofocus]")?.focus(); }, [view, focus]);
   return <dialog ref={ref} className={confirm ? "editor-dialog confirm-dialog" : "editor-dialog"} aria-labelledby={titleId} onCancel={(event) => { event.preventDefault(); if (!busy) onClose(); }} onClose={onClosed}>
     <div className="dialog-heading"><h2 id={titleId}>{title}</h2><div className="dialog-heading-tools"><HelpButton className="text-button" disabled={busy}><CircleHelp size={16} aria-hidden="true" />Help</HelpButton><button className="icon-button" aria-label="Close" onClick={onClose} disabled={busy}><X size={20} /></button></div></div>{children}<FeedbackButton />
   </dialog>;
@@ -169,6 +170,8 @@ export default function PlannerApp({ initialData, initialBudgets, access = {}, d
   const [data, setData] = useState(initialData);
   const [lastInitial, setLastInitial] = useState(initialData);
   const [editor, setEditor] = useState<Editor | null>(null);
+  // The field an editor opened from a budget's Not set or Not estimated amount focuses (TRA-165). Others focus their first.
+  const [focusField, setFocusField] = useState<string>();
   const [saving, setSaving] = useState(false);
   // An idea's editor opened from its details returns there in the same render as the refreshed page, so the details
   // show what was saved. Until then it is still saving.
@@ -235,7 +238,8 @@ export default function PlannerApp({ initialData, initialBudgets, access = {}, d
   const visitsOf = (id: string) => data.stops.filter((item) => item.destinationId === id).flatMap((item) => data.trips.filter((visiting) => visiting.id === item.tripId).map((visiting) => ({ trip: visiting, stop: item })));
   /** An idea's Delete confirmation, the same from its page's list and from its editor (TRA-128). */
   const ideaDeletion = (item: Candidate) => ({ title: "Delete “" + item.name + "”?", description: "This idea will be removed from " + formatSavedDestinationLabel(placeOf(item.destinationId)) + ", in every trip that visits it." });
-  const open = (value: Editor) => {
+  /** Opens an editor, focused on its first field or on `field`. */
+  const open = (value: Editor, field?: string) => {
     if (busy) return;
     // An activity's editor opens with the links and photos of the draft its dialog kept for it, if any (TRA-160).
     const draft = value.kind === "candidate" ? value.draft : undefined;
@@ -249,6 +253,7 @@ export default function PlannerApp({ initialData, initialBudgets, access = {}, d
     setCandidateGallery(draft?.gallery ?? createGalleryDraft(value.kind === "candidate" || value.kind === "church" ? value.item : undefined));
     setTripImage(createTripImageDraft(value.kind === "trip" ? value.item?.image ?? null : null));
     setNewId(randomUuid());
+    setFocusField(field);
     setEditor(value); setError(""); setMessage("");
   };
   /** The item a save is for: the saved one an editor changes, or the new one it adds. */
@@ -312,6 +317,43 @@ export default function PlannerApp({ initialData, initialBudgets, access = {}, d
       if (idea) open({ kind: "ideaDetails", item: idea });
     }
   };
+  /**
+   * Opens the editor that enters an unset amount, focused on its field (TRA-165): a connection's, an idea's, or a stay's
+   * budget editor for its category. A stay's nights are in Accommodation's editor, and otherwise in their own.
+   */
+  const enter = (unset: UnsetAmount) => {
+    if (unset.kind === "leg") return open({ kind: "leg", item: unset.leg }, unset.field);
+    if (unset.kind === "idea") return open({ kind: "candidate", destinationId: unset.idea.destinationId, category: unset.idea.category, item: unset.idea }, "price");
+    const { category, stop: stay, visit, field } = unset;
+    open(category === "hotels" ? { kind: "accommodationBudget", item: visit, stop: stay }
+      : field === "nights" ? { kind: "stayNights", stop: stay }
+      : category === "activities" ? { kind: "activitiesBudget", item: visit }
+      : category === "food" ? { kind: "foodBudget", item: visit, nights: visit.nights }
+      : category === "shopping" ? { kind: "shoppingBudget", item: visit }
+      : { kind: "miscellaneousBudget", item: visit, nights: visit.nights }, field);
+  };
+  /** What an unset amount's link adds, for screen readers, as its editor's field names it (TRA-165). */
+  const unsetDescription = (unset: UnsetAmount) => {
+    if (unset.kind === "leg") return (unset.field === "price" ? "the price of travel from " : "miscellaneous spending from ") + legName(unset.leg.fromId, "from") + " to " + legName(unset.leg.toId, "to");
+    if (unset.kind === "idea") return "the price of " + unset.idea.name;
+    const fields = { nights: "nights in ", hotelNightlyAmount: "the nightly hotel amount for ", activitiesGeneralAmount: "the general activities amount for ", foodDailyAmount: "the daily food amount for ", shoppingAmount: "the shopping amount for ", miscDailyAmount: "the daily miscellaneous amount for " };
+    return fields[unset.field] + formatSavedDestinationLabel(unset.visit);
+  };
+  /**
+   * A budget's Not set or Not estimated amount, or the trip estimate's count of them, as a link to the editor for `unset`
+   * (TRA-165), or as text when there is nothing to enter. If a save replaces the link while it has keyboard focus,
+   * `keepFocus` moves focus nearby.
+   */
+  const unsetControl = (unset: UnsetAmount | null, text: string, keepFocus: KeepFocus): ReactNode => unset
+    ? <button ref={keepFocus} type="button" className="text-button unset-amount" onClick={() => enter(unset)}>{text}<span className="sr-only">: add {unsetDescription(unset)}</span></button>
+    : text;
+  // The trip estimate's heading takes keyboard focus when a save replaces the link that had it (TRA-165).
+  const estimateHeading = useRef<HTMLHeadingElement>(null);
+  const keepEstimateFocus = useFocusFallback(estimateHeading);
+  /** A trip estimate category's Not set or Not estimated amount, or its count of them: a link to its first unset amount in route order (TRA-165). */
+  const estimateUnset = (category: EstimateCategory, text: string) => unsetControl(trip ? unsetTripAmount(data, trip.id, category) : null, text, keepEstimateFocus);
+  /** How many amounts a trip estimate category is missing, below its name. */
+  const missingCount = (category: EstimateCategory, count: number) => count > 0 && <small>{estimateUnset(category, count + " not estimated")}</small>;
   /** The saved idea whose Delete confirmation shows above its editor (TRA-128). */
   const deleting = editor?.kind === "candidate" && editor.deleting ? editor.item : undefined;
   /** Shows or hides the Delete confirmation above an idea's editor, which keeps its draft either way. */
@@ -480,12 +522,13 @@ export default function PlannerApp({ initialData, initialBudgets, access = {}, d
     : editor?.kind === "destination" ? "Edit destination: " + formatSavedDestinationLabel(editor.item)
     : editor?.kind === "addStop" ? "Add a destination" + (editor.before ? " before " + formatSavedDestinationLabel(placeOf(editor.before.destinationId)) : "")
     : editor?.kind === "newDestination" ? "New destination"
-    : editor?.kind === "shoppingBudget" ? "Edit shopping budget"
-    : editor?.kind === "accommodationBudget" ? "Edit accommodation budget"
-    : editor?.kind === "miscellaneousBudget" ? "Edit miscellaneous budget"
-    : editor?.kind === "stayNights" ? "Edit destination nights"
-    : editor?.kind === "foodBudget" ? "Edit food budget"
-    : editor?.kind === "activitiesBudget" ? "Edit activities budget"
+    // A destination's budget editors name it, since the trip estimate opens them too (TRA-165).
+    : editor?.kind === "shoppingBudget" ? "Edit shopping budget for " + formatSavedDestinationLabel(editor.item)
+    : editor?.kind === "accommodationBudget" ? "Edit accommodation budget for " + formatSavedDestinationLabel(editor.item)
+    : editor?.kind === "miscellaneousBudget" ? "Edit miscellaneous budget for " + formatSavedDestinationLabel(editor.item)
+    : editor?.kind === "stayNights" ? "Edit destination nights for " + formatSavedDestinationLabel(placeOf(editor.stop.destinationId))
+    : editor?.kind === "foodBudget" ? "Edit food budget for " + formatSavedDestinationLabel(editor.item)
+    : editor?.kind === "activitiesBudget" ? "Edit activities budget for " + formatSavedDestinationLabel(editor.item)
     : editor?.kind === "leg" ? "Plan this connection"
     : editor?.kind === "layover" ? "Layover in " + editor.layover.place
     : editor?.kind === "homeItem" ? (editor.item ? "Edit home item" : "Add an item at home")
@@ -671,7 +714,7 @@ export default function PlannerApp({ initialData, initialBudgets, access = {}, d
                 {visit.notes && <p className="destination-notes">{visit.notes}</p>}
                 {/* The card's photos come first, then its name, stay notes and notes, so its map follows them, before its budget (TRA-130). */}
                 <DestinationMap destination={visit} places={destinationPlaces(data, visit.id)} onView={viewPlace} />
-                <DestinationBudget snapshot={data} visit={visit} stop={visitStop} onShoppingEdit={() => open({ kind: "shoppingBudget", item: visit })} onMiscellaneousEdit={() => open({ kind: "miscellaneousBudget", item: visit, nights: visit.nights })} />
+                <DestinationBudget snapshot={data} visit={visit} stop={visitStop} onShoppingEdit={() => open({ kind: "shoppingBudget", item: visit })} onMiscellaneousEdit={() => open({ kind: "miscellaneousBudget", item: visit, nights: visit.nights })} renderUnset={(category, text, keepFocus) => unsetControl(unsetStayAmount(data, visitStop, visit, category), text, keepFocus)} />
                 {renderIdeaSections(visit, visitStop)}
                 <EntryRequirementsPanel requirements={visit.entryRequirements} stay={visitStop} disabled={busy} onEdit={() => open({ kind: "entryRequirements", item: visit })} onClear={() => confirmDelete({ type: "destination.entryRequirements", id: visit.id, requirements: null }, "Clear entry requirements?", "This removes the recorded requirements, sources, and last checked date for " + label + ", in every trip that visits it.")} />
                 <HealthSafetyPanel healthSafety={visit.healthSafety} disabled={busy} onEdit={() => open({ kind: "healthSafety", item: visit })} onClear={() => confirmDelete({ type: "destination.healthSafety", id: visit.id, healthSafety: null }, "Clear health and safety?", "This removes the recorded advisories, precautions, safety guidance, emergency contacts, sources, and last checked date for " + label + ", in every trip that visits it.")} />
@@ -689,7 +732,7 @@ export default function PlannerApp({ initialData, initialBudgets, access = {}, d
             onEdit={(item) => open({ kind: "homeItem", item })}
             onDelete={(item) => confirmDelete({ type: "homeItem.delete", id: item.id, tripId: trip.id }, "Delete “" + item.name + "”?", "This removes the item and any cost from the trip estimate.")} />
         </div>
-        {budget && <aside className="budget-panel"><span className="budget-symbol"><Wallet size={23} strokeWidth={1.4} /></span><h2>The trip estimate</h2><div className="budget-total"><BudgetValue budget={budget} /></div><p className="budget-caption">Total for {trip.travelers === 1 ? "1 traveler" : "all " + trip.travelers + " travelers"}</p><dl className="budget-breakdown"><div><dt>Travel{budget.travelMissingCount > 0 && <small>{budget.travelMissingCount} not estimated</small>}</dt><dd>{tripLegs.some((leg) => leg.priceCents !== null) ? formatCurrency(budget.travelCents, "USD") : "Not estimated"}</dd></div><div><dt>Transit miscellaneous</dt><dd>{budget.transitMiscCents === null ? "Not set" : formatCurrency(budget.transitMiscCents, "USD")}</dd></div><div><dt>Hotels{budget.hotelMissingCount > 0 && <small>{budget.hotelMissingCount} not estimated</small>}</dt><dd><CurrencyTotals totals={budget.hotelsByCurrency} /></dd></div><div><dt>Activities{budget.activitiesMissingCount > 0 && <small>{budget.activitiesMissingCount} not estimated</small>}</dt><dd><CurrencyTotals totals={budget.activitiesByCurrency} empty={budget.activitiesMissingCount ? "Not estimated" : "$0"} /></dd></div><div><dt>Food{budget.foodMissingCount > 0 && <small>{budget.foodMissingCount} not estimated</small>}</dt><dd><CurrencyTotals totals={budget.foodByCurrency} empty={budget.foodMissingCount ? "Not estimated" : "$0"} /></dd></div><div><dt>Shopping</dt><dd><CurrencyTotals totals={budget.shoppingByCurrency} empty="Not set" /></dd></div><div><dt>At home</dt><dd>{formatCurrency(budget.homeCents, "USD")}</dd></div><div><dt>Miscellaneous{budget.miscMissingCount > 0 && <small>{budget.miscMissingCount} not estimated</small>}</dt><dd><CurrencyTotals totals={budget.miscellaneousByCurrency} /></dd></div></dl><div className="budget-note">{budget.complete ? <CheckCircle2 size={17} /> : <MoreHorizontal size={20} />}<p>{budget.complete ? "All required estimates are added." : budget.missingCount + " " + (budget.missingCount === 1 ? "detail still needs" : "details still need") + " an estimate or a choice."}</p></div></aside>}
+        {budget && <aside className="budget-panel"><span className="budget-symbol"><Wallet size={23} strokeWidth={1.4} /></span><h2 ref={estimateHeading} tabIndex={-1}>The trip estimate</h2><div className="budget-total"><BudgetValue budget={budget} /></div><p className="budget-caption">Total for {trip.travelers === 1 ? "1 traveler" : "all " + trip.travelers + " travelers"}</p><dl className="budget-breakdown"><div><dt>Travel{missingCount("travel", budget.travelMissingCount)}</dt><dd>{tripLegs.some((leg) => leg.priceCents !== null) ? formatCurrency(budget.travelCents, "USD") : estimateUnset("travel", "Not estimated")}</dd></div><div><dt>Transit miscellaneous</dt><dd>{budget.transitMiscCents === null ? estimateUnset("transitMiscellaneous", "Not set") : formatCurrency(budget.transitMiscCents, "USD")}</dd></div><div><dt>Hotels{missingCount("hotels", budget.hotelMissingCount)}</dt><dd><CurrencyTotals totals={budget.hotelsByCurrency} empty={estimateUnset("hotels", "Not estimated")} /></dd></div><div><dt>Activities{missingCount("activities", budget.activitiesMissingCount)}</dt><dd><CurrencyTotals totals={budget.activitiesByCurrency} empty={budget.activitiesMissingCount ? estimateUnset("activities", "Not estimated") : "$0"} /></dd></div><div><dt>Food{missingCount("food", budget.foodMissingCount)}</dt><dd><CurrencyTotals totals={budget.foodByCurrency} empty={budget.foodMissingCount ? estimateUnset("food", "Not estimated") : "$0"} /></dd></div><div><dt>Shopping</dt><dd><CurrencyTotals totals={budget.shoppingByCurrency} empty={estimateUnset("shopping", "Not set")} /></dd></div><div><dt>At home</dt><dd>{formatCurrency(budget.homeCents, "USD")}</dd></div><div><dt>Miscellaneous{missingCount("miscellaneous", budget.miscMissingCount)}</dt><dd><CurrencyTotals totals={budget.miscellaneousByCurrency} empty={estimateUnset("miscellaneous", "Not estimated")} /></dd></div></dl><div className="budget-note">{budget.complete ? <CheckCircle2 size={17} /> : <MoreHorizontal size={20} />}<p>{budget.complete ? "All required estimates are added." : budget.missingCount + " " + (budget.missingCount === 1 ? "detail still needs" : "details still need") + " an estimate or a choice."}</p></div></aside>}
         </div>
       </>}
 
@@ -726,7 +769,7 @@ export default function PlannerApp({ initialData, initialBudgets, access = {}, d
       {error && !editor && <div className="toast error-toast" role="alert"><CircleAlert size={17} aria-hidden="true" />{error}<button aria-label="Dismiss error" className="icon-button" onClick={() => setError("")}><X size={14} /></button></div>}
     </main>
     <footer className="site-footer"><span><Compass size={15} />For the trips still taking shape.</span><span>Shared editing · whole-party estimates</span></footer>
-    {editor && <Dialog title={pageTitle} view={editor.kind} confirm={editor.kind === "delete"} busy={busy} onClose={close} onClosed={forget}>{editor.kind === "ideaDetails" ? renderIdeaDetails(latest(editor.item)) : editor.kind === "churchDetails" ? renderChurchDetails(editor.item) : <form id="planner-editor" ref={editorForm} onSubmit={submit}>
+    {editor && <Dialog title={pageTitle} view={editor.kind} focus={focusField} confirm={editor.kind === "delete"} busy={busy} onClose={close} onClosed={forget}>{editor.kind === "ideaDetails" ? renderIdeaDetails(latest(editor.item)) : editor.kind === "churchDetails" ? renderChurchDetails(editor.item) : <form id="planner-editor" ref={editorForm} onSubmit={submit}>
       {/* An activity's editor opened from its details steps through its destination's activities too, each idea's fields starting afresh (TRA-160). */}
       {editor.kind === "candidate" && editor.details && editor.item && renderActivitySteps(latest(editor.item))}<div className="form-grid dialog-body" key={editor.kind === "candidate" ? editor.item?.id ?? newId : undefined}>
       {editor.kind === "delete" && <p className="delete-description wide">{editor.description} This cannot be undone.</p>}

@@ -461,7 +461,7 @@ test("an activity's editor has Estimated time (minutes) below its price, and sav
   assert.deepEqual(page.fields().slice(0, 4).map(([label]) => label), ["Name", "What it is", "Estimated price (USD)", "Estimated time (minutes)"]);
   const field = () => page.fields().find(([label]) => label === "Estimated time (minutes)")[1];
   const { type, name, min, step, max, required, defaultValue, inputMode } = field().props;
-  assert.deepEqual([field().type, type, name, min, step, max, required, defaultValue, inputMode], ["input", "number", "estimatedMinutes", "1", "1", undefined, undefined, 90, "numeric"],
+  assert.deepEqual([field().type, type, name, min, step, max, required, defaultValue, inputMode], ["input", "number", "estimatedMinutes", "1", "1", undefined, undefined, "90", "numeric"],
     "optional whole minutes from 1, with no maximum, opening with the saved time");
   const details = { name: "Schönbrunn Palace", description: "", price: "80", address: "Schönbrunner Schloßstraße 47", notes: "Book the Grand Tour" };
   await page.submit({ ...details, estimatedMinutes: "150" });
@@ -469,14 +469,14 @@ test("an activity's editor has Estimated time (minutes) below its price, and sav
   assert.equal(minutesOf(store, ideas.palace), 150);
   assert.equal(shownText(page.times()["Schönbrunn Palace"]), "2 hours 30 minutes", "its card shows the saved time");
   page.click(page.button("Edit Schönbrunn Palace"));
-  assert.equal(field().props.defaultValue, 150, "the editor opens with it");
+  assert.equal(field().props.defaultValue, "150", "the editor opens with it");
   await page.submit({ ...details, estimatedMinutes: "" });
   assert.equal(page.sent.at(-1).estimatedMinutes, null, "cleared, it is sent as none");
   assert.deepEqual([minutesOf(store, ideas.palace), page.times()["Schönbrunn Palace"]], [null, undefined], "and its card shows no time");
   assert.equal(store.getSnapshot().candidates.find((item) => item.id === ideas.palace).notes, "Book the Grand Tour");
   // A new activity's editor starts without one.
   page.click(page.button("Add activity"));
-  assert.equal(field().props.defaultValue, undefined);
+  assert.equal(field().props.defaultValue, "");
   await page.submit({ name: "Belvedere", description: "", price: "", address: "", notes: "", estimatedMinutes: "45" });
   const belvedere = store.getSnapshot().candidates.find((item) => item.name === "Belvedere");
   assert.deepEqual([page.sent.at(-1).create, belvedere.estimatedMinutes, shownText(page.times().Belvedere)], [true, 45, "45 minutes"]);

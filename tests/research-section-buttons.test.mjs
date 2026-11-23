@@ -102,7 +102,7 @@ function section(path, name, modules, props) {
 
 const recorded = {
   requirements: entryRequirements.normalizeEntryRequirements({ passportNationality: "United States", visaRequirements: "No visa for stays under 90 days." }),
-  healthSafety: healthSafety.normalizeHealthSafety({ advisoryLevel: "Level 1: Exercise normal precautions" }),
+  healthSafety: healthSafety.normalizeHealthSafety({ usAdvisoryLevel: null, advisoryLevel: "Level 1: Exercise normal precautions" }),
 };
 const research = [
   {

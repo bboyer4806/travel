@@ -144,6 +144,11 @@ Repeat passing checks when subsequent changes affect their coverage or required 
   its source, years and every month, each beside the saved one. Travel never looks them up, estimates them or fills in a
   month. `src/components/climate-chart.tsx` charts them for every destination; in a trip it first chooses the month of the
   stay's `arrivalDate`, and choosing a month changes only what it shows.
+- A destination's U.S. travel advisory level (TRA-171) is `usAdvisoryLevel` in its health and safety record, one of
+  `US_ADVISORY_LEVELS` in `src/lib/health-safety.ts` or null for none, shown with `usAdvisoryLabel` beside its color. Every
+  record gives it: a save without it comes from a page opened before TRA-171 and is refused with `PLANNER_UPDATED`, and
+  `aiChange` refuses an assistant's with `GIVE_US_ADVISORY_LEVEL`. It is apart from the typed `advisoryLevel`, and Travel
+  never reads a level from research or looks one up.
 - Layover plans (TRA-45) are `layover_plans`, at most one per layover in a connection's `itineraryJson`, keyed by
   `legId` and `layoverId`, read as each leg's `layoverPlans` and changed only by `leg.layoverPlan` with a whole plan or
   null. `normalizeLayoverPlan` and `layoverSchedule` in `src/lib/layover-plan.ts` check a plan and work out its schedule:

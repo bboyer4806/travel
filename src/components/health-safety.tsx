@@ -4,7 +4,7 @@ import { useEffect, useId, useRef, useState } from "react";
 import { ChevronDown, Pencil, Plus, Trash2 } from "lucide-react";
 import { useFocusFallback } from "@/components/focus-after";
 import { ResearchLinks, ResearchLinksEditor } from "@/components/research-links";
-import { EMERGENCY_CONTACT_MAX_LENGTH, HEALTH_SAFETY_FIELDS, MAX_EMERGENCY_CONTACTS, type EmergencyContact, type HealthSafety } from "@/lib/health-safety";
+import { EMERGENCY_CONTACT_MAX_LENGTH, HEALTH_SAFETY_FIELDS, MAX_EMERGENCY_CONTACTS, US_ADVISORY_LEVELS, usAdvisoryLabel, type EmergencyContact, type HealthSafety } from "@/lib/health-safety";
 import { formatCalendarDate } from "@/lib/trip-dates";
 import type { ResearchLink } from "@/lib/types";
 import { randomUuid } from "@/lib/uuid";
@@ -12,7 +12,9 @@ import styles from "./health-safety.module.css";
 
 const reminder = "Manually maintained research. Travel advisories, health guidance, and local conditions change. Verify with official government and health sources before travel.";
 const missing = "Missing or unconfirmed information does not mean the destination is safe or that no precautions are needed.";
-// The level and last checked date share the first row; the longer research follows.
+// The U.S. travel advisory level comes first (TRA-171). The advisory level as typed and the last checked date share the
+// next row, and the longer research follows.
+const usAdvisoryField = "U.S. travel advisory level";
 const [levelField, ...researchFields] = HEALTH_SAFETY_FIELDS;
 const fieldHints = {
   advisoryWarnings: "Warnings from government travel advisories, and which government issued each.",
@@ -48,6 +50,9 @@ export function HealthSafetyPanel({ healthSafety, disabled, onEdit, onClear }: P
       <p className={styles.reminder}>{reminder}</p>
       {!healthSafety ? <p className={styles.empty}>No health and safety information recorded. {missing}</p> : <>
         <dl className={styles.details}>
+          {/* Its color always comes with its number and description, so the level never depends on color alone. */}
+          <div className={styles.usAdvisory}><dt>{usAdvisoryField}</dt><dd>{healthSafety.usAdvisoryLevel === null ? "Not recorded"
+            : <span className={styles.advisoryLevel + " " + styles[`level${healthSafety.usAdvisoryLevel}`]}>{usAdvisoryLabel(healthSafety.usAdvisoryLevel)}</span>}</dd></div>
           <div><dt>{levelField.label}</dt><dd>{healthSafety[levelField.name] || "Not recorded"}</dd></div>
           <div><dt>Last checked</dt><dd>{healthSafety.lastCheckedDate ? formatCalendarDate(healthSafety.lastCheckedDate) : "Not checked / unconfirmed"}</dd></div>
           {researchFields.map((field) => <div key={field.name}><dt>{field.label}</dt><dd>{healthSafety[field.name] || "Not recorded"}</dd></div>)}
@@ -77,6 +82,13 @@ export function HealthSafetyEditor({ healthSafety, contacts, onContactsChange, s
     <p className={styles.reminder}>{reminder}</p>
     <p className={styles.hint}>All fields are optional. Leave anything you have not researched blank.</p>
     <div className="form-grid">
+      <label className="field wide"><span>{usAdvisoryField}</span>
+        <select name="usAdvisoryLevel" defaultValue={healthSafety?.usAdvisoryLevel ?? ""}>
+          <option value="">Not set</option>
+          {US_ADVISORY_LEVELS.map((level) => <option key={level} value={level}>{usAdvisoryLabel(level)}</option>)}
+        </select>
+        <small>The U.S. State Department&apos;s level for this destination. Leave it Not set until you have checked the current advisory.</small>
+      </label>
       <label className="field"><span>{levelField.label}</span><input name={levelField.name} defaultValue={healthSafety?.[levelField.name] ?? ""} maxLength={levelField.maxLength} placeholder="e.g. Level 2: Exercise increased caution" /></label>
       <label className="field"><span>Last checked date</span><input name="lastCheckedDate" type="date" min="0001-01-01" max="9999-12-31" defaultValue={healthSafety?.lastCheckedDate ?? ""} /><small>Enter the date you verified the information. Saving does not set it automatically.</small></label>
       {researchFields.map((field) => <label className="field wide" key={field.name}>

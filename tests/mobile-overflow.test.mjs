@@ -27,7 +27,8 @@ test("a trip's page and an idea list keep the screen's width, however wide their
 
 test("what people and assistants write wraps within the screen, a long link or word included (TRA-157)", () => {
   for (const [file, selectors] of [
-    [GLOBALS, [".trip-meta", ".destination-name p", ".list-intro", ".helper", ".form-error", ".destination-budget-total small", ".budget-breakdown dt small", ".budget-category dt small"]],
+    // A trip's focus on its card (TRA-168).
+    [GLOBALS, [".trip-meta", ".destination-name p", ".list-intro", ".helper", ".form-error", ".destination-budget-total small", ".budget-breakdown dt small", ".budget-category dt small", ".trip-focus"]],
     ["../src/components/destination-map.module.css", [".unmapped > p", ".credit"]],
     // A layover plan's notes name the layover's place (TRA-45).
     ["../src/components/layover-plan.module.css", [".note"]],

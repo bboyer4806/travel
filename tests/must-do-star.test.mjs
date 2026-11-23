@@ -76,7 +76,10 @@ function tripPage(store, tripId) {
   const unused = new Proxy({}, { get: () => () => null });
   // A CSS module's class names are their own names.
   const require = (name) => name.endsWith(".module.css") ? { default: new Proxy({}, { get: (_, key) => String(key) }) } : modules[name] ?? unused;
-  modules["@/components/focus-after"] = load("../src/components/focus-after.ts", require);
+  modules["@/components/focus-after"] = modules["./focus-after"] = load("../src/components/focus-after.ts", require);
+  modules["./photo-browsing"] = load("../src/components/photo-browsing.tsx", require);
+  // An activity's details step to its destination's others (TRA-160), in a body that holds what they show.
+  modules["@/components/activity-steps"] = load("../src/components/activity-steps.tsx", require);
   modules["@/components/destination-ideas"] = load("../src/components/destination-ideas.tsx", require);
   const { default: PlannerApp } = load("../src/components/planner-app.tsx", require);
   let props;

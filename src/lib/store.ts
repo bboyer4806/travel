@@ -217,6 +217,18 @@ function nightsField(input: Input): number | null | undefined {
   }
   return value;
 }
+/**
+ * An activity's estimated time in minutes as a save sends it (TRA-170): a whole number from 1, null to remove it, or
+ * undefined to keep the saved one. It has no maximum but the largest whole number JavaScript holds exactly.
+ */
+function estimatedMinutesField(input: Input): number | null | undefined {
+  const value = input.estimatedMinutes;
+  if (value === undefined || value === null) return value;
+  if (typeof value !== "number" || !Number.isSafeInteger(value) || value < 1) {
+    throw new ValidationError("Estimated time must be a whole number of minutes, 1 or more, or left blank.");
+  }
+  return value;
+}
 function activitiesModeField(input: Input): ActivitiesBudgetMode | undefined {
   if (input.activitiesBudgetMode === undefined) return undefined;
   if (input.activitiesBudgetMode !== "itemized" && input.activitiesBudgetMode !== "general") {
@@ -544,7 +556,7 @@ function validate(input: unknown): Mutation {
       return { type: value.type, id: idField(value), layoverId: idField(value, "layoverId"), plan };
     }
     case "candidate.save":
-      return { type: value.type, id: saveIdField(value), create: createField(value), destinationId: idField(value, "destinationId"), category: categoryField(value), name: textField(value, "name", 160, true), description: value.description === undefined ? undefined : textField(value, "description", 120), price: priceField(value), address: textField(value, "address", 500), url: urlField(value), notes: textField(value, "notes", 8000), included: booleanField(value, "included"), mustDo: value.mustDo === undefined ? undefined : booleanField(value, "mustDo"), restaurantTypes: restaurantTypesField(value), links: linksField(value), coordinates: coordinatesField(value), gallery: galleryField(value) };
+      return { type: value.type, id: saveIdField(value), create: createField(value), destinationId: idField(value, "destinationId"), category: categoryField(value), name: textField(value, "name", 160, true), description: value.description === undefined ? undefined : textField(value, "description", 120), price: priceField(value), estimatedMinutes: estimatedMinutesField(value), address: textField(value, "address", 500), url: urlField(value), notes: textField(value, "notes", 8000), included: booleanField(value, "included"), mustDo: value.mustDo === undefined ? undefined : booleanField(value, "mustDo"), restaurantTypes: restaurantTypesField(value), links: linksField(value), coordinates: coordinatesField(value), gallery: galleryField(value) };
     case "candidate.move":
       if (value.direction !== "up" && value.direction !== "down") throw new ValidationError("Choose a valid direction for this idea.");
       return { type: value.type, id: idField(value), direction: value.direction };
@@ -686,7 +698,7 @@ const LIVE: Make = { id: () => randomUUID(), now: () => new Date().toISOString()
  * The schema this build upgrades every database to, as SQLite's user_version. A schema change adds the next
  * upgrade in createStore and raises this to match; earlier upgrades keep their own numbers.
  */
-export const SCHEMA_VERSION = 42;
+export const SCHEMA_VERSION = 43;
 
 /** A destination as schema 20 saved it, inside one trip, with that trip's owner and name. */
 type TripDestinationRow = Omit<StoredDestination, "cityKey"> & Omit<TripStop, "destinationId"> & { tripName: string };
@@ -1409,6 +1421,12 @@ export function createStore(databasePath: string, ownerEmail: string) {
       // trips. Every saved trip starts without one, so no card looks different. A replay keeps each saved focus.
       if (!hasColumn("trips", "focus")) db.exec("ALTER TABLE trips ADD COLUMN focus TEXT NOT NULL DEFAULT '';");
       db.exec("PRAGMA user_version = 42;");
+    }
+    if (version < 43) {
+      // Each activity's estimated time (TRA-170): about how long it takes, in whole minutes from 1. Only activities have
+      // one. Every saved activity starts without one, so nothing looks different. A replay keeps each saved estimate.
+      if (!hasColumn("candidates", "estimatedMinutes")) db.exec("ALTER TABLE candidates ADD COLUMN estimatedMinutes INTEGER CHECK(estimatedMinutes IS NULL OR (estimatedMinutes >= 1 AND category = 'activities'));");
+      db.exec("PRAGMA user_version = 43;");
     }
     if (version < SCHEMA_VERSION && db.prepare("PRAGMA foreign_key_check").get()) {
       throw new Error("This upgrade would leave saved items without the trip or destination they belong to. Nothing was changed; review the database against a backup before upgrading.");
@@ -2308,13 +2326,15 @@ export function createStore(databasePath: string, ownerEmail: string) {
         const mustDo = input.mustDo === undefined ? (before?.mustDo ?? 0) : Number(input.mustDo);
         if (input.category === "hotels" && mustDo) throw new ValidationError("Must do is available for activities and restaurants only.");
         if (input.category !== "restaurants" && input.restaurantTypes?.length) throw new ValidationError("Restaurant types are available for restaurants only.");
+        if (input.category !== "activities" && input.estimatedMinutes) throw new ValidationError("Estimated time is available for activities only.");
         const restaurantTypesJson = input.restaurantTypes === undefined ? (before?.restaurantTypesJson ?? "[]") : JSON.stringify(input.restaurantTypes);
+        const estimatedMinutes = input.estimatedMinutes === undefined ? (before?.estimatedMinutes ?? null) : input.estimatedMinutes;
         if (input.included && input.category === "hotels") clearHotelSelection(input.destinationId);
         if (before) {
-          db.prepare("UPDATE candidates SET name = ?, description = ?, priceCents = ?, address = ?, url = ?, notes = ?, included = ?, mustDo = ?, restaurantTypesJson = ?, linksJson = ? WHERE id = ?").run(input.name, input.description ?? before.description, priceCents(input.price), input.address, url, input.notes, Number(input.included), mustDo, restaurantTypesJson, JSON.stringify(links), id);
+          db.prepare("UPDATE candidates SET name = ?, description = ?, priceCents = ?, estimatedMinutes = ?, address = ?, url = ?, notes = ?, included = ?, mustDo = ?, restaurantTypesJson = ?, linksJson = ? WHERE id = ?").run(input.name, input.description ?? before.description, priceCents(input.price), estimatedMinutes, input.address, url, input.notes, Number(input.included), mustDo, restaurantTypesJson, JSON.stringify(links), id);
         } else {
           const position = Number(db.prepare("SELECT coalesce(max(position), -1) + 1 AS position FROM candidates WHERE destinationId = ? AND category = ?").get(input.destinationId, input.category)!.position);
-          db.prepare("INSERT INTO candidates(id,destinationId,category,name,description,priceCents,address,url,notes,included,mustDo,restaurantTypesJson,position,linksJson) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)").run(id, input.destinationId, input.category, input.name, input.description ?? "", priceCents(input.price), input.address, url, input.notes, Number(input.included), mustDo, restaurantTypesJson, position, JSON.stringify(links));
+          db.prepare("INSERT INTO candidates(id,destinationId,category,name,description,priceCents,estimatedMinutes,address,url,notes,included,mustDo,restaurantTypesJson,position,linksJson) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)").run(id, input.destinationId, input.category, input.name, input.description ?? "", priceCents(input.price), estimatedMinutes, input.address, url, input.notes, Number(input.included), mustDo, restaurantTypesJson, position, JSON.stringify(links));
         }
         saveCoordinates("candidates", id, savedCoordinateColumns(input.coordinates, before, input.address));
         saveGallery("candidate", id, input.gallery, make);

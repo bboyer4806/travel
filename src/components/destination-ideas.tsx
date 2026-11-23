@@ -7,6 +7,7 @@ import { CandidateGallery, largeUrl, photoUrl } from "./candidate-gallery";
 import { CoordinatesDetail } from "./place-location";
 import { ResearchLinks } from "./research-links";
 import { RestaurantTypeTags } from "./restaurant-types";
+import { formatEstimatedTime } from "@/lib/estimated-time";
 import { formatCurrency } from "@/lib/money";
 import { CAROUSEL_CARD, DIALOG, photoSizes } from "@/lib/photo-sizes";
 import type { Candidate, Category } from "@/lib/types";
@@ -140,13 +141,17 @@ function Carousel({ category, ideas, busy, onView, onMustDo }: { category: Categ
   </div>;
 }
 
-/** An idea's details, read only, in its editor's order and words. Its name is the dialog's title. */
+/**
+ * An idea's details, read only, in its editor's order and words. Its name is the dialog's title. An activity's estimated
+ * time shows only when it has one, without a placeholder (TRA-170).
+ */
 export function IdeaDetails({ item }: { item: Candidate }) {
   const category = item.category;
   return <dl className={styles.details}>
     <div><dt>What it is</dt><dd>{item.description || "Not added"}</dd></div>
     {item.restaurantTypes.length > 0 && <div><dt>Restaurant types</dt><dd><RestaurantTypeTags types={item.restaurantTypes} /></dd></div>}
     <div><dt>Estimated price (USD)</dt><dd>{price(item)}<small>{priceNotes[category]}</small></dd></div>
+    {item.estimatedMinutes !== null && <div><dt>Estimated time</dt><dd>{formatEstimatedTime(item.estimatedMinutes)}</dd></div>}
     <div><dt>Address or neighborhood</dt><dd>{item.address || "Not added"}</dd></div>
     <div><dt>Coordinates</dt><dd><CoordinatesDetail coordinates={item.coordinates} /></dd></div>
     <div><dt>{subjects[category]} photos</dt><dd>{item.images.length ? <CandidateGallery candidate={item} frame={DIALOG} /> : "Not added"}</dd></div>

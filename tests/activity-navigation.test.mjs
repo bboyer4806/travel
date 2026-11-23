@@ -355,6 +355,24 @@ test("an activity's editor opened from its details steps too, keeping each activ
   assert.equal(page.sent.length, 1);
 });
 
+test("an activity's editor keeps the estimated time typed in it with its other unsaved changes while stepping, and saves only its own (TRA-170)", async (t) => {
+  const { store, tripId, viennaId, ids } = vienna(t);
+  store.applyMutation(candidateInput(viennaId, "activities", { id: ids.opera, name: "Opera", included: false, notes: "Standing room", url: "https://www.wiener-staatsoper.at", estimatedMinutes: 90 }));
+  const page = plannerPage(store, tripId);
+  page.click(page.button("View Belvedere"));
+  page.click(page.button("Edit"));
+  assert.equal(page.value("estimatedMinutes"), "", "Belvedere has none saved");
+  page.type("estimatedMinutes", "150");
+  page.click(page.steps().previous);
+  assert.deepEqual([page.steps().place, page.value("estimatedMinutes")], ["3 of 4: Opera", "90"], "Opera's editor shows Opera's saved time");
+  page.type("estimatedMinutes", "45");
+  page.click(page.steps().next);
+  assert.equal(page.value("estimatedMinutes"), "150", "Belvedere's comes back as it was left");
+  await page.save();
+  assert.deepEqual(page.sent.map(({ mutation }) => [mutation.id, mutation.estimatedMinutes]), [[ids.belvedere, 150]], "saving sends only the activity shown, its time as a number");
+  assert.deepEqual([saved(store, ids.belvedere).estimatedMinutes, saved(store, ids.opera).estimatedMinutes], [150, 90], "Opera's draft isn't saved");
+});
+
 test("closing an activity's dialog, or deleting from it, forgets every draft it kept (TRA-160)", async (t) => {
   const { store, tripId, ids } = vienna(t);
   const page = plannerPage(store, tripId);

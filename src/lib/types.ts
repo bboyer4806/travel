@@ -97,11 +97,12 @@ export interface DestinationPhotos { images: DestinationImage[]; mainImageId: st
 export interface GalleryUpdate { add: ({ id: string } & PreparedImage)[]; remove: string[]; mainImageId?: string | null; order?: string[]; focus?: ({ id: string } & PhotoFocus)[]; }
 /**
  * A hotel, activity or restaurant idea. `description` says what it is in a few words, such as "Boutique hotel", shown
- * below its name on its cards, or is empty without one (TRA-138). `restaurantTypes` is empty for hotels and activities,
- * and for a restaurant without any. `coordinates` place it on its destination's map when its address isn't found or it
- * has none (TRA-163), or are null (TRA-150).
+ * below its name on its cards, or is empty without one (TRA-138). `estimatedMinutes` is about how long an activity takes,
+ * in whole minutes from 1, or null without an estimate, as for every hotel and restaurant (TRA-170). `restaurantTypes` is
+ * empty for hotels and activities, and for a restaurant without any. `coordinates` place it on its destination's map when
+ * its address isn't found or it has none (TRA-163), or are null (TRA-150).
  */
-export interface Candidate { id: string; destinationId: string; category: Category; position: number; mustDo: boolean; name: string; description: string; priceCents: number | null; address: string; url: string; notes: string; included: boolean; links: ResearchLink[]; images: CandidateImage[]; mainImageId: string | null; restaurantTypes: RestaurantType[]; coordinates: SavedCoordinates | null; }
+export interface Candidate { id: string; destinationId: string; category: Category; position: number; mustDo: boolean; name: string; description: string; priceCents: number | null; estimatedMinutes: number | null; address: string; url: string; notes: string; included: boolean; links: ResearchLink[]; images: CandidateImage[]; mainImageId: string | null; restaurantTypes: RestaurantType[]; coordinates: SavedCoordinates | null; }
 export interface MassTime { id: string; day: string; time: string; }
 /** A church. `coordinates` place it on its destination's map when its address isn't found or it has none (TRA-163), or are null (TRA-150). */
 export interface Church { id: string; destinationId: string; name: string; address: string; denomination: string; url: string; massTimes: MassTime[]; images: CandidateImage[]; mainImageId: string | null; coordinates: SavedCoordinates | null; }
@@ -171,7 +172,9 @@ export type Mutation =
  | { type: "leg.layoverPlan"; id: string; layoverId: string; plan: LayoverPlan | null }
  // A restaurant's `restaurantTypes` replace its saved ones, and left out keep them. Hotels and activities have none.
  // `description` says what the idea is, below its name on its cards (TRA-138). Left out, as a page opened before it does, it keeps the saved one.
- | { type: "candidate.save"; id: string; create?: true; destinationId: string; category: Category; name: string; description?: string; price: string; address: string; url: string; notes: string; included: boolean; mustDo?: boolean; restaurantTypes?: RestaurantType[]; links?: ResearchLink[]; coordinates?: Coordinates | null; gallery?: GalleryUpdate }
+ // `estimatedMinutes` is an activity's estimated time in whole minutes, or null to remove it (TRA-170). Left out, as a page
+ // opened before it and every hotel's and restaurant's editor do, it keeps the saved one. Hotels and restaurants have none.
+ | { type: "candidate.save"; id: string; create?: true; destinationId: string; category: Category; name: string; description?: string; price: string; estimatedMinutes?: number | null; address: string; url: string; notes: string; included: boolean; mustDo?: boolean; restaurantTypes?: RestaurantType[]; links?: ResearchLink[]; coordinates?: Coordinates | null; gallery?: GalleryUpdate }
  | { type: "candidate.move"; id: string; direction: "up" | "down" }
  | { type: "candidate.mustDo"; id: string; mustDo: boolean }
  | { type: "candidate.delete"; id: string }

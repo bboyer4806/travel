@@ -400,6 +400,17 @@ button svg,a svg {
   letter-spacing:-.5px;
   overflow-wrap:anywhere
 }
+/* TRA-168: a trip's focus on its card, below its name, only when it has one: a further detail (TRA-51), ranked below
+   the name and what the trip is, its label in semibold, wrapping onto more lines rather than cut short. */
+.trip-focus {
+  margin-top:8px;
+  font-size:13px;
+  color:var(--muted);
+  overflow-wrap:anywhere
+}
+.trip-focus strong {
+  font-weight:600
+}
 /* TRA-51: the text beneath a location's image on its cards ranks the same way on every card. Its name leads; then what
    the place, stay or trip is, in ink (--ink); then further details, muted (--muted) and no smaller than 13px, except
    small labels and tags. Here, a trip's destinations or the trips that visit a destination, in two lines' room. */
@@ -2221,9 +2232,11 @@ button.nav-link { border:0; background:none; }
 @media(max-width:540px) {
   .help-points { padding:18px 20px 22px 38px; }
 }
-/* With Help, the owner's navigation has five links. Closer spacing keeps each label on one line down to 360px wide. */
-@media(max-width:400px) {
-  .site-header nav { gap:8px; }
+/* With Access (TRA-162) and Help, the owner's navigation has six links. Smaller labels and closer spacing keep each on one
+   line down to 390px wide, and the five anyone else has down to 320px. On narrower screens a label wraps, within the screen. */
+@media(max-width:440px) {
+  .site-header nav { gap:6px; }
+  .site-header .nav-link { font-size:12px; }
 }
 .sign-in { max-width:620px; padding-top:72px; }
 .sign-in h1 { font-size:clamp(38px,4.5vw,56px); letter-spacing:-1.5px; }
@@ -2257,4 +2270,25 @@ button.nav-link { border:0; background:none; }
   .confirm-dialog .dialog-heading h2 { font-size:18px; }
   .confirm-dialog .dialog-body { padding-block:14px; }
   .confirm-dialog .dialog-footer { padding-block:10px 12px; }
+}
+/* TRA-156: on phones, a trip's page shows more of itself on each screen. Its boxes, from its destination cards and the
+   panels in them to its At home items and estimate, have 12px of padding, the panels in a card are 12px apart, its
+   sections are 28px apart, and its headings have 16px of room. Its 18px margins, which the header and footer share on
+   every page, its fonts and its controls are unchanged, as are other pages and wider screens. Panels and At home items
+   have theirs in their own styles, and a card's main photo takes back its padding (destination-gallery.module.css). A
+   destination's name needs 8px more room beside its buttons, the 8px its card gains, so they wrap below it at the same
+   widths as before, under 323px, rather than squeezing it into a narrow column beside them. */
+@media(max-width:540px) {
+  .trip-page .trip-heading { padding:20px 0; margin-bottom:20px; }
+  .trip-page .trip-main>section>.section-heading { margin-bottom:16px; }
+  .trip-page .budget-section-heading { margin-top:16px; }
+  .trip-page .destination-card { padding:12px; }
+  .trip-page .destination-name { min-width:108px; }
+  .trip-page .destination-budget { margin:0 0 12px; }
+  .trip-page .destination-church .idea-card { padding:12px; }
+  .trip-page .travel-section { margin-top:28px; }
+  .trip-page .travel-card { padding-bottom:14px; }
+  .trip-page .travel-card+.travel-card { padding-top:14px; }
+  .trip-page .trip-layout { gap:28px; }
+  .trip-page .budget-panel { margin-top:0; padding:12px; }
 }

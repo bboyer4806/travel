@@ -13,7 +13,8 @@
 .noPrice { color: var(--muted); font-size: 12px; }
 .bottom small { display: block; margin-top: 4px; color: var(--muted); font-size: 10px; }
 @media (max-width: 540px) {
-  .section { margin-top: 34px; }
-  .card { padding: 17px; }
+  /* TRA-156: the trip page's spacing on phones, 28px between its sections and 12px inside its boxes. */
+  .section { margin-top: 28px; }
+  .card { padding: 12px; }
   .title { font-size: 20px; }
 }

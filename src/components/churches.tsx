@@ -1,7 +1,7 @@
 "use client";
 
-import { useRef } from "react";
-import { Church as ChurchIcon, ExternalLink, MapPin, Pencil, Plus, Trash2 } from "lucide-react";
+import { useId, useRef, useState, type ReactNode } from "react";
+import { ChevronDown, Church as ChurchIcon, ExternalLink, MapPin, Pencil, Plus, Trash2 } from "lucide-react";
 import type { GalleryDraft } from "@/lib/gallery-draft";
 import { DIALOG, type FrameWidths } from "@/lib/photo-sizes";
 import { CandidateGallery, CandidateGalleryEditor } from "./candidate-gallery";
@@ -13,6 +13,22 @@ import styles from "./churches.module.css";
 import ideaStyles from "./destination-ideas.module.css";
 
 const HEADINGS = ["h1", "h2", "h3", "h4", "h5", "h6"] as const;
+
+/**
+ * A destination's Church section, named for screen readers by its destination's `label`, with `actions` beside its
+ * heading. On a destination's card, on a trip's page or in Destinations, the heading opens and closes the section's
+ * Sundays and churches, which start closed each time the page loads, as the Budget heading's breakdowns do, and
+ * `actions` show either way (TRA-169). Opening and closing saves nothing. On a destination's Church page, where it is
+ * the page, `collapsible` is false and it is always open.
+ */
+export function ChurchSection({ label, collapsible, actions, children }: { label: string; collapsible: boolean; actions: ReactNode; children: ReactNode }) {
+  const [expanded, setExpanded] = useState(false);
+  const contentId = useId();
+  return <section className="destination-church" aria-label={"Church in " + label}>
+    <div className="budget-section-heading"><h4>{collapsible ? <button type="button" className="budget-toggle" aria-expanded={expanded} aria-controls={contentId} onClick={() => setExpanded((open) => !open)}>Church<ChevronDown size={18} aria-hidden="true" /></button> : "Church"}</h4>{actions}</div>
+    {collapsible ? <div id={contentId} hidden={!expanded}>{children}</div> : children}
+  </section>;
+}
 
 /**
  * A destination's churches. Each church's name is a heading at `headingLevel`, below the section that lists them, and

@@ -20,7 +20,7 @@ const google = (subject, email, name = null) => ({ subject, email, emailVerified
 /** Monthly climate averages (TRA-135), each month by name (TRA-158). */
 const climate = () => ({ months: MONTHS.map((month, index) => ({ month, highF: 60 + index, lowF: 50 + index, precipitationIn: 1 })), source: "Test normals", firstYear: 1991, lastYear: 2020 });
 const requirements = () => ({ passportNationality: "United States", travelPurpose: "Tourism", travelerCircumstances: "Two adults", visaRequirements: "None for short stays", passportValidity: "Three months", requiredDocuments: "Return ticket", transitRequirements: "None", notes: "Checked", sources: [{ id: randomUUID(), url: "https://example.gov/entry", description: "Entry guidance" }], lastCheckedDate: "2026-11-03" });
-const healthSafety = () => ({ usAdvisoryLevel: 1, advisoryLevel: "Level 1", advisoryWarnings: "", healthPrecautions: "Routine vaccines", localSafety: "Watch for pickpockets", emergencyContacts: [{ id: randomUUID(), name: "Emergency services", phone: "112", notes: "" }], sources: [{ id: randomUUID(), url: "https://example.gov/advisory", description: "Travel advisory" }], lastCheckedDate: "2026-11-10" });
+const healthSafety = () => ({ usAdvisoryLevel: 1, advisoryLevel: "Level 1", advisoryWarnings: "", healthPrecautions: "Routine vaccines", localSafety: "Watch for pickpockets", emergencyContacts: [{ id: randomUUID(), name: "Emergency services", phone: "112", notes: "" }], sources: [{ id: randomUUID(), url: "https://example.gov/advisory", description: "Travel advisory" }], lastCheckedDate: "2026-11-10", medicalProviders: [] });
 
 /** The designated owner, someone a trip will be shared with, and someone it never is. */
 function setup(t, path = ":memory:") {

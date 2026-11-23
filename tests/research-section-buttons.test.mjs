@@ -3,6 +3,7 @@ import { readFileSync } from "node:fs";
 import test from "node:test";
 import { runInNewContext } from "node:vm";
 import ts from "typescript";
+import * as coordinates from "../src/lib/coordinates.ts";
 import * as entryRequirements from "../src/lib/entry-requirements.ts";
 import * as healthSafety from "../src/lib/health-safety.ts";
 import * as tripDates from "../src/lib/trip-dates.ts";
@@ -102,7 +103,7 @@ function section(path, name, modules, props) {
 
 const recorded = {
   requirements: entryRequirements.normalizeEntryRequirements({ passportNationality: "United States", visaRequirements: "No visa for stays under 90 days." }),
-  healthSafety: healthSafety.normalizeHealthSafety({ usAdvisoryLevel: null, advisoryLevel: "Level 1: Exercise normal precautions" }),
+  healthSafety: healthSafety.normalizeHealthSafety({ usAdvisoryLevel: null, advisoryLevel: "Level 1: Exercise normal precautions", medicalProviders: [] }),
 };
 const research = [
   {
@@ -111,7 +112,7 @@ const research = [
   },
   {
     name: "Health and safety", record: "healthSafety", recorded: recorded.healthSafety, edit: "Edit health and safety", add: "Add health and safety", empty: "No health and safety information recorded.",
-    open: (props) => section("../src/components/health-safety.tsx", "HealthSafetyPanel", { "@/lib/health-safety": healthSafety, "./health-safety.module.css": { default: names } }, props),
+    open: (props) => section("../src/components/health-safety.tsx", "HealthSafetyPanel", { "@/lib/health-safety": healthSafety, "@/lib/coordinates": coordinates, "./health-safety.module.css": { default: names } }, props),
   },
 ];
 const labels = (view) => view.heading().map(([label]) => label);

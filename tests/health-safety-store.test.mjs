@@ -15,6 +15,7 @@ const details = () => ({
   emergencyContacts: [{ id: randomUUID(), name: "Emergency services", phone: "112", notes: "Police, fire and ambulance" }, { id: randomUUID(), name: "Embassy", phone: "+1 202 555 0100", notes: "" }],
   sources: [{ id: randomUUID(), url: "https://example.gov/advisory", description: "Government travel advisory" }],
   lastCheckedDate: "2026-11-10",
+  medicalProviders: [],
 });
 const requirements = () => ({ passportNationality: "United States", travelPurpose: "Tourism", travelerCircumstances: "", visaRequirements: "None for short stays", passportValidity: "", requiredDocuments: "", transitRequirements: "", notes: "", sources: [], lastCheckedDate: "2026-11-03" });
 const destination = (snapshot, id) => snapshot.destinations.find((item) => item.id === id);

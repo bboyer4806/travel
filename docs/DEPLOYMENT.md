@@ -218,7 +218,7 @@ Prefer fixing forward. Rolling back an image does not reverse a database schema 
 
 ## Schema history
 
-The schema version is SQLite's `user_version`; the current schema is 44, `SCHEMA_VERSION` in `src/lib/store.ts`. At every start, `createStore` in `src/lib/store.ts` upgrades an older database in one transaction, through each version in turn. Each upgrade checks what already exists, so running it again on a database that already has its changes (a replay) keeps saved data. The notes below are in schema order. **Superseded** marks behavior that a later schema replaced; the current behavior is in [README.md](../README.md).
+The schema version is SQLite's `user_version`; the current schema is 45, `SCHEMA_VERSION` in `src/lib/store.ts`. At every start, `createStore` in `src/lib/store.ts` upgrades an older database in one transaction, through each version in turn. Each upgrade checks what already exists, so running it again on a database that already has its changes (a replay) keeps saved data. The notes below are in schema order. **Superseded** marks behavior that a later schema replaced; the current behavior is in [README.md](../README.md).
 
 ### Schema 1: first shared planner
 The first release creates the `trips`, `destinations`, `legs` and `candidates` tables, with prices in integer USD cents for the whole party. Anyone with the URL can view and edit every trip. The schema 1 build sets `user_version` to 1 at every start and does not refuse a newer database, so later upgrades check what already exists as well as the version: redeploying a newer build after a rollback to schema 1 cannot repeat an `ALTER TABLE` or replace saved links.
@@ -449,6 +449,11 @@ Restoring the pre-upgrade backup to run a schema 42 build again loses every acti
 The U.S. travel advisory level upgrades the database to schema 44 in the startup transaction, adding `usAdvisoryLevel` to each record's JSON in `destination_health_safety`: the U.S. State Department's travel advisory level someone chose, 1 to 4, or null for none, which the store checks every record gives. Every existing record gets null, appended with SQLite's `json_set`, so no destination shows a level until someone chooses one, and its research, including the advisory level typed in `advisoryLevel`, is unchanged. Destinations without a record still have none, and nothing else changes. The records are in the same online backups, and a replay keeps each saved level.
 
 Restoring the pre-upgrade backup to run a schema 43 build again loses every U.S. travel advisory level, and that build shows none.
+
+### Schema 45: non-emergency medical providers (TRA-172)
+Non-emergency medical care upgrades the database to schema 45 in the startup transaction, adding `medicalProviders` to each record's JSON in `destination_health_safety`: the doctors, clinics and outpatient facilities people recorded for the destination, as a list the store checks every record gives. Every existing record gets an empty list, appended with SQLite's `json_set`, so no destination shows a provider until someone adds one, and its research, emergency contacts, U.S. travel advisory level, sources and last checked date are unchanged. Destinations without a record still have none, and nothing else changes. The records are in the same online backups, and a replay keeps each saved provider.
+
+Restoring the pre-upgrade backup to run a schema 44 build again loses every medical provider, and that build shows none.
 
 ## Feedback and release notes
 Configure server-only JIRA_URL (HTTPS Jira base URL), JIRA_EMAIL, and JIRA_API_TOKEN with permission to create Tasks in TRA. Use the host's secret configuration; never put credentials in source, image layers, client variables, or logs. Preserve the browser Host and Origin headers through the proxy; the feedback endpoint compares them and ignores forwarded-host claims. Its limits count per signed-in account. A failed send logs one line saying why, such as a missing setting's name, an invalid JIRA_URL, or Jira's HTTP status (401 for wrong credentials, 403 for missing permission), never the settings' values.

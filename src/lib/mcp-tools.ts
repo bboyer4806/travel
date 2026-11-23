@@ -2,7 +2,7 @@ import { COORDINATE_ACCURACIES } from "./coordinates.ts";
 import { EDITABLE_FIELDS } from "./editable-fields.ts";
 import { ENTRY_REQUIREMENT_FIELDS } from "./entry-requirements.ts";
 import { LAYOVER_BUFFERS, MAX_LAYOVER_ACTIVITIES, MAX_LAYOVER_MINUTES } from "./layover-plan.ts";
-import { EMERGENCY_CONTACT_MAX_LENGTH, HEALTH_SAFETY_FIELDS, MAX_EMERGENCY_CONTACTS, US_ADVISORY_LEVELS, usAdvisoryLabel } from "./health-safety.ts";
+import { EMERGENCY_CONTACT_MAX_LENGTH, HEALTH_SAFETY_FIELDS, MAX_EMERGENCY_CONTACTS, MAX_SOURCES, MEDICAL_PROVIDER_MAX_LENGTH, PROVIDER_CHECKS, SHORT_NOTICE_CARE, US_ADVISORY_LEVELS, usAdvisoryLabel } from "./health-safety.ts";
 import { AI_PHOTO_DOWNLOAD_SECONDS, formatMegabytes, MAX_AI_PROPOSAL_PHOTOS, MAX_CANDIDATE_IMAGES, MAX_DESTINATION_IMAGES, MAX_GALLERY_UPLOAD_BYTES, MAX_IMAGE_UPLOAD_BYTES } from "./image-limits.ts";
 import { MAX_TAG_LENGTH } from "./trip-tags.ts";
 import { CLIMATE_LIMITS, MONTHS } from "./typical-weather.ts";
@@ -140,10 +140,10 @@ const CHANGES = [
       description: "The whole record, or null to clear it.",
     },
   }, ["id", "requirements"]),
-  change("destination.healthSafety", "Replaces a destination's health and safety research, or clears it with null.", {
+  change("destination.healthSafety", "Replaces a destination's health and safety research, with its emergency contacts and its doctors and clinics for non-emergency care, or clears it with null.", {
     id: id("The destination's id."),
     healthSafety: {
-      type: ["object", "null"], additionalProperties: false, required: ["usAdvisoryLevel"],
+      type: ["object", "null"], additionalProperties: false, required: ["usAdvisoryLevel", "medicalProviders"],
       properties: {
         usAdvisoryLevel: {
           type: ["integer", "null"], enum: [...US_ADVISORY_LEVELS, null],
@@ -155,6 +155,35 @@ const CHANGES = [
           items: { type: "object", additionalProperties: false, required: ["id", "name", "phone"], properties: { id: id("The contact's id: a new UUID for a new one."), name: text("Who.", EMERGENCY_CONTACT_MAX_LENGTH.name), phone: text("Digits, spaces, +, (, ), - and . only.", EMERGENCY_CONTACT_MAX_LENGTH.phone), notes: text("Notes. Empty for none.", EMERGENCY_CONTACT_MAX_LENGTH.notes) } },
         },
         sources, lastCheckedDate: lastChecked,
+        medicalProviders: {
+          type: "array",
+          description: "Doctors, medical clinics and outpatient facilities for non-emergency care, such as a bad cold, an ear infection or a minor injury, replacing the saved ones. Emergency services belong in emergencyContacts instead. Prefer providers confirmed to offer consultations in English, found on the U.S. embassy's or consulate's list of medical providers, then on the provider's own website and other reliable sources; being on an embassy's list is no U.S. government endorsement. Include only providers worth keeping. Always given: the saved ones to keep them, or empty for none.",
+          items: {
+            type: "object", additionalProperties: false, required: ["id", "name", "englishConsultations", "visitingAmericans", "shortNotice"],
+            properties: {
+              id: id("The provider's id: a new UUID for a new one."),
+              name: text("The doctor's, clinic's or facility's name.", MEDICAL_PROVIDER_MAX_LENGTH.name),
+              address: text("Its address. Empty when unknown.", MEDICAL_PROVIDER_MAX_LENGTH.address),
+              coordinates: {
+                type: ["object", "null"], additionalProperties: false, required: ["latitude", "longitude"],
+                properties: {
+                  latitude: { type: "number", minimum: -90, maximum: 90, description: "Degrees north, negative for south." },
+                  longitude: { type: "number", minimum: -180, maximum: 180, description: "Degrees east, negative for west." },
+                },
+                description: "Its map location, from a source you can name, or null: never a guess.",
+              },
+              phone: text("Its phone number: digits, spaces, +, (, ), - and . only. Empty when unknown.", MEDICAL_PROVIDER_MAX_LENGTH.phone),
+              website: text("Its own website's https:// or http:// address. Empty when unknown.", MEDICAL_PROVIDER_MAX_LENGTH.website),
+              services: text("Its medical specialty or services, such as general practice or pediatrics. Empty when unknown.", MEDICAL_PROVIDER_MAX_LENGTH.services),
+              notes: text("Anything else worth knowing, such as hours or how to book. Empty for none.", MEDICAL_PROVIDER_MAX_LENGTH.notes),
+              englishConsultations: { type: "string", enum: PROVIDER_CHECKS, description: "verified only when a source you cite confirms it offers medical consultations in English; otherwise unconfirmed." },
+              visitingAmericans: { type: "string", enum: PROVIDER_CHECKS, description: "verified only when a source you cite confirms it sees visiting American patients; otherwise unconfirmed." },
+              shortNotice: { type: "string", enum: SHORT_NOTICE_CARE, description: "The soonest visit a source you cite confirms it offers: walk-in visits without an appointment, same-day appointments, or short-notice appointments; otherwise unconfirmed. Never a guarantee that it can see anyone." },
+              sources: { type: "array", maxItems: MAX_SOURCES, items: link("source"), description: "The pages its details come from, such as the embassy's list and its own website." },
+              lastVerifiedDate: { type: ["string", "null"], pattern: DATE, description: "When its details were last checked, YYYY-MM-DD, or null." },
+            },
+          },
+        },
       },
       description: "The whole record, or null to clear it.",
     },

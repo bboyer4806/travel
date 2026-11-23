@@ -30,10 +30,12 @@ const research = (overrides = {}) => ({
   healthPrecautions: "Routine vaccines", localSafety: "Pickpockets on trams",
   emergencyContacts: [{ id: randomUUID(), name: "Emergency services", phone: "112", notes: "Police, fire and ambulance" }],
   sources: [{ id: randomUUID(), url: "https://travel.state.gov/", description: "U.S. travel advisory" }],
-  lastCheckedDate: "2026-11-10", usAdvisoryLevel: null, ...overrides,
+  lastCheckedDate: "2026-11-10", usAdvisoryLevel: null, medicalProviders: [], ...overrides,
 });
 /** A record without its U.S. travel advisory level, as the editor of a page opened before it had one saves it. */
 const withoutLevel = (record) => Object.fromEntries(Object.entries(record).filter(([key]) => key !== "usAdvisoryLevel"));
+/** A record as schema 43 saved it, before its U.S. travel advisory level and its medical providers (TRA-172). */
+const asSchema43 = (record) => Object.fromEntries(Object.entries(record).filter(([key]) => key !== "usAdvisoryLevel" && key !== "medicalProviders"));
 const save = (id, record) => ({ type: "destination.healthSafety", id, healthSafety: record });
 const saved = (store, id) => store.getSnapshot().destinations.find((item) => item.id === id).healthSafety;
 /** A snapshot with every destination's U.S. travel advisory level left out, to compare everything else. */
@@ -49,8 +51,8 @@ test("the four levels read as the State Department writes them, and a record kee
   assert.throws(() => normalizeHealthSafety(withoutLevel(research())), { message: GIVE_US_ADVISORY_LEVEL });
   // The editor's dropdown: Not set is none, and each level its number.
   const form = (value) => { const fields = new FormData(); fields.set("usAdvisoryLevel", value); return fields; };
-  assert.equal(healthSafetyFromForm(form(""), [], []).usAdvisoryLevel, null);
-  for (const level of US_ADVISORY_LEVELS) assert.equal(healthSafetyFromForm(form(String(level)), [], []).usAdvisoryLevel, level);
+  assert.equal(healthSafetyFromForm(form(""), [], [], []).usAdvisoryLevel, null);
+  for (const level of US_ADVISORY_LEVELS) assert.equal(healthSafetyFromForm(form(String(level)), [], [], []).usAdvisoryLevel, level);
 });
 
 test("each level saves with its destination, changes and clears, every trip's page and the destination's page show it, and reopening keeps it (TRA-171)", (t) => {
@@ -109,16 +111,16 @@ test("schema 43 research upgrades with no level and keeps everything recorded, a
     const bare = addDestination(store, tripId, { city: "Porto", nights: 2 });
     store.applyMutation(save(id, research()));
     store.close(); store = null;
-    // A schema 43 database: research as TRA-14 saved it, without a U.S. travel advisory level.
+    // A schema 43 database: research as TRA-14 saved it, without a U.S. travel advisory level or medical providers.
     let db = new DatabaseSync(path);
-    const old = withoutLevel(JSON.parse(db.prepare("SELECT healthSafetyJson FROM destination_health_safety WHERE destinationId = ?").get(id).healthSafetyJson));
+    const old = asSchema43(JSON.parse(db.prepare("SELECT healthSafetyJson FROM destination_health_safety WHERE destinationId = ?").get(id).healthSafetyJson));
     db.prepare("UPDATE destination_health_safety SET healthSafetyJson = ? WHERE destinationId = ?").run(JSON.stringify(old), id);
     db.exec("PRAGMA user_version = 43;");
     db.close();
     store = createOwnedStore(path);
-    assert.deepEqual(saved(store, id), { ...old, usAdvisoryLevel: null }, "no level is assumed, and the research, its typed advisory level included, is as recorded");
+    assert.deepEqual(saved(store, id), { ...old, usAdvisoryLevel: null, medicalProviders: [] }, "no level is assumed, and the research, its typed advisory level included, is as recorded");
     assert.equal(saved(store, bare), null, "a destination without research still has none");
-    store.applyMutation(save(id, { ...old, usAdvisoryLevel: 3 }));
+    store.applyMutation(save(id, { ...old, usAdvisoryLevel: 3, medicalProviders: [] }));
     const later = store.getSnapshot();
     // A replay of schema 44, also after the schema 1 build resets the schema version, keeps it.
     for (const version of [43, 1]) {
@@ -148,7 +150,7 @@ test("upgraded research is stored as a save stores it, the level last (TRA-171)"
   for (const id of [upgraded, edited]) store.applyMutation(save(id, record));
   store.close();
   let db = new DatabaseSync(path);
-  db.prepare("UPDATE destination_health_safety SET healthSafetyJson = ? WHERE destinationId = ?").run(JSON.stringify(withoutLevel(record)), upgraded);
+  db.prepare("UPDATE destination_health_safety SET healthSafetyJson = ? WHERE destinationId = ?").run(JSON.stringify(asSchema43(record)), upgraded);
   db.exec("PRAGMA user_version = 43;");
   db.close();
   store = createOwnedStore(path);
@@ -217,7 +219,7 @@ test("ChatGPT and Claude read the level and propose it, always giving it, and ap
   assert.deepEqual(store.getSnapshot(), before);
 
   const schema = TOOLS.find((tool) => tool.name === "propose_changes").inputSchema.properties.changes.items.anyOf.find((change) => change.title === "destination.healthSafety").properties.healthSafety;
-  assert.deepEqual(schema.required, ["usAdvisoryLevel"]);
+  assert.ok(schema.required.includes("usAdvisoryLevel"), "it is required");
   assert.deepEqual([schema.properties.usAdvisoryLevel.type, schema.properties.usAdvisoryLevel.enum], [["integer", "null"], [1, 2, 3, 4, null]]);
   for (const label of LABELS) assert.ok(schema.properties.usAdvisoryLevel.description.includes(label), label);
 });
@@ -253,7 +255,10 @@ function text(node) {
   return text(typeof node.type === "function" ? node.type(node.props) : node.props.children);
 }
 const panel = (record) => hosts({ type: component.HealthSafetyPanel, props: { healthSafety: record, disabled: false, onEdit() {}, onClear() {} } });
-const editor = (record) => hosts({ type: component.HealthSafetyEditor, props: { healthSafety: record, contacts: record?.emergencyContacts ?? [], onContactsChange() {}, sources: record?.sources ?? [], onSourcesChange() {}, disabled: false } });
+const editor = (record) => hosts({ type: component.HealthSafetyEditor, props: {
+  healthSafety: record, contacts: record?.emergencyContacts ?? [], onContactsChange() {}, providers: record?.medicalProviders.map(healthSafety.providerDraft) ?? [], onProvidersChange() {},
+  sources: record?.sources ?? [], onSourcesChange() {}, disabled: false,
+} });
 
 test("the section shows the level first, in its color with its number and description, and Not recorded without one (TRA-171)", () => {
   for (const [index, level] of US_ADVISORY_LEVELS.entries()) {
@@ -286,7 +291,7 @@ test("the editor's first field is a dropdown of Not set and the four levels, sho
     // Each field holds what is saved, so saving the editor unchanged saves the record as it was.
     const form = new FormData();
     for (const field of fields) form.set(field.props.name, String(field.props.defaultValue));
-    assert.deepEqual(normalizeHealthSafety(healthSafetyFromForm(form, record.emergencyContacts, record.sources)), record);
+    assert.deepEqual(normalizeHealthSafety(healthSafetyFromForm(form, record.emergencyContacts, record.sources, record.medicalProviders.map(healthSafety.providerDraft))), record);
   }
   const [label] = editor(null).filter((node) => node.type === "label" && hosts(node.props.children).some((child) => child.type === "select"));
   assert.equal(text(label.props.children[0]), "U.S. travel advisory level");

@@ -1,0 +1,19 @@
+/* TRA-162: Access's two tables, Trips and Destinations, one section after the other. */
+.section + .section { margin-top: 48px; }
+.intro { margin: -10px 0 18px; color: var(--muted); font-size: 13px; line-height: 1.7; }
+/* A table fills its section. On a screen too narrow for its columns, as a phone's, it scrolls sideways within its own
+   box, as a data table may, so it never reaches past the screen or widens the page (TRA-157). Words in it never break,
+   so each email stays whole. */
+.scroll { overflow-x: auto; }
+.table { width: 100%; border-collapse: collapse; font-size: 13px; }
+.table th, .table td { padding: 12px 16px 12px 0; border-bottom: 1px solid var(--line); text-align: left; vertical-align: top; font-weight: 400; }
+.table th *, .table td * { overflow-wrap: normal; }
+.table thead th { padding-block: 0; vertical-align: middle; color: var(--muted); font-size: 12px; font-weight: 600; white-space: nowrap; }
+.table tbody th { width: 30%; min-width: 120px; font-size: 14px; font-weight: 600; }
+.table tbody th a { color: var(--green); }
+.table tbody th a:hover { color: var(--orange); }
+/* The name column's heading sorts its table, A to Z or Z to A, and is at least 44px tall for a finger. */
+.sort { display: inline-flex; align-items: center; gap: 6px; min-height: 44px; padding: 0; border: 0; background: none; color: inherit; font: inherit; cursor: pointer; }
+.sort:hover { color: var(--orange); }
+.people { display: grid; gap: 10px; margin: 0; padding: 0; list-style: none; }
+.note { margin: 10px 0 0; color: var(--muted); font-size: 12px; line-height: 1.6; }

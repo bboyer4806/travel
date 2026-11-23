@@ -378,7 +378,7 @@ const tripPages = ["/trips/container-smoke", "/trips/container-smoke/destination
 const destinationPages = ["/destinations/22222222-2222-4222-8222-222222222222", "/destinations/22222222-2222-4222-8222-222222222222/hotels"];
 // The owner's AI assistant pages (TRA-115), whose proposal and connection IDs reveal nothing.
 const aiPages = ["/ai", "/ai/authorize?response_type=code&client_id=c1000000-0000-4000-8000-000000000001&redirect_uri=https%3A%2F%2Fclaude.ai%2Fapi%2Fmcp%2Fauth_callback", "/ai/proposals/c2000000-0000-4000-8000-000000000001"];
-const pages = ["/", "/destinations", ...tripPages, ...destinationPages, "/whats-new", ...aiPages];
+const pages = ["/", "/destinations", ...tripPages, ...destinationPages, "/access", "/whats-new", ...aiPages];
 // A photo of a proposal awaiting the owner (TRA-122), which only the designated owner sees.
 const aiPhotoRoute = "/api/ai-proposal-images/c2000000-0000-4000-8000-000000000001/c3000000-0000-4000-8000-000000000001";
 // Where the seeded trip's places are on its map (TRA-44), which only accounts that can open the trip are told.
@@ -432,6 +432,10 @@ async function assertHidden(label, headers) {
   const destinations = await get("/destinations", headers);
   assert.equal(destinations.status, 200, `${label} Destinations`);
   assert.ok(!(await destinations.text()).includes("Vienna"), `${label} must not see the destination in Destinations`);
+  const access = await get("/access", headers);
+  assert.equal(access.status, 200, `${label} Access`);
+  const accessBody = await access.text();
+  assert.ok(!accessBody.includes("Persistence test") && !accessBody.includes("Vienna") && !accessBody.includes("editor@example.test"), `${label} must not see the trip, its destination or who has them in Access`);
   for (const path of [...tripPages, ...destinationPages]) {
     const body = await (await get(path, headers)).text();
     assert.ok(body.includes("This page has moved on."), `${label} ${path} must be not found`);
@@ -486,6 +490,12 @@ try {
   const editorDestinations = await (await get("/destinations", editor)).text();
   assert.match(editorDestinations, /Vienna/, "A shared trip's destination appears in its recipient's Destinations");
   assert.match(editorDestinations, /Shared by Smoke Owner/);
+  // Access (TRA-162): the owner sees everyone the trip and its destination are shared with; the editor, their owner and themselves.
+  const ownerAccess = await (await get("/access", owner)).text();
+  assert.ok(["Persistence test", "Vienna", "Smoke editor", "editor@example.test"].every((shown) => ownerAccess.includes(shown)), "The owner's Access lists the trip and its destination with who can open them");
+  assert.ok(!ownerAccess.includes(">Share<") && !ownerAccess.includes(">Remove<") && !ownerAccess.includes("Share with"), "Access offers no way to change who has access");
+  const editorAccess = await (await get("/access", editor)).text();
+  assert.ok(["Persistence test", "Vienna", "Smoke Owner", "owner@example.test", "Only its owner sees who else has access."].every((shown) => editorAccess.includes(shown)), "The editor's Access lists the shared trip and destination with their owner");
   for (const path of [...tripPages, ...destinationPages]) {
     const response = await get(path, editor);
     assert.equal(response.status, 200, `editor ${path}`);
@@ -528,6 +538,10 @@ try {
   assert.deepEqual(await mutation(edit("Edited by the editor"), editor), { ok: true, id: saved.id });
   assert.equal(notes(), "Edited by the editor");
   assert.match(await (await get("/trips/" + saved.id, owner)).text(), /Edited by the editor/, "The owner sees the editor's change");
+  // Access shows the owner everyone the trip is shared with, and sends the editor only its owner and themselves.
+  assert.match(await (await get("/access", owner)).text(), /first-timer@example\.test/, "The owner's Access lists everyone the trip is shared with");
+  const sharedAccess = await (await get("/access", editor)).text();
+  assert.ok(sharedAccess.includes("Container action smoke") && !sharedAccess.includes("first-timer@example.test"), "The editor's Access lists the trip without who else it is shared with");
   assert.deepEqual(await mutation({ type: "trip.delete", id: saved.id }, editor), { ok: false, error: "Only the trip's owner can delete it." });
   assert.deepEqual(await mutation({ type: "trip.share", tripId: saved.id, email: "outsider@example.test" }, editor), { ok: false, error: "Only the trip's owner can share it." });
   assert.deepEqual(await mutation({ type: "trip.unshare", tripId: saved.id, email: "first-timer@example.test" }, editor), { ok: false, error: "Only the trip's owner can remove someone's access." });
@@ -586,6 +600,7 @@ try {
   assert.ok(!(await (await get("/trips/" + saved.id, owner)).text()).includes("Smokeville"), "A trip's page never offers another account's destination");
   assert.deepEqual(await mutation({ type: "trip.unshare", tripId: saved.id, email: "editor@example.test" }), { ok: true, id: saved.id });
   assert.deepEqual(await mutation(edit("Editor, after removal"), editor), notAvailable, "Removing access ends it at once");
+  assert.ok(!(await (await get("/access", editor)).text()).includes("Container action smoke"), "Removing access takes the trip from the editor's Access");
   const revoked = await (await get("/trips/" + saved.id, editor)).text();
   assert.ok(revoked.includes("This page has moved on.") && !revoked.includes("Edited by the editor"), "A removed editor's saved URL no longer opens the trip");
   assert.equal(notes(), "Edited by the editor", "Removing access keeps the trip as it was");

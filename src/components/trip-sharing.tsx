@@ -32,7 +32,7 @@ export default function TripSharing({ access, busy, onRemove }: {
   </>;
 }
 
-/** Their name and email, or the email alone until they sign in with Google. */
-function Person({ member }: { member: TripMember }) {
+/** Their name and email, or the email alone until they sign in with Google. Access (TRA-162) shows people the same way. */
+export function Person({ member }: { member: TripMember }) {
   return <span className={styles.identity}>{member.name ? <><span className={styles.name}>{member.name}</span><span className={styles.email}>{member.email}</span></> : <span className={styles.name}>{member.email}</span>}</span>;
 }

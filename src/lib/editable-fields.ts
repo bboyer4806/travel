@@ -58,6 +58,11 @@ export const EDITABLE_FIELDS = {
       label: "Return city", description: "The return city, or null when it is the departing city. Left out keeps the saved one.",
     },
     travelers: { kind: "whole", min: 1, max: 999, invalid: "Number of travelers must be a whole number between 1 and 999.", label: "Travelers", description: "How many people travel." },
+    // One optional amount for the whole trip (TRA-159), which its budget counts once.
+    entryVisaFeesAmount: {
+      kind: "amount", noun: "Entry / visa fees", keep: true, column: "entryVisaFeesCents", label: "Entry / visa fees",
+      description: "The trip's entry and visa fees, such as visa applications, electronic travel authorizations and entry fees, as one estimate for the whole party and every destination, counted once in its budget. Optional: blank adds no cost. Left out keeps the saved amount.",
+    },
     notes: { kind: "text", maxLength: 8000, label: "Notes", description: "Notes. Empty for none." },
   },
   home_items: {

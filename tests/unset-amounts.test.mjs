@@ -103,9 +103,11 @@ test("each category of the trip estimate lacks its first amount in route order, 
   });
 });
 
-test("a trip without destinations has no amounts to enter (TRA-165)", (t) => {
+test("a trip without destinations has no connection or stay amounts to enter, only its entry and visa fees (TRA-165, TRA-159)", (t) => {
   const { store, tripId } = setup(t);
   assert.deepEqual(Object.values(tripGaps(store, tripId)), [null, null, null, null, null, null, null]);
+  const snapshot = store.getTripSnapshot(tripId).data;
+  assert.deepEqual(unsetTripAmount(snapshot, tripId, "entryVisaFees"), { kind: "trip", trip: snapshot.trips[0], field: "entryVisaFeesAmount" });
 });
 
 test("an amount is lacking wherever the estimate counts one missing, and entering each in turn completes it (TRA-165)", (t) => {
@@ -306,6 +308,7 @@ test("each Not set and Not estimated in the trip estimate, and each count of the
   assert.deepEqual(links(page.estimate()).map((link) => [shown(link), text(link)]), [
     ["3 not estimated", "3 not estimated: add the price of travel from Boston to Vienna"], ["Not estimated", "Not estimated: add the price of travel from Boston to Vienna"],
     ["Not set", "Not set: add miscellaneous spending from Boston to Vienna"],
+    ["Not set", "Not set: add the trip's entry and visa fees"],
     ["2 not estimated", "2 not estimated: add the nightly hotel amount for Vienna"], ["Not estimated", "Not estimated: add the nightly hotel amount for Vienna"],
     ["Not set", "Not set: add the shopping amount for Vienna"],
     ["2 not estimated", "2 not estimated: add the daily miscellaneous amount for Vienna"], ["Not estimated", "Not estimated: add the daily miscellaneous amount for Vienna"],
@@ -313,23 +316,25 @@ test("each Not set and Not estimated in the trip estimate, and each count of the
   for (const link of links(page.estimate())) assert.deepEqual([link.props.type, link.props.className], ["button", "text-button unset-amount"], "styled as Travel's links");
   // Activities and Food include nothing, a known $0, and At home has nothing to enter.
   assert.deepEqual(rows(page), [
-    ["Travel3 not estimated", "Not estimated"], ["Transit miscellaneous", "Not set"], ["Hotels2 not estimated", "Not estimated"],
+    ["Travel3 not estimated", "Not estimated"], ["Transit miscellaneous", "Not set"], ["Entry / visa fees", "Not set"], ["Hotels2 not estimated", "Not estimated"],
     ["Activities", "$0"], ["Food", "$0"], ["Shopping", "Not set"], ["At home", "$0"], ["Miscellaneous2 not estimated", "Not estimated"],
   ]);
   // Once part of a category is estimated, its amount shows as before, and its count links to what is left.
   store.applyMutation({ type: "destination.save", id: vienna, stopId: vienna, nights: 3, hotelNightlyAmount: "200" });
   const reloaded = tripPage(store, tripId);
-  assert.deepEqual(rows(reloaded)[2], ["Hotels1 not estimated", "$600"]);
+  assert.deepEqual(rows(reloaded)[3], ["Hotels1 not estimated", "$600"]);
   assert.deepEqual(links(reloaded.estimate()).filter((link) => text(link).includes("hotel")).map(text), ["1 not estimated: add the nightly hotel amount for Salzburg"]);
 });
 
 test("each link opens the existing editor for its first unset amount in route order, focused on its field, with what is saved (TRA-165)", (t) => {
   const { store, tripId, vienna, salzburg } = austria(t);
   const page = tripPage(store, tripId);
-  const [travelCount, travel, transit, hotelCount, hotels, shopping, misc] = links(page.estimate());
+  const [travelCount, travel, transit, entryVisaFees, hotelCount, hotels, shopping, misc] = links(page.estimate());
   assert.deepEqual(page.open(travelCount), { title: "Plan this connection", focused: ["price", ""], route: "Boston to Vienna" });
   assert.deepEqual(page.open(travel), { title: "Plan this connection", focused: ["price", ""], route: "Boston to Vienna" });
   assert.deepEqual(page.open(transit), { title: "Plan this connection", focused: ["miscAmount", ""], route: "Boston to Vienna" });
+  // The trip's own amount opens the trip's editor (TRA-159).
+  assert.deepEqual(page.open(entryVisaFees), { title: "Edit trip", focused: ["entryVisaFeesAmount", ""] });
   assert.deepEqual(page.open(hotelCount), { title: "Edit accommodation budget for Vienna", focused: ["hotelNightlyAmount", ""] });
   assert.deepEqual(page.open(hotels), { title: "Edit accommodation budget for Vienna", focused: ["hotelNightlyAmount", ""] });
   assert.deepEqual(page.open(shopping), { title: "Edit shopping budget for Vienna", focused: ["shoppingAmount", ""] });
@@ -381,7 +386,7 @@ test("saving the editor updates the estimate and its totals as any save does, an
   await page.submit({ nights: "3", hotelNightlyAmount: "200" });
   assert.deepEqual(page.sent, [{ type: "destination.save", id: vienna, stopId: vienna, nights: 3, hotelNightlyAmount: "200" }], "the editor's own save, as from Hotels");
   assert.equal(page.title(), undefined, "saving closes it");
-  assert.deepEqual(rows(page)[2], ["Hotels1 not estimated", "$600"]);
+  assert.deepEqual(rows(page)[3], ["Hotels1 not estimated", "$600"]);
   assert.equal(text(page.estimate().props.children.find((child) => child.props.className === "budget-total")), "$600Partial estimate");
   assert.deepEqual(calculateBudget(store.getTripSnapshot(tripId).data, tripId).hotelsByCurrency, { USD: 60000 });
 });

@@ -1,4 +1,4 @@
-import type { FoodBudgetMode, ActivitiesBudgetMode, Budget, Candidate, Category, Destination, DestinationVisit, Snapshot, TravelLeg, TripStop } from "./types";
+import type { FoodBudgetMode, ActivitiesBudgetMode, Budget, Candidate, Category, Destination, DestinationVisit, Snapshot, TravelLeg, Trip, TripStop } from "./types";
 import { nightsToBudgetDays } from "./destination-duration.ts";
 
 type MiscellaneousInput = Pick<DestinationVisit, "nights" | "miscDailyMinor" | "miscCurrency">;
@@ -30,7 +30,7 @@ export interface DestinationBudget {
   complete: boolean;
 }
 
-type CostCategory = "travel" | "transitMiscellaneous" | "hotels" | "activities" | "food" | "home" | "miscellaneous" | "shopping";
+type CostCategory = "travel" | "transitMiscellaneous" | "entryVisaFees" | "hotels" | "activities" | "food" | "home" | "miscellaneous" | "shopping";
 interface Cost { amount: number | null; currency: string | null; category: CostCategory; }
 
 /**
@@ -154,12 +154,16 @@ function routeLegs(snapshot: Snapshot, tripId: string, visits: { stop: TripStop 
   return route.slice(1).map((toId, index) => snapshot.legs.find((item) => item.tripId === tripId && item.fromId === route[index] && item.toId === toId));
 }
 
-/** Currencies stay separate. Travel, miscellaneous spending in transit and at-home costs are always USD, so they are totaled in cents. */
+/**
+ * Currencies stay separate. Travel, miscellaneous spending in transit, entry and visa fees and at-home costs are always
+ * USD, so they are totaled in cents.
+ */
 export function calculateBudget(snapshot: Snapshot, tripId: string): Budget {
   const budget: Budget = {
     homeCents: 0,
     travelCents: 0,
     transitMiscCents: null,
+    entryVisaFeesCents: null,
     totalsByCurrency: {},
     miscellaneousByCurrency: {},
     shoppingByCurrency: {},
@@ -196,6 +200,8 @@ export function calculateBudget(snapshot: Snapshot, tripId: string): Budget {
       else budget.travelCents += cost.amount;
     } else if (cost.category === "transitMiscellaneous") {
       if (cost.amount !== null) budget.transitMiscCents = (budget.transitMiscCents ?? 0) + cost.amount;
+    } else if (cost.category === "entryVisaFees") {
+      budget.entryVisaFeesCents = cost.amount;
     } else if (cost.category === "food") {
       if (cost.amount === null || cost.currency === null) budget.foodMissingCount += 1;
       else budget.foodByCurrency[cost.currency] = (budget.foodByCurrency[cost.currency] ?? 0) + cost.amount;
@@ -220,6 +226,9 @@ export function calculateBudget(snapshot: Snapshot, tripId: string): Budget {
   for (const item of snapshot.homeItems) {
     if (item.tripId === tripId && item.priceCents !== null) add({ amount: item.priceCents, currency: "USD", category: "home" });
   }
+  // Entry and visa fees are one optional amount for the whole trip, counted once: blank adds no cost and is not a missing
+  // estimate, so a trip without them keeps its total and completeness (TRA-159).
+  if (trip.entryVisaFeesCents !== null) add({ amount: trip.entryVisaFeesCents, currency: "USD", category: "entryVisaFees" });
   budget.complete = budget.missingCount === 0;
   return budget;
 }
@@ -228,16 +237,18 @@ export function calculateBudget(snapshot: Snapshot, tripId: string): Budget {
  * The trip estimate's categories with amounts to enter in an editor (TRA-165). At home has none: a blank price there is a
  * task without a cost, not an amount the estimate lacks.
  */
-export type EstimateCategory = "travel" | "transitMiscellaneous" | "hotels" | "activities" | "food" | "shopping" | "miscellaneous";
+export type EstimateCategory = "travel" | "transitMiscellaneous" | "entryVisaFees" | "hotels" | "activities" | "food" | "shopping" | "miscellaneous";
 /** The categories of one stay's destination budget. */
-export type StayCategory = Exclude<EstimateCategory, "travel" | "transitMiscellaneous">;
+export type StayCategory = Exclude<EstimateCategory, "travel" | "transitMiscellaneous" | "entryVisaFees">;
 /**
  * An amount an estimate shows as Not set or Not estimated, by what it belongs to and the field that enters it (TRA-165): a
- * connection's price or miscellaneous spending, the price of a hotel, activity or restaurant chosen for the budget, or a
- * stay's nights or one of its destination's amounts, for one of the stay's categories.
+ * connection's price or miscellaneous spending, the trip's entry and visa fees (TRA-159), the price of a hotel, activity
+ * or restaurant chosen for the budget, or a stay's nights or one of its destination's amounts, for one of the stay's
+ * categories.
  */
 export type UnsetAmount =
   | { kind: "leg"; leg: TravelLeg; field: "price" | "miscAmount" }
+  | { kind: "trip"; trip: Trip; field: "entryVisaFeesAmount" }
   | { kind: "idea"; idea: Candidate }
   | { kind: "stay"; category: StayCategory; stop: TripStop; visit: DestinationVisit; field: "nights" | "hotelNightlyAmount" | "activitiesGeneralAmount" | "foodDailyAmount" | "shoppingAmount" | "miscDailyAmount" };
 
@@ -276,9 +287,14 @@ export function unsetStayAmount(snapshot: Snapshot, stop: TripStop, visit: Desti
 /**
  * The first amount a category of a trip's estimate lacks, in route order, or null when it has every one (TRA-165): the
  * connections from the departing city to the return city, then each stay's as above. Shopping and miscellaneous spending
- * in transit are optional, so theirs is the first stay or connection without one.
+ * in transit are optional, so theirs is the first stay or connection without one. Entry and visa fees are the trip's own
+ * optional amount, entered in its editor (TRA-159).
  */
 export function unsetTripAmount(snapshot: Snapshot, tripId: string, category: EstimateCategory): UnsetAmount | null {
+  if (category === "entryVisaFees") {
+    const trip = snapshot.trips.find((item) => item.id === tripId);
+    return trip && trip.entryVisaFeesCents === null ? { kind: "trip", trip, field: "entryVisaFeesAmount" } : null;
+  }
   const visits = tripVisits(snapshot, tripId);
   if (category === "travel" || category === "transitMiscellaneous") {
     const field = category === "travel" ? "price" : "miscAmount";

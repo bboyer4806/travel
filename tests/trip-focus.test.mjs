@@ -329,7 +329,7 @@ function plannerPage(store, read) {
 const homePage = (store) => plannerPage(store, () => { const { data, budgets, access } = store.getHomeOverview(); return { initialData: data, initialBudgets: budgets, access }; });
 const tripPage = (store, tripId) => plannerPage(store, () => { const { data, access, library } = store.getTripSnapshot(tripId); return { initialData: data, access: { [tripId]: access }, library, tripId }; });
 
-test("a trip's card shows its focus after Focus:, directly below its name and in full, and a trip without one shows no Focus line (TRA-168)", (t) => {
+test("a trip's card shows its focus after Focus:, directly below its name or its tagline and in full, and a trip without one shows no Focus line (TRA-168)", (t) => {
   const { store, tripId } = setup(t, tripInput({ name: "Central Asia Adventure", tagline: TAGLINE, focus: FOCUS }));
   addDestination(store, tripId, { city: "Samarkand" });
   store.applyMutation(tripInput({ name: "A weekend away" }));
@@ -339,10 +339,11 @@ test("a trip's card shows its focus after Focus:, directly below its name and in
   store.applyMutation(tripInput({ name: "The Alps", focus: long }));
   const cards = homePage(store).cards();
   const withFocus = ["div.trip-card-top", "h3", "p.trip-focus", "p.city-list", "div.trip-meta", "div.card-budget"];
-  assert.deepEqual(cards["Central Asia Adventure"].shows, withFocus, "the trip's name, its focus, then its cities and details");
+  // A trip's tagline is directly below its name (TRA-167), so its focus follows the tagline.
+  assert.deepEqual(cards["Central Asia Adventure"].shows, ["div.trip-card-top", "h3", "p.trip-tagline", "p.trip-focus", "p.city-list", "div.trip-meta", "div.card-budget"], "the trip's name, its tagline, its focus, then its cities and details");
   assert.equal(cards["Central Asia Adventure"].focus, `Focus: ${FOCUS}`);
   assert.deepEqual([cards["Central Asia Adventure"].label.type, text(cards["Central Asia Adventure"].label)], ["strong", "Focus:"], "its label is set apart from what was typed");
-  assert.deepEqual(cards["The Alps"].shows, withFocus);
+  assert.deepEqual(cards["The Alps"].shows, withFocus, "without a tagline, the focus is directly below the name");
   assert.equal(cards["The Alps"].focus, `Focus: ${long}`, "a long focus is shown whole");
   assert.deepEqual(cards["A weekend away"], { shows: ["div.trip-card-top", "h3", "p.city-list", "div.trip-meta", "div.card-budget"], focus: undefined, label: undefined }, "no label, placeholder or empty line");
   // The trip's own page doesn't show it.

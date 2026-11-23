@@ -102,9 +102,10 @@ test("invisible protection rejects replay, bot fields, too-fast sends and bursts
   let time=0; const guard=createFeedbackGuard(()=>time);
   let token=guard.issue("one"); assert.equal(guard.consume("one",token,""),null);
   token=guard.issue("one"); time+=1100; assert.equal(guard.consume("other",token,""),null); assert.equal(guard.consume("one",token,"spam"),null);
-  for(let i=0;i<3;i++){token=guard.issue("one");time+=1100;assert.equal(typeof guard.consume("one",token,""),"function");assert.equal(guard.consume("one",token,""),null);}
-  token=guard.issue("one");time+=1100;assert.equal(guard.consume("one",token,""),null,"three sends an hour for each account");
-  for(let i=0;i<2;i++){token=guard.issue("fresh"+i);time+=1100;assert.equal(typeof guard.consume("fresh"+i,token,""),"function");}
+  // A minute apart, so the shared cap of five sends a minute never applies.
+  for(let i=0;i<10;i++){token=guard.issue("one");time+=1100;assert.equal(typeof guard.consume("one",token,""),"function","send "+(i+1));assert.equal(guard.consume("one",token,""),null);time+=60_000;}
+  token=guard.issue("one");time+=1100;assert.equal(guard.consume("one",token,""),null,"ten sends an hour for each account");
+  for(let i=0;i<5;i++){token=guard.issue("fresh"+i);time+=1100;assert.equal(typeof guard.consume("fresh"+i,token,""),"function");}
   token=guard.issue("another");time+=1100;assert.equal(guard.consume("another",token,""),null,"the shared cap of five sends a minute applies across accounts");
   time+=3600001; token=guard.issue("one");time+=1100;assert.equal(typeof guard.consume("one",token,""),"function");
   token=guard.issue("expiry");time+=16*60000;assert.equal(guard.consume("expiry",token,""),null);
@@ -114,10 +115,11 @@ test("a returned send slot no longer counts against the account's or the shared 
   let time=0; const guard=createFeedbackGuard(()=>time);
   const take=(account)=>{const token=guard.issue(account);time+=1100;return guard.consume(account,token,"");};
   for(let i=0;i<5;i++) take("one")?.();
-  for(let i=0;i<3;i++) assert.equal(typeof take("one"),"function","returned slots leave all three of the hour's sends");
-  assert.equal(take("one"),null);
-  for(let i=0;i<2;i++) assert.equal(typeof take("two"+i),"function","and leave the minute's shared sends to others");
+  for(let i=0;i<5;i++) assert.equal(typeof take("two"+i),"function","returned slots leave the minute's shared sends to others");
   assert.equal(take("three"),null);
+  time+=60_000;
+  for(let i=0;i<10;i++){assert.equal(typeof take("one"),"function","and leave all ten of the account's sends an hour");time+=60_000;}
+  assert.equal(take("one"),null);
 });
 
 test("feedback endpoint validates requests and never calls Jira for rejected submissions",async()=>{
@@ -145,13 +147,17 @@ test("uncertain Jira delivery reports failure and consumes the token and the sen
  const {token,result}=await send();assert.equal(result.status,502);assert.deepEqual(await result.json(),{error:FEEDBACK_FAILURE});
  assert.equal((await handler(request({...feedback(),token,website:""}),"account")).status,429);assert.equal(calls,1);
  assert.deepEqual(logged.mock.calls.map((call)=>call.arguments),[["Feedback delivery failed."]],"an unexpected error's message may hold upstream data");
- for(let i=0;i<2;i++) assert.equal((await send()).result.status,502);
- assert.equal((await send()).result.status,429,"a send Jira may have created counts against the account's three an hour");
- assert.equal(calls,3);
+ // A minute apart, so the shared cap of five sends a minute never applies.
+ for(let i=0;i<9;i++){time+=60_000;assert.equal((await send()).result.status,502);}
+ time+=60_000;assert.equal((await send()).result.status,429,"a send Jira may have created counts against the account's ten an hour");
+ assert.equal(calls,10);
 });
 
-test("each account gets ten tokens an hour, so one account can't use up everyone's",async()=>{
+test("each account gets twenty tokens an hour, and everyone together twenty a minute",async()=>{
   const endpoint=feedbackEndpoint(async()=>created());
+  // Over two minutes, so the shared cap of twenty tokens a minute doesn't refuse the account's own.
+  for(let i=0;i<10;i++) assert.equal((await endpoint.open("busy")).status,200);
+  endpoint.clock.time+=60_000;
   for(let i=0;i<10;i++) assert.equal((await endpoint.open("busy")).status,200);
   const refusedOpen=await endpoint.open("busy");
   assert.equal(refusedOpen.status,429); assert.deepEqual(await refusedOpen.json(),{error:FEEDBACK_RETRY});
@@ -169,13 +175,13 @@ test("a Jira outage answering 503 doesn't use up anyone's sends",async(t)=>{
   const logged=t.mock.method(console,"error",()=>{});
   let down=true,attempts=0;
   const endpoint=feedbackEndpoint(async()=>{attempts++;return down?new Response("Service Unavailable",{status:503}):created();});
-  for(let i=0;i<5;i++) assert.equal((await endpoint.send("patient")).status,502);
-  assert.equal(attempts,5,"more failures than the account's three an hour and everyone's five a minute");
+  for(let i=0;i<11;i++) assert.equal((await endpoint.send("patient")).status,502);
+  assert.equal(attempts,11,"more failures than the account's ten an hour and everyone's five a minute");
   assert.deepEqual(new Set(logged.mock.calls.map((call)=>call.arguments[0])),new Set(["Feedback delivery failed: Jira answered HTTP 503."]));
   down=false;
   assert.equal((await endpoint.send("patient")).status,200);
   assert.equal((await endpoint.send("someone-else")).status,200);
-  assert.equal(attempts,7);
+  assert.equal(attempts,13);
 });
 
 test("credentials saved with a trailing line break still sign in to Jira",async()=>{

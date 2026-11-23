@@ -2,7 +2,7 @@ import { randomBytes } from "node:crypto";
 
 /**
  * One web process behind Dokku. Every request comes from a signed-in account, which a client can't change the way it
- * can drop a cookie, so each account's limits keep one client from using up the shared ones (TRA-92). The shared
+ * can drop a cookie, so each account's limits keep one client from using up the shared hourly ones (TRA-92). The shared
  * limits bound everyone together.
  */
 export function createFeedbackGuard(now: () => number = Date.now) {
@@ -23,11 +23,11 @@ export function createFeedbackGuard(now: () => number = Date.now) {
     }
   }
   return {
-    /** Ten tokens an hour for each account: each opening of the feedback sheet, and each retry, uses one. */
+    /** Twenty tokens an hour for each account: each opening of the feedback sheet, and each retry, uses one. */
     issue(account: string) {
       prune();
       const usage = accounts.get(account) ?? { issued: [], sends: [] };
-      if (usage.issued.length >= 10 || issued.length >= 120 || issued.filter((time) => time > now() - 60_000).length >= 20) return null;
+      if (usage.issued.length >= 20 || issued.length >= 120 || issued.filter((time) => time > now() - 60_000).length >= 20) return null;
       issued.push(now());
       usage.issued.push(now());
       accounts.set(account, usage);
@@ -46,7 +46,7 @@ export function createFeedbackGuard(now: () => number = Date.now) {
       challenges.delete(token); // Single use even after upstream failure or timeout.
       if (honeypot !== "" || now() - challenge.issued < 1000) return null;
       const usage = accounts.get(account) ?? { issued: [], sends: [] };
-      if (usage.sends.length >= 3 || sends.length >= 30 || sends.filter((time) => time > now() - 60_000).length >= 5) return null;
+      if (usage.sends.length >= 10 || sends.length >= 30 || sends.filter((time) => time > now() - 60_000).length >= 5) return null;
       const time = now();
       sends.push(time);
       usage.sends.push(time);

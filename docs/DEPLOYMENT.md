@@ -471,7 +471,7 @@ Configure server-only JIRA_URL (HTTPS Jira base URL), JIRA_EMAIL, and JIRA_API_T
 
 Feedback creates backlog Tasks with label user-feedback, message and page/browser context. Verify one explicitly authorized production submission after deployment and remove any temporary test task as appropriate. Local development and automated tests use the loopback stand-in only. Upstream timeout is 10 seconds, with no automatic retry; an uncertain response can mean the issue was created even though the user sees an error. One-use tokens prevent token replay, while a deliberate retry starts a new attempt.
 
-Abuse guards are in-memory for the single web process: 3 sends per session per hour, 5 globally per minute, and 30 globally per hour; token issuance is limited separately. Tokens expire after 15 minutes and must mature for one second. Limits reset at process restart and are not a substitute for shared limits if the deployment model changes.
+Abuse guards are in-memory for the single web process: 10 sends per account per hour, 5 globally per minute, and 30 globally per hour; token issuance is limited separately. Tokens expire after 15 minutes and must mature for one second. Limits reset at process restart and are not a substitute for shared limits if the deployment model changes.
 
 At release close, add only actually shipped changes and their actual release date to src/lib/change-log.ts. Version ordering drives the browser-local unread dot; no account or database migration is involved.
 

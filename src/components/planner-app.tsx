@@ -16,7 +16,8 @@ import { MonthlyClimateEditor, TypicalWeatherPanel, TypicalWeatherEditor } from 
 import { monthlyClimateFromForm } from "@/lib/typical-weather";
 import { DestinationCardPhoto, DestinationGallery, DestinationGalleryEditor } from "@/components/destination-gallery";
 import CandidateList from "@/components/candidate-list";
-import { DestinationIdeas, IdeaDetails, priceNotes, selectionLabels } from "@/components/destination-ideas";
+import { carouselOrder, DestinationIdeas, IdeaDetails, priceNotes, selectionLabels } from "@/components/destination-ideas";
+import { ActivitySteps, SwipeBody } from "@/components/activity-steps";
 import { CandidateGalleryEditor } from "@/components/candidate-gallery";
 import { createGalleryDraft, galleryForm, type GalleryDraft } from "@/lib/gallery-draft";
 import { TripImageEditor, TripImageView } from "@/components/trip-image";
@@ -81,8 +82,10 @@ type Editor =
   | { kind: "layover"; leg: TravelLeg; layover: ItineraryStop }
   // An idea's editor, which adds one to the destination without `item`. Opened from its details, Cancel and saving return there.
   // `deleting` shows a saved idea's Delete confirmation above it, which leaves the editor and its draft as they are (TRA-128).
-  | { kind: "candidate"; destinationId: string; category: Category; item?: Candidate; details?: true; deleting?: boolean }
-  // An idea's details, read only, from its destination's carousels (TRA-120) and map (TRA-130).
+  // `draft` is the unsaved changes an activity's dialog kept for it, which it opens with (TRA-160).
+  | { kind: "candidate"; destinationId: string; category: Category; item?: Candidate; details?: true; deleting?: boolean; draft?: IdeaDraft }
+  // An idea's details, read only, from its destination's carousels (TRA-120) and map (TRA-130). An activity's, and its
+  // editor opened from them, step through its destination's activities (TRA-160).
   | { kind: "ideaDetails"; item: Candidate }
   // A church's details, read only, from its destination's map (TRA-130).
   | { kind: "churchDetails"; item: Church }
@@ -90,6 +93,12 @@ type Editor =
   | { kind: "homeItem"; item?: HomeItem }
   | { kind: "share" }
   | { kind: "delete"; mutation: Mutation; title: string; description: string; redirect?: string };
+type CandidateEditor = Extract<Editor, { kind: "candidate" }>;
+/**
+ * An activity editor's unsaved changes, kept when its dialog steps to another activity (TRA-160): its fields as its form
+ * held them, and its links and photos.
+ */
+type IdeaDraft = { fields: FormData; links: ResearchLink[]; gallery: GalleryDraft };
 const categories: Category[] = ["hotels", "activities", "restaurants"];
 const labels = { hotels: "Hotels", activities: "Activities", restaurants: "Restaurants" };
 const singular = { hotels: "hotel", activities: "activity", restaurants: "restaurant" } as const;
@@ -180,6 +189,10 @@ export default function PlannerApp({ initialData, initialBudgets, access = {}, d
   const [tripImage, setTripImage] = useState<TripImageDraft>(null);
   // The ID of the item an editor adds, given once when it opens, so saving again after a response is lost changes that item instead of adding another.
   const [newId, setNewId] = useState("");
+  // The open editor's form, and the unsaved changes an activity's dialog keeps for the activities it stepped away from
+  // in their editors, until they're saved or canceled or the dialog closes (TRA-160).
+  const editorForm = useRef<HTMLFormElement>(null);
+  const drafts = useRef(new Map<string, IdeaDraft>());
   const [error, setError] = useState("");
   const [message, setMessage] = useState("");
   const [search, setSearch] = useState("");
@@ -224,25 +237,32 @@ export default function PlannerApp({ initialData, initialBudgets, access = {}, d
   const ideaDeletion = (item: Candidate) => ({ title: "Delete “" + item.name + "”?", description: "This idea will be removed from " + formatSavedDestinationLabel(placeOf(item.destinationId)) + ", in every trip that visits it." });
   const open = (value: Editor) => {
     if (busy) return;
+    // An activity's editor opens with the links and photos of the draft its dialog kept for it, if any (TRA-160).
+    const draft = value.kind === "candidate" ? value.draft : undefined;
     if (value.kind === "leg") setItinerary(value.item.itinerary ?? []);
     if (value.kind === "layover") setLayoverDraft(layoverPlanDraft(value.leg.layoverPlans.find((plan) => plan.layoverId === value.layover.id)));
-    if (value.kind === "leg" || value.kind === "candidate") setResearchLinks(value.item?.links ?? []);
+    if (value.kind === "leg" || value.kind === "candidate") setResearchLinks(draft?.links ?? value.item?.links ?? []);
     if (value.kind === "entryRequirements") setResearchLinks(value.item.entryRequirements?.sources ?? []);
     if (value.kind === "healthSafety") { setResearchLinks(value.item.healthSafety?.sources ?? []); setEmergencyContacts(value.item.healthSafety?.emergencyContacts ?? []); }
     if (value.kind === "church") setMassTimes(value.item?.massTimes ?? []);
     setDestinationGallery(createGalleryDraft(value.kind === "destination" ? value.item : undefined));
-    setCandidateGallery(createGalleryDraft(value.kind === "candidate" || value.kind === "church" ? value.item : undefined));
+    setCandidateGallery(draft?.gallery ?? createGalleryDraft(value.kind === "candidate" || value.kind === "church" ? value.item : undefined));
     setTripImage(createTripImageDraft(value.kind === "trip" ? value.item?.image ?? null : null));
     setNewId(randomUuid());
     setEditor(value); setError(""); setMessage("");
   };
   /** The item a save is for: the saved one an editor changes, or the new one it adds. */
   const itemToSave = (item?: { id: string }) => item ? { id: item.id } : { id: newId, create: true as const };
+  /** What a field of an idea's editor starts with: what an unsaved draft left in it (TRA-160), or its saved value. */
+  const draftText = (value: CandidateEditor, name: string, saved: string) => value.draft ? String(value.draft.fields.get(name) ?? "") : saved;
+  /** Whether a checkbox of an idea's editor starts checked: as an unsaved draft left it (TRA-160), or as saved. */
+  const draftChecked = (value: CandidateEditor, name: string, saved: boolean) => value.draft ? value.draft.fields.has(name) : saved;
   /**
-   * Forgets the open editor and its photo drafts, keeping any error. When the browser closes an editor while it saves,
-   * this lets the save's error show on the page and the next editor open as a new dialog (TRA-81).
+   * Forgets the open editor and its photo drafts, and the drafts an activity's dialog kept (TRA-160), keeping any error.
+   * When the browser closes an editor while it saves, this lets the save's error show on the page and the next editor
+   * open as a new dialog (TRA-81).
    */
-  const forget = () => { setEditor(null); setDestinationGallery(createGalleryDraft()); setCandidateGallery(createGalleryDraft()); setTripImage(null); };
+  const forget = () => { setEditor(null); setDestinationGallery(createGalleryDraft()); setCandidateGallery(createGalleryDraft()); setTripImage(null); drafts.current.clear(); };
   const close = () => { if (!busy) { forget(); setError(""); } };
   /** Where saving or Cancel leaves an editor: an idea's editor opened from its details returns to them, and others close. */
   const detailsOf = (value: Editor | null): Editor | null => value?.kind === "candidate" && value.details && value.item ? { kind: "ideaDetails", item: value.item } : null;
@@ -250,6 +270,38 @@ export default function PlannerApp({ initialData, initialBudgets, access = {}, d
   const cancel = () => { const details = detailsOf(editor); if (details) open(details); else close(); };
   /** An idea as the page last loaded it, so its details show what was saved once the page refreshes. */
   const latest = (item: Candidate) => data.candidates.find((saved) => saved.id === item.id) ?? item;
+  /**
+   * Where an activity's dialog is among its destination's activities, in the order its Activities carousel shows them
+   * (TRA-160), or null when it has none to step to: for other ideas, a destination's only activity, and one no longer saved.
+   */
+  const stepsOf = (item: Candidate) => {
+    const list = item.category === "activities" ? carouselOrder(data.candidates.filter((idea) => idea.destinationId === item.destinationId && idea.category === "activities")) : [];
+    const index = list.findIndex((idea) => idea.id === item.id);
+    return list.length > 1 && index >= 0 ? { list, index } : null;
+  };
+  /** Opens an idea's editor from its details, with the unsaved changes an activity's dialog kept for it, if any (TRA-160). */
+  function editFromDetails(item: Candidate) {
+    if (busy) return;
+    const draft = drafts.current.get(item.id);
+    drafts.current.delete(item.id);
+    open({ kind: "candidate", destinationId: item.destinationId, category: item.category, item, details: true, draft });
+  }
+  /**
+   * Shows the activity `step` places from the one an activity's dialog shows, without closing it (TRA-160): its details,
+   * or from its editor, the other's editor. The editor's unsaved changes, links and photos included, stay with their
+   * activity and come back when its editor opens again. Stepping saves nothing, and past either end changes nothing.
+   */
+  function stepActivity(step: -1 | 1) {
+    const item = editor?.kind === "ideaDetails" || (editor?.kind === "candidate" && editor.details) ? editor.item : undefined;
+    const steps = item && !busy ? stepsOf(item) : null;
+    const next = steps?.list[steps.index + step];
+    if (!item || !next) return;
+    if (editor?.kind === "ideaDetails") open({ kind: "ideaDetails", item: next });
+    else {
+      drafts.current.set(item.id, { fields: new FormData(editorForm.current!), links: researchLinks, gallery: candidateGallery });
+      editFromDetails(next);
+    }
+  }
   /** A place's details, from its marker on its destination's map or its place under Not on the map (TRA-130). */
   const viewPlace = (place: SavedPlace) => {
     if (place.category === "churches") {
@@ -277,9 +329,9 @@ export default function PlannerApp({ initialData, initialBudgets, access = {}, d
     try {
       const result = await mutatePlanner(mutation, imageForm);
       if (!result.ok) { setError(result.error); return false; }
-      // A deleted idea has no details to return to (TRA-128).
+      // A deleted idea has no details to return to (TRA-128). An editor that closes forgets the drafts its dialog kept (TRA-160).
       const details = mutation.type === "candidate.delete" ? null : detailsOf(editor);
-      const finish = () => { setEditor(details); setDestinationGallery(createGalleryDraft()); setCandidateGallery(createGalleryDraft()); setTripImage(null); };
+      const finish = () => { setEditor(details); setDestinationGallery(createGalleryDraft()); setCandidateGallery(createGalleryDraft()); setTripImage(null); if (!details) drafts.current.clear(); };
       if (details) startReturning(finish); else finish();
       setMessage(success);
       if ((mutation.type === "stop.add" || mutation.type === "stop.visit") && result.id) {
@@ -505,10 +557,20 @@ export default function PlannerApp({ initialData, initialBudgets, access = {}, d
       onAdd={(kind) => open({ kind: "candidate", destinationId: place.id, category: kind })}
       onBudgetEdit={(kind) => open(kind === "hotels" ? { kind: "accommodationBudget", item: place, stop: stay } : kind === "activities" ? { kind: "activitiesBudget", item: place } : { kind: "foodBudget", item: place, nights: stay?.nights ?? null })} />;
   }
-  /** An idea's details, read only, with Close and Edit where an editor has Cancel and Save. Edit opens its editor, which returns here. */
+  /**
+   * An idea's details, read only, with Close and Edit where an editor has Cancel and Save. Edit opens its editor, which
+   * returns here. An activity's have Previous and Next, and swipe, while its destination has others (TRA-160); each
+   * activity's start at the top.
+   */
   function renderIdeaDetails(item: Candidate) {
-    return <><div className="dialog-body"><IdeaDetails item={item} /></div>
-      <div className="dialog-footer"><div className="dialog-actions"><button type="button" className="button secondary" onClick={close}>Close</button><button type="button" className="button primary" data-autofocus onClick={() => open({ kind: "candidate", destinationId: item.destinationId, category: item.category, item, details: true })}><Pencil size={15} aria-hidden="true" />Edit</button></div></div></>;
+    const steps = renderActivitySteps(item);
+    return <>{steps}{steps ? <SwipeBody key={item.id} onStep={stepActivity}><IdeaDetails item={item} /></SwipeBody> : <div className="dialog-body"><IdeaDetails item={item} /></div>}
+      <div className="dialog-footer"><div className="dialog-actions"><button type="button" className="button secondary" onClick={close}>Close</button><button type="button" className="button primary" data-autofocus onClick={() => editFromDetails(item)}><Pencil size={15} aria-hidden="true" />Edit</button></div></div></>;
+  }
+  /** Previous and Next in an activity's dialog, while its destination has other activities to step to (TRA-160). */
+  function renderActivitySteps(item: Candidate) {
+    const steps = stepsOf(item);
+    return steps && <ActivitySteps index={steps.index} count={steps.list.length} name={item.name} disabled={busy} onStep={stepActivity} />;
   }
   /** A church's details, read only, with Close (TRA-130). Its card in the Church section edits it. */
   function renderChurchDetails(item: Church) {
@@ -663,7 +725,9 @@ export default function PlannerApp({ initialData, initialBudgets, access = {}, d
       {error && !editor && <div className="toast error-toast" role="alert"><CircleAlert size={17} aria-hidden="true" />{error}<button aria-label="Dismiss error" className="icon-button" onClick={() => setError("")}><X size={14} /></button></div>}
     </main>
     <footer className="site-footer"><span><Compass size={15} />For the trips still taking shape.</span><span>Shared editing · whole-party estimates</span></footer>
-    {editor && <Dialog title={pageTitle} view={editor.kind} confirm={editor.kind === "delete"} busy={busy} onClose={close} onClosed={forget}>{editor.kind === "ideaDetails" ? renderIdeaDetails(latest(editor.item)) : editor.kind === "churchDetails" ? renderChurchDetails(editor.item) : <form id="planner-editor" onSubmit={submit}><div className="form-grid dialog-body">
+    {editor && <Dialog title={pageTitle} view={editor.kind} confirm={editor.kind === "delete"} busy={busy} onClose={close} onClosed={forget}>{editor.kind === "ideaDetails" ? renderIdeaDetails(latest(editor.item)) : editor.kind === "churchDetails" ? renderChurchDetails(editor.item) : <form id="planner-editor" ref={editorForm} onSubmit={submit}>
+      {/* An activity's editor opened from its details steps through its destination's activities too, each idea's fields starting afresh (TRA-160). */}
+      {editor.kind === "candidate" && editor.details && editor.item && renderActivitySteps(latest(editor.item))}<div className="form-grid dialog-body" key={editor.kind === "candidate" ? editor.item?.id ?? newId : undefined}>
       {editor.kind === "delete" && <p className="delete-description wide">{editor.description} This cannot be undone.</p>}
       {editor.kind === "trip" && <>
         <Field label="Trip name" wide><input name="name" defaultValue={editor.item?.name} required maxLength={120} placeholder="A long weekend in the mountains" /></Field>
@@ -722,15 +786,15 @@ export default function PlannerApp({ initialData, initialBudgets, access = {}, d
       {editor.kind === "share" && trip && tripAccess?.role === "owner" && <TripSharing access={tripAccess} busy={busy}
         onRemove={(member) => void perform({ type: "trip.unshare", tripId: trip.id, email: member.email }, member.email + " can no longer open this trip.")} />}
       {editor.kind === "candidate" && <>
-        <Field label="Name" wide><input name="name" defaultValue={editor.item?.name} required maxLength={160} placeholder={"Name of the " + singular[editor.category]} /></Field>
-        <Field label="What it is" hint={"Shown below the " + singular[editor.category] + "’s name on its cards. Leave it blank for none."} wide><input name="description" defaultValue={editor.item?.description} maxLength={120} placeholder={ideaExamples[editor.category]} /></Field>
+        <Field label="Name" wide><input name="name" defaultValue={draftText(editor, "name", editor.item?.name ?? "")} required maxLength={160} placeholder={"Name of the " + singular[editor.category]} /></Field>
+        <Field label="What it is" hint={"Shown below the " + singular[editor.category] + "’s name on its cards. Leave it blank for none."} wide><input name="description" defaultValue={draftText(editor, "description", editor.item?.description ?? "")} maxLength={120} placeholder={ideaExamples[editor.category]} /></Field>
         {editor.category === "restaurants" && <RestaurantTypesField types={editor.item?.restaurantTypes ?? []} disabled={busy} />}
-        <Field label="Estimated price (USD)" wide hint={priceNotes[editor.category] + " Leave blank if unknown."}><input name="price" type="number" min="0" max={MAX_AMOUNT_DOLLARS} step="0.01" defaultValue={minorAmountValue(editor.item?.priceCents, "USD")} placeholder="Not estimated" /></Field>
-        <PlaceLocationFields key={editor.item?.id ?? newId} label="Address or neighborhood" placeholder="Optional" address={editor.item?.address ?? ""} coordinates={editor.item?.coordinates ?? null} disabled={busy} />
+        <Field label="Estimated price (USD)" wide hint={priceNotes[editor.category] + " Leave blank if unknown."}><input name="price" type="number" min="0" max={MAX_AMOUNT_DOLLARS} step="0.01" defaultValue={draftText(editor, "price", minorAmountValue(editor.item?.priceCents, "USD"))} placeholder="Not estimated" /></Field>
+        <PlaceLocationFields label="Address or neighborhood" placeholder="Optional" address={editor.item?.address ?? ""} coordinates={editor.item?.coordinates ?? null} draft={editor.draft?.fields} disabled={busy} />
         <CandidateGalleryEditor candidate={editor.item} subject={singular[editor.category]} draft={candidateGallery} onChange={setCandidateGallery} disabled={busy} />
-        <ResearchLinksEditor links={researchLinks} onChange={setResearchLinks} disabled={busy} /><Notes value={editor.item?.notes} />
-        {editor.category !== "hotels" && <label className="checkbox-field wide"><input name="mustDo" type="checkbox" defaultChecked={editor.item?.mustDo ?? false} disabled={busy} /><span>Must do<small>A planning priority. Budget inclusion and list order stay separate.</small></span></label>}
-        <label className="checkbox-field wide"><input name="included" type="checkbox" defaultChecked={editor.item?.included ?? false} /><span>{selectionLabels[editor.category]}<small>{editor.category === "hotels" ? "Replaces the general estimate or other chosen hotel. Your general estimate stays saved." : editor.category === "activities" ? "Applies only in Itemized activity costs mode. This does not change your budgeting method." : "Applies only in Itemized restaurant costs mode. This does not change your budgeting method."}</small></span></label>
+        <ResearchLinksEditor links={researchLinks} onChange={setResearchLinks} disabled={busy} /><Notes value={draftText(editor, "notes", editor.item?.notes ?? "")} />
+        {editor.category !== "hotels" && <label className="checkbox-field wide"><input name="mustDo" type="checkbox" defaultChecked={draftChecked(editor, "mustDo", editor.item?.mustDo ?? false)} disabled={busy} /><span>Must do<small>A planning priority. Budget inclusion and list order stay separate.</small></span></label>}
+        <label className="checkbox-field wide"><input name="included" type="checkbox" defaultChecked={draftChecked(editor, "included", editor.item?.included ?? false)} /><span>{selectionLabels[editor.category]}<small>{editor.category === "hotels" ? "Replaces the general estimate or other chosen hotel. Your general estimate stays saved." : editor.category === "activities" ? "Applies only in Itemized activity costs mode. This does not change your budgeting method." : "Applies only in Itemized restaurant costs mode. This does not change your budgeting method."}</small></span></label>
       </>}
     </div><div className="dialog-footer">{error && !deleting && <p className="form-error" role="alert">{error}</p>}<div className="dialog-actions"><button type="button" className="button secondary" onClick={cancel} disabled={busy}>Cancel</button>{editor.kind === "candidate" && editor.item && <button type="button" className="button danger editor-delete" onClick={() => setDeleting(true)} disabled={busy}>Delete</button>}<button className={editor.kind === "delete" ? "button danger" : "button primary"} type="submit" disabled={busy}>{busy ? "Saving…" : editor.kind === "delete" ? (editor.mutation.type === "leg.clear" ? "Clear travel plan" : editor.mutation.type === "leg.layoverPlan" ? "Remove plan" : editor.mutation.type === "destination.entryRequirements" ? "Clear entry requirements" : editor.mutation.type === "destination.healthSafety" ? "Clear health and safety" : editor.mutation.type === "stop.remove" ? "Remove from trip" : "Delete") : editor.kind === "trip" && !editor.item ? "Create trip" : editor.kind === "addStop" ? "Add destination" : editor.kind === "newDestination" ? "Create destination" : editor.kind === "share" ? "Share" : editor.kind === "layover" ? "Save plan" : "Save changes"}</button></div></div></form>}</Dialog>}
     {/* An idea's Delete confirmation, above its editor (TRA-128). It deletes the saved idea without saving the draft, which Cancel keeps. */}

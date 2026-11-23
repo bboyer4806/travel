@@ -44,7 +44,9 @@
 .price.unknown { color: var(--muted); font-weight: 400; }
 .chosen { position: absolute; top: 8px; left: 8px; }
 
-.details { display: grid; gap: 18px; margin: 0; font-size: 13px; }
+/* One column as wide as the dialog, so an idea with many photos scrolls their thumbnails within it instead of widening
+   every detail past the dialog's edge, where they'd scroll sideways and its swipes would compete with them (TRA-160). */
+.details { display: grid; grid-template-columns: minmax(0, 1fr); gap: 18px; margin: 0; font-size: 13px; }
 .details dt { margin-bottom: 4px; color: var(--muted); font-size: 12px; font-weight: 600; }
 .details dd { margin: 0; overflow-wrap: anywhere; }
 .details dd small { display: block; margin-top: 2px; color: var(--muted); font-size: 10px; line-height: 1.55; }

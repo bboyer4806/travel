@@ -34,6 +34,14 @@ export const selectionLabels = {
 const price = (item: Candidate) => item.priceCents === null ? "Not estimated" : formatCurrency(item.priceCents, "USD");
 
 /**
+ * Ideas in the order a destination's carousels show them: those chosen for the budget first, then the rest, each group in
+ * its saved order (TRA-120). An activity's dialog steps through its destination's activities in this order (TRA-160).
+ */
+export function carouselOrder(ideas: Candidate[]): Candidate[] {
+  return [...ideas.filter((item) => item.included), ...ideas.filter((item) => !item.included)];
+}
+
+/**
  * A destination's Hotels, Activities and Restaurants, below its budget (TRA-120). Each section starts expanded on every
  * page load and opens and closes on its own; toggling saves nothing. Its carousel shows the ideas chosen for the budget
  * first, then the rest, each group in its saved order. Selecting a card shows that idea's details. Each section edits
@@ -67,7 +75,7 @@ function IdeaSection({ category, ideas, city, href, busy, onView, onAdd, onBudge
       </div>
     </div>
     <div id={contentId} className={styles.content} hidden={!expanded}>
-      {ideas.length ? <Carousel category={category} ideas={[...ideas.filter((item) => item.included), ...ideas.filter((item) => !item.included)]} onView={onView} />
+      {ideas.length ? <Carousel category={category} ideas={carouselOrder(ideas)} onView={onView} />
         : <p className={styles.empty}>No {name.toLowerCase()} saved yet.</p>}
       <Link className={"text-button " + styles.manage} href={href}>Manage {name.toLowerCase()}<span className="sr-only"> in {city}</span></Link>
     </div>

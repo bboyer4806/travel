@@ -197,6 +197,10 @@ Repeat passing checks when subsequent changes affect their coverage or required 
   which `mutatePlanner` always builds from the trip editor's form with `prepareTripImage` in
   `src/lib/trip-image-upload.ts`, so no mutation supplies it, and `aiChange` refuses it. New crops name the version of the
   image they were chosen for. `src/components/trip-image.tsx` shows it only when a trip has one, and edits it.
+- A trip's page has its own spacing on phones (TRA-156): the planner marks its main content `trip-page`, and rules under
+  it, in `globals.css` and in components' styles as `:global(.trip-page)`, change only spacing, up to 540px wide. What
+  depends on a padding follows it: a card's photo takes it back, a carousel's arrows stay within it, and a destination's
+  name keeps its room beside its buttons. Pages sharing its styles, such as a destination's page, keep theirs; tests check.
 - Trip startDate and each stop's nights are schedule inputs. Use `src/lib/trip-dates.ts`
   for ordered read-only destination dates and trip end; retain legacy date columns for migration review.
   Hotels use nights; daily food/miscellaneous use `nightsToBudgetDays` (zero nights = one day).

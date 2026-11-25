@@ -70,6 +70,11 @@ Repeat passing checks when subsequent changes affect their coverage or required 
   `getHomeOverview` follows. `trip.order` saves an account's whole order and is refused unless it names every trip the
   account can open, once each. A trip it hasn't placed, as one created or shared since, comes last, in the order the
   account got it; unsharing removes the trip's place in that account's order.
+- Sort by on All trips (TRA-177) is `sortTrips` in `src/lib/trip-sort.ts`, applied to the trips matching the search and
+  tag filters from what `getHomeOverview` already loads. It only orders what the page shows: it saves nothing, starts in
+  Custom order each time the page opens, and keeps the account's order among equal values. Unknown values sort last
+  either way, never as zero, and only a city suggestion's label gives a destination's country (`destinationCountry`).
+  Trips move only in Custom order while every trip shows.
 - Destinations are shared by their owner's trips (TRA-105). Each owner has one per city
   (`destinations.cityKey`, from `destinationKey` in `src/lib/destination-label.ts`), and trips visit
   them through `trip_stops`, which keep each trip's order, stay notes, nights and dates. A destination

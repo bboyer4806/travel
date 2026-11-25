@@ -48,6 +48,11 @@
 .star { position: absolute; top: 8px; right: 8px; display: grid; place-items: center; width: 36px; height: 36px; padding: 0; border: 1px solid #d4dbcd; border-radius: 50%; background: var(--white); color: var(--muted); box-shadow: 0 4px 12px #233d351f; }
 .star:hover:not(:disabled) { background: #eef1e8; }
 .star[aria-pressed="true"] { color: var(--orange); }
+/* TRA-31: each idea's Like, at the bottom right of its card's photo, in a box the photo's size and place, clear of In
+   the plan and the star at its top. Only the Like takes taps, so the rest of the photo still selects the card, and its
+   shadow keeps it clear on any photo, as the star's does. */
+.likeSlot { position: absolute; top: 1px; right: 1px; left: 1px; display: flex; align-items: flex-end; justify-content: flex-end; aspect-ratio: 4 / 3; padding: 8px; pointer-events: none; }
+.likeSlot > * { pointer-events: auto; box-shadow: 0 4px 12px #233d351f; }
 
 /* One column as wide as the dialog, so an idea with many photos scrolls their thumbnails within it instead of widening
    every detail past the dialog's edge, where they'd scroll sideways and its swipes would compete with them (TRA-160). */

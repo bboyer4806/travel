@@ -135,10 +135,10 @@ test("every editable field is read, proposed, checked and previewed from the sha
       assert.deepEqual(setup.store.getSnapshot(), before, `${label}: proposing changes nothing`);
       assert.equal(setup.decide(proposal, true).status, "applied", label);
       assert.deepEqual(record.read()[column], read, `${label}: assistants read the new value`);
-      // Everything saved, but the record's field and what its save changes along with it.
+      // Everything saved, but the record's field and what its save changes along with it. A check's snapshot reads no likes (TRA-31).
       const rest = (all) => {
         const item = record.item(all);
-        return Object.fromEntries(Object.entries(all).map(([key, list]) => [key, list.map((entry) => entry === item ? without(entry, [column, ...alongside(name, field)]) : entry)]));
+        return Object.fromEntries(Object.entries(all).map(([key, list]) => [key, key === "likes" ? list : list.map((entry) => entry === item ? without(entry, [column, ...alongside(name, field)]) : entry)]));
       };
       assert.deepEqual(rest(setup.store.getSnapshot()), rest(before), `${label}: nothing else changed`);
     }

@@ -62,7 +62,7 @@ test("complete create, edit, clear, and delete flows preserve the trip relations
   const { destinations, candidates } = store.getSnapshot();
   store.applyMutation({ type: "trip.delete", id: tripId });
   // The destination and its ideas stay in Destinations; only the trip's own parts go.
-  assert.deepEqual(store.getSnapshot(), { trips: [], stops: [], destinations, legs: [], candidates, homeItems: [], packingItems: [], churches: [], tags: [] });
+  assert.deepEqual(store.getSnapshot(), { trips: [], stops: [], destinations, legs: [], candidates, homeItems: [], packingItems: [], churches: [], tags: [], likes: { trip: {}, destination: {}, candidate: {}, church: {} } });
 });
 
 test("route changes retain only unchanged connections, and removing a destination from the trip keeps its ideas", (t) => {

@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useId, useRef, useState } from "react";
+import { useEffect, useId, useRef, useState, type ReactNode } from "react";
 import { BedDouble, Binoculars, Check, ChevronDown, ChevronLeft, ChevronRight, Pencil, Plus, Star, Utensils } from "lucide-react";
 import { CandidateGallery, largeUrl, photoUrl } from "./candidate-gallery";
 import { CoordinatesDetail } from "./place-location";
@@ -46,10 +46,10 @@ export function carouselOrder(ideas: Candidate[]): Candidate[] {
  * A destination's Hotels, Activities and Restaurants, below its budget (TRA-120). Each section starts expanded on every
  * page load and opens and closes on its own; toggling saves nothing. Its carousel shows the ideas chosen for the budget
  * first, then the rest, each group in its saved order. Selecting a card shows that idea's details, and an activity's
- * star marks it Must do, or not (TRA-161). Each section edits its category's budget, adds an idea, and links to its full
- * page under `pages`, where ideas are reordered and deleted.
+ * star marks it Must do, or not (TRA-161). Each card has its idea's Like, `like` (TRA-31). Each section edits its
+ * category's budget, adds an idea, and links to its full page under `pages`, where ideas are reordered and deleted.
  */
-export function DestinationIdeas({ ideas, city, pages, busy, onView, onAdd, onBudgetEdit, onMustDo }: {
+export function DestinationIdeas({ ideas, city, pages, busy, onView, onAdd, onBudgetEdit, onMustDo, like }: {
   /** The destination's ideas, in their saved order. */
   ideas: Candidate[];
   /** The destination's name, for screen readers. */
@@ -61,12 +61,14 @@ export function DestinationIdeas({ ideas, city, pages, busy, onView, onAdd, onBu
   onBudgetEdit: (category: Category) => void;
   /** Saves an activity as Must do, or not, from its star, `control`. */
   onMustDo: (item: Candidate, control: HTMLButtonElement) => void;
+  /** An idea's Like (TRA-31). */
+  like: (item: Candidate) => ReactNode;
 }) {
   return <>{categories.map((category) => <IdeaSection key={category} category={category} ideas={ideas.filter((item) => item.category === category)} city={city} href={pages + "/" + category} busy={busy}
-    onView={onView} onAdd={() => onAdd(category)} onBudgetEdit={() => onBudgetEdit(category)} onMustDo={onMustDo} />)}</>;
+    onView={onView} onAdd={() => onAdd(category)} onBudgetEdit={() => onBudgetEdit(category)} onMustDo={onMustDo} like={like} />)}</>;
 }
 
-function IdeaSection({ category, ideas, city, href, busy, onView, onAdd, onBudgetEdit, onMustDo }: { category: Category; ideas: Candidate[]; city: string; href: string; busy: boolean; onView: (item: Candidate) => void; onAdd: () => void; onBudgetEdit: () => void; onMustDo: (item: Candidate, control: HTMLButtonElement) => void }) {
+function IdeaSection({ category, ideas, city, href, busy, onView, onAdd, onBudgetEdit, onMustDo, like }: { category: Category; ideas: Candidate[]; city: string; href: string; busy: boolean; onView: (item: Candidate) => void; onAdd: () => void; onBudgetEdit: () => void; onMustDo: (item: Candidate, control: HTMLButtonElement) => void; like: (item: Candidate) => ReactNode }) {
   const [expanded, setExpanded] = useState(true);
   const contentId = useId();
   const name = labels[category];
@@ -79,7 +81,7 @@ function IdeaSection({ category, ideas, city, href, busy, onView, onAdd, onBudge
       </div>
     </div>
     <div id={contentId} className={styles.content} hidden={!expanded}>
-      {ideas.length ? <Carousel category={category} ideas={carouselOrder(ideas)} busy={busy} onView={onView} onMustDo={onMustDo} />
+      {ideas.length ? <Carousel category={category} ideas={carouselOrder(ideas)} busy={busy} onView={onView} onMustDo={onMustDo} like={like} />
         : <p className={styles.empty}>No {name.toLowerCase()} saved yet.</p>}
       <Link className={"text-button " + styles.manage} href={href}>Manage {name.toLowerCase()}<span className="sr-only"> in {city}</span></Link>
     </div>
@@ -90,9 +92,10 @@ function IdeaSection({ category, ideas, city, href, busy, onView, onAdd, onBudge
  * One card per idea, scrolled sideways by its arrows, or by swiping or scrolling. The arrows loop (TRA-127): Next at the
  * end returns to the start, and Previous at the start goes to the end. Swiping and scrolling stop at either end. Each
  * activity's star sits over its card's photo, beside the card rather than in it, so selecting the star saves its Must do
- * without showing the activity's details (TRA-161). It shows what is saved: filled for Must do, outlined otherwise.
+ * without showing the activity's details (TRA-161). It shows what is saved: filled for Must do, outlined otherwise. Each
+ * idea's Like sits over the bottom of its card's photo the same way, so selecting it shows no details either (TRA-31).
  */
-function Carousel({ category, ideas, busy, onView, onMustDo }: { category: Category; ideas: Candidate[]; busy: boolean; onView: (item: Candidate) => void; onMustDo: (item: Candidate, control: HTMLButtonElement) => void }) {
+function Carousel({ category, ideas, busy, onView, onMustDo, like }: { category: Category; ideas: Candidate[]; busy: boolean; onView: (item: Candidate) => void; onMustDo: (item: Candidate, control: HTMLButtonElement) => void; like: (item: Candidate) => ReactNode }) {
   const track = useRef<HTMLUListElement>(null);
   // Both arrows work while the cards overflow the list, at either end too. Until the list is measured, neither does.
   const [overflows, setOverflows] = useState(false);
@@ -134,6 +137,7 @@ function Carousel({ category, ideas, busy, onView, onMustDo }: { category: Categ
         </button>
         {category === "activities" && <button type="button" className={styles.star} aria-label={"Must do for " + item.name} aria-pressed={item.mustDo} disabled={busy}
           onClick={(event) => onMustDo(item, event.currentTarget)}><Star size={18} fill={item.mustDo ? "currentColor" : "none"} aria-hidden="true" /></button>}
+        <span className={styles.likeSlot}>{like(item)}</span>
         </li>;
       })}
     </ul>

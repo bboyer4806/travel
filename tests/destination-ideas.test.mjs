@@ -103,7 +103,7 @@ function render(t) {
   const tree = { type: DestinationIdeas, props: {
     ideas: snapshot.candidates.filter((item) => item.destinationId === id), city: "Vienna", pages: "/trips/trip/destinations/stop", busy: false,
     onView: (item) => calls.push(["view", item.id]), onAdd: (category) => calls.push(["add", category]), onBudgetEdit: (category) => calls.push(["budget", category]),
-    onMustDo: (item) => calls.push(["mustDo", item.id]),
+    onMustDo: (item) => calls.push(["mustDo", item.id]), like: () => null,
   } };
   const sections = hosts(tree).filter((node) => node.type === "section");
   return { snapshot, ideas, calls, sections: Object.fromEntries(sections.map((section) => [section.props["aria-label"], hosts(section)])), order: sections.map((section) => section.props["aria-label"]) };
@@ -198,12 +198,12 @@ test("a restaurant's types show as labeled tags on its cards and in its details,
   const ideas = snapshot.candidates.filter((item) => item.destinationId === id);
   const tags = (nodes) => byClass(nodes, "tag").map(text);
   // The destination's Restaurants carousel, and the hotels' and activities' beside it.
-  const overview = hosts({ type: DestinationIdeas, props: { ideas, city: "Vienna", pages: "/destinations/vienna", busy: false, onView() {}, onAdd() {}, onBudgetEdit() {} } });
+  const overview = hosts({ type: DestinationIdeas, props: { ideas, city: "Vienna", pages: "/destinations/vienna", busy: false, onView() {}, onAdd() {}, onBudgetEdit() {}, like: () => null } });
   const carousel = byClass(overview, "card").map((card) => [text(byClass(hosts(card), "name")[0]), tags(hosts(card))]);
   assert.deepEqual(carousel.filter(([, list]) => list.length), [["Lunch and drinks", ["Lunch", "Drinks"]]]);
   assert.ok(carousel.some(([name]) => name === "No types"));
   // The Restaurants page's cards.
-  const list = (category) => hosts({ type: CandidateList, props: { items: ideas.filter((item) => item.category === category), category, destination: snapshot.destinations.find((item) => item.id === id), busy: false, onEdit() {}, onDelete() {}, onMutate() {} } });
+  const list = (category) => hosts({ type: CandidateList, props: { items: ideas.filter((item) => item.category === category), category, destination: snapshot.destinations.find((item) => item.id === id), busy: false, onEdit() {}, onDelete() {}, onMutate() {}, like: () => null } });
   assert.deepEqual(list("restaurants").filter((node) => node.type === "article").map((card) => [card.props["aria-label"], tags(hosts(card))]), [["Lunch and drinks", ["Lunch", "Drinks"]], ["No types", []]]);
   // Only a restaurant with types has a tag list, so no empty one shows anywhere.
   assert.deepEqual([overview, list("restaurants"), list("hotels"), list("activities")].map((nodes) => byClass(nodes, "tags").length), [1, 1, 0, 0]);
@@ -245,7 +245,7 @@ test("a destination card's names say what it shows, and its Church headings sit 
   assert.deepEqual(byClass(budget, "budget-category-action").map(text), ["Edit shopping budget for Vienna, Austria", "Edit miscellaneous budget for Vienna, Austria"]);
   // The Must do toggle's name is the label it shows, then the activity's name.
   const activities = store.getSnapshot().candidates.filter((item) => item.category === "activities");
-  const toggles = byClass(hosts({ type: CandidateList, props: { items: activities, category: "activities", destination: visit(store, id), busy: false, onEdit() {}, onDelete() {}, onMutate() {} } }), "must-do");
+  const toggles = byClass(hosts({ type: CandidateList, props: { items: activities, category: "activities", destination: visit(store, id), busy: false, onEdit() {}, onDelete() {}, onMutate() {}, like: () => null } }), "must-do");
   assert.deepEqual(toggles.map((toggle) => [shownText(toggle), text(toggle), toggle.props["aria-pressed"], toggle.props["aria-label"]]), [
     ["Mark as must do", "Mark as must do for Opera", false, undefined],
     ["Must do", "Must do for Palace", true, undefined],
@@ -254,7 +254,7 @@ test("a destination card's names say what it shows, and its Church headings sit 
   // At level 5, as the card's Church section passes them below its h4, the Sundays and each church are h5 headings and
   // its Mass times h6, styled by class.
   const headings = (element) => hosts(element).filter((node) => /^h[1-6]$/.test(node.type)).map((node) => [node.type, text(node), node.props.className]);
-  const churches = (items) => ({ type: ChurchOptions, props: { items, headingLevel: 5, busy: false, onAdd() {}, onEdit() {}, onDelete() {} } });
+  const churches = (items) => ({ type: ChurchOptions, props: { items, headingLevel: 5, busy: false, onAdd() {}, onEdit() {}, onDelete() {}, like: () => null } });
   assert.deepEqual(headings({ type: ChurchSundays, props: { destination: stop(store, id), headingLevel: 5 } }), [["h5", "Sundays during your stay", "heading"]]);
   assert.deepEqual(headings(churches([])), [["h5", "Find a church for your visit.", "emptyHeading"]]);
   store.applyMutation({ type: "church.save", ...newItem(), destinationId: id, name: "St. Stephen's Cathedral", address: "", denomination: "", url: "", massTimes: [{ id: randomUUID(), day: "Sunday", time: "10:15 AM" }] });
@@ -274,7 +274,7 @@ test("activity photos fill frames of one shape, and an activity without photos k
   // The destination's carousels frame every category's photos alike since TRA-137, tested below.
   // The full pages: each activity's card starts with a main photo frame, its gallery's or an empty one of the same size.
   // Hotels and restaurants without photos still show none.
-  const frames = (category) => hosts({ type: CandidateList, props: { items: ideas.filter((item) => item.category === category), category, destination: snapshot.destinations.find((item) => item.id === id), busy: false, onEdit() {}, onDelete() {}, onMutate() {} } })
+  const frames = (category) => hosts({ type: CandidateList, props: { items: ideas.filter((item) => item.category === category), category, destination: snapshot.destinations.find((item) => item.id === id), busy: false, onEdit() {}, onDelete() {}, onMutate() {}, like: () => null } })
     .filter((node) => node.type === "article").map((card) => {
       const [gallery, frame, content] = hosts(card.props.children[0]);
       return [card.props["aria-label"], gallery && [gallery.props.className, frame.props.className, content.type === "img" ? content.props.src : content.type]];
@@ -286,7 +286,7 @@ test("activity photos fill frames of one shape, and an activity without photos k
   assert.deepEqual(frames("hotels").map(([name, frame]) => [name, frame?.[1]]), [["First hotel", "hero"], ["Chosen hotel", undefined], ["Third hotel", "hero"]]);
   assert.deepEqual(frames("restaurants"), [["Cafe", undefined]]);
   // The gallery still opens on the main photo, with every photo's thumbnail in its saved order, as a small image (TRA-89).
-  const card = byClass(hosts({ type: CandidateList, props: { items: [tower], category: "activities", destination: snapshot.destinations.find((item) => item.id === id), busy: false, onEdit() {}, onDelete() {}, onMutate() {} } }), "thumbnails");
+  const card = byClass(hosts({ type: CandidateList, props: { items: [tower], category: "activities", destination: snapshot.destinations.find((item) => item.id === id), busy: false, onEdit() {}, onDelete() {}, onMutate() {}, like: () => null } }), "thumbnails");
   assert.deepEqual(hosts(card).filter((node) => node.type === "img").map((node) => node.props.src), [thumbnail(other), thumbnail(main)]);
 });
 
@@ -299,7 +299,7 @@ test("hotel, activity and restaurant cards in a destination's carousels show pho
   const ideas = store.getSnapshot().candidates.filter((item) => item.destinationId === id);
   // A card's main photo, at the size every card's photo has.
   const shown = (name) => { const item = ideas.find((idea) => idea.name === name); const image = item.images.find((photo) => photo.id === item.mainImageId); return [`/api/candidate-images/${item.id}/${image.id}?v=${image.version}`, 400, 300]; };
-  const sections = hosts({ type: DestinationIdeas, props: { ideas, city: "Vienna", pages: "/destinations/vienna", busy: false, onView() {}, onAdd() {}, onBudgetEdit() {} } }).filter((node) => node.type === "section");
+  const sections = hosts({ type: DestinationIdeas, props: { ideas, city: "Vienna", pages: "/destinations/vienna", busy: false, onView() {}, onAdd() {}, onBudgetEdit() {}, like: () => null } }).filter((node) => node.type === "section");
   // No category's carousel is set apart, and every card's frame shows its main photo or, without one, its category's icon.
   assert.deepEqual(Object.fromEntries(sections.map((section) => {
     const [carousel] = byClass(hosts(section), "carousel");
@@ -342,14 +342,14 @@ test("every hotel, activity and restaurant card shows what it is directly below 
     Figlmüller: [element, long], Cafe: null,
   });
   // A destination's carousels, whose cards are buttons, so the line is a span.
-  const carousel = hosts({ type: DestinationIdeas, props: { ideas, city: "Vienna", pages: "/destinations/vienna", busy: false, onView() {}, onAdd() {}, onBudgetEdit() {} } });
+  const carousel = hosts({ type: DestinationIdeas, props: { ideas, city: "Vienna", pages: "/destinations/vienna", busy: false, onView() {}, onAdd() {}, onBudgetEdit() {}, like: () => null } });
   const isName = (node) => byClass([node], "name").length > 0;
   assert.deepEqual(Object.fromEntries(byClass(carousel, "card").map((card) => [text(byClass(hosts(card), "name")[0]), lineBelow(card, isName, "description")])), expected("span"));
   // Then a restaurant's types and its price, below it.
   const figlmuller = byClass(carousel, "card").find((card) => text(byClass(hosts(card), "name")[0]) === "Figlmüller");
   assert.deepEqual(hosts(figlmuller).map((node) => node.props.className).filter(Boolean), ["card", "photo", "name", "description", "tags types", "tag", "tag", "price unknown"]);
   // The Hotels, Activities and Restaurants pages, where each card's name is its heading.
-  const page = (category) => hosts({ type: CandidateList, props: { items: ideas.filter((item) => item.category === category), category, destination: snapshot.destinations.find((item) => item.id === id), busy: false, onEdit() {}, onDelete() {}, onMutate() {} } });
+  const page = (category) => hosts({ type: CandidateList, props: { items: ideas.filter((item) => item.category === category), category, destination: snapshot.destinations.find((item) => item.id === id), busy: false, onEdit() {}, onDelete() {}, onMutate() {}, like: () => null } });
   assert.deepEqual(Object.fromEntries(["hotels", "activities", "restaurants"].flatMap((category) => page(category).filter((node) => node.type === "article")
     .map((card) => [card.props["aria-label"], lineBelow(card, (node) => node.type === "h2", "idea-description")]))), expected("p"));
   // Then a restaurant's types, as in the carousel.

@@ -33,6 +33,7 @@ import { FlightDetails, TransportationFields } from "@/components/connection-fli
 import { LayoverPlanEditor } from "@/components/layover-plan";
 import { layoverPlanDraft, layoverPlanFromDraft, type LayoverPlanDraft } from "@/lib/layover-plan";
 import { ResearchLinks, ResearchLinksEditor } from "@/components/research-links";
+import { LikeButton } from "@/components/like-button";
 import { unstable_isUnrecognizedActionError, useRouter } from "next/navigation";
 import { useEffect, useId, useRef, useState, useTransition, type FormEvent, type ReactNode } from "react";
 import { controlOrNeighbor, useFocusAfter, useFocusFallback } from "@/components/focus-after";
@@ -56,7 +57,7 @@ import { calculateBudget, calculateDestinationBudget, tripVisits, unsetStayAmoun
 import { formatCurrency, MAX_AMOUNT_DOLLARS, minorAmountValue } from "@/lib/money";
 import { ShoppingBudgetEditor, FoodBudgetEditor, FoodSummary, ActivitiesBudgetEditor, ActivitiesSummary, AccommodationBudgetEditor, AccommodationSummary, CurrencyTotals, DestinationBudget, DestinationBudgetEditor, MiscellaneousBudgetEditor, StayNightsEditor, type KeepFocus } from "@/components/destination-budget";
 import { RESTAURANT_TYPES } from "@/lib/types";
-import type { FoodBudgetMode, ActivitiesBudgetMode, Budget, Candidate, Church, MassTime, Category, Destination, DestinationAccess, DestinationVisit, HomeItem, ItineraryStop, LibraryDestination, Mutation, PackingItem, ResearchLink, Snapshot, TravelLeg, Trip, TripAccess, TripStop } from "@/lib/types";
+import type { FoodBudgetMode, ActivitiesBudgetMode, Budget, Candidate, Church, MassTime, Category, Destination, DestinationAccess, DestinationVisit, HomeItem, ItineraryStop, LibraryDestination, Like, LikeKind, Mutation, PackingItem, ResearchLink, Snapshot, TravelLeg, Trip, TripAccess, TripStop } from "@/lib/types";
 
 type Editor =
   | { kind: "trip"; item?: Trip }
@@ -121,6 +122,8 @@ const ideaExamples = { hotels: "Boutique hotel", activities: "Historic cathedral
 const DEFAULT_TAGLINE = "A place worth knowing";
 /** What a trip's page shows above its name until it has a tagline of its own (TRA-134). */
 const DEFAULT_TRIP_TAGLINE = "An adventure in the making";
+/** The likes of an item no account likes (TRA-31), which a page's likes leave out. */
+const NOT_LIKED: Like = { count: 0, liked: false };
 function displayPrice(cents: number | null) { return cents === null ? "Not estimated" : formatCurrency(cents, "USD"); }
 function BudgetValue({ budget }: { budget: Budget }) {
   return <><strong>{<CurrencyTotals totals={budget.totalsByCurrency} />}</strong>
@@ -387,7 +390,8 @@ export default function PlannerApp({ initialData, initialBudgets, access = {}, d
       const result = await mutatePlanner(mutation, imageForm);
       if (!result.ok) { setError(result.error); return false; }
       // A deleted idea has no details to return to (TRA-128). An editor that closes forgets the drafts its dialog kept (TRA-160).
-      const details = mutation.type === "candidate.delete" ? null : detailsOf(editor);
+      // An idea's or church's details stay open after its Like saves in them (TRA-31).
+      const details = mutation.type === "candidate.delete" ? null : editor?.kind === "ideaDetails" || editor?.kind === "churchDetails" ? editor : detailsOf(editor);
       const finish = () => { setEditor(details); setDestinationGallery(createGalleryDraft()); setCandidateGallery(createGalleryDraft()); setTripImage(null); if (!details) drafts.current.clear(); };
       if (details) startReturning(finish); else finish();
       setMessage(success);
@@ -417,6 +421,15 @@ export default function PlannerApp({ initialData, initialBudgets, access = {}, d
   function saveFrom(control: HTMLButtonElement, mutation: Mutation, success: string, find: () => HTMLElement | null | undefined = () => controlOrNeighbor(control)) {
     focusAfterSave(find);
     void perform(mutation, success);
+  }
+  /**
+   * A trip's, destination's, idea's or church's Like (TRA-31), named for screen readers by `name`, as the page last
+   * loaded it. Selecting it saves the signed-in account's like, or removes it, at once, and the page loads again to show
+   * the saved change and everyone's count, with focus back on it.
+   */
+  function renderLike(kind: LikeKind, id: string, name: string) {
+    return <LikeButton like={data.likes[kind][id] ?? NOT_LIKED} name={name} disabled={busy}
+      onLike={(liked, control) => saveFrom(control, { type: `${kind}.like`, id, liked }, liked ? "Liked." : "Like removed.")} />;
   }
   /**
    * Shows a trip in its new place in the account's own order at once and saves the order (TRA-16). If saving fails, the
@@ -591,7 +604,8 @@ export default function PlannerApp({ initialData, initialBudgets, access = {}, d
     // them; on its Church page, where `church` is set, they are the page and always show (TRA-169).
     return <ChurchSection label={label} collapsible={!church} actions={<div className="heading-actions"><button type="button" className="text-button" disabled={busy} onClick={() => open({ kind: "church", destinationId: place.id })}><Plus size={15} />Add church</button><button type="button" id={toggle} className="text-button" disabled={busy} onClick={(event) => saveFrom(event.currentTarget, { type: "destination.churchVisibility", id: place.id, enabled: false }, "Church hidden. Your churches and photos are saved.", findToggle)}>Hide Church</button></div>}>
       {stay && <ChurchSundays destination={stay} headingLevel={5} />}
-      <ChurchOptions items={data.churches.filter((item) => item.destinationId === place.id)} headingLevel={5} photoFrame={photoFrame} busy={busy} onAdd={() => open({ kind: "church", destinationId: place.id })} onEdit={(item) => open({ kind: "church", item, destinationId: place.id })} onDelete={(item) => confirmDelete({ type: "church.delete", id: item.id, destinationId: place.id }, "Delete “" + item.name + "”?", "This church and its photos will be removed from this destination, in every trip that visits it.")} />
+      <ChurchOptions items={data.churches.filter((item) => item.destinationId === place.id)} headingLevel={5} photoFrame={photoFrame} busy={busy} onAdd={() => open({ kind: "church", destinationId: place.id })} onEdit={(item) => open({ kind: "church", item, destinationId: place.id })} onDelete={(item) => confirmDelete({ type: "church.delete", id: item.id, destinationId: place.id }, "Delete “" + item.name + "”?", "This church and its photos will be removed from this destination, in every trip that visits it.")}
+        like={(item) => renderLike("church", item.id, item.name)} />
     </ChurchSection>;
   }
   /** A destination's Hotels, Activities, Restaurants or Church page, from a trip's stop or from Destinations. */
@@ -614,7 +628,8 @@ export default function PlannerApp({ initialData, initialBudgets, access = {}, d
       <CandidateList items={data.candidates.filter((item) => item.destinationId === place.id && item.category === category)} category={category} destination={place} busy={busy}
         onEdit={(item) => open({ kind: "candidate", destinationId: place.id, category, item })}
         onDelete={(item) => { const { title, description } = ideaDeletion(item); confirmDelete({ type: "candidate.delete", id: item.id }, title, description); }}
-        onMutate={(mutation, success, control) => saveFrom(control, mutation, success)} />
+        onMutate={(mutation, success, control) => saveFrom(control, mutation, success)}
+        like={(item) => renderLike("candidate", item.id, item.name)} />
       </>}
     </>;
   }
@@ -628,27 +643,33 @@ export default function PlannerApp({ initialData, initialBudgets, access = {}, d
       onView={(item) => open({ kind: "ideaDetails", item })}
       onAdd={(kind) => open({ kind: "candidate", destinationId: place.id, category: kind })}
       onBudgetEdit={(kind) => open(kind === "hotels" ? { kind: "accommodationBudget", item: place, stop: stay } : kind === "activities" ? { kind: "activitiesBudget", item: place } : { kind: "foodBudget", item: place, nights: stay?.nights ?? null })}
-      onMustDo={(item, control) => saveFrom(control, { type: "candidate.mustDo", id: item.id, mustDo: !item.mustDo }, item.mustDo ? "Must do removed." : "Marked as must do.")} />;
+      onMustDo={(item, control) => saveFrom(control, { type: "candidate.mustDo", id: item.id, mustDo: !item.mustDo }, item.mustDo ? "Must do removed." : "Marked as must do.")}
+      like={(item) => renderLike("candidate", item.id, item.name)} />;
   }
   /**
-   * An idea's details, read only, with Close and Edit where an editor has Cancel and Save. Edit opens its editor, which
-   * returns here. An activity's have Previous and Next, and swipe, while its destination has others (TRA-160); each
+   * An idea's details, read only, below its Like (TRA-31), with Close and Edit where an editor has Cancel and Save. Edit
+   * opens its editor, which returns here. Its Like saves without closing them, and a Like that fails shows its error above
+   * their buttons. An activity's have Previous and Next, and swipe, while its destination has others (TRA-160); each
    * activity's start at the top.
    */
   function renderIdeaDetails(item: Candidate) {
     const steps = renderActivitySteps(item);
-    return <>{steps}{steps ? <SwipeBody key={item.id} onStep={stepActivity}><IdeaDetails item={item} /></SwipeBody> : <div className="dialog-body"><IdeaDetails item={item} /></div>}
-      <div className="dialog-footer"><div className="dialog-actions"><button type="button" className="button secondary" onClick={close}>Close</button><button type="button" className="button primary" data-autofocus onClick={() => editFromDetails(item)}><Pencil size={15} aria-hidden="true" />Edit</button></div></div></>;
+    const details = <><div className="details-like">{renderLike("candidate", item.id, item.name)}</div><IdeaDetails item={item} /></>;
+    return <>{steps}{steps ? <SwipeBody key={item.id} onStep={stepActivity}>{details}</SwipeBody> : <div className="dialog-body">{details}</div>}
+      <div className="dialog-footer">{error && <p className="form-error" role="alert">{error}</p>}<div className="dialog-actions"><button type="button" className="button secondary" onClick={close}>Close</button><button type="button" className="button primary" data-autofocus onClick={() => editFromDetails(item)}><Pencil size={15} aria-hidden="true" />Edit</button></div></div></>;
   }
   /** Previous and Next in an activity's dialog, while its destination has other activities to step to (TRA-160). */
   function renderActivitySteps(item: Candidate) {
     const steps = stepsOf(item);
     return steps && <ActivitySteps index={steps.index} count={steps.list.length} name={item.name} disabled={busy} onStep={stepActivity} />;
   }
-  /** A church's details, read only, with Close (TRA-130). Its card in the Church section edits it. */
+  /**
+   * A church's details, read only, below its Like (TRA-31), with Close (TRA-130), as an idea's details are. Its card in the
+   * Church section edits it.
+   */
   function renderChurchDetails(item: Church) {
-    return <><div className="dialog-body"><ChurchDetails item={item} /></div>
-      <div className="dialog-footer"><div className="dialog-actions"><button type="button" className="button secondary" data-autofocus onClick={close}>Close</button></div></div></>;
+    return <><div className="dialog-body"><div className="details-like">{renderLike("church", item.id, item.name)}</div><ChurchDetails item={item} /></div>
+      <div className="dialog-footer">{error && <p className="form-error" role="alert">{error}</p>}<div className="dialog-actions"><button type="button" className="button secondary" data-autofocus onClick={close}>Close</button></div></div></>;
   }
   /** One destination's page in Destinations: its shared research, and the trips that visit it with each stay's estimate. */
   function renderDestination(place: Destination) {
@@ -658,7 +679,7 @@ export default function PlannerApp({ initialData, initialBudgets, access = {}, d
     return <>
       <Link href="/destinations" className="breadcrumb"><ArrowLeft size={16} />All destinations</Link>
       <section className="trip-heading"><div><p className="eyebrow">{(place.tagline || DEFAULT_TAGLINE).toUpperCase()}</p><h1>{label}</h1><div className="trip-meta">{label !== place.city && <span><MapPin size={17} />{place.city}</span>}<span><Plane size={17} />{stays.length ? "In " + count(new Set(stays.map((visit) => visit.trip.id)).size, "trip", "trips") : "Not in a trip"}</span>{placeAccess?.role === "editor" && <span><Share2 size={17} />{"Shared by " + memberLabel(placeAccess.owner)}</span>}</div>{place.notes && <p className="trip-notes">{place.notes}</p>}</div>
-        <div className="heading-actions"><button className="button secondary" onClick={() => open({ kind: "destination", item: place })}><Pencil size={15} />Edit destination</button>{placeAccess?.role === "owner" && stays.length === 0 && <button className="icon-button" aria-label="Delete destination" onClick={() => confirmDelete({ type: "destination.delete", id: place.id }, "Delete this destination?", "“" + label + "” and everything saved for it will be removed: its hotels, activities, restaurants, churches, photos, notes, budget amounts, entry requirements, health and safety, and typical weather with its monthly averages.", "/destinations")}><Trash2 size={18} /></button>}</div>
+        <div className="heading-actions">{renderLike("destination", place.id, label)}<button className="button secondary" onClick={() => open({ kind: "destination", item: place })}><Pencil size={15} />Edit destination</button>{placeAccess?.role === "owner" && stays.length === 0 && <button className="icon-button" aria-label="Delete destination" onClick={() => confirmDelete({ type: "destination.delete", id: place.id }, "Delete this destination?", "“" + label + "” and everything saved for it will be removed: its hotels, activities, restaurants, churches, photos, notes, budget amounts, entry requirements, health and safety, and typical weather with its monthly averages.", "/destinations")}><Trash2 size={18} /></button>}</div>
       </section>
       <div className="trip-layout"><div className="trip-main">
         <article className="destination-card" id={"destination-" + place.id}><DestinationGallery destination={place} />
@@ -726,7 +747,7 @@ export default function PlannerApp({ initialData, initialBudgets, access = {}, d
                   <div className="trip-meta"><span><CalendarDays size={15} />{item.startDate ? formatCalendarDate(item.startDate) + " → " + formatCalendarDate(item.endDate) : item.dateLabel || "Whenever the time is right"}</span><span><Users size={15} />{item.travelers} {item.travelers === 1 ? "traveler" : "travelers"}</span>{itemAccess.role === "editor" && <span><Share2 size={15} />{"Shared by " + memberLabel(itemAccess.owner)}</span>}</div>
                   <TripTagList tags={item.tags} />
                   <div className="card-budget"><div><span className="small-label">ESTIMATED BUDGET</span><BudgetValue budget={estimate} /></div><span className="round-arrow"><ArrowRight size={19} /></span></div>
-                </Link><div className="card-tools"><span className="card-tools-start"><button type="button" className="icon-button trip-handle" aria-label={"Reorder " + item.name} aria-describedby={tripDragHelp} {...tripDrag.handle(item.id)}><GripVertical size={16} aria-hidden="true" /></button><button className="text-button" aria-label={"Edit " + item.name} onClick={() => open({ kind: "trip", item })}><Pencil size={14} />Edit</button></span>{itemAccess.role === "owner" && <button className="icon-button muted" aria-label={"Delete " + item.name} onClick={() => confirmDelete({ type: "trip.delete", id: item.id }, "Delete “" + item.name + "”?", "This removes the trip, its travel plans, At home items, and packing list. Its destinations, with their saved ideas and research, stay in Destinations." + sharedDeleteNote(itemAccess))}><Trash2 size={15} /></button>}</div>
+                </Link><div className="card-tools"><span className="card-tools-start"><button type="button" className="icon-button trip-handle" aria-label={"Reorder " + item.name} aria-describedby={tripDragHelp} {...tripDrag.handle(item.id)}><GripVertical size={16} aria-hidden="true" /></button><button className="text-button" aria-label={"Edit " + item.name} onClick={() => open({ kind: "trip", item })}><Pencil size={14} />Edit</button>{renderLike("trip", item.id, item.name)}</span>{itemAccess.role === "owner" && <button className="icon-button muted" aria-label={"Delete " + item.name} onClick={() => confirmDelete({ type: "trip.delete", id: item.id }, "Delete “" + item.name + "”?", "This removes the trip, its travel plans, At home items, and packing list. Its destinations, with their saved ideas and research, stay in Destinations." + sharedDeleteNote(itemAccess))}><Trash2 size={15} /></button>}</div>
               </article>;
             })}</div>}
         </section>
@@ -738,13 +759,13 @@ export default function PlannerApp({ initialData, initialBudgets, access = {}, d
         <section className="trip-heading"><div><p className="eyebrow">{(trip.tagline || DEFAULT_TRIP_TAGLINE).toUpperCase()}</p><h1>{trip.name}</h1><div className="trip-meta"><span><CalendarDays size={17} />{trip.startDate ? formatCalendarDate(trip.startDate) + " → " + formatCalendarDate(trip.endDate) : trip.dateLabel || "Dates to be decided"}</span><span><Users size={17} />{trip.travelers} {trip.travelers === 1 ? "traveler" : "travelers"}</span><span><MapPin size={17} />{trip.homeCity ? "Departing: " + trip.homeCity : "Add departing city"}</span>{trip.returnCity && <span><MapPin size={17} />Returning: {trip.returnCity}</span>}{tripAccess?.role === "editor" && <span><Share2 size={17} />{"Shared by " + memberLabel(tripAccess.owner)}</span>}{tripAccess?.role === "owner" && tripAccess.sharedWith.length > 0 && <span><Share2 size={17} />{"Shared with " + tripAccess.sharedWith.length + (tripAccess.sharedWith.length === 1 ? " person" : " people")}</span>}</div>
           <TripTagsEditor tags={trip.tags} available={data.tags} busy={busy} onAdd={(name) => perform({ type: "trip.tag", tripId: trip.id, name }, "Tag added.")} onRemove={(name) => void perform({ type: "trip.untag", tripId: trip.id, name }, "Tag removed.")} />
           {trip.notes && <p className="trip-notes">{trip.notes}</p>}</div>
-          <div className="heading-actions"><button className="button secondary" onClick={() => open({ kind: "trip", item: trip })}><Pencil size={15} />Edit trip</button>{tripAccess?.role === "owner" && <><button className="button secondary" onClick={() => open({ kind: "share" })}><UserPlus size={15} />Share</button><button className="icon-button" aria-label="Delete trip" onClick={() => confirmDelete({ type: "trip.delete", id: trip.id }, "Delete this trip?", "“" + trip.name + "”, its travel plans, At home items, and packing list will be removed. Its destinations, with their saved ideas and research, stay in Destinations." + sharedDeleteNote(tripAccess), "/")}><Trash2 size={18} /></button></>}</div>
+          <div className="heading-actions">{renderLike("trip", trip.id, trip.name)}<button className="button secondary" onClick={() => open({ kind: "trip", item: trip })}><Pencil size={15} />Edit trip</button>{tripAccess?.role === "owner" && <><button className="button secondary" onClick={() => open({ kind: "share" })}><UserPlus size={15} />Share</button><button className="icon-button" aria-label="Delete trip" onClick={() => confirmDelete({ type: "trip.delete", id: trip.id }, "Delete this trip?", "“" + trip.name + "”, its travel plans, At home items, and packing list will be removed. Its destinations, with their saved ideas and research, stay in Destinations." + sharedDeleteNote(tripAccess), "/")}><Trash2 size={18} /></button></>}</div>
         </section>
         <div className="trip-layout"><div className="trip-main">
           <TripMap tripId={trip.id} journey={tripJourney(data, trip.id)} />
           <section><div className="section-heading"><div><p className="eyebrow">ONE STOP AT A TIME</p><h2>The destinations</h2></div><button className="button secondary small" onClick={() => open({ kind: "addStop" })}><Plus size={16} />Add destination</button></div>
             {visits.length === 0 ? <div className="empty-state"><MapPin size={29} strokeWidth={1.4} /><h3>Where should this trip take you?</h3><p>Add your first destination. Your departure and return connections will appear automatically.</p><button className="text-button" onClick={() => open({ kind: "addStop" })}>Add a destination <ArrowRight size={16} /></button></div>
-              : <div className="destination-list">{visits.map(({ stop: visitStop, visit }, index) => { const label = formatSavedDestinationLabel(visit); return [renderStopInsertion(index), <article className="destination-card" key={visitStop.id} id={"destination-" + visitStop.id} tabIndex={-1}><DestinationGallery destination={visit} /><div className="destination-top"><span className="stop-number">{String(index + 1).padStart(2, "0")}</span><div className="destination-name"><h3><Link href={"/destinations/" + visit.id}>{label}</Link></h3>{visit.tagline && <p className="tagline">{visit.tagline}</p>}<p className={visitStop.stay ? undefined : "unknown"}>{visitStop.stay || "Stay notes not added"}</p></div><div className="destination-tools"><button className="icon-button" disabled={busy || index === 0} aria-label={"Move " + label + " up"} onClick={(event) => saveFrom(event.currentTarget, { type: "stop.move", id: visitStop.id, direction: "up" }, "Route updated. Review the new travel connections.")}><ArrowUp size={15} /></button><button className="icon-button" disabled={busy || index === visits.length - 1} aria-label={"Move " + label + " down"} onClick={(event) => saveFrom(event.currentTarget, { type: "stop.move", id: visitStop.id, direction: "down" }, "Route updated. Review the new travel connections.")}><ArrowDown size={15} /></button><button className="icon-button" aria-label={"Edit " + label} onClick={() => open({ kind: "destination", item: visit, stop: visitStop })}><Pencil size={15} /></button><button className="icon-button" aria-label={"Remove " + label + " from this trip"} onClick={() => confirmDelete({ type: "stop.remove", id: visitStop.id }, "Remove “" + label + "” from this trip?", "Its hotels, activities, restaurants, photos, and research stay in Destinations and in any other trip. This trip’s nights, stay notes, and travel plans to and from it are removed, and the remaining route reconnects.")}><Trash2 size={15} /></button></div></div>
+              : <div className="destination-list">{visits.map(({ stop: visitStop, visit }, index) => { const label = formatSavedDestinationLabel(visit); return [renderStopInsertion(index), <article className="destination-card" key={visitStop.id} id={"destination-" + visitStop.id} tabIndex={-1}><DestinationGallery destination={visit} /><div className="destination-top"><span className="stop-number">{String(index + 1).padStart(2, "0")}</span><div className="destination-name"><h3><Link href={"/destinations/" + visit.id}>{label}</Link></h3>{visit.tagline && <p className="tagline">{visit.tagline}</p>}<p className={visitStop.stay ? undefined : "unknown"}>{visitStop.stay || "Stay notes not added"}</p><div className="destination-like">{renderLike("destination", visit.id, label)}</div></div><div className="destination-tools"><button className="icon-button" disabled={busy || index === 0} aria-label={"Move " + label + " up"} onClick={(event) => saveFrom(event.currentTarget, { type: "stop.move", id: visitStop.id, direction: "up" }, "Route updated. Review the new travel connections.")}><ArrowUp size={15} /></button><button className="icon-button" disabled={busy || index === visits.length - 1} aria-label={"Move " + label + " down"} onClick={(event) => saveFrom(event.currentTarget, { type: "stop.move", id: visitStop.id, direction: "down" }, "Route updated. Review the new travel connections.")}><ArrowDown size={15} /></button><button className="icon-button" aria-label={"Edit " + label} onClick={() => open({ kind: "destination", item: visit, stop: visitStop })}><Pencil size={15} /></button><button className="icon-button" aria-label={"Remove " + label + " from this trip"} onClick={() => confirmDelete({ type: "stop.remove", id: visitStop.id }, "Remove “" + label + "” from this trip?", "Its hotels, activities, restaurants, photos, and research stay in Destinations and in any other trip. This trip’s nights, stay notes, and travel plans to and from it are removed, and the remaining route reconnects.")}><Trash2 size={15} /></button></div></div>
                 {visit.notes && <p className="destination-notes">{visit.notes}</p>}
                 {/* The card's photos come first, then its name, stay notes and notes, so its map follows them, before its budget (TRA-130). */}
                 <DestinationMap destination={visit} places={destinationPlaces(data, visit.id)} onView={viewPlace} />
@@ -795,6 +816,7 @@ export default function PlannerApp({ initialData, initialBudgets, access = {}, d
                   <p className="city-list"><Plane size={15} />{trips.length ? [...new Set(trips)].join(" · ") : "Not in a trip"}</p>
                   <div className="trip-meta"><span><BedDouble size={15} />{count(ideas("hotels"), "hotel", "hotels")}</span><span><Binoculars size={15} />{count(ideas("activities"), "activity", "activities")}</span><span><Utensils size={15} />{count(ideas("restaurants"), "restaurant", "restaurants")}</span>{itemAccess?.role === "editor" && <span><Share2 size={15} />{"Shared by " + memberLabel(itemAccess.owner)}</span>}</div>
                 </Link>
+                <div className="card-tools">{renderLike("destination", item.id, formatSavedDestinationLabel(item))}</div>
               </article>;
             })}</div>}
         </section>

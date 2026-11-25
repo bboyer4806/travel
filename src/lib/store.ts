@@ -34,6 +34,7 @@ import type { MonthlyClimate } from "./typical-weather.ts";
 import type { AiConnection, AiPhotoToAdd, AiProposal, DestinationFields, GalleryUpdate, LargePhoto, PhotoCrop, PhotoWidths, PreparedImage, StoredThumbnail, TripImage, TripImageUpdate } from "./types";
 import type { AccessEntry, AccessOverview, AuthorizedAccount, DestinationAccess, GoogleIdentity, LibraryDestination, TripAccess, TripMember, TripStop } from "./types";
 import type { Candidate, CandidateImage, Category, Church, MassTime, Destination, DestinationImage, HomeItem, PackingItem, StoredImage, ItineraryStop, Mutation, ResearchLink, RestaurantType, Snapshot, TravelLeg, Trip } from "./types";
+import type { Like, LikeKind, Likes } from "./types";
 
 type StoredDestination = Omit<Destination, "churchEnabled" | "cityFromSuggestion" | "images" | "entryRequirements" | "healthSafety" | "climate" | "mainImageId" | "imageVersion"> & { churchEnabled: number; cityFromSuggestion: number; ownerId: string; cityKey: string };
 /** A hotel's, activity's, restaurant's or church's coordinate columns (TRA-150): latitude, longitude and accuracy all set, or all empty with review 0. */
@@ -70,6 +71,20 @@ const DESTINATION_OF = {
   candidates: "SELECT destinationId FROM candidates WHERE id = ?",
   churches: "SELECT destinationId FROM churches WHERE id = ?",
 } as const;
+/**
+ * Where each kind of item's likes are saved (TRA-31): its table, one row for each account that likes an item, the column
+ * naming the item, which refers to it, so deleting the item deletes its likes, and the table of the items themselves.
+ */
+const LIKES: Record<LikeKind, { table: string; column: string; items: "trips" | "destinations" | "candidates" | "churches" }> = {
+  trip: { table: "trip_likes", column: "tripId", items: "trips" },
+  destination: { table: "destination_likes", column: "destinationId", items: "destinations" },
+  candidate: { table: "candidate_likes", column: "candidateId", items: "candidates" },
+  church: { table: "church_likes", column: "churchId", items: "churches" },
+};
+/** The changes that save whether an account likes an item (TRA-31), which only people make. */
+const LIKE_CHANGES: readonly string[] = Object.keys(LIKES).map((kind) => `${kind}.like`);
+/** A snapshot's likes where it reads none: snapshots for checks, budgets and assistants, which never show likes. */
+const NO_LIKES: Likes = { trip: {}, destination: {}, candidate: {}, church: {} };
 /** A missing trip or destination and one the account can't open look the same, so an ID reveals nothing about other people's. */
 const NOT_AVAILABLE = "This item no longer exists or isn't shared with you. Please refresh and try again.";
 const OWNER_ONLY: Partial<Record<Mutation["type"], string>> = {
@@ -582,6 +597,11 @@ function validate(input: unknown): Mutation {
       return { type: value.type, id: idField(value), mustDo: booleanField(value, "mustDo") };
     case "candidate.include":
       return { type: value.type, id: idField(value), included: booleanField(value, "included") };
+    case "trip.like":
+    case "destination.like":
+    case "candidate.like":
+    case "church.like":
+      return { type: value.type, id: idField(value), liked: booleanField(value, "liked") };
     default:
       throw new ValidationError("This action is not supported. Please refresh and try again.");
   }
@@ -691,6 +711,8 @@ function proposedChange(value: Input, photos: ReadonlyMap<string, PreparedImage>
   if ((value.type === "candidate.save" || value.type === "church.save") && "coordinates" in value) throw new ValidationError("Change coordinates with candidate.coordinates or church.coordinates.");
   // Each person arranges their own trips on All trips (TRA-16), an order assistants can't read.
   if (value.type === "trip.order") throw new ValidationError("Each person puts their own trips in order on All trips, so trip order can't be proposed.");
+  // Each person likes items themselves (TRA-31), and an approved change is made as Travel's owner, so none is proposed.
+  if (LIKE_CHANGES.includes(value.type as string)) throw new ValidationError("Each person likes trips, destinations, ideas and churches themselves, so likes can't be proposed.");
   // An assistant's headline image is one Travel downloads for trip.image, never one sent with the trip's details (TRA-174).
   if (value.type === "trip.save" && "image" in value) throw new ValidationError("Change a trip's headline image with trip.image.");
   if ("image" in value || "gallery" in value) throw new ValidationError("Change photos with destination.photos, candidate.photos or church.photos.");
@@ -770,7 +792,7 @@ const LIVE: Make = { id: () => randomUUID(), now: () => new Date().toISOString()
  * The schema this build upgrades every database to, as SQLite's user_version. A schema change adds the next
  * upgrade in createStore and raises this to match; earlier upgrades keep their own numbers.
  */
-export const SCHEMA_VERSION = 48;
+export const SCHEMA_VERSION = 49;
 
 /** A destination as schema 20 saved it, inside one trip, with that trip's owner and name. */
 type TripDestinationRow = Omit<StoredDestination, "cityKey"> & Omit<TripStop, "destinationId"> & { tripName: string };
@@ -1553,6 +1575,34 @@ export function createStore(databasePath: string, ownerEmail: string) {
         PRAGMA user_version = 48;
       `);
     }
+    if (version < 49) {
+      // What each account likes (TRA-31): trips, destinations, ideas and churches, each at most once. A like refers to its
+      // item and its account, so deleting the item deletes its likes, and nothing else refers to a like. Nothing starts
+      // liked, so nothing looks different. A replay keeps saved likes.
+      db.exec(`
+        CREATE TABLE IF NOT EXISTS trip_likes (
+          tripId TEXT NOT NULL REFERENCES trips(id) ON DELETE CASCADE,
+          accountId TEXT NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
+          PRIMARY KEY (tripId, accountId)
+        ) STRICT;
+        CREATE TABLE IF NOT EXISTS destination_likes (
+          destinationId TEXT NOT NULL REFERENCES destinations(id) ON DELETE CASCADE,
+          accountId TEXT NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
+          PRIMARY KEY (destinationId, accountId)
+        ) STRICT;
+        CREATE TABLE IF NOT EXISTS candidate_likes (
+          candidateId TEXT NOT NULL REFERENCES candidates(id) ON DELETE CASCADE,
+          accountId TEXT NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
+          PRIMARY KEY (candidateId, accountId)
+        ) STRICT;
+        CREATE TABLE IF NOT EXISTS church_likes (
+          churchId TEXT NOT NULL REFERENCES churches(id) ON DELETE CASCADE,
+          accountId TEXT NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
+          PRIMARY KEY (churchId, accountId)
+        ) STRICT;
+        PRAGMA user_version = 49;
+      `);
+    }
     if (version < SCHEMA_VERSION && db.prepare("PRAGMA foreign_key_check").get()) {
       throw new Error("This upgrade would leave saved items without the trip or destination they belong to. Nothing was changed; review the database against a backup before upgrading.");
     }
@@ -1700,9 +1750,25 @@ export function createStore(databasePath: string, ownerEmail: string) {
     return rows.map(({ massTimesJson, latitude, longitude, coordinatesAccuracy, coordinatesReview, ...church }) => ({ ...church, massTimes: JSON.parse(massTimesJson) as MassTime[], images: photos.get(church.id) ?? [],
       coordinates: coordinatesOf({ latitude, longitude, coordinatesAccuracy, coordinatesReview }) }));
   }
-  /** Everything saved, for checks and tests. What the app shows or changes always takes the signed-in account. */
+  /**
+   * The likes of the given trips, destinations, ideas and churches (TRA-31): how many accounts like each, and whether the
+   * account is one of them. Every account that can open an item sees the same count. A kind left out has no likes read.
+   */
+  function likesOf(accountId: string, ids: Partial<Record<LikeKind, readonly string[]>>): Likes {
+    const read = (kind: LikeKind): Record<string, Like> => {
+      const { table, column } = LIKES[kind];
+      const [where, args] = among(column, ids[kind] ?? []);
+      return Object.fromEntries(db.prepare(`SELECT ${column} AS id, count(*) AS count, max(accountId = ?) AS liked FROM ${table}${where} GROUP BY ${column}`).all(accountId, ...args)
+        .map((row) => [row.id as string, { count: Number(row.count), liked: row.liked === 1 }]));
+    };
+    return { trip: read("trip"), destination: read("destination"), candidate: read("candidate"), church: read("church") };
+  }
+  /**
+   * Everything saved but likes, for checks and tests. What the app shows or changes always takes the signed-in account,
+   * as reading likes does, since they say whether the account likes each item (TRA-31).
+   */
   function getSnapshot(): Snapshot {
-    return { trips: readTrips(null), stops: readStops(null), destinations: readDestinations(null), legs: readLegs(null), candidates: readCandidates(null), churches: readChurches(null), homeItems: readHomeItems(null), packingItems: readPackingItems(null), tags: tagNames(null) };
+    return { trips: readTrips(null), stops: readStops(null), destinations: readDestinations(null), legs: readLegs(null), candidates: readCandidates(null), churches: readChurches(null), homeItems: readHomeItems(null), packingItems: readPackingItems(null), tags: tagNames(null), likes: NO_LIKES };
   }
   /**
    * The trips the account owns or was shared, with their tags and budgets, what the account may do with each, and every
@@ -1730,7 +1796,7 @@ export function createStore(databasePath: string, ownerEmail: string) {
       legs: db.prepare(`SELECT tripId,fromId,toId,priceCents,miscCents FROM legs WHERE tripId IN (${VISIBLE_TRIPS})`).all(...visible) as unknown as TravelLeg[],
       candidates: db.prepare(`SELECT destinationId,category,priceCents,included FROM candidates WHERE destinationId IN (${visited})`).all(...visible).map((row) => ({ ...row, included: row.included === 1 })) as unknown as Candidate[],
       homeItems: db.prepare(`SELECT tripId,priceCents FROM home_items WHERE tripId IN (${VISIBLE_TRIPS})`).all(...visible) as unknown as HomeItem[],
-      packingItems: [], churches: [], tags: [],
+      packingItems: [], churches: [], tags: [], likes: NO_LIKES,
     };
     const budgets = Object.fromEntries(trips.map((trip) => [trip.id, calculateBudget(input, trip.id)]));
     return {
@@ -1740,6 +1806,8 @@ export function createStore(databasePath: string, ownerEmail: string) {
         destinations: destinations.map(({ id, city, cityFromSuggestion }) => ({ id, city, cityFromSuggestion })) as Destination[],
         legs: [], candidates: [], homeItems: [], packingItems: [], churches: [],
         tags: tagNames(tripIds),
+        // Each trip's card has its Like (TRA-31).
+        likes: likesOf(accountId, { trip: tripIds }),
       } as Snapshot,
       budgets,
       access: Object.fromEntries(trips.map((trip) => [trip.id, tripAccess(accountId, trip.id)!])) as Record<string, TripAccess>,
@@ -1757,8 +1825,12 @@ export function createStore(databasePath: string, ownerEmail: string) {
     const destinationIds = [...new Set(stops.filter((stop) => stopId === undefined || stop.id === stopId).map((stop) => stop.destinationId))];
     // The trip can reuse any tag on a trip the account can open, and no other.
     const visibleTripIds = db.prepare(VISIBLE_TRIPS).all(accountId, accountId).map((row) => row.id as string);
+    const candidates = readCandidates(destinationIds);
+    const churches = readChurches(destinationIds);
+    // The trip, its destinations, their ideas and their churches each have their Like (TRA-31).
+    const likes = likesOf(accountId, { trip: [tripId], destination: destinationIds, candidate: candidates.map((item) => item.id), church: churches.map((item) => item.id) });
     return {
-      data: { trips: readTrips([tripId]), stops, destinations: readDestinations(destinationIds), legs: readLegs([tripId]), candidates: readCandidates(destinationIds), churches: readChurches(destinationIds), homeItems: readHomeItems([tripId]), packingItems: readPackingItems([tripId]), tags: tagNames(visibleTripIds) },
+      data: { trips: readTrips([tripId]), stops, destinations: readDestinations(destinationIds), legs: readLegs([tripId]), candidates, churches, homeItems: readHomeItems([tripId]), packingItems: readPackingItems([tripId]), tags: tagNames(visibleTripIds), likes },
       access,
       library: tripLibrary(accountId, tripId),
     };
@@ -1777,7 +1849,8 @@ export function createStore(databasePath: string, ownerEmail: string) {
     const destinationIds = db.prepare(VISIBLE_DESTINATIONS).all(accountId, accountId, accountId).map((row) => row.id as string);
     const stops = stopRows(` WHERE tripId IN (${VISIBLE_TRIPS})`, accountId, accountId);
     return {
-      data: { trips: readTrips([...new Set(stops.map((stop) => stop.tripId))]), stops, destinations: readDestinations(destinationIds), legs: [], candidates: readCandidates(destinationIds), churches: [], homeItems: [], packingItems: [], tags: [] },
+      // Each destination's card has its Like (TRA-31).
+      data: { trips: readTrips([...new Set(stops.map((stop) => stop.tripId))]), stops, destinations: readDestinations(destinationIds), legs: [], candidates: readCandidates(destinationIds), churches: [], homeItems: [], packingItems: [], tags: [], likes: likesOf(accountId, { destination: destinationIds }) },
       access: Object.fromEntries(destinationIds.map((id) => [id, destinationAccess(accountId, id)!])),
     };
   }
@@ -1789,8 +1862,12 @@ export function createStore(databasePath: string, ownerEmail: string) {
     const access = destinationAccess(accountId, destinationId);
     if (!access) return undefined;
     const stops = stopRows(` WHERE destinationId = ? AND tripId IN (${VISIBLE_TRIPS})`, destinationId, accountId, accountId);
+    const candidates = readCandidates([destinationId]);
+    const churches = readChurches([destinationId]);
+    // The destination, its ideas and its churches each have their Like (TRA-31).
+    const likes = likesOf(accountId, { destination: [destinationId], candidate: candidates.map((item) => item.id), church: churches.map((item) => item.id) });
     return {
-      data: { trips: readTrips([...new Set(stops.map((stop) => stop.tripId))]), stops, destinations: readDestinations([destinationId]), legs: [], candidates: readCandidates([destinationId]), churches: readChurches([destinationId]), homeItems: [], packingItems: [], tags: [] },
+      data: { trips: readTrips([...new Set(stops.map((stop) => stop.tripId))]), stops, destinations: readDestinations([destinationId]), legs: [], candidates, churches, homeItems: [], packingItems: [], tags: [], likes },
       access,
     };
   }
@@ -2564,7 +2641,23 @@ export function createStore(databasePath: string, ownerEmail: string) {
         existing<StoredChurch>("churches", input.id);
         saveCoordinates("churches", input.id, coordinateColumns(input.coordinates));
         return input.id;
+      case "trip.like": return saveLike(accountId, "trip", input);
+      case "destination.like": return saveLike(accountId, "destination", input);
+      case "candidate.like": return saveLike(accountId, "candidate", input);
+      case "church.like": return saveLike(accountId, "church", input);
     }
+  }
+  /**
+   * Saves whether the account likes an item (TRA-31), and changes nothing else. Each account likes an item at most once,
+   * so liking it again, as a save sent again after a lost response does, keeps its like, and removing a like it doesn't
+   * have changes nothing.
+   */
+  function saveLike(accountId: string, kind: LikeKind, input: { id: string; liked: boolean }): string {
+    const { table, column, items } = LIKES[kind];
+    existing(items, input.id);
+    if (input.liked) db.prepare(`INSERT INTO ${table}(${column}, accountId) VALUES(?, ?) ON CONFLICT DO NOTHING`).run(input.id, accountId);
+    else db.prepare(`DELETE FROM ${table} WHERE ${column} = ? AND accountId = ?`).run(input.id, accountId);
+    return input.id;
   }
   /**
    * The trip or destination a change applies to, found from the most specific saved item it names, so a browser can't
@@ -2573,7 +2666,8 @@ export function createStore(databasePath: string, ownerEmail: string) {
    */
   function mutationScope(input: Mutation): { trip: string | undefined } | { destination: string | undefined } {
     switch (input.type) {
-      case "trip.save": case "trip.delete": case "trip.image": return { trip: tripOf("trips", input.id) };
+      // Liking a trip, or a destination, idea or church, below, is a change to it, open to whoever can open it (TRA-31).
+      case "trip.save": case "trip.delete": case "trip.image": case "trip.like": return { trip: tripOf("trips", input.id) };
       // Adding a saved destination to a trip is a change to the trip. `authorize` also checks the account can open the destination.
       case "trip.share": case "trip.unshare": case "trip.tag": case "trip.untag": case "stop.add": case "stop.visit": return { trip: tripOf("trips", input.tripId) };
       // An account's own trip order names every trip it can open, not one, so nothing places it; authorize lets each
@@ -2597,9 +2691,9 @@ export function createStore(databasePath: string, ownerEmail: string) {
       case "church.delete": return { destination: destinationOf("churches", input.id) };
       case "candidate.save": return { destination: destinationOf("candidates", input.id) ?? (input.create && destinationOf("destinations", input.destinationId)) };
       case "candidate.move": case "candidate.mustDo": case "candidate.delete": case "candidate.include": return { destination: destinationOf("candidates", input.id) };
-      case "destination.photos": return { destination: destinationOf("destinations", input.id) };
-      case "candidate.photos": case "candidate.coordinates": return { destination: destinationOf("candidates", input.id) };
-      case "church.photos": case "church.coordinates": return { destination: destinationOf("churches", input.id) };
+      case "destination.photos": case "destination.like": return { destination: destinationOf("destinations", input.id) };
+      case "candidate.photos": case "candidate.coordinates": case "candidate.like": return { destination: destinationOf("candidates", input.id) };
+      case "church.photos": case "church.coordinates": case "church.like": return { destination: destinationOf("churches", input.id) };
     }
   }
   /**
@@ -2696,7 +2790,7 @@ export function createStore(databasePath: string, ownerEmail: string) {
     if (!tripOf("trips", tripId)) return undefined;
     const stops = readStops([tripId]);
     const destinationIds = [...new Set(stops.map((stop) => stop.destinationId))];
-    const data: Snapshot = { trips: readTrips([tripId]), stops, destinations: readDestinations(destinationIds), legs: readLegs([tripId]), candidates: readCandidates(destinationIds), churches: readChurches(destinationIds), homeItems: readHomeItems([tripId]), packingItems: readPackingItems([tripId]), tags: [] };
+    const data: Snapshot = { trips: readTrips([tripId]), stops, destinations: readDestinations(destinationIds), legs: readLegs([tripId]), candidates: readCandidates(destinationIds), churches: readChurches(destinationIds), homeItems: readHomeItems([tripId]), packingItems: readPackingItems([tripId]), tags: [], likes: NO_LIKES };
     return { trip: data.trips[0], ...tripMembers(tripId), stops, travel: data.legs, atHome: data.homeItems, packing: data.packingItems, destinations: data.destinations, ideas: data.candidates, churches: data.churches, budget: calculateBudget(data, tripId) };
   }
   /** Each trip's stays at the given destinations, or at every destination, with the trip's name. */

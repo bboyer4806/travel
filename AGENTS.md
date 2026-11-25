@@ -207,6 +207,12 @@ Repeat passing checks when subsequent changes affect their coverage or required 
   details alone, never looking anything up, and says what it assumed; recommendations are never saved. `packingReview`
   leaves out items already on the list by name, and `packingList.add` adds only those chosen, under the IDs the review
   gave them, never changing a saved item.
+- Likes (TRA-31) are `trip_likes`, `destination_likes`, `candidate_likes` and `church_likes`, one row per account and item,
+  each referring to its item so deleting the item deletes its likes, changed only by `trip.like`, `destination.like`,
+  `candidate.like` and `church.like` with whether the account likes it. `likesOf` in the store reads them into each page's
+  `Snapshot.likes`, by kind and item: everyone's count, and whether the signed-in account is among them. Snapshots for
+  checks, budgets and assistants read none (`NO_LIKES`). `LikeButton` in `src/components/like-button.tsx` shows one,
+  through `renderLike` in the planner, wherever its item shows as a card, heading or details. Likes change nothing else.
 - Application writes go through `mutatePlanner` in `src/app/actions.ts`, into `applyMutation`
   in `src/lib/store.ts`, or come from an approved AI proposal. A new ordinary field of an existing save goes in
   `EDITABLE_FIELDS` instead (TRA-174). A new operation adds a `Mutation`
@@ -214,7 +220,8 @@ Repeat passing checks when subsequent changes affect their coverage or required 
   `aiChange`), `mutationScope` and `mutate` in the store, a schema in `src/lib/mcp-tools.ts` and a
   title in `operationTitle`. `mutationScope` finds the trip or
   destination a change applies to from saved rows; a change it doesn't place is refused. Only `trip.order`, each
-  account's own trip order, is for people alone: `aiChange` refuses it and it has no schema.
+  account's own trip order, and the likes, each account's own (TRA-31), are for people alone: `aiChange` refuses them and
+  they have no schema.
 - A save that adds a trip, an idea, a church, an At home item or a packing item sends the
   ID its editor gave it when it opened, with `create: true` (TRA-75). The store adds the item when no
   item has that ID, and the same save sent again after a lost response changes that item instead of

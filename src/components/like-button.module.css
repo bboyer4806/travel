@@ -1,0 +1,10 @@
+/* TRA-31: an item's Like, a heart beside how many accounts like it, in a pill as wide as its count needs. While the
+   signed-in account likes the item, its heart is filled and the pill turns rose. Touchscreens get a 44-pixel target. */
+.like { display: inline-flex; flex: none; align-items: center; justify-content: center; gap: 6px; min-width: 32px; min-height: 32px; padding: 0 10px; border: 1px solid #d4dbcd; border-radius: 999px; background: var(--white); color: var(--muted); font-size: 12px; font-weight: 600; line-height: 1; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.like:hover:not(:disabled) { background: #eef1e8; color: var(--green); }
+.like[aria-pressed="true"] { border-color: #e2b6bf; background: #fcf1f3; color: #b42d48; }
+.like[aria-pressed="true"]:hover:not(:disabled) { background: #f8e4e8; color: #962139; }
+
+@media (pointer: coarse) {
+  .like { min-width: 44px; min-height: 44px; padding: 0 14px; }
+}

@@ -33,9 +33,10 @@ export function ChurchSection({ label, collapsible, actions, children }: { label
 /**
  * A destination's churches. Each church's name is a heading at `headingLevel`, below the section that lists them, and
  * its Mass times one level lower (TRA-95). `photoFrame` is how wide each church's photo is where they show (TRA-154).
+ * Each church's Like, `like`, is beside its Edit and Delete (TRA-31).
  */
-export function ChurchOptions({ items, headingLevel, photoFrame, busy, onAdd, onEdit, onDelete }: {
-  items: Church[]; headingLevel: 2 | 3 | 4 | 5; photoFrame: FrameWidths; busy: boolean; onAdd: () => void; onEdit: (item: Church) => void; onDelete: (item: Church) => void;
+export function ChurchOptions({ items, headingLevel, photoFrame, busy, onAdd, onEdit, onDelete, like }: {
+  items: Church[]; headingLevel: 2 | 3 | 4 | 5; photoFrame: FrameWidths; busy: boolean; onAdd: () => void; onEdit: (item: Church) => void; onDelete: (item: Church) => void; like: (item: Church) => ReactNode;
 }) {
   const Heading = HEADINGS[headingLevel - 1];
   const TimesHeading = HEADINGS[headingLevel];
@@ -48,6 +49,7 @@ export function ChurchOptions({ items, headingLevel, photoFrame, busy, onAdd, on
   return <div className="ideas-grid">{items.map((item) => <article className="idea-card" key={item.id}>
     <CandidateGallery candidate={item} frame={photoFrame} imageKind="church" browse />
     <div className="idea-top"><span className="selection-tag">Church option</span><div className="idea-tools">
+      {like(item)}
       <button type="button" className="icon-button" aria-label={`Edit ${item.name}`} onClick={() => onEdit(item)} disabled={busy}><Pencil size={16} /></button>
       <button type="button" className="icon-button" aria-label={`Delete ${item.name}`} onClick={() => onDelete(item)} disabled={busy}><Trash2 size={16} /></button>
     </div></div>

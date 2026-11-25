@@ -9,6 +9,7 @@ import * as destinationLabel from "../src/lib/destination-label.ts";
 import * as galleryDraft from "../src/lib/gallery-draft.ts";
 import * as money from "../src/lib/money.ts";
 import * as tripDates from "../src/lib/trip-dates.ts";
+import * as tripSort from "../src/lib/trip-sort.ts";
 import * as types from "../src/lib/types.ts";
 import * as uuid from "../src/lib/uuid.ts";
 import { addDestination, candidateInput, setup } from "./budget-fixtures.mjs";
@@ -90,7 +91,7 @@ function plannerPage(store, tripId, { stopId, category } = {}) {
     "@/components/research-links": { ResearchLinksEditor: (props) => element("links-editor", props), ResearchLinks: () => null },
     "@/components/place-location": { PlaceLocationFields: (props) => element("place-location", props) },
     "@/lib/budget": budget, "@/lib/coordinates": coordinates, "@/lib/destination-label": destinationLabel, "@/lib/gallery-draft": galleryDraft,
-    "@/lib/money": money, "@/lib/trip-dates": tripDates, "@/lib/types": types, "@/lib/uuid": uuid,
+    "@/lib/money": money, "@/lib/trip-dates": tripDates, "@/lib/trip-sort": tripSort, "@/lib/types": types, "@/lib/uuid": uuid,
   };
   const { default: PlannerApp } = load("../src/components/planner-app.tsx", require(modules), { FormData });
 

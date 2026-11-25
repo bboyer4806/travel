@@ -9,6 +9,7 @@ import * as destinationLabel from "../src/lib/destination-label.ts";
 import * as money from "../src/lib/money.ts";
 import * as photoFocus from "../src/lib/photo-focus.ts";
 import * as tripDates from "../src/lib/trip-dates.ts";
+import * as tripSort from "../src/lib/trip-sort.ts";
 import { MOUSE, TOUCH, styles } from "./css-rules.mjs";
 import { createOwnedStore } from "./owned-store.mjs";
 import { addDestination, prepared, tripInput } from "./budget-fixtures.mjs";
@@ -30,7 +31,7 @@ const modules = {
   "react/jsx-runtime": { jsx: element, jsxs: element, Fragment: "fragment" },
   "lucide-react": new Proxy({}, { get: (_, name) => "icon:" + String(name) }),
   "next/link": { default: ({ children, ...props }) => element("a", { ...props, children }) },
-  "@/lib/budget": budget, "@/lib/destination-label": destinationLabel, "@/lib/money": money, "@/lib/photo-focus": photoFocus, "@/lib/trip-dates": tripDates,
+  "@/lib/budget": budget, "@/lib/destination-label": destinationLabel, "@/lib/money": money, "@/lib/photo-focus": photoFocus, "@/lib/trip-dates": tripDates, "@/lib/trip-sort": tripSort,
 };
 // Every other module is one the cards' photos don't use: each of its exports renders, and returns, nothing.
 const unused = new Proxy({}, { get: () => () => null });

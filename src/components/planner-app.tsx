@@ -41,6 +41,7 @@ import TripSharing, { memberLabel } from "@/components/trip-sharing";
 import { TripTagFilter, TripTagList, TripTagsEditor } from "@/components/trip-tags";
 import { useTripDrag } from "@/components/trip-drag";
 import { hasEveryTag, tagKey } from "@/lib/trip-tags";
+import { sortTrips, TRIP_SORTS, type TripSort } from "@/lib/trip-sort";
 import { mutatePlanner } from "@/app/actions";
 import { randomUuid } from "@/lib/uuid";
 import { PLANNER_UPDATED } from "@/lib/planner-updated";
@@ -209,6 +210,9 @@ export default function PlannerApp({ initialData, initialBudgets, access = {}, d
   const [search, setSearch] = useState("");
   // The trip list's selected tag filters, as tag keys.
   const [tagFilter, setTagFilter] = useState<string[]>([]);
+  // How the trip list is sorted (TRA-177): Custom order, the account's own order, each time the page opens, until
+  // another sort is chosen. No sort saves anything.
+  const [tripSort, setTripSort] = useState<TripSort>("custom");
   const tripDragHelp = useId();
   // A stop to scroll to once the page shows it, after adding its city. This scrolls instead of navigating to its
   // #destination- link: after a Server Action, Next.js 16.4 adds that hash to any the URL already has.
@@ -682,11 +686,13 @@ export default function PlannerApp({ initialData, initialBudgets, access = {}, d
   // Selected tags no trip has any longer drop out of the filter.
   const filterTags = data.tags.filter((tag) => tagFilter.includes(tagKey(tag)));
   const toggleTagFilter = (tag: string) => setTagFilter((keys) => keys.includes(tagKey(tag)) ? keys.filter((key) => key !== tagKey(tag)) : [...keys, tagKey(tag)]);
-  // A trip shows when it matches the search and has every selected tag.
-  const visibleTrips = data.trips.filter((item) => hasEveryTag(item.tags, filterTags) && [item.name, item.dateLabel, ...tripPlaces(item.id).flatMap((place) => [place.city, formatSavedDestinationLabel(place)])].join(" ").toLowerCase().includes(search.toLowerCase()));
-  // Trips move only while every trip shows, so the list is the account's whole order (TRA-16).
+  // A trip shows when it matches the search and has every selected tag, in the order Sort by chooses (TRA-177).
+  const visibleTrips = sortTrips(data.trips.filter((item) => hasEveryTag(item.tags, filterTags) && [item.name, item.dateLabel, ...tripPlaces(item.id).flatMap((place) => [place.city, formatSavedDestinationLabel(place)])].join(" ").toLowerCase().includes(search.toLowerCase())),
+    tripSort, { stops: data.stops, destinations: data.destinations, budgets: homeBudgets });
+  // Trips move only in Custom order while every trip shows, so the list is the account's whole order (TRA-16, TRA-177).
   const filtered = search !== "" || filterTags.length > 0;
-  const tripDrag = useTripDrag(visibleTrips, placeTrip, !filtered && visibleTrips.length > 1 && !busy && !refreshing);
+  const sorted = tripSort !== "custom";
+  const tripDrag = useTripDrag(visibleTrips, placeTrip, !filtered && !sorted && visibleTrips.length > 1 && !busy && !refreshing);
   const visibleDestinations = data.destinations.filter((item) => [item.city, formatSavedDestinationLabel(item), ...visitsOf(item.id).map((visit) => visit.trip.name)].join(" ").toLowerCase().includes(search.toLowerCase()));
   /** Same-named cities can share a short label, so the list shows their full saved names. */
   const sharesLabel = (item: Destination) => data.destinations.some((other) => other.id !== item.id && formatSavedDestinationLabel(other) === formatSavedDestinationLabel(item));
@@ -702,7 +708,10 @@ export default function PlannerApp({ initialData, initialBudgets, access = {}, d
         <section className="trips-section"><div className="section-heading"><div className="heading-inline"><h2>Your possibilities</h2><span className="count-pill">{data.trips.length}</span></div>
           {data.trips.length > 0 && <label className="search-field"><Search size={17} /><input aria-label="Search trips" value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Find a trip or city" /></label>}</div>
           {data.tags.length > 0 && <TripTagFilter tags={data.tags} selected={filterTags} onToggle={toggleTagFilter} onClear={() => setTagFilter([])} />}
-          {filtered && visibleTrips.length > 0 && data.trips.length > 1 && <p className="helper trip-order-note">Clear the search and tag filters to drag trips into a new order.</p>}
+          {data.trips.length > 0 && <label className="trip-sort"><span>Sort by</span><select value={tripSort} onChange={(event) => setTripSort(event.target.value as TripSort)}>
+            {Object.entries(TRIP_SORTS).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label>}
+          {(filtered || sorted) && visibleTrips.length > 0 && data.trips.length > 1 && <p className="helper trip-order-note">{sorted && filtered ? "Choose Custom order and clear the search and tag filters to drag trips into a new order."
+            : sorted ? "Choose Custom order to drag trips into a new order." : "Clear the search and tag filters to drag trips into a new order."}</p>}
           <p id={tripDragHelp} className="sr-only">Drag to move this trip, or press Space, move it with the arrow keys, and press Space again to drop it. Escape cancels.</p>
           <p className="sr-only" aria-live="assertive" aria-atomic="true">{tripDrag.announcement}</p>
           {data.trips.length === 0 ? <div className="empty-state home-empty"><span className="empty-icon"><MapPin size={28} strokeWidth={1.5} /></span><h3>Every trip starts with a possibility.</h3><p>A weekend away? A place you have always wanted to see?<br />Add your first trip and work out the details as you go.</p><button className="button secondary" onClick={() => open({ kind: "trip" })}><Plus size={17} />Create your first trip</button></div>

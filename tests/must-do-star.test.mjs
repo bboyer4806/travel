@@ -7,6 +7,7 @@ import * as budget from "../src/lib/budget.ts";
 import * as destinationLabel from "../src/lib/destination-label.ts";
 import * as money from "../src/lib/money.ts";
 import * as tripDates from "../src/lib/trip-dates.ts";
+import * as tripSort from "../src/lib/trip-sort.ts";
 import * as types from "../src/lib/types.ts";
 import { addDestination, candidateInput, setup } from "./budget-fixtures.mjs";
 import { contrast, cssRules } from "./css-rules.mjs";
@@ -70,7 +71,7 @@ function tripPage(store, tripId) {
         }
       },
     },
-    "@/lib/budget": budget, "@/lib/destination-label": destinationLabel, "@/lib/money": money, "@/lib/trip-dates": tripDates, "@/lib/types": types,
+    "@/lib/budget": budget, "@/lib/destination-label": destinationLabel, "@/lib/money": money, "@/lib/trip-dates": tripDates, "@/lib/trip-sort": tripSort, "@/lib/types": types,
   };
   // Every other module is one the idea sections and their saves don't need: each of its exports renders, and returns, nothing.
   const unused = new Proxy({}, { get: () => () => null });

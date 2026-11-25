@@ -7,6 +7,7 @@ import * as budget from "../src/lib/budget.ts";
 import * as destinationLabel from "../src/lib/destination-label.ts";
 import * as money from "../src/lib/money.ts";
 import * as tripDates from "../src/lib/trip-dates.ts";
+import * as tripSort from "../src/lib/trip-sort.ts";
 import * as tripTags from "../src/lib/trip-tags.ts";
 import { addDestination, destinationEdit, setup, tripInput } from "./budget-fixtures.mjs";
 import { contrast, cssRules, onlyRule } from "./css-rules.mjs";
@@ -133,7 +134,7 @@ const modules = {
   "react/jsx-runtime": { jsx: element, jsxs: element, Fragment: "fragment" },
   "lucide-react": new Proxy({}, { get: (_, name) => "icon:" + String(name) }),
   "next/link": { default: ({ children, ...props }) => element("a", { ...props, children }) },
-  "@/lib/budget": budget, "@/lib/destination-label": destinationLabel, "@/lib/money": money, "@/lib/trip-dates": tripDates,
+  "@/lib/budget": budget, "@/lib/destination-label": destinationLabel, "@/lib/money": money, "@/lib/trip-dates": tripDates, "@/lib/trip-sort": tripSort,
   // All trips shows the trips that have every selected tag: with none selected, every trip.
   "@/lib/trip-tags": tripTags,
 };

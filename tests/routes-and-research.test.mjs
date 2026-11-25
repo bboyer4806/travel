@@ -62,6 +62,8 @@ function legacyDatabase(path, version) {
     // Trips from before tags upgrade with none, without a headline image (TRA-133), a tagline (TRA-134), a focus (TRA-168)
     // or entry and visa fees (TRA-159).
     tags: [],
+    // Nothing upgrades liked (TRA-31), and likes are read for an account, never in a check's snapshot.
+    likes: { trip: {}, destination: {}, candidate: {}, church: {} },
     trips: db.prepare("SELECT * FROM trips").all().map((row) => ({ ...row, startDate: null, endDate: null, returnCity: version === 2 ? "Boston" : null, tags: [], image: null, tagline: "", focus: "", entryVisaFeesCents: null })),
     // Each destination becomes a shared one, without a tagline (TRA-125), visited by a stop with its ID that keeps the trip's own details.
     destinations: db.prepare("SELECT * FROM destinations").all().map((row) => ({ id: row.id, city: row.city, cityFromSuggestion: false, tagline: "", notes: row.notes, imageVersion: null, miscDailyMinor: null, miscCurrency: null, hotelNightlyMinor: null, hotelCurrency: null, activitiesBudgetMode: "itemized", activitiesGeneralMinor: null, activitiesCurrency: null, foodBudgetMode: "itemized", foodDailyMinor: null, foodCurrency: null, shoppingMinor: null, shoppingCurrency: null, weatherHighF: null, weatherLowF: null, weatherRainfall: "", weatherPeriod: "", weatherSource: "", churchEnabled: false })),

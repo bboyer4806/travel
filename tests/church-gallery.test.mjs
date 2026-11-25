@@ -134,7 +134,7 @@ function photo(owner, number) {
 }
 
 /** A destination's Church section listing `churches`, as its card and Church page show it, recording what its controls ask for in `calls`. */
-const section = (churches, calls = []) => ({ ChurchOptions }) => ({ type: ChurchOptions, props: { items: churches, headingLevel: 5, busy: false, onAdd: () => calls.push(["add"]), onEdit: (item) => calls.push(["edit", item.id]), onDelete: (item) => calls.push(["delete", item.id]) } });
+const section = (churches, calls = []) => ({ ChurchOptions }) => ({ type: ChurchOptions, props: { items: churches, headingLevel: 5, busy: false, onAdd: () => calls.push(["add"]), onEdit: (item) => calls.push(["edit", item.id]), onDelete: (item) => calls.push(["delete", item.id]), like: () => null } });
 /** A church's details, as its marker on the destination map opens them (TRA-130). */
 const details = (church) => ({ ChurchDetails }) => ({ type: ChurchDetails, props: { item: church } });
 

@@ -842,6 +842,13 @@ button svg,a svg {
 .destination-name h3 a:hover {
   color:var(--orange)
 }
+/* TRA-31: a destination's Like on a trip's page, below its stay's notes, and an idea's or church's above its details. */
+.destination-like {
+  margin-top:8px
+}
+.details-like {
+  margin-bottom:18px
+}
 .destination-full-name {
   font-size:13px;
   color:var(--muted);
@@ -1125,8 +1132,11 @@ button svg,a svg {
   color:#527347;
   background:#e9efdf
 }
+/* TRA-31: an idea's or church's Like leads its tools, a little apart from Edit and Delete. */
 .idea-tools {
-  display:flex
+  display:flex;
+  align-items:center;
+  gap:4px
 }
 .must-do {
   align-self:flex-start;

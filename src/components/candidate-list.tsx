@@ -5,11 +5,12 @@ import { RestaurantTypeTags } from "./restaurant-types";
 import { formatEstimatedTime } from "@/lib/estimated-time";
 import { formatCurrency } from "@/lib/money";
 import { HALF_PAGE } from "@/lib/photo-sizes";
+import type { ReactNode } from "react";
 import type { Candidate, Category, Destination, Mutation } from "@/lib/types";
 
 const singular = { hotels: "hotel", activities: "activity", restaurants: "restaurant" };
 
-export default function CandidateList({ items, category, destination, busy, onEdit, onDelete, onMutate }: {
+export default function CandidateList({ items, category, destination, busy, onEdit, onDelete, onMutate, like }: {
   items: Candidate[];
   category: Category;
   destination: Destination;
@@ -18,6 +19,8 @@ export default function CandidateList({ items, category, destination, busy, onEd
   onDelete: (item: Candidate) => void;
   /** Saves a change made from `control`, which takes focus again once the page shows it, or at a list end the card's other direction. */
   onMutate: (mutation: Mutation, message: string, control: HTMLButtonElement) => void;
+  /** An idea's Like, beside its Edit and Delete (TRA-31). */
+  like: (item: Candidate) => ReactNode;
 }) {
   const inactiveItemized = (category === "activities" && destination.activitiesBudgetMode === "general")
     || (category === "restaurants" && destination.foodBudgetMode === "daily");
@@ -32,6 +35,7 @@ export default function CandidateList({ items, category, destination, busy, onEd
             {item.included ? <><Check size={13} />{category === "hotels" ? "Chosen stay" : "In the plan"}</> : "A possibility"}
           </span>
           <div className="idea-tools">
+            {like(item)}
             <button className="icon-button" disabled={busy} aria-label={"Edit " + item.name} onClick={() => onEdit(item)}><Pencil size={16} /></button>
             <button className="icon-button" disabled={busy} aria-label={"Delete " + item.name} onClick={() => onDelete(item)}><Trash2 size={16} /></button>
           </div>

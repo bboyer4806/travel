@@ -118,8 +118,17 @@ export interface Candidate { id: string; destinationId: string; category: Catego
 export interface MassTime { id: string; day: string; time: string; }
 /** A church. `coordinates` place it on its destination's map when its address isn't found or it has none (TRA-163), or are null (TRA-150). */
 export interface Church { id: string; destinationId: string; name: string; address: string; denomination: string; url: string; massTimes: MassTime[]; images: CandidateImage[]; mainImageId: string | null; coordinates: SavedCoordinates | null; }
-/** `tags` is one spelling of each tag on the trips the account can open, in alphabetical order, for a trip's page to reuse and the trip list to filter by. Destinations pages leave it empty. */
-export interface Snapshot { churches: Church[]; trips: Trip[]; homeItems: HomeItem[]; packingItems: PackingItem[]; stops: TripStop[]; destinations: Destination[]; legs: TravelLeg[]; candidates: Candidate[]; tags: string[]; }
+/** What people like (TRA-31): trips, destinations, ideas (hotels, activities and restaurants) and churches. */
+export type LikeKind = "trip" | "destination" | "candidate" | "church";
+/** An item's likes as the signed-in account sees them (TRA-31): how many accounts like it, and whether it is one of them. */
+export interface Like { count: number; liked: boolean; }
+/** The likes of the items a page shows, by kind and by the item's ID (TRA-31). An item no account likes has no entry. */
+export type Likes = Record<LikeKind, Record<string, Like>>;
+/**
+ * `tags` is one spelling of each tag on the trips the account can open, in alphabetical order, for a trip's page to reuse and the trip list to filter by. Destinations pages leave it empty.
+ * `likes` are the likes of the trips, destinations, ideas and churches the page shows as cards or details (TRA-31).
+ */
+export interface Snapshot { churches: Church[]; trips: Trip[]; homeItems: HomeItem[]; packingItems: PackingItem[]; stops: TripStop[]; destinations: Destination[]; legs: TravelLeg[]; candidates: Candidate[]; tags: string[]; likes: Likes; }
 /** A save's values for the editable fields of the record a table holds (TRA-174). */
 type Fields<T extends keyof typeof EDITABLE_FIELDS> = FieldValues<(typeof EDITABLE_FIELDS)[T]>;
 /**
@@ -215,7 +224,11 @@ export type Mutation =
  // Set or remove an idea's or church's coordinates, and nothing else, for a ChatGPT or Claude proposal (TRA-150). Only
  // those proposals make them; people change coordinates with each item's save.
  | { type: "candidate.coordinates"; id: string; coordinates: Coordinates | null }
- | { type: "church.coordinates"; id: string; coordinates: Coordinates | null };
+ | { type: "church.coordinates"; id: string; coordinates: Coordinates | null }
+ // Saves whether the signed-in account likes a trip, destination, idea or church (TRA-31), once at most, and changes
+ // nothing else: the item, its planning and other accounts' likes stay. Each person likes items themselves, so only
+ // people make these, never ChatGPT or Claude.
+ | { type: `${LikeKind}.like`; id: string; liked: boolean };
 export type ActionResult = { ok: true; id?: string } | { ok: false; error: string };
 /** An email authorized to use Travel. Its Google subject is bound privately at the first sign-in. */
 export interface AuthorizedAccount { id: string; email: string; name: string | null; }

@@ -165,9 +165,10 @@ test("every activity's card on a trip's page has a Must do star beside it, fille
     assert.deepEqual([star.props.type, star.props.disabled], ["button", false]);
     // A star alone, hidden from screen readers, which hear the control's name and whether it is pressed.
     assert.deepEqual(star.props.children.map((icon) => [icon.type, icon.props.fill, icon.props["aria-hidden"]]), [["icon:Star", star.props["aria-pressed"] ? "currentColor" : "none", "true"]]);
-    // Beside its card rather than in it, so it never selects the card.
+    // Beside its card rather than in it, so it never selects the card. The activity's Like follows, beside the card too (TRA-31).
     const card = page.card(name);
-    assert.deepEqual(page.all().find((node) => node.type === "li" && node.props.children.includes(star)).props.children, [card, star]);
+    const [shown, shownStar, like] = page.all().find((node) => node.type === "li" && node.props.children.includes(star)).props.children;
+    assert.deepEqual([shown, shownStar, like.props.className], [card, star, "likeSlot"]);
     assert.ok(!within(card).includes(star));
   }
 });

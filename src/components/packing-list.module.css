@@ -1,0 +1,53 @@
+/* TRA-18: a trip's packing list, below At home, in the At home section's boxes and spacing. */
+.section { margin-top: 44px; }
+.actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.description { margin: -6px 0 18px; color: var(--muted); font-size: 12px; line-height: 1.65; }
+.empty { padding: 30px 20px; }
+.emptyActions { display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: 14px; }
+.progress, .group { min-width: 0; padding: 20px; border: 1px solid var(--line); border-radius: 8px; background: var(--white); }
+.progress { margin-bottom: 13px; }
+.progressText { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; margin: 0 0 10px; color: var(--muted); font-size: 13px; }
+.progressText strong { color: var(--green); font-size: 17px; }
+.bar { display: block; width: 100%; height: 8px; border: 0; border-radius: 4px; background: var(--wash); appearance: none; overflow: hidden; }
+.bar::-webkit-progress-bar { background: var(--wash); border-radius: 4px; }
+.bar::-webkit-progress-value { background: var(--green); border-radius: 4px; }
+.bar::-moz-progress-bar { background: var(--green); border-radius: 4px; }
+.group + .group { margin-top: 13px; }
+.groupHeading { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 4px 12px; margin-bottom: 4px; }
+.groupHeading h3 { font-size: 17px; }
+.groupHeading span { color: var(--muted); font-size: 11px; }
+.items { margin: 0; padding: 0; list-style: none; }
+.row { display: flex; align-items: center; gap: 10px; border-top: 1px solid var(--line); }
+.row:first-child { border-top: 0; }
+/* The whole name and quantity check the item, at least 44px tall. */
+.check { display: flex; flex: 1; align-items: center; gap: 11px; min-width: 0; min-height: 44px; padding: 6px 0; font-size: 14px; cursor: pointer; }
+.check input { flex-shrink: 0; width: 20px; height: 20px; margin: 0; accent-color: var(--green); }
+/* A name and quantity wrap within the row, a long word or pasted link included (TRA-157). */
+.text { min-width: 0; overflow-wrap: anywhere; }
+.quantity { margin-left: 6px; color: var(--muted); font-size: 12px; white-space: nowrap; }
+.packed .name { color: var(--muted); text-decoration: line-through; }
+.tools { display: flex; flex-shrink: 0; align-items: center; gap: 3px; }
+.select { display: block; width: 100%; min-height: 42px; padding: 10px 12px; border: 1px solid #ccd6c7; border-radius: 5px; background: #fffffc; color: var(--ink); font-size: 13px; font-weight: 400; }
+/* A review of recommendations, in an editor's form. */
+.assumptions { padding: 12px 14px; border-radius: 6px; background: var(--wash); font-size: 12px; line-height: 1.6; }
+.assumptions h3 { margin: 0 0 4px; font-size: 13px; }
+.assumptions ul { margin: 0; padding-left: 18px; }
+.allSaved { margin: 0; font-size: 13px; }
+.reviewGroup { min-width: 0; margin: 0; padding: 0; border: 0; }
+.reviewGroup legend { margin-bottom: 2px; padding: 0; font-size: 13px; font-weight: 600; }
+.reviewItem { display: flex; align-items: flex-start; gap: 10px; min-height: 44px; padding: 10px 0; border-top: 1px solid var(--line); font-size: 13px; cursor: pointer; }
+.reviewItem input { flex-shrink: 0; width: 20px; height: 20px; margin: 0; accent-color: var(--green); }
+.reviewItem > span { min-width: 0; overflow-wrap: anywhere; }
+.reviewItem small { display: block; margin-top: 2px; color: var(--muted); font-size: 11px; }
+@media (pointer: coarse) {
+  /* Touchscreens: 44px edit and delete buttons, and larger checkboxes. */
+  .tools :global(.icon-button) { width: 44px; height: 44px; }
+  .check input, .reviewItem input { width: 24px; height: 24px; }
+}
+@media (max-width: 540px) {
+  /* TRA-156: the trip page's spacing on phones, 28px between its sections and 12px inside its boxes. */
+  .section { margin-top: 28px; }
+  .progress, .group { padding: 12px; }
+  /* 16px keeps phones from zooming into the field, as other fields do. */
+  .select { font-size: 16px; }
+}

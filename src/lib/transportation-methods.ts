@@ -14,8 +14,11 @@ const TERMS: ReadonlyArray<readonly [Exclude<TransportationIcon, "route">, reado
   ["bicycle", ["bike", "bikes", "bicycle", "bicycles", "cycling"]],
 ];
 
-/** Lowercase words: runs of letters, marks and digits. Spaces, hyphens and punctuation separate them. */
-function words(text: string): string[] {
+/**
+ * Lowercase words: runs of letters, marks and digits. Spaces, hyphens and punctuation separate them. Packing
+ * recommendations match activities' terms the same way (TRA-18).
+ */
+export function words(text: string): string[] {
   return text.toLowerCase().match(/[\p{L}\p{M}\p{N}]+/gu) ?? [];
 }
 

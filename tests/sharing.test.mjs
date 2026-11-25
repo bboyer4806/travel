@@ -97,8 +97,8 @@ test("a new trip belongs to whoever creates it, and only its owner can open it u
   assert.deepEqual(Object.keys(editorHome.budgets), [ownTrip]);
   assert.ok(editorHome.data.stops.every((stop) => stop.tripId === ownTrip), "The home page sends no other trip's cities");
   assert.equal(editorHome.access[ownTrip].role, "owner");
-  assert.deepEqual(store.getHomeOverview(outsider), { data: { trips: [], stops: [], destinations: [], legs: [], candidates: [], homeItems: [], churches: [], tags: [] }, budgets: {}, access: {} });
-  assert.deepEqual(store.getDestinationsOverview(outsider), { data: { trips: [], stops: [], destinations: [], legs: [], candidates: [], homeItems: [], churches: [], tags: [] }, access: {} });
+  assert.deepEqual(store.getHomeOverview(outsider), { data: { trips: [], stops: [], destinations: [], legs: [], candidates: [], homeItems: [], packingItems: [], churches: [], tags: [] }, budgets: {}, access: {} });
+  assert.deepEqual(store.getDestinationsOverview(outsider), { data: { trips: [], stops: [], destinations: [], legs: [], candidates: [], homeItems: [], packingItems: [], churches: [], tags: [] }, access: {} });
   // The owner's account ID stays on the server.
   assert.ok(store.getSnapshot().trips.every((item) => !("ownerId" in item)));
 });

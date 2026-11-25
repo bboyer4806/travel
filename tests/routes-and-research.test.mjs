@@ -56,6 +56,8 @@ function legacyDatabase(path, version) {
   db.prepare("INSERT INTO candidates VALUES (?,?,?,?,?,?,?,?,?)").run(randomUUID(), destinationId, "hotels", "Existing hotel", 90000, "Downtown", "https://example.com/hotel", "Breakfast", 1);
   const before = {
     homeItems: [],
+    // Trips from before packing lists upgrade with none (TRA-18).
+    packingItems: [],
     churches: [],
     // Trips from before tags upgrade with none, without a headline image (TRA-133), a tagline (TRA-134), a focus (TRA-168)
     // or entry and visa fees (TRA-159).

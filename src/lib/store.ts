@@ -13,6 +13,7 @@ import { GIVE_EMERGENCY_NUMBER, GIVE_MEDICAL_PROVIDERS, GIVE_US_ADVISORY_LEVEL, 
 import { climateFromJson, climateJson, NAME_EACH_MONTH, normalizeMonthlyClimate } from "./typical-weather.ts";
 import { normalizeCoordinates } from "./coordinates.ts";
 import { MAX_LAYOVER_MINUTES, normalizeLayoverPlan } from "./layover-plan.ts";
+import { MAX_PACKING_ADD } from "./packing.ts";
 import { MAX_PHOTO_ZOOM, UNCROPPED } from "./photo-focus.ts";
 import { SESSION_DAYS } from "./session-cookie.ts";
 import { alreadyTagged, cleanTagName, MAX_TAG_LENGTH, tagKey } from "./trip-tags.ts";
@@ -32,7 +33,7 @@ import type { LayoverActivity, LayoverPlan, SavedLayoverPlan } from "./layover-p
 import type { MonthlyClimate } from "./typical-weather.ts";
 import type { AiConnection, AiPhotoToAdd, AiProposal, DestinationFields, GalleryUpdate, LargePhoto, PhotoCrop, PhotoWidths, PreparedImage, StoredThumbnail, TripImage, TripImageUpdate } from "./types";
 import type { AccessEntry, AccessOverview, AuthorizedAccount, DestinationAccess, GoogleIdentity, LibraryDestination, TripAccess, TripMember, TripStop } from "./types";
-import type { Candidate, CandidateImage, Category, Church, MassTime, Destination, DestinationImage, HomeItem, StoredImage, ItineraryStop, Mutation, ResearchLink, RestaurantType, Snapshot, TravelLeg, Trip } from "./types";
+import type { Candidate, CandidateImage, Category, Church, MassTime, Destination, DestinationImage, HomeItem, PackingItem, StoredImage, ItineraryStop, Mutation, ResearchLink, RestaurantType, Snapshot, TravelLeg, Trip } from "./types";
 
 type StoredDestination = Omit<Destination, "churchEnabled" | "cityFromSuggestion" | "images" | "entryRequirements" | "healthSafety" | "climate" | "mainImageId" | "imageVersion"> & { churchEnabled: number; cityFromSuggestion: number; ownerId: string; cityKey: string };
 /** A hotel's, activity's, restaurant's or church's coordinate columns (TRA-150): latitude, longitude and accuracy all set, or all empty with review 0. */
@@ -60,6 +61,7 @@ const TRIP_OF = {
   trips: "SELECT id AS tripId FROM trips WHERE id = ?",
   trip_stops: "SELECT tripId FROM trip_stops WHERE id = ?",
   home_items: "SELECT tripId FROM home_items WHERE id = ?",
+  packing_items: "SELECT tripId FROM packing_items WHERE id = ?",
   legs: "SELECT tripId FROM legs WHERE id = ?",
 } as const;
 /** How each saved destination item finds its destination. */
@@ -459,6 +461,26 @@ function unnamedMonths(climate: unknown): boolean {
 function leavesOut(healthSafety: unknown, key: "usAdvisoryLevel" | "medicalProviders" | "emergencyNumber"): boolean {
   return !!healthSafety && typeof healthSafety === "object" && !Array.isArray(healthSafety) && !(key in healthSafety);
 }
+/**
+ * The items a review of packing recommendations adds (TRA-18): 1 to MAX_PACKING_ADD of them, each with its new ID, given
+ * once, and its editable fields, and nothing else.
+ */
+function packingItemsField(input: Input): Extract<Mutation, { type: "packingList.add" }>["items"] {
+  if (!Array.isArray(input.items) || input.items.length === 0) throw new ValidationError("Choose at least one item to add to the packing list.");
+  if (input.items.length > MAX_PACKING_ADD) throw new ValidationError(`Add up to ${MAX_PACKING_ADD} items to the packing list at once.`);
+  const ids = new Set<string>();
+  const fields = ["id", ...Object.keys(EDITABLE_FIELDS.packing_items)];
+  return input.items.map((value) => {
+    if (!value || typeof value !== "object" || Array.isArray(value)) throw new ValidationError("Give each item to add its id, name, category and quantity.");
+    const item = value as Input;
+    const other = Object.keys(item).find((name) => !fields.includes(name));
+    if (other !== undefined) throw new ValidationError(`A packing item to add has no field ${other}.`);
+    const id = idField(item);
+    if (ids.has(id.toLowerCase())) throw new ValidationError("Each packing item must have a unique identifier.");
+    ids.add(id.toLowerCase());
+    return { id, ...readFields(EDITABLE_FIELDS.packing_items, item) };
+  });
+}
 function validate(input: unknown): Mutation {
   if (!input || typeof input !== "object" || Array.isArray(input)) throw new ValidationError("The submitted information is invalid.");
   const value = input as Input;
@@ -488,6 +510,14 @@ function validate(input: unknown): Mutation {
       return { type: value.type, id: saveIdField(value), create: createField(value), tripId: idField(value, "tripId"), ...readFields(EDITABLE_FIELDS.home_items, value) };
     case "homeItem.delete":
       return { type: value.type, id: idField(value), tripId: idField(value, "tripId") };
+    case "packingItem.save":
+      return { type: value.type, id: saveIdField(value), create: createField(value), tripId: idField(value, "tripId"), ...readFields(EDITABLE_FIELDS.packing_items, value) };
+    case "packingItem.pack":
+      return { type: value.type, id: idField(value), tripId: idField(value, "tripId"), packed: booleanField(value, "packed") };
+    case "packingItem.delete":
+      return { type: value.type, id: idField(value), tripId: idField(value, "tripId") };
+    case "packingList.add":
+      return { type: value.type, tripId: idField(value, "tripId"), items: packingItemsField(value) };
     case "destination.save": {
       // A trip adds a city with `stop.add` (TRA-107). Only a page opened before that adds a destination with this save.
       if (value.create !== undefined || value.tripId !== undefined) throw new ValidationError(PLANNER_UPDATED);
@@ -672,8 +702,8 @@ function proposedChange(value: Input, photos: ReadonlyMap<string, PreparedImage>
   if (value.type === "destination.healthSafety" && leavesOut(value.healthSafety, "usAdvisoryLevel")) throw new ValidationError(GIVE_US_ADVISORY_LEVEL);
   if (value.type === "destination.healthSafety" && leavesOut(value.healthSafety, "medicalProviders")) throw new ValidationError(GIVE_MEDICAL_PROVIDERS);
   if (value.type === "destination.healthSafety" && leavesOut(value.healthSafety, "emergencyNumber")) throw new ValidationError(GIVE_EMERGENCY_NUMBER);
-  if (["trip.save", "homeItem.save", "destination.save", "church.save", "candidate.save"].includes(value.type as string) && value.id === undefined) {
-    throw new ValidationError("Give the id of the item to change, or a new UUID with create: true to add a trip, idea, church or At home item.");
+  if (["trip.save", "homeItem.save", "packingItem.save", "destination.save", "church.save", "candidate.save"].includes(value.type as string) && value.id === undefined) {
+    throw new ValidationError("Give the id of the item to change, or a new UUID with create: true to add a trip, idea, church, At home item or packing item.");
   }
   return validate(value);
 }
@@ -740,7 +770,7 @@ const LIVE: Make = { id: () => randomUUID(), now: () => new Date().toISOString()
  * The schema this build upgrades every database to, as SQLite's user_version. A schema change adds the next
  * upgrade in createStore and raises this to match; earlier upgrades keep their own numbers.
  */
-export const SCHEMA_VERSION = 47;
+export const SCHEMA_VERSION = 48;
 
 /** A destination as schema 20 saved it, inside one trip, with that trip's owner and name. */
 type TripDestinationRow = Omit<StoredDestination, "cityKey"> & Omit<TripStop, "destinationId"> & { tripName: string };
@@ -1508,6 +1538,21 @@ export function createStore(databasePath: string, ownerEmail: string) {
         PRAGMA user_version = 47;
       `);
     }
+    if (version < 48) {
+      // Each trip's packing list (TRA-18), one for everyone who can open the trip: its items, each in a category, with how
+      // many to pack for the whole party and whether it is packed. Every trip starts without any, so no trip changes.
+      // Deleting a trip deletes its list. A replay keeps saved items.
+      db.exec(`
+        CREATE TABLE IF NOT EXISTS packing_items (
+          id TEXT PRIMARY KEY, tripId TEXT NOT NULL REFERENCES trips(id) ON DELETE CASCADE,
+          category TEXT NOT NULL CHECK(category IN ('clothing', 'toiletries', 'electronics', 'documents', 'health-safety', 'activity-gear', 'other')),
+          name TEXT NOT NULL, quantity INTEGER NOT NULL CHECK(quantity BETWEEN 1 AND 9999),
+          packed INTEGER NOT NULL DEFAULT 0 CHECK(packed IN (0,1))
+        ) STRICT;
+        CREATE INDEX IF NOT EXISTS packing_items_trip ON packing_items(tripId);
+        PRAGMA user_version = 48;
+      `);
+    }
     if (version < SCHEMA_VERSION && db.prepare("PRAGMA foreign_key_check").get()) {
       throw new Error("This upgrade would leave saved items without the trip or destination they belong to. Nothing was changed; review the database against a backup before upgrading.");
     }
@@ -1613,6 +1658,12 @@ export function createStore(databasePath: string, ownerEmail: string) {
     const [where, args] = among("tripId", tripIds);
     return db.prepare(`SELECT id, tripId, name, notes, priceCents, createdAt FROM home_items${where} ORDER BY createdAt, id`).all(...args).map((row) => ({ ...row }) as unknown as HomeItem);
   }
+  /** Each of the given trips' packing items (TRA-18), or every trip's, in alphabetical order, as their list shows them in each category. */
+  function readPackingItems(tripIds: readonly string[] | null): PackingItem[] {
+    const [where, args] = among("tripId", tripIds);
+    return db.prepare(`SELECT id, tripId, category, name, quantity, packed FROM packing_items${where} ORDER BY tripId, name COLLATE NOCASE, id`).all(...args)
+      .map((row) => ({ ...row, packed: row.packed === 1 }) as unknown as PackingItem);
+  }
   function readDestinations(ids: readonly string[] | null): Destination[] {
     const [where, args] = among("destinations.id", ids);
     // Entry requirements, health and safety research and monthly climate averages each have at most one record per destination.
@@ -1651,7 +1702,7 @@ export function createStore(databasePath: string, ownerEmail: string) {
   }
   /** Everything saved, for checks and tests. What the app shows or changes always takes the signed-in account. */
   function getSnapshot(): Snapshot {
-    return { trips: readTrips(null), stops: readStops(null), destinations: readDestinations(null), legs: readLegs(null), candidates: readCandidates(null), churches: readChurches(null), homeItems: readHomeItems(null), tags: tagNames(null) };
+    return { trips: readTrips(null), stops: readStops(null), destinations: readDestinations(null), legs: readLegs(null), candidates: readCandidates(null), churches: readChurches(null), homeItems: readHomeItems(null), packingItems: readPackingItems(null), tags: tagNames(null) };
   }
   /**
    * The trips the account owns or was shared, with their tags and budgets, what the account may do with each, and every
@@ -1679,7 +1730,7 @@ export function createStore(databasePath: string, ownerEmail: string) {
       legs: db.prepare(`SELECT tripId,fromId,toId,priceCents,miscCents FROM legs WHERE tripId IN (${VISIBLE_TRIPS})`).all(...visible) as unknown as TravelLeg[],
       candidates: db.prepare(`SELECT destinationId,category,priceCents,included FROM candidates WHERE destinationId IN (${visited})`).all(...visible).map((row) => ({ ...row, included: row.included === 1 })) as unknown as Candidate[],
       homeItems: db.prepare(`SELECT tripId,priceCents FROM home_items WHERE tripId IN (${VISIBLE_TRIPS})`).all(...visible) as unknown as HomeItem[],
-      churches: [], tags: [],
+      packingItems: [], churches: [], tags: [],
     };
     const budgets = Object.fromEntries(trips.map((trip) => [trip.id, calculateBudget(input, trip.id)]));
     return {
@@ -1687,7 +1738,7 @@ export function createStore(databasePath: string, ownerEmail: string) {
         trips,
         stops: stops.map(({ id, tripId, destinationId, position }) => ({ id, tripId, destinationId, position })) as TripStop[],
         destinations: destinations.map(({ id, city, cityFromSuggestion }) => ({ id, city, cityFromSuggestion })) as Destination[],
-        legs: [], candidates: [], homeItems: [], churches: [],
+        legs: [], candidates: [], homeItems: [], packingItems: [], churches: [],
         tags: tagNames(tripIds),
       } as Snapshot,
       budgets,
@@ -1707,7 +1758,7 @@ export function createStore(databasePath: string, ownerEmail: string) {
     // The trip can reuse any tag on a trip the account can open, and no other.
     const visibleTripIds = db.prepare(VISIBLE_TRIPS).all(accountId, accountId).map((row) => row.id as string);
     return {
-      data: { trips: readTrips([tripId]), stops, destinations: readDestinations(destinationIds), legs: readLegs([tripId]), candidates: readCandidates(destinationIds), churches: readChurches(destinationIds), homeItems: readHomeItems([tripId]), tags: tagNames(visibleTripIds) },
+      data: { trips: readTrips([tripId]), stops, destinations: readDestinations(destinationIds), legs: readLegs([tripId]), candidates: readCandidates(destinationIds), churches: readChurches(destinationIds), homeItems: readHomeItems([tripId]), packingItems: readPackingItems([tripId]), tags: tagNames(visibleTripIds) },
       access,
       library: tripLibrary(accountId, tripId),
     };
@@ -1726,7 +1777,7 @@ export function createStore(databasePath: string, ownerEmail: string) {
     const destinationIds = db.prepare(VISIBLE_DESTINATIONS).all(accountId, accountId, accountId).map((row) => row.id as string);
     const stops = stopRows(` WHERE tripId IN (${VISIBLE_TRIPS})`, accountId, accountId);
     return {
-      data: { trips: readTrips([...new Set(stops.map((stop) => stop.tripId))]), stops, destinations: readDestinations(destinationIds), legs: [], candidates: readCandidates(destinationIds), churches: [], homeItems: [], tags: [] },
+      data: { trips: readTrips([...new Set(stops.map((stop) => stop.tripId))]), stops, destinations: readDestinations(destinationIds), legs: [], candidates: readCandidates(destinationIds), churches: [], homeItems: [], packingItems: [], tags: [] },
       access: Object.fromEntries(destinationIds.map((id) => [id, destinationAccess(accountId, id)!])),
     };
   }
@@ -1739,7 +1790,7 @@ export function createStore(databasePath: string, ownerEmail: string) {
     if (!access) return undefined;
     const stops = stopRows(` WHERE destinationId = ? AND tripId IN (${VISIBLE_TRIPS})`, destinationId, accountId, accountId);
     return {
-      data: { trips: readTrips([...new Set(stops.map((stop) => stop.tripId))]), stops, destinations: readDestinations([destinationId]), legs: [], candidates: readCandidates([destinationId]), churches: readChurches([destinationId]), homeItems: [], tags: [] },
+      data: { trips: readTrips([...new Set(stops.map((stop) => stop.tripId))]), stops, destinations: readDestinations([destinationId]), legs: [], candidates: readCandidates([destinationId]), churches: readChurches([destinationId]), homeItems: [], packingItems: [], tags: [] },
       access,
     };
   }
@@ -2006,7 +2057,7 @@ export function createStore(databasePath: string, ownerEmail: string) {
     db.prepare(`UPDATE ${table} SET latitude = ?, longitude = ?, coordinatesAccuracy = ?, coordinatesReview = ? WHERE id = ?`)
       .run(columns.latitude, columns.longitude, columns.coordinatesAccuracy, columns.coordinatesReview, id);
   }
-  function existing<T>(table: "trips" | "destinations" | "trip_stops" | "legs" | "candidates" | "home_items" | "churches", id: string): T {
+  function existing<T>(table: "trips" | "destinations" | "trip_stops" | "legs" | "candidates" | "home_items" | "packing_items" | "churches", id: string): T {
     const row = db.prepare(`SELECT * FROM ${table} WHERE id = ?`).get(id);
     if (!row) throw new ValidationError("This item no longer exists. Please refresh and try again.");
     return row as unknown as T;
@@ -2015,13 +2066,17 @@ export function createStore(databasePath: string, ownerEmail: string) {
    * Whether a save changes a saved item rather than adding a new one: always without `create`, and with it once the
    * new item is saved, so saving it again after a response is lost changes it instead of adding another.
    */
-  function changesSaved(table: "trips" | "home_items" | "churches" | "candidates", input: { id: string; create?: true }): boolean {
+  function changesSaved(table: "trips" | "home_items" | "packing_items" | "churches" | "candidates", input: { id: string; create?: true }): boolean {
     return !input.create || db.prepare(`SELECT 1 FROM ${table} WHERE id = ?`).get(input.id) !== undefined;
   }
   function homeItemForTrip(id: string, tripId: string): HomeItem {
     const item = existing<HomeItem>("home_items", id);
     if (item.tripId !== tripId) throw new ValidationError("This home item belongs to a different trip.");
     return item;
+  }
+  /** A saved packing item of the trip a change names (TRA-18), refusing one that is gone or another trip's. */
+  function packingItemForTrip(id: string, tripId: string): void {
+    if (existing<PackingItem>("packing_items", id).tripId !== tripId) throw new ValidationError("This packing item belongs to a different trip.");
   }
   function orderedStops(tripId: string): TripStop[] {
     return db.prepare("SELECT * FROM trip_stops WHERE tripId = ? ORDER BY position, id").all(tripId) as unknown as TripStop[];
@@ -2275,6 +2330,38 @@ export function createStore(databasePath: string, ownerEmail: string) {
         homeItemForTrip(input.id, input.tripId);
         db.prepare("DELETE FROM home_items WHERE id = ? AND tripId = ?").run(input.id, input.tripId);
         return;
+      // A packing item's save keeps whether it is packed, and a new one starts not packed (TRA-18).
+      case "packingItem.save": {
+        existing<Trip>("trips", input.tripId);
+        if (changesSaved("packing_items", input)) {
+          packingItemForTrip(input.id, input.tripId);
+          db.prepare("UPDATE packing_items SET name = ?, category = ?, quantity = ? WHERE id = ?").run(input.name, input.category, input.quantity, input.id);
+        } else {
+          db.prepare("INSERT INTO packing_items(id, tripId, category, name, quantity) VALUES(?, ?, ?, ?, ?)").run(input.id, input.tripId, input.category, input.name, input.quantity);
+        }
+        return input.id;
+      }
+      case "packingItem.pack":
+        packingItemForTrip(input.id, input.tripId);
+        db.prepare("UPDATE packing_items SET packed = ? WHERE id = ?").run(Number(input.packed), input.id);
+        return input.id;
+      case "packingItem.delete":
+        packingItemForTrip(input.id, input.tripId);
+        db.prepare("DELETE FROM packing_items WHERE id = ?").run(input.id);
+        return;
+      // Only new items are added: an item already saved under its ID, as when the same add is sent again after a lost
+      // response, stays as it is now, packed or not. Nothing else on the list changes.
+      case "packingList.add": {
+        existing<Trip>("trips", input.tripId);
+        const saved = db.prepare("SELECT tripId FROM packing_items WHERE id = ?");
+        const insert = db.prepare("INSERT INTO packing_items(id, tripId, category, name, quantity) VALUES(?, ?, ?, ?, ?)");
+        for (const item of input.items) {
+          const row = saved.get(item.id);
+          if (row && row.tripId !== input.tripId) throw new ValidationError("This packing item belongs to a different trip.");
+          if (!row) insert.run(item.id, input.tripId, item.category, item.name, item.quantity);
+        }
+        return input.tripId;
+      }
       case "destination.save":
         return saveDestination(input, make);
       case "destination.create":
@@ -2494,6 +2581,9 @@ export function createStore(databasePath: string, ownerEmail: string) {
       case "trip.order": return { trip: undefined };
       case "homeItem.save": return { trip: tripOf("home_items", input.id) ?? (input.create && tripOf("trips", input.tripId)) };
       case "homeItem.delete": return { trip: tripOf("home_items", input.id) };
+      case "packingItem.save": return { trip: tripOf("packing_items", input.id) ?? (input.create && tripOf("trips", input.tripId)) };
+      case "packingItem.pack": case "packingItem.delete": return { trip: tripOf("packing_items", input.id) };
+      case "packingList.add": return { trip: tripOf("trips", input.tripId) };
       case "stop.move": case "stop.remove": return { trip: tripOf("trip_stops", input.id) };
       case "leg.save": case "leg.clear": case "leg.layoverPlan": return { trip: tripOf("legs", input.id) };
       // Changing a trip's stay there along with it is a change to that trip.
@@ -2606,8 +2696,8 @@ export function createStore(databasePath: string, ownerEmail: string) {
     if (!tripOf("trips", tripId)) return undefined;
     const stops = readStops([tripId]);
     const destinationIds = [...new Set(stops.map((stop) => stop.destinationId))];
-    const data: Snapshot = { trips: readTrips([tripId]), stops, destinations: readDestinations(destinationIds), legs: readLegs([tripId]), candidates: readCandidates(destinationIds), churches: readChurches(destinationIds), homeItems: readHomeItems([tripId]), tags: [] };
-    return { trip: data.trips[0], ...tripMembers(tripId), stops, travel: data.legs, atHome: data.homeItems, destinations: data.destinations, ideas: data.candidates, churches: data.churches, budget: calculateBudget(data, tripId) };
+    const data: Snapshot = { trips: readTrips([tripId]), stops, destinations: readDestinations(destinationIds), legs: readLegs([tripId]), candidates: readCandidates(destinationIds), churches: readChurches(destinationIds), homeItems: readHomeItems([tripId]), packingItems: readPackingItems([tripId]), tags: [] };
+    return { trip: data.trips[0], ...tripMembers(tripId), stops, travel: data.legs, atHome: data.homeItems, packing: data.packingItems, destinations: data.destinations, ideas: data.candidates, churches: data.churches, budget: calculateBudget(data, tripId) };
   }
   /** Each trip's stays at the given destinations, or at every destination, with the trip's name. */
   function visitsOf(destinationIds: readonly string[] | null) {
@@ -2676,8 +2766,13 @@ export function createStore(databasePath: string, ownerEmail: string) {
    */
   function placeAiChange(change: Mutation): void {
     if ("create" in change && change.create) {
-      const table = ({ "trip.save": "trips", "homeItem.save": "home_items", "church.save": "churches", "candidate.save": "candidates" } as const)[change.type];
+      const table = ({ "trip.save": "trips", "homeItem.save": "home_items", "packingItem.save": "packing_items", "church.save": "churches", "candidate.save": "candidates" } as const)[change.type];
       if (db.prepare(`SELECT 1 FROM ${table} WHERE id = ?`).get(change.id)) throw new ValidationError("This id is already a saved item's. Leave out create to change it, or give the new item a new UUID.");
+    }
+    // The packing items an add proposes are all new: a proposal never adds an item that is already saved (TRA-18).
+    if (change.type === "packingList.add") {
+      const saved = db.prepare("SELECT 1 FROM packing_items WHERE id = ?");
+      if (change.items.some((item) => saved.get(item.id))) throw new ValidationError("A new packing item's id is already a saved item's. Give each new item a new UUID.");
     }
     if (change.type === "destination.photos" || change.type === "candidate.photos" || change.type === "church.photos") {
       const saved = db.prepare(`SELECT 1 FROM ${PHOTO_CHANGES[change.type]} WHERE lower(id) = lower(?)`);

@@ -18,7 +18,7 @@ import type { MonthlyClimate } from "./typical-weather";
  * Travel's own data, in the order a preview lists it. Sessions and the AI integration's tables are never read for a
  * proposal, and every other table must be listed here: tests check each column has a preview label.
  */
-export const DATA_TABLES = ["trips", "trip_images", "trip_shares", "trip_tags", "trip_order", "trip_stops", "legs", "layover_plans", "home_items", "destinations", "destination_entry_requirements", "destination_health_safety", "destination_climate", "destination_images", "candidates", "candidate_images", "churches", "church_images", "accounts"] as const;
+export const DATA_TABLES = ["trips", "trip_images", "trip_shares", "trip_tags", "trip_order", "trip_stops", "legs", "layover_plans", "home_items", "packing_items", "destinations", "destination_entry_requirements", "destination_health_safety", "destination_climate", "destination_images", "candidates", "candidate_images", "churches", "church_images", "accounts"] as const;
 export type DataTable = typeof DATA_TABLES[number];
 /** The photos of destinations, ideas and churches. The owner sees each photo a change adds, changes or deletes beside its record (TRA-122). */
 export const PHOTO_TABLES: readonly DataTable[] = ["destination_images", "candidate_images", "church_images"];
@@ -29,7 +29,7 @@ const LARGE_VERSION = ["large", "photoWidth", "largeWidth"];
  * their widths (TRA-154), and the Google account each authorization is bound to.
  */
 export const UNREAD_COLUMNS: Record<DataTable, string[]> = {
-  trips: [], trip_images: ["data", ...LARGE_VERSION], trip_shares: [], trip_tags: [], trip_order: [], trip_stops: [], legs: [], layover_plans: [], home_items: [], destinations: [], destination_entry_requirements: [], destination_health_safety: [], destination_climate: [],
+  trips: [], trip_images: ["data", ...LARGE_VERSION], trip_shares: [], trip_tags: [], trip_order: [], trip_stops: [], legs: [], layover_plans: [], home_items: [], packing_items: [], destinations: [], destination_entry_requirements: [], destination_health_safety: [], destination_climate: [],
   destination_images: ["data", "thumbnail", ...LARGE_VERSION], candidates: [], candidate_images: ["data", "thumbnail", ...LARGE_VERSION], churches: [], church_images: ["data", "thumbnail", ...LARGE_VERSION], accounts: ["googleSubject"],
 };
 
@@ -85,6 +85,8 @@ export const PREVIEW_COLUMNS: Record<DataTable, Record<string, [string, Format] 
   },
   // Whether an item is done is kept as saved, but no longer shown or changed (TRA-146).
   home_items: { id: null, tripId: null, completed: null, createdAt: null, ...fieldColumns(EDITABLE_FIELDS.home_items) },
+  // Whether a packing item is packed changes only with packingItem.pack (TRA-18).
+  packing_items: { id: null, tripId: null, packed: ["Packed", "flag"], ...fieldColumns(EDITABLE_FIELDS.packing_items) },
   destinations: {
     id: null, ownerId: ["Owner", "account"], cityKey: null, cityFromSuggestion: ["City chosen from a suggestion", "flag"],
     miscCurrency: null, hotelCurrency: null, activitiesCurrency: null, foodCurrency: null, shoppingCurrency: null, churchEnabled: ["Church shown", "flag"],
@@ -167,6 +169,7 @@ export function previewChange(change: Mutation, effects: Effect[], before: Table
       case "legs": return travel(row.id);
       case "layover_plans": return `${travel(row.legId)}: plan for the layover in ${layoverPlace(row.legId, row.layoverId)}`;
       case "home_items": return `${trip(row.tripId)}: At home item “${row.name}”`;
+      case "packing_items": return `${trip(row.tripId)}: packing item “${row.name}”`;
       case "destinations": return destination(row.id);
       case "destination_entry_requirements": return `${destination(row.destinationId)}: entry requirements`;
       case "destination_health_safety": return `${destination(row.destinationId)}: health and safety`;
@@ -261,6 +264,10 @@ export function operationTitle(change: Mutation): string {
     case "trip.order": return "Put trips in order";
     case "homeItem.save": return `${change.create ? "Add" : "Change"} the At home item “${change.name}”`;
     case "homeItem.delete": return "Delete an At home item";
+    case "packingItem.save": return `${change.create ? "Add" : "Change"} the packing item “${change.name}”`;
+    case "packingItem.pack": return change.packed ? "Mark a packing item packed" : "Mark a packing item not packed";
+    case "packingItem.delete": return "Delete a packing item";
+    case "packingList.add": return `Add ${change.items.length === 1 ? "1 item" : `${change.items.length} items`} to a packing list`;
     case "destination.save": return change.stopId === undefined ? "Change a destination" : "Change a destination and a trip's stay there";
     case "destination.create": return `Add the destination “${change.city}”`;
     case "destination.delete": return "Delete a destination";

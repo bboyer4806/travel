@@ -6,6 +6,8 @@ import { HelpButton } from "@/components/help";
 import { churchDateEligible, formatCalendarDate } from "@/lib/trip-dates";
 import LocationField from "@/components/location-field";
 import HomeItems from "@/components/home-items";
+import PackingList, { PackingItemFields, PackingReviewFields } from "@/components/packing-list";
+import { chosenItems, packingReview, recommendPacking, type PackingCategory, type PackingReview } from "@/lib/packing";
 import { ChurchSundays } from "@/components/church-sundays";
 import { EntryRequirementsPanel, EntryRequirementsEditor } from "@/components/entry-requirements";
 import { entryRequirementsFromForm } from "@/lib/entry-requirements";
@@ -53,7 +55,7 @@ import { calculateBudget, calculateDestinationBudget, tripVisits, unsetStayAmoun
 import { formatCurrency, MAX_AMOUNT_DOLLARS, minorAmountValue } from "@/lib/money";
 import { ShoppingBudgetEditor, FoodBudgetEditor, FoodSummary, ActivitiesBudgetEditor, ActivitiesSummary, AccommodationBudgetEditor, AccommodationSummary, CurrencyTotals, DestinationBudget, DestinationBudgetEditor, MiscellaneousBudgetEditor, StayNightsEditor, type KeepFocus } from "@/components/destination-budget";
 import { RESTAURANT_TYPES } from "@/lib/types";
-import type { FoodBudgetMode, ActivitiesBudgetMode, Budget, Candidate, Church, MassTime, Category, Destination, DestinationAccess, DestinationVisit, HomeItem, ItineraryStop, LibraryDestination, Mutation, ResearchLink, Snapshot, TravelLeg, Trip, TripAccess, TripStop } from "@/lib/types";
+import type { FoodBudgetMode, ActivitiesBudgetMode, Budget, Candidate, Church, MassTime, Category, Destination, DestinationAccess, DestinationVisit, HomeItem, ItineraryStop, LibraryDestination, Mutation, PackingItem, ResearchLink, Snapshot, TravelLeg, Trip, TripAccess, TripStop } from "@/lib/types";
 
 type Editor =
   | { kind: "trip"; item?: Trip }
@@ -91,6 +93,10 @@ type Editor =
   | { kind: "churchDetails"; item: Church }
   | { kind: "church"; destinationId: string; item?: Church }
   | { kind: "homeItem"; item?: HomeItem }
+  // A packing item's editor, which adds one to the trip's list without `item` (TRA-18).
+  | { kind: "packingItem"; item?: PackingItem }
+  // A review of packing recommendations, each new one with the ID it is added under (TRA-18).
+  | { kind: "packingReview"; review: PackingReview }
   | { kind: "share" }
   | { kind: "delete"; mutation: Mutation; title: string; description: string; redirect?: string };
 type CandidateEditor = Extract<Editor, { kind: "candidate" }>;
@@ -497,6 +503,16 @@ export default function PlannerApp({ initialData, initialBudgets, access = {}, d
         if (trip) void perform({ type: "homeItem.save", ...itemToSave(editor.item), tripId: trip.id, name: text("name"), price: text("price"), notes: text("notes") }, "At home item saved.");
         break;
       }
+      case "packingItem": {
+        if (trip) void perform({ type: "packingItem.save", ...itemToSave(editor.item), tripId: trip.id, name: text("name"), category: text("category") as PackingCategory, quantity: Number(text("quantity")) }, "Packing item saved.");
+        break;
+      }
+      // Only the recommendations still checked are added, under the IDs the review gave them.
+      case "packingReview": {
+        const items = chosenItems(editor.review, fields.getAll("recommended").map(String));
+        if (trip) void perform({ type: "packingList.add", tripId: trip.id, items }, count(items.length, "item", "items") + " added to the packing list.");
+        break;
+      }
       case "share": {
         if (trip) void perform({ type: "trip.share", tripId: trip.id, email: text("email") }, "Shared with " + text("email").trim().toLowerCase() + ". Travel doesn't send email, so let them know.");
         break;
@@ -539,6 +555,8 @@ export default function PlannerApp({ initialData, initialBudgets, access = {}, d
     : editor?.kind === "leg" ? "Plan this connection"
     : editor?.kind === "layover" ? "Layover in " + editor.layover.place
     : editor?.kind === "homeItem" ? (editor.item ? "Edit home item" : "Add an item at home")
+    : editor?.kind === "packingItem" ? (editor.item ? "Edit packing item" : "Add a packing item")
+    : editor?.kind === "packingReview" ? "Packing recommendations"
     : editor?.kind === "share" ? "Share this trip"
     : editor?.kind === "candidate" ? (editor.item ? "Edit " : editor.category === "activities" ? "Add " : "Add a ") + singular[editor.category]
     : editor?.kind === "ideaDetails" ? latest(editor.item).name
@@ -699,7 +717,7 @@ export default function PlannerApp({ initialData, initialBudgets, access = {}, d
                   <div className="trip-meta"><span><CalendarDays size={15} />{item.startDate ? formatCalendarDate(item.startDate) + " → " + formatCalendarDate(item.endDate) : item.dateLabel || "Whenever the time is right"}</span><span><Users size={15} />{item.travelers} {item.travelers === 1 ? "traveler" : "travelers"}</span>{itemAccess.role === "editor" && <span><Share2 size={15} />{"Shared by " + memberLabel(itemAccess.owner)}</span>}</div>
                   <TripTagList tags={item.tags} />
                   <div className="card-budget"><div><span className="small-label">ESTIMATED BUDGET</span><BudgetValue budget={estimate} /></div><span className="round-arrow"><ArrowRight size={19} /></span></div>
-                </Link><div className="card-tools"><span className="card-tools-start"><button type="button" className="icon-button trip-handle" aria-label={"Reorder " + item.name} aria-describedby={tripDragHelp} {...tripDrag.handle(item.id)}><GripVertical size={16} aria-hidden="true" /></button><button className="text-button" aria-label={"Edit " + item.name} onClick={() => open({ kind: "trip", item })}><Pencil size={14} />Edit</button></span>{itemAccess.role === "owner" && <button className="icon-button muted" aria-label={"Delete " + item.name} onClick={() => confirmDelete({ type: "trip.delete", id: item.id }, "Delete “" + item.name + "”?", "This removes the trip, its travel plans, and At home items. Its destinations, with their saved ideas and research, stay in Destinations." + sharedDeleteNote(itemAccess))}><Trash2 size={15} /></button>}</div>
+                </Link><div className="card-tools"><span className="card-tools-start"><button type="button" className="icon-button trip-handle" aria-label={"Reorder " + item.name} aria-describedby={tripDragHelp} {...tripDrag.handle(item.id)}><GripVertical size={16} aria-hidden="true" /></button><button className="text-button" aria-label={"Edit " + item.name} onClick={() => open({ kind: "trip", item })}><Pencil size={14} />Edit</button></span>{itemAccess.role === "owner" && <button className="icon-button muted" aria-label={"Delete " + item.name} onClick={() => confirmDelete({ type: "trip.delete", id: item.id }, "Delete “" + item.name + "”?", "This removes the trip, its travel plans, At home items, and packing list. Its destinations, with their saved ideas and research, stay in Destinations." + sharedDeleteNote(itemAccess))}><Trash2 size={15} /></button>}</div>
               </article>;
             })}</div>}
         </section>
@@ -711,7 +729,7 @@ export default function PlannerApp({ initialData, initialBudgets, access = {}, d
         <section className="trip-heading"><div><p className="eyebrow">{(trip.tagline || DEFAULT_TRIP_TAGLINE).toUpperCase()}</p><h1>{trip.name}</h1><div className="trip-meta"><span><CalendarDays size={17} />{trip.startDate ? formatCalendarDate(trip.startDate) + " → " + formatCalendarDate(trip.endDate) : trip.dateLabel || "Dates to be decided"}</span><span><Users size={17} />{trip.travelers} {trip.travelers === 1 ? "traveler" : "travelers"}</span><span><MapPin size={17} />{trip.homeCity ? "Departing: " + trip.homeCity : "Add departing city"}</span>{trip.returnCity && <span><MapPin size={17} />Returning: {trip.returnCity}</span>}{tripAccess?.role === "editor" && <span><Share2 size={17} />{"Shared by " + memberLabel(tripAccess.owner)}</span>}{tripAccess?.role === "owner" && tripAccess.sharedWith.length > 0 && <span><Share2 size={17} />{"Shared with " + tripAccess.sharedWith.length + (tripAccess.sharedWith.length === 1 ? " person" : " people")}</span>}</div>
           <TripTagsEditor tags={trip.tags} available={data.tags} busy={busy} onAdd={(name) => perform({ type: "trip.tag", tripId: trip.id, name }, "Tag added.")} onRemove={(name) => void perform({ type: "trip.untag", tripId: trip.id, name }, "Tag removed.")} />
           {trip.notes && <p className="trip-notes">{trip.notes}</p>}</div>
-          <div className="heading-actions"><button className="button secondary" onClick={() => open({ kind: "trip", item: trip })}><Pencil size={15} />Edit trip</button>{tripAccess?.role === "owner" && <><button className="button secondary" onClick={() => open({ kind: "share" })}><UserPlus size={15} />Share</button><button className="icon-button" aria-label="Delete trip" onClick={() => confirmDelete({ type: "trip.delete", id: trip.id }, "Delete this trip?", "“" + trip.name + "”, its travel plans, and At home items will be removed. Its destinations, with their saved ideas and research, stay in Destinations." + sharedDeleteNote(tripAccess), "/")}><Trash2 size={18} /></button></>}</div>
+          <div className="heading-actions"><button className="button secondary" onClick={() => open({ kind: "trip", item: trip })}><Pencil size={15} />Edit trip</button>{tripAccess?.role === "owner" && <><button className="button secondary" onClick={() => open({ kind: "share" })}><UserPlus size={15} />Share</button><button className="icon-button" aria-label="Delete trip" onClick={() => confirmDelete({ type: "trip.delete", id: trip.id }, "Delete this trip?", "“" + trip.name + "”, its travel plans, At home items, and packing list will be removed. Its destinations, with their saved ideas and research, stay in Destinations." + sharedDeleteNote(tripAccess), "/")}><Trash2 size={18} /></button></>}</div>
         </section>
         <div className="trip-layout"><div className="trip-main">
           <TripMap tripId={trip.id} journey={tripJourney(data, trip.id)} />
@@ -738,6 +756,13 @@ export default function PlannerApp({ initialData, initialBudgets, access = {}, d
             onAdd={() => open({ kind: "homeItem" })}
             onEdit={(item) => open({ kind: "homeItem", item })}
             onDelete={(item) => confirmDelete({ type: "homeItem.delete", id: item.id, tripId: trip.id }, "Delete “" + item.name + "”?", "This removes the item and any cost from the trip estimate.")} />
+          {/* The packing list (TRA-18): recommendations open a review of what isn't on the list yet, and a checkbox saves at once. */}
+          <PackingList items={data.packingItems.filter((item) => item.tripId === trip.id)} busy={busy}
+            onRecommend={() => open({ kind: "packingReview", review: packingReview(recommendPacking(data, trip.id), data.packingItems.filter((item) => item.tripId === trip.id), randomUuid) })}
+            onAdd={() => open({ kind: "packingItem" })}
+            onEdit={(item) => open({ kind: "packingItem", item })}
+            onDelete={(item) => confirmDelete({ type: "packingItem.delete", id: item.id, tripId: trip.id }, "Delete “" + item.name + "”?", "This removes it from the packing list for everyone on this trip.")}
+            onPack={(item, control) => { focusAfterSave(() => control); void perform({ type: "packingItem.pack", id: item.id, tripId: trip.id, packed: !item.packed }, "“" + item.name + "” marked " + (item.packed ? "not packed." : "packed.")); }} />
         </div>
         {budget && <aside className="budget-panel"><span className="budget-symbol"><Wallet size={23} strokeWidth={1.4} /></span><h2 ref={estimateHeading} tabIndex={-1}>The trip estimate</h2><div className="budget-total"><BudgetValue budget={budget} /></div><p className="budget-caption">Total for {trip.travelers === 1 ? "1 traveler" : "all " + trip.travelers + " travelers"}</p><dl className="budget-breakdown"><div><dt>Travel{missingCount("travel", budget.travelMissingCount)}</dt><dd>{tripLegs.some((leg) => leg.priceCents !== null) ? formatCurrency(budget.travelCents, "USD") : estimateUnset("travel", "Not estimated")}</dd></div><div><dt>Transit miscellaneous</dt><dd>{budget.transitMiscCents === null ? estimateUnset("transitMiscellaneous", "Not set") : formatCurrency(budget.transitMiscCents, "USD")}</dd></div><div><dt>Entry / visa fees</dt><dd>{budget.entryVisaFeesCents === null ? estimateUnset("entryVisaFees", "Not set") : formatCurrency(budget.entryVisaFeesCents, "USD")}</dd></div><div><dt>Hotels{missingCount("hotels", budget.hotelMissingCount)}</dt><dd><CurrencyTotals totals={budget.hotelsByCurrency} empty={estimateUnset("hotels", "Not estimated")} /></dd></div><div><dt>Activities{missingCount("activities", budget.activitiesMissingCount)}</dt><dd><CurrencyTotals totals={budget.activitiesByCurrency} empty={budget.activitiesMissingCount ? estimateUnset("activities", "Not estimated") : "$0"} /></dd></div><div><dt>Food{missingCount("food", budget.foodMissingCount)}</dt><dd><CurrencyTotals totals={budget.foodByCurrency} empty={budget.foodMissingCount ? estimateUnset("food", "Not estimated") : "$0"} /></dd></div><div><dt>Shopping</dt><dd><CurrencyTotals totals={budget.shoppingByCurrency} empty={estimateUnset("shopping", "Not set")} /></dd></div><div><dt>At home</dt><dd>{formatCurrency(budget.homeCents, "USD")}</dd></div><div><dt>Miscellaneous{missingCount("miscellaneous", budget.miscMissingCount)}</dt><dd><CurrencyTotals totals={budget.miscellaneousByCurrency} empty={estimateUnset("miscellaneous", "Not estimated")} /></dd></div></dl><div className="budget-note">{budget.complete ? <CheckCircle2 size={17} /> : <MoreHorizontal size={20} />}<p>{budget.complete ? "All required estimates are added." : budget.missingCount + " " + (budget.missingCount === 1 ? "detail still needs" : "details still need") + " an estimate or a choice."}</p></div></aside>}
         </div>
@@ -836,6 +861,8 @@ export default function PlannerApp({ initialData, initialBudgets, access = {}, d
         <Field label="Estimated price (USD, optional)" wide hint="Add the total cost for this trip, or leave blank if there is no cost to add. You can add a price later."><input name="price" type="number" className="no-spin-buttons" min="0" max={MAX_AMOUNT_DOLLARS} step="0.01" defaultValue={minorAmountValue(editor.item?.priceCents, "USD")} placeholder="No price added" disabled={busy} /></Field>
         <Field label="Notes" wide><textarea name="notes" defaultValue={editor.item?.notes} maxLength={8000} rows={3} placeholder="Contacts, arrangements, or anything to remember" disabled={busy} /></Field>
       </>}
+      {editor.kind === "packingItem" && <PackingItemFields item={editor.item} disabled={busy} />}
+      {editor.kind === "packingReview" && <PackingReviewFields review={editor.review} disabled={busy} />}
       {editor.kind === "share" && trip && tripAccess?.role === "owner" && <TripSharing access={tripAccess} busy={busy}
         onRemove={(member) => void perform({ type: "trip.unshare", tripId: trip.id, email: member.email }, member.email + " can no longer open this trip.")} />}
       {editor.kind === "candidate" && <>
@@ -850,7 +877,7 @@ export default function PlannerApp({ initialData, initialBudgets, access = {}, d
         {editor.category !== "hotels" && <label className="checkbox-field wide"><input name="mustDo" type="checkbox" defaultChecked={draftChecked(editor, "mustDo", editor.item?.mustDo ?? false)} disabled={busy} /><span>Must do<small>A planning priority. Budget inclusion and list order stay separate.</small></span></label>}
         <label className="checkbox-field wide"><input name="included" type="checkbox" defaultChecked={draftChecked(editor, "included", editor.item?.included ?? false)} /><span>{selectionLabels[editor.category]}<small>{editor.category === "hotels" ? "Replaces the general estimate or other chosen hotel. Your general estimate stays saved." : editor.category === "activities" ? "Applies only in Itemized activity costs mode. This does not change your budgeting method." : "Applies only in Itemized restaurant costs mode. This does not change your budgeting method."}</small></span></label>
       </>}
-    </div><div className="dialog-footer">{error && !deleting && <p className="form-error" role="alert">{error}</p>}<div className="dialog-actions"><button type="button" className="button secondary" onClick={cancel} disabled={busy}>Cancel</button>{editor.kind === "candidate" && editor.item && <button type="button" className="button danger editor-delete" onClick={() => setDeleting(true)} disabled={busy}>Delete</button>}<button className={editor.kind === "delete" ? "button danger" : "button primary"} type="submit" disabled={busy}>{busy ? "Saving…" : editor.kind === "delete" ? (editor.mutation.type === "leg.clear" ? "Clear travel plan" : editor.mutation.type === "leg.layoverPlan" ? "Remove plan" : editor.mutation.type === "destination.entryRequirements" ? "Clear entry requirements" : editor.mutation.type === "destination.healthSafety" ? "Clear health and safety" : editor.mutation.type === "stop.remove" ? "Remove from trip" : "Delete") : editor.kind === "trip" && !editor.item ? "Create trip" : editor.kind === "addStop" ? "Add destination" : editor.kind === "newDestination" ? "Create destination" : editor.kind === "share" ? "Share" : editor.kind === "layover" ? "Save plan" : "Save changes"}</button></div></div></form>}</Dialog>}
+    </div><div className="dialog-footer">{error && !deleting && <p className="form-error" role="alert">{error}</p>}<div className="dialog-actions"><button type="button" className="button secondary" onClick={cancel} disabled={busy}>Cancel</button>{editor.kind === "candidate" && editor.item && <button type="button" className="button danger editor-delete" onClick={() => setDeleting(true)} disabled={busy}>Delete</button>}{!(editor.kind === "packingReview" && editor.review.items.length === 0) && <button className={editor.kind === "delete" ? "button danger" : "button primary"} type="submit" disabled={busy}>{busy ? "Saving…" : editor.kind === "delete" ? (editor.mutation.type === "leg.clear" ? "Clear travel plan" : editor.mutation.type === "leg.layoverPlan" ? "Remove plan" : editor.mutation.type === "destination.entryRequirements" ? "Clear entry requirements" : editor.mutation.type === "destination.healthSafety" ? "Clear health and safety" : editor.mutation.type === "stop.remove" ? "Remove from trip" : "Delete") : editor.kind === "trip" && !editor.item ? "Create trip" : editor.kind === "addStop" ? "Add destination" : editor.kind === "newDestination" ? "Create destination" : editor.kind === "share" ? "Share" : editor.kind === "layover" ? "Save plan" : editor.kind === "packingReview" ? "Add chosen items" : "Save changes"}</button>}</div></div></form>}</Dialog>}
     {/* An idea's Delete confirmation, above its editor (TRA-128). It deletes the saved idea without saving the draft, which Cancel keeps. */}
     {deleting && <Dialog title={ideaDeletion(deleting).title} view="delete" confirm busy={busy} onClose={() => setDeleting(false)} onClosed={leaveDeleting}><div className="form-grid dialog-body"><p className="delete-description wide">{ideaDeletion(deleting).description} This cannot be undone.</p></div>
       <div className="dialog-footer">{error && <p className="form-error" role="alert">{error}</p>}<div className="dialog-actions"><button type="button" className="button secondary" onClick={() => setDeleting(false)} disabled={busy}>Cancel</button><button type="button" className="button danger" onClick={() => void perform({ type: "candidate.delete", id: deleting.id }, "Removed from your notebook.")} disabled={busy}>{busy ? "Saving…" : "Delete"}</button></div></div></Dialog>}

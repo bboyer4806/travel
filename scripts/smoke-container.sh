@@ -92,6 +92,9 @@ db.prepare('INSERT INTO trip_shares(tripId,accountId,sharedAt) VALUES(?,?,?)').r
 db.prepare("UPDATE trips SET startDate = '2027-05-10' WHERE id = 'container-smoke'").run();
 db.prepare('INSERT INTO home_items(id,tripId,name,priceCents,notes,completed,createdAt) VALUES(?,?,?,?,?,?,?)').run('a1000000-0000-4000-8000-000000000001','container-smoke','House sitting',23950,'Give sitter a key',1,'2026-10-12T12:00:00.000Z');
 db.prepare('INSERT INTO home_items(id,tripId,name,priceCents,notes,completed,createdAt) VALUES(?,?,?,?,?,?,?)').run('a1000000-0000-4000-8000-000000000002','container-smoke','Pause mail',null,'Arrange before leaving',0,'2026-10-12T12:01:00.000Z');
+// TRA-18: the trip's packing list, with one item packed.
+db.prepare('INSERT INTO packing_items(id,tripId,category,name,quantity,packed) VALUES(?,?,?,?,?,?)').run('a3000000-0000-4000-8000-000000000001','container-smoke','documents','Passport',2,1);
+db.prepare('INSERT INTO packing_items(id,tripId,category,name,quantity,packed) VALUES(?,?,?,?,?,?)').run('a3000000-0000-4000-8000-000000000002','container-smoke','clothing','Rain jacket or umbrella',2,0);
 // The owner's shared destination, and the trip's stop there, which shares its ID as each destination's first stop does.
 db.prepare('INSERT INTO destinations(id,ownerId,city,cityKey,notes,miscDailyMinor,miscCurrency,hotelNightlyMinor,hotelCurrency) VALUES(?,?,?,?,?,?,?,?,?)').run(destinationId, owner, 'Vienna', 'vienna', '', 3250, 'USD', 17525, 'USD');
 db.prepare('INSERT INTO trip_stops(id,tripId,destinationId,position,stay,nights,arrivalDate,departureDate) VALUES(?,?,?,?,?,?,?,?)').run(destinationId, 'container-smoke', destinationId, 0, 'Spring visit', 3, '2027-05-10', '2027-05-13');
@@ -201,6 +204,10 @@ try {
     {name:'House sitting',priceCents:23950,notes:'Give sitter a key',completed:1,createdAt:'2026-10-12T12:00:00.000Z'},
     {name:'Pause mail',priceCents:null,notes:'Arrange before leaving',completed:0,createdAt:'2026-10-12T12:01:00.000Z'},
   ]);
+  assert.deepEqual(db.prepare('SELECT category,name,quantity,packed FROM packing_items WHERE tripId = ? ORDER BY name').all('container-smoke').map(row => ({...row})), [
+    {category:'documents',name:'Passport',quantity:2,packed:1},
+    {category:'clothing',name:'Rain jacket or umbrella',quantity:2,packed:0},
+  ], 'The packing list must persist');
   assert.deepEqual({ ...db.prepare('SELECT accounts.email,city,cityKey,miscDailyMinor,miscCurrency,hotelNightlyMinor,hotelCurrency FROM destinations JOIN accounts ON accounts.id = destinations.ownerId WHERE destinations.id = ?').get(destinationId) }, { email: 'owner@example.test', city: 'Vienna', cityKey: 'vienna', miscDailyMinor: 3250, miscCurrency: 'USD', hotelNightlyMinor: 17525, hotelCurrency: 'USD' });
   assert.deepEqual({ ...db.prepare('SELECT activitiesBudgetMode,activitiesGeneralMinor,activitiesCurrency FROM destinations WHERE id = ?').get(destinationId) }, { activitiesBudgetMode: 'general', activitiesGeneralMinor: 22550, activitiesCurrency: 'USD' });
   assert.deepEqual({ ...db.prepare('SELECT foodBudgetMode,foodDailyMinor,foodCurrency FROM destinations WHERE id = ?').get(destinationId) }, { foodBudgetMode: 'daily', foodDailyMinor: 8025, foodCurrency: 'USD' });
@@ -510,6 +517,8 @@ try {
   const ownerPage = await (await get(tripPages[0], owner)).text();
   assert.ok(ownerPage.includes(">Share<") && ownerPage.includes('aria-label="Delete trip"'), "The owner can share and delete the trip");
   assert.ok(ownerPage.includes(">Health and safety<"), "Each destination on the trip page has Health and safety");
+  // TRA-18: the trip's packing list, with how much of it is packed.
+  assert.ok(ownerPage.includes(">Packing list<") && ownerPage.includes(">Rain jacket or umbrella<") && ownerPage.includes(">Recommend items<"), "The trip page shows its packing list");
   const ownerDestinationPage = await (await get(destinationPages[0], owner)).text();
   assert.ok(ownerDestinationPage.includes(">Health and safety<"), "A destination's page has Health and safety");
   // TRA-173: each shows the verified local emergency number first, with a link that calls it.
@@ -571,6 +580,14 @@ try {
   assert.deepEqual(await mutation(edit("Edited by the editor"), editor), { ok: true, id: saved.id });
   assert.equal(notes(), "Edited by the editor");
   assert.match(await (await get("/trips/" + saved.id, owner)).text(), /Edited by the editor/, "The owner sees the editor's change");
+  // The trip's packing list is the editor's to change too, through the same action, and nobody else's (TRA-18).
+  const packingItem = "d3000000-0000-4000-8000-000000000001";
+  assert.deepEqual(await mutation({ type: "packingItem.save", id: packingItem, create: true, tripId: saved.id, name: "Passport", category: "documents", quantity: 2 }), { ok: true, id: packingItem });
+  const pack = { type: "packingItem.pack", id: packingItem, tripId: saved.id, packed: true };
+  assert.deepEqual(await mutation(pack, outsider), notAvailable);
+  assert.equal(db.prepare("SELECT packed FROM packing_items WHERE id = ?").get(packingItem).packed, 0, "A refused change leaves the item unpacked");
+  assert.deepEqual(await mutation(pack, editor), { ok: true, id: packingItem });
+  assert.equal(db.prepare("SELECT packed FROM packing_items WHERE id = ?").get(packingItem).packed, 1, "The editor packs the owner's item");
   // Access shows the owner everyone the trip is shared with, and sends the editor only its owner and themselves.
   assert.match(await (await get("/access", owner)).text(), /first-timer@example\.test/, "The owner's Access lists everyone the trip is shared with");
   const sharedAccess = await (await get("/access", editor)).text();

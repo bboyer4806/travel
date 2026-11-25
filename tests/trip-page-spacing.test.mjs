@@ -61,6 +61,8 @@ const IDEAS = component("destination-ideas");
 const PANELS = ["entry-requirements", "health-safety", "typical-weather"].map(component);
 const SUNDAYS = component("church-sundays");
 const HOME = component("home-items");
+// The packing list (TRA-18) keeps At home's spacing.
+const PACKING = component("packing-list");
 const MAP = component("trip-map");
 /** Phones, up to 540 pixels wide, and tablets and desktops. */
 const PHONES = [320, 360, 375, 390, 414, 448, 540];
@@ -76,11 +78,14 @@ const SPACING = [
   [SUNDAYS, [".panel", ":global(.trip-page) .panel"], { padding: "12px", "margin-bottom": "12px" }],
   [GLOBALS, [".idea-card", ".destination-church .idea-card", ".trip-page .destination-church .idea-card"], { padding: "12px" }],
   [HOME, [".card"], { padding: "12px" }],
+  [PACKING, [".progress"], { padding: "12px" }],
+  [PACKING, [".group"], { padding: "12px" }],
   [GLOBALS, [".budget-panel", ".trip-page .budget-panel"], { padding: "12px", "margin-top": "0" }],
   // Sections are 28px apart: the map, the destinations, the travel between them, At home and the estimate.
   [MAP, [".section"], { "margin-bottom": "28px" }],
   [GLOBALS, [".travel-section", ".trip-page .travel-section"], { "margin-top": "28px" }],
   [HOME, [".section"], { "margin-top": "28px" }],
+  [PACKING, [".section"], { "margin-top": "28px" }],
   [GLOBALS, [".trip-layout", ".trip-page .trip-layout"], { gap: "28px" }],
   // Headings have 16px of room: below each section's, and above each heading in a destination's card.
   [GLOBALS, [".section-heading", ".trip-page .trip-main>section>.section-heading"], { "margin-bottom": "16px" }],

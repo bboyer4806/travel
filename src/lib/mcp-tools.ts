@@ -4,6 +4,7 @@ import { ENTRY_REQUIREMENT_FIELDS } from "./entry-requirements.ts";
 import { LAYOVER_BUFFERS, MAX_LAYOVER_ACTIVITIES, MAX_LAYOVER_MINUTES } from "./layover-plan.ts";
 import { EMERGENCY_CONTACT_MAX_LENGTH, EMERGENCY_NUMBER_MAX_LENGTH, HEALTH_SAFETY_FIELDS, MAX_EMERGENCY_CONTACTS, MAX_SOURCES, MEDICAL_PROVIDER_MAX_LENGTH, PROVIDER_CHECKS, SHORT_NOTICE_CARE, US_ADVISORY_LEVELS, usAdvisoryLabel } from "./health-safety.ts";
 import { AI_PHOTO_DOWNLOAD_SECONDS, formatMegabytes, IMAGE_FORMAT_NAMES, MAX_AI_PROPOSAL_PHOTOS, MAX_CANDIDATE_IMAGES, MAX_DESTINATION_IMAGES, MAX_GALLERY_UPLOAD_BYTES, MAX_IMAGE_UPLOAD_BYTES } from "./image-limits.ts";
+import { MAX_PACKING_ADD } from "./packing.ts";
 import { MAX_TAG_LENGTH } from "./trip-tags.ts";
 import { CLIMATE_LIMITS, MONTHS } from "./typical-weather.ts";
 import { RESTAURANT_TYPES } from "./types.ts";
@@ -102,6 +103,9 @@ function gallery(owner: string, maxImages: number, main: string, ordered: boolea
   };
 }
 
+/** A packing item's editable fields (TRA-18), which each item a packing list add gives with its new id. */
+const PACKING_ITEM = fieldProperties(EDITABLE_FIELDS.packing_items);
+
 /** One of each of the planner's changes, as `propose_changes` takes them. */
 const CHANGES = [
   save("trip.save", "Adds a trip, owned by Travel's owner, or changes a saved one. Each field is saved as given. A new departing or return city clears the travel from or to it. Its headline image changes only with trip.image.", {
@@ -118,7 +122,7 @@ const CHANGES = [
       description: "The new image, or null to remove the saved one.",
     },
   }, ["id", "image"]),
-  change("trip.delete", "Deletes a trip with its stays, travel, At home items, tags and sharing. The destinations it visits stay, with everything saved for them.", { id: id("The trip's id.") }, ["id"]),
+  change("trip.delete", "Deletes a trip with its stays, travel, At home items, packing list, tags and sharing. The destinations it visits stay, with everything saved for them.", { id: id("The trip's id.") }, ["id"]),
   change("trip.share", "Shares a trip with a Google account's email address, which can then sign in to Travel and change the trip. Nothing is sent to them.", { tripId: id("The trip's id."), email: text("Their Google account's email address.", 254) }, ["tripId", "email"]),
   change("trip.unshare", "Ends an account's access to a trip. The account can still sign in, and the trip is unchanged.", { tripId: id("The trip's id."), email: text("The email address it is shared with.", 254) }, ["tripId", "email"]),
   change("trip.tag", "Adds a tag to a trip, spelled as the same tag already is on another trip.", { tripId: id("The trip's id."), name: text("The tag.", MAX_TAG_LENGTH) }, ["tripId", "name"]),
@@ -127,6 +131,18 @@ const CHANGES = [
     id: id("The item's id, or a new UUID with create."), create, tripId: id("Its trip's id."),
   }, ["id", "tripId"], EDITABLE_FIELDS.home_items),
   change("homeItem.delete", "Deletes an At home item.", { id: id("The item's id."), tripId: id("Its trip's id.") }, ["id", "tripId"]),
+  save("packingItem.save", "Adds an item to a trip's packing list, one list shared by everyone who can open the trip, or changes a saved one's name, category and quantity. Each field is saved as given. Whether it is packed changes only with packingItem.pack: a new item starts not packed.", {
+    id: id("The item's id, or a new UUID with create."), create, tripId: id("Its trip's id."),
+  }, ["id", "tripId"], EDITABLE_FIELDS.packing_items),
+  change("packingItem.pack", "Marks a packing item packed, or not packed, and changes nothing else.", { id: id("The item's id."), tripId: id("Its trip's id."), packed: flag("Whether it is packed.") }, ["id", "tripId", "packed"]),
+  change("packingItem.delete", "Deletes an item from a trip's packing list.", { id: id("The item's id."), tripId: id("Its trip's id.") }, ["id", "tripId"]),
+  change("packingList.add", `Adds up to ${MAX_PACKING_ADD} new items to a trip's packing list at once, none packed. Items already on the list stay as they are, so leave out any it already has.`, {
+    tripId: id("The trip's id."),
+    items: {
+      type: "array", minItems: 1, maxItems: MAX_PACKING_ADD, description: "The items to add, each new.",
+      items: { type: "object", additionalProperties: false, properties: { id: id("A new UUID for the item."), ...PACKING_ITEM.properties }, required: ["id", ...PACKING_ITEM.required] },
+    },
+  }, ["tripId", "items"]),
   save("destination.save", "Changes the fields given of a destination, in every trip that visits it. With stopId, also changes that trip's stay there: its stay notes and nights. Anything left out stays as it is. A new city clears the travel to and from it in every trip. Its weather fields summarize one time of year; averages for every month go in destination.climate. Its photos, its primary one included, change only with destination.photos.", {
     id: id("The destination's id."), stopId: id("A trip's stay at this destination, for stay and nights."),
   }, ["id"], EDITABLE_FIELDS.destinations, EDITABLE_FIELDS.trip_stops),
@@ -310,7 +326,7 @@ export const TOOLS = [
   },
   {
     name: "get_trip", title: "Get a trip", annotations: readOnly, inputSchema: input({ trip_id: id("The trip's id.") }),
-    description: "One trip with everything on its page: its tagline, its headline image's version and crops in image, or null without one, which get_photo shows, stays, travel between them with a flight's airline and flightNumber and each layover's plan in layoverPlans, At home items, the destinations it visits with their hotels, activities, restaurants, churches and research, and its estimated budget. Amounts are whole USD cents for the whole party; null is not estimated. Each idea's and church's coordinates are null, or place it on its destination's map when its address isn't found or it has none, unless review is true: its address changed after they were saved, so the map doesn't use them.",
+    description: "One trip with everything on its page: its tagline, its headline image's version and crops in image, or null without one, which get_photo shows, stays, travel between them with a flight's airline and flightNumber and each layover's plan in layoverPlans, At home items, its packing list in packing, each item with its category, quantity for the whole party and whether it is packed, the destinations it visits with their hotels, activities, restaurants, churches and research, and its estimated budget. Amounts are whole USD cents for the whole party; null is not estimated. Each idea's and church's coordinates are null, or place it on its destination's map when its address isn't found or it has none, unless review is true: its address changed after they were saved, so the map doesn't use them.",
   },
   {
     name: "list_destinations", title: "List destinations", annotations: readOnly, inputSchema: noInput,
@@ -340,7 +356,7 @@ export const TOOLS = [
         changes: { type: "array", minItems: 1, maxItems: 50, items: { anyOf: CHANGES }, description: "The changes, at most 50, made in this order. A refusal names the change by its place in this list, from 1." },
       },
     },
-    description: `Proposes changes to Travel for its owner to approve. Nothing changes until they do. Changes may apply to any trip or destination, whoever owns it, including deleting trips and changing who they are shared with. Each change is checked by Travel's own rules as it is proposed, in order, and the reply lists every record each one adds, changes or deletes, before and after. Give the owner the reply's approve_at link: there they approve or reject every change at once, within 24 hours. Approving makes all of them exactly as shown, or none if Travel has changed since. Check what they decided with get_change_proposal. Records are named by the ids the read tools list. A change that adds a trip, idea, church or At home item gives it a new UUID as its id, with create: true, and later changes in the same proposal can name it by that id. A change takes only the fields its schema lists. Coordinates change only with candidate.coordinates and church.coordinates, photos only with destination.photos, candidate.photos and church.photos, and a trip's headline image only with trip.image. Travel downloads each new photo and headline image from its address as it is proposed and checks it as it does an upload: at most ${MAX_AI_PROPOSAL_PHOTOS} new images and ${formatMegabytes(MAX_GALLERY_UPLOAD_BYTES)} in one proposal, downloaded within ${AI_PHOTO_DOWNLOAD_SECONDS} seconds, from public https:// addresses only. If any can't be downloaded or used, nothing is proposed, and the reply names its change and address. The owner sees every photo added, removed or rearranged, and each headline image's current and proposed images, before approving.`,
+    description: `Proposes changes to Travel for its owner to approve. Nothing changes until they do. Changes may apply to any trip or destination, whoever owns it, including deleting trips and changing who they are shared with. Each change is checked by Travel's own rules as it is proposed, in order, and the reply lists every record each one adds, changes or deletes, before and after. Give the owner the reply's approve_at link: there they approve or reject every change at once, within 24 hours. Approving makes all of them exactly as shown, or none if Travel has changed since. Check what they decided with get_change_proposal. Records are named by the ids the read tools list. A change that adds a trip, idea, church, At home item or packing item gives it a new UUID as its id, with create: true, and later changes in the same proposal can name it by that id. A change takes only the fields its schema lists. Coordinates change only with candidate.coordinates and church.coordinates, photos only with destination.photos, candidate.photos and church.photos, and a trip's headline image only with trip.image. Travel downloads each new photo and headline image from its address as it is proposed and checks it as it does an upload: at most ${MAX_AI_PROPOSAL_PHOTOS} new images and ${formatMegabytes(MAX_GALLERY_UPLOAD_BYTES)} in one proposal, downloaded within ${AI_PHOTO_DOWNLOAD_SECONDS} seconds, from public https:// addresses only. If any can't be downloaded or used, nothing is proposed, and the reply names its change and address. The owner sees every photo added, removed or rearranged, and each headline image's current and proposed images, before approving.`,
   },
   {
     name: "get_change_proposal", title: "Get a change proposal", annotations: readOnly, inputSchema: input({ proposal_id: id("The proposal_id propose_changes replied with.") }),

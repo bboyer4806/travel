@@ -33,6 +33,13 @@ const RECORDS = {
     const id = store.applyMutation(guest, { type: "homeItem.save", ...newItem(), tripId, name: "House sitting", price: "", notes: "" }).id;
     return { type: "homeItem.save", save: (fields) => ({ type: "homeItem.save", id, tripId, name: "House sitting", price: "", notes: "", ...fields }), read: () => store.aiTrip(tripId).atHome.find((item) => item.id === id), item: (all) => all.homeItems.find((item) => item.id === id) };
   },
+  // An item on a trip's packing list (TRA-18).
+  packing_items: ({ store, guest }) => {
+    const { tripId } = guestTrip(store, guest);
+    const saved = { tripId, name: "Socks", category: "clothing", quantity: 2 };
+    const id = store.applyMutation(guest, { type: "packingItem.save", ...newItem(), ...saved }).id;
+    return { type: "packingItem.save", save: (fields) => ({ type: "packingItem.save", id, ...saved, ...fields }), read: () => store.aiTrip(tripId).packing.find((item) => item.id === id), item: (all) => all.packingItems.find((item) => item.id === id) };
+  },
   destinations: ({ store, guest }) => {
     const { destinationId } = guestTrip(store, guest, true);
     return { type: "destination.save", save: (fields) => ({ type: "destination.save", id: destinationId, ...fields }), read: () => store.aiDestination(destinationId).destination, item: (all) => all.destinations.find((item) => item.id === destinationId) };

@@ -2,14 +2,15 @@
 
 import "leaflet/dist/leaflet.css";
 import L from "leaflet";
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
+import { ArrowRight } from "lucide-react";
 import { thumbnailUrl } from "@/components/destination-gallery";
-import { transportationLabel } from "@/components/transportation-icons";
+import { TransportationIcons, transportationLabel } from "@/components/transportation-icons";
 import { MarkerSymbol, TransportationBadge } from "@/components/trip-map-symbols";
 import { objectPosition } from "@/lib/photo-focus";
 import { transportationIcons } from "@/lib/transportation-methods";
-import { placeRole, previewPosition, type MapLayout, type MapMarker, type Position } from "@/lib/trip-map";
+import { placeRole, popupPosition, previewPosition, type MapLayout, type MapMarker, type Position } from "@/lib/trip-map";
 import styles from "./trip-map.module.css";
 
 /** Scrolls to what a marker stands for on the trip page and focuses it, so the keyboard carries on from there. */
@@ -24,9 +25,10 @@ const zIndex: Record<MapMarker["kind"], number> = { roundTrip: 3000, departure: 
 // Each marker's size, so what it draws can be selected and outlined whole: trip endpoints and destinations are larger
 // than layovers and stops, and a connection's transportation is as wide as its icons.
 const size: Record<MapMarker["kind"], number> = { roundTrip: 30, departure: 30, return: 30, destination: 30, layover: 22, stop: 22 };
-const badgeSize = (method: string): [number, number] => [12 + 17 * transportationIcons(method).length, 22];
-// How long a destination's preview stays once the pointer leaves its marker and the preview, so the pointer can cross
-// between the two (TRA-143).
+const BADGE_HEIGHT = 22;
+const badgeSize = (method: string): [number, number] => [12 + 17 * transportationIcons(method).length, BADGE_HEIGHT];
+// How long a destination's preview, or a connection's popup opened by pointing to it, stays once the pointer leaves its
+// marker and the preview or popup, so the pointer can cross between the two (TRA-143, TRA-175).
 const PREVIEW_CLOSE_DELAY = 200;
 
 /** The destination marker whose preview the pointer is over, on the marker or the preview, and whether it has left both. */
@@ -34,14 +36,28 @@ interface Hover { key: string; leaving: boolean }
 const leave = (hover: Hover | null): Hover | null => hover && { key: hover.key, leaving: true };
 
 /**
+ * The connection whose popup shows (TRA-175): opened by pointing to its transportation, until a moment after the pointer
+ * has left both its transportation and the popup, or `selected`, by a click, tap, Enter or Space, until it is dismissed.
+ */
+interface Opened { id: string; selected: boolean; leaving: boolean }
+/** The popup once the pointer leaves connection `id`'s transportation or popup: one opened by pointing closes a moment later. */
+const leaveConnection = (opened: Opened | null, id: string): Opened | null => opened?.id === id && !opened.selected ? { ...opened, leaving: true } : opened;
+
+/**
  * A trip's journey on an OpenStreetMap map (TRA-44): Leaflet places each marker, and React draws what is in it. The map
  * frames every place when it opens and whenever the places change, and leaves zoom and panning alone otherwise.
- * Selecting a marker, by pointer, touch, Enter or Space, goes to what it stands for on the trip page. Markers are drawn
- * before the page paints, so what React renders into them never shows without them.
+ * Selecting a place's marker, by pointer, touch, Enter or Space, goes to what it stands for on the trip page. Markers are
+ * drawn before the page paints, so what React renders into them never shows without them.
  *
  * A destination's marker shows a preview of it (TRA-143), its name and primary photo, while a mouse or pen is over the
  * marker or the preview, and while the keyboard is on the marker. It closes a moment after the pointer leaves both, when
  * the keyboard moves on, or on Escape. Touch has no hover, so a tap goes to the destination as before, without one.
+ *
+ * A connection's transportation opens a popup of the connection (TRA-175): its route and saved details, and View
+ * details, which goes to its card on the trip page. Pointing to the transportation with a mouse or pen opens it until a
+ * moment after the pointer leaves both, and selecting it, by pointer, touch, Enter or Space, opens it and moves focus to
+ * View details, until a click or tap elsewhere on the map, Escape, which returns focus to the transportation, or another
+ * connection's popup closes it. One connection's popup shows at a time, apart from destinations' previews.
  */
 export default function TripMapCanvas({ layout }: { layout: MapLayout }) {
   const container = useRef<HTMLDivElement>(null);
@@ -58,12 +74,21 @@ export default function TripMapCanvas({ layout }: { layout: MapLayout }) {
   const [hovered, setHovered] = useState<Hover | null>(null);
   // The destination marker the keyboard is on.
   const [focused, setFocused] = useState<string | null>(null);
-  // Whether the map is moving, as when Leaflet brings a marker the keyboard reaches into view. The preview waits until it
-  // stops, then shows beside its marker where the marker ends up.
+  // Whether the map is moving, as when Leaflet brings a marker the keyboard reaches into view. The preview and the popup
+  // wait until it stops, then show beside their marker where the marker ends up.
   const [moving, setMoving] = useState(false);
   const preview = useRef<HTMLDivElement>(null);
   const shown = hovered?.key ?? focused;
   const previewed = moving ? undefined : layout.markers.find((marker) => marker.key === shown);
+  const [opened, setOpened] = useState<Opened | null>(null);
+  const popup = useRef<HTMLDivElement>(null);
+  // Each connection's transportation, by the connection's ID, which Escape returns focus to from its popup.
+  const badges = useRef(new Map<string, HTMLElement>());
+  // Whether the popup takes focus once it shows, as it does when selected, so the keyboard and screen readers reach it.
+  const focusPopup = useRef(false);
+  const popupId = useId();
+  const openedId = opened?.id ?? null;
+  const connection = moving ? undefined : layout.lines.find((line) => line.id === openedId);
 
   useLayoutEffect(() => {
     const instance = L.map(container.current!, { scrollWheelZoom: false });
@@ -73,6 +98,9 @@ export default function TripMapCanvas({ layout }: { layout: MapLayout }) {
     instance.on("blur", () => instance.scrollWheelZoom.disable());
     instance.on("movestart zoomstart", () => setMoving(true));
     instance.on("moveend", () => setMoving(false));
+    // A click or tap anywhere on the map closes a connection's popup, before one on a connection's transportation opens
+    // its own. Dragging the map, its zoom buttons and its credits leave it open.
+    instance.on("preclick", () => setOpened(null));
     layers.current = L.layerGroup().addTo(instance);
     map.current = instance;
     return () => {
@@ -93,26 +121,28 @@ export default function TripMapCanvas({ layout }: { layout: MapLayout }) {
       framed.current = frame;
     }
     group.clearLayers();
+    badges.current.clear();
     for (const line of layout.lines) L.polyline(line.points, { color: "#254f42", weight: 3, opacity: 0.7, interactive: false }).addTo(group);
-    const place = (key: string, position: Position, iconSize: [number, number], label: string, title: string, target: string | null, zIndexOffset: number) => {
+    const place = (key: string, position: Position, iconSize: [number, number], label: string, title: string, select: (() => void) | null, zIndexOffset: number) => {
       const icon = L.divIcon({ className: styles.anchor, html: elements.get(key)!, iconSize });
-      const marker = L.marker(position, { icon, title, zIndexOffset, keyboard: target !== null, interactive: target !== null }).addTo(group);
+      const marker = L.marker(position, { icon, title, zIndexOffset, keyboard: select !== null, interactive: select !== null }).addTo(group);
       const element = marker.getElement();
-      if (!element || target === null) return;
+      if (!element || select === null) return;
       element.setAttribute("aria-label", label);
-      marker.on("click", () => showOnPage(target));
+      marker.on("click", select);
       marker.on("keydown", (event) => {
         const { originalEvent } = event as L.LeafletKeyboardEvent;
         if (originalEvent.key !== "Enter" && originalEvent.key !== " ") return;
         originalEvent.preventDefault();
-        showOnPage(target);
+        select();
       });
       return element;
     };
     // The keyboard reaches places in travel order, then each connection's transportation.
     for (const marker of layout.markers) {
       const label = placeRole(marker.kind, marker.number) + ": " + marker.label;
-      const element = place(marker.key, marker.position, [size[marker.kind], size[marker.kind]], label, label + "\nShown at " + marker.found, marker.target, zIndex[marker.kind]);
+      const target = marker.target;
+      const element = place(marker.key, marker.position, [size[marker.kind], size[marker.kind]], label, label + "\nShown at " + marker.found, target === null ? null : () => showOnPage(target), zIndex[marker.kind]);
       // Only a destination's marker has a preview. The marker's label already names the destination for screen readers,
       // so the preview, which repeats it, is hidden from them.
       if (!element || marker.kind !== "destination") continue;
@@ -126,15 +156,38 @@ export default function TripMapCanvas({ layout }: { layout: MapLayout }) {
     }
     for (const line of layout.lines) {
       const label = transportationLabel(line.method) + " from " + line.from + " to " + line.to;
-      place("line-" + line.id, line.badge, badgeSize(line.method), label, label, line.target, 0);
+      // Selecting it opens its popup and moves focus there. Its popup shows more than a tooltip could, so it has none.
+      const element = place("line-" + line.id, line.badge, badgeSize(line.method), label, "", () => {
+        focusPopup.current = true;
+        setOpened({ id: line.id, selected: true, leaving: false });
+      }, 0);
+      if (!element) continue;
+      element.setAttribute("aria-haspopup", "dialog");
+      badges.current.set(line.id, element);
+      // Touch has no hover: a tap selects it.
+      element.addEventListener("pointerenter", (event) => {
+        if (event.pointerType !== "touch") setOpened((current) => current?.id !== line.id ? { id: line.id, selected: false, leaving: false } : current.leaving ? { ...current, leaving: false } : current);
+      });
+      element.addEventListener("pointerleave", (event) => { if (!popup.current?.contains(event.relatedTarget as Node | null)) setOpened((current) => leaveConnection(current, line.id)); });
     }
   }, [layout, elements]);
+
+  // Each connection's transportation tells screen readers whether its popup is open.
+  useLayoutEffect(() => {
+    for (const [id, element] of badges.current) element.setAttribute("aria-expanded", String(id === openedId));
+  }, [openedId, layout, elements]);
 
   useEffect(() => {
     if (!hovered?.leaving) return;
     const timer = setTimeout(() => setHovered(null), PREVIEW_CLOSE_DELAY);
     return () => clearTimeout(timer);
   }, [hovered]);
+
+  useEffect(() => {
+    if (!opened?.leaving) return;
+    const timer = setTimeout(() => setOpened(null), PREVIEW_CLOSE_DELAY);
+    return () => clearTimeout(timer);
+  }, [opened]);
 
   // Escape closes the preview without moving the pointer or the keyboard. It shows again once either comes back.
   useEffect(() => {
@@ -148,6 +201,18 @@ export default function TripMapCanvas({ layout }: { layout: MapLayout }) {
     return () => document.removeEventListener("keydown", dismiss);
   }, [shown]);
 
+  // Escape closes a connection's popup, and focus in the popup returns to the connection's transportation.
+  useEffect(() => {
+    if (openedId === null) return;
+    const dismiss = (event: KeyboardEvent) => {
+      if (event.key !== "Escape") return;
+      if (popup.current?.contains(document.activeElement)) badges.current.get(openedId)?.focus({ preventScroll: true });
+      setOpened(null);
+    };
+    document.addEventListener("keydown", dismiss);
+    return () => document.removeEventListener("keydown", dismiss);
+  }, [openedId]);
+
   // The preview goes beside its marker wherever the map has room for all of it, once its size is known and before it shows.
   useLayoutEffect(() => {
     const instance = map.current, element = preview.current;
@@ -158,6 +223,21 @@ export default function TripMapCanvas({ layout }: { layout: MapLayout }) {
     element.style.top = corner.y + "px";
   }, [previewed]);
 
+  // A connection's popup goes beside its transportation, never over it, once its size is known and before it shows, and
+  // once selected, focus moves to its View details without scrolling the page.
+  useLayoutEffect(() => {
+    const instance = map.current, element = popup.current;
+    if (!instance || !element || !connection) return;
+    const area = instance.getSize();
+    const [width, height] = badgeSize(connection.method);
+    const corner = popupPosition(instance.latLngToContainerPoint(connection.badge), { width: element.offsetWidth, height: element.offsetHeight }, { width: area.x, height: area.y }, { width, height });
+    element.style.left = corner.x + "px";
+    element.style.top = corner.y + "px";
+    if (!focusPopup.current) return;
+    focusPopup.current = false;
+    element.querySelector("button")?.focus({ preventScroll: true });
+  }, [connection, opened]);
+
   return <>
     <div ref={container} className={styles.map} />
     {layout.markers.map((marker) => createPortal(<MarkerSymbol kind={marker.kind} number={marker.number} />, elements.get(marker.key)!, marker.key))}
@@ -167,6 +247,21 @@ export default function TripMapCanvas({ layout }: { layout: MapLayout }) {
       {/* eslint-disable-next-line @next/next/no-img-element */}
       {previewed.photo && <img className={styles.previewPhoto} src={thumbnailUrl(previewed.photo.destinationId, previewed.photo)} alt="" decoding="async" style={{ objectPosition: objectPosition(previewed.photo) }} />}
       <strong className={styles.previewName}>{previewed.label}</strong>
+    </div>}
+    {/* A connection's popup, named by its route and described by its details. Once focus is in a popup opened by
+        pointing, it stays until dismissed, so focus never goes with it. */}
+    {connection && <div key={connection.id} ref={popup} className={styles.popup} role="dialog" aria-labelledby={popupId + "-title"} aria-describedby={connection.details.length > 0 ? popupId + "-details" : undefined}
+      onPointerEnter={() => setOpened((current) => current?.leaving ? { ...current, leaving: false } : current)}
+      onPointerLeave={() => setOpened((current) => leaveConnection(current, connection.id))}
+      onFocus={() => setOpened((current) => current && !current.selected ? { ...current, selected: true, leaving: false } : current)}>
+      <p id={popupId + "-title"} className={styles.popupTitle}>
+        <TransportationIcons method={connection.method} size={13} className={styles.popupIcons} />
+        <strong>{connection.from} <ArrowRight size={13} aria-hidden="true" /><span className="sr-only">to</span> {connection.to}</strong>
+      </p>
+      {connection.details.length > 0 && <dl id={popupId + "-details"} className={styles.popupDetails}>
+        {connection.details.map((detail) => <div key={detail.term}><dt>{detail.term}</dt><dd>{detail.value}</dd></div>)}
+      </dl>}
+      <button type="button" className="text-button" onClick={() => { showOnPage(connection.target); setOpened(null); }}>View details<span className="sr-only"> for travel from {connection.from} to {connection.to}</span></button>
     </div>}
   </>;
 }

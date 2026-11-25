@@ -1,8 +1,11 @@
 import { tripVisits } from "./budget.ts";
+import { isValidDate } from "./destination-duration.ts";
 import { formatSavedDestinationLabel } from "./destination-label.ts";
+import { formatMinutes } from "./layover-plan.ts";
 import type { PlaceLocation } from "./location-search.ts";
 import type { Size } from "./photo-focus.ts";
-import type { DestinationImage, Snapshot } from "./types.ts";
+import { isFlight } from "./transportation-methods.ts";
+import type { DestinationImage, Snapshot, TravelLeg } from "./types.ts";
 
 /** What a place on a trip's map is (TRA-44). Layovers and stops come from its connections' itineraries. */
 export type MapPlaceKind = "departure" | "return" | "destination" | "layover" | "stop";
@@ -21,8 +24,17 @@ export interface MapPhoto extends DestinationImage { destinationId: string }
  */
 export interface MapPlace { key: string; kind: MapPlaceKind; place: string; label: string; target: string | null; number: number | null; connection: string | null; photo: MapPhoto | null }
 
-/** A travel connection: its saved Transportation text and the keys of the places it passes, from where it leaves to where it arrives. */
-export interface MapLeg { id: string; method: string; from: string; to: string; places: string[] }
+/** One of a connection's saved details that its popup on the map lists (TRA-175): what it is, such as "Airline", and its value. */
+export interface ConnectionDetail { term: string; value: string }
+
+/**
+ * A travel connection as its transportation's popup on the map shows it (TRA-175): its saved Transportation text, the
+ * names of where it leaves and arrives, as its card shows them, and the saved details its popup lists.
+ */
+export interface MapConnection { id: string; method: string; from: string; to: string; details: ConnectionDetail[] }
+
+/** A travel connection, with the keys of the places it passes, from where it leaves to where it arrives. */
+export interface MapLeg extends MapConnection { places: string[] }
 
 /** A trip's places in travel order, departure first and return last, and its connections in route order. */
 export interface Journey { places: MapPlace[]; legs: MapLeg[] }
@@ -36,8 +48,8 @@ export interface Point { x: number; y: number }
 /** A place the map shows. A departure and return at the same position show as one marker, `roundTrip`. */
 export interface MapMarker { key: string; kind: MapPlaceKind | "roundTrip"; position: Position; label: string; number: number | null; target: string | null; found: string; photo: MapPhoto | null }
 
-/** A connection's straight lines between the places it passes that the map shows, and where its transportation shows. */
-export interface MapLine { id: string; points: Position[]; badge: Position; method: string; from: string; to: string; target: string }
+/** A connection's straight lines between the places it passes that the map shows, where its transportation shows, and its card's ID on the trip page. */
+export interface MapLine extends MapConnection { points: Position[]; badge: Position; target: string }
 
 /** A place the map doesn't show, and why: none is saved, no place has its name, or the lookup couldn't be made. */
 export interface UnmappedPlace { key: string; kind: MapPlaceKind | "roundTrip"; label: string; number: number | null; connection: string | null; reason: "notAdded" | "missing" | "unavailable" }
@@ -60,6 +72,49 @@ export function placeRole(kind: MapPlaceKind | "roundTrip", number: number | nul
 export function connectionTarget(legId: string): string { return "connection-" + legId; }
 /** The ID of an itinerary entry on the trip page. Entries are unique within their connection. */
 export function itineraryTarget(legId: string, stopId: string): string { return "itinerary-" + legId + "-" + stopId; }
+
+/**
+ * A date and time with its offset from UTC, as ISO 8601 writes them, such as 2026-12-01T18:00-05:00: a space may stand
+ * for the T, seconds are optional, and Z is UTC.
+ */
+const ZONED_TIME = /^(\d{4}-\d{2}-\d{2})[T ]((?:[01]\d|2[0-3]):[0-5]\d(?::[0-5]\d)?)(Z|[+-](?:[01]\d|2[0-3]):[0-5]\d)$/;
+
+/** The instant saved text names, in milliseconds since the epoch, when it is a date and time with its offset from UTC, or null. */
+function savedInstant(text: string): number | null {
+  const match = ZONED_TIME.exec(text);
+  return match && isValidDate(match[1]) ? Date.parse(match[1] + "T" + match[2] + match[3]) : null;
+}
+
+/**
+ * How long a connection takes, in whole minutes, from its saved Departure and Arrival (TRA-175): only when both are
+ * dates and times with their offsets from UTC and it arrives after it leaves, and null otherwise. Without its offset, a
+ * time such as "Dec 1, 6:00 PM" could be in any time zone, so Travel never assumes one, nor a date for a time without one.
+ */
+export function transitMinutes(departure: string, arrival: string): number | null {
+  const leaves = savedInstant(departure), arrives = savedInstant(arrival);
+  if (leaves === null || arrives === null) return null;
+  const minutes = Math.round((arrives - leaves) / 60_000);
+  return minutes > 0 ? minutes : null;
+}
+
+/**
+ * What a connection's popup lists (TRA-175), in this order, each only once saved: its Transportation text, a flight's
+ * airline and flight number, which show only while its transportation names an airplane, as on its card (TRA-147), its
+ * Departure and Arrival as saved, and its time in transit when they give one.
+ */
+export function connectionDetails(leg: Pick<TravelLeg, "method" | "airline" | "flightNumber" | "departure" | "arrival">): ConnectionDetail[] {
+  const flight = isFlight(leg.method);
+  const minutes = transitMinutes(leg.departure, leg.arrival);
+  const details: ConnectionDetail[] = [
+    { term: "Transportation", value: leg.method },
+    { term: "Airline", value: flight ? leg.airline : "" },
+    { term: "Flight number", value: flight ? leg.flightNumber : "" },
+    { term: "Departure", value: leg.departure },
+    { term: "Arrival", value: leg.arrival },
+    { term: "Time in transit", value: minutes === null ? "" : formatMinutes(minutes) },
+  ];
+  return details.filter((detail) => detail.value !== "");
+}
 
 /**
  * A trip's journey: its departure, each destination in route order with the itinerary of the connection that reaches it
@@ -91,7 +146,7 @@ export function tripJourney(snapshot: Snapshot, tripId: string): Journey {
       const photo = visit.images.find((image) => image.id === visit.mainImageId);
       places.push({ key: keyOf(to, "to"), kind: "destination", place: visit.city.trim(), label: formatSavedDestinationLabel(visit), target: "destination-" + to, number: index + 1, connection: null, photo: photo ? { destinationId: visit.id, ...photo } : null });
     }
-    if (leg) mapLegs.push({ id: leg.id, method: leg.method, from: endName(route[index], "from"), to: endName(to, "to"), places: [keyOf(route[index], "from"), ...stops.map((stop) => stop.key), keyOf(to, "to")] });
+    if (leg) mapLegs.push({ id: leg.id, method: leg.method, from: endName(route[index], "from"), to: endName(to, "to"), details: connectionDetails(leg), places: [keyOf(route[index], "from"), ...stops.map((stop) => stop.key), keyOf(to, "to")] });
   });
   places.push({ key: "return", kind: "return", place: returnCity.trim(), label: returnCity, target: last ? connectionTarget(last.id) : null, number: null, connection: null, photo: null });
   return { places, legs: mapLegs };
@@ -168,9 +223,9 @@ export function mapLayout(journey: Journey, locations: Readonly<Record<string, P
     markers[markers.indexOf(departure)] = { ...departure, kind: "roundTrip", label: departure.label === arrival.label ? departure.label : departure.label + " and " + arrival.label, target: departure.target ?? arrival.target };
   }
   // A connection's lines join the places it passes that the map shows, never places of another connection.
-  const lines: MapLine[] = journey.legs.flatMap((leg) => {
-    const points = leg.places.flatMap((key) => { const position = positions.get(key); return position ? [position] : []; });
-    return points.length < 2 ? [] : [{ id: leg.id, points, badge: badgePosition(points), method: leg.method, from: leg.from, to: leg.to, target: connectionTarget(leg.id) }];
+  const lines: MapLine[] = journey.legs.flatMap(({ places, ...connection }) => {
+    const points = places.flatMap((key) => { const position = positions.get(key); return position ? [position] : []; });
+    return points.length < 2 ? [] : [{ ...connection, points, badge: badgePosition(points), target: connectionTarget(connection.id) }];
   });
   const unmapped: UnmappedPlace[] = journey.places.flatMap((place) => {
     if (positions.has(place.key)) return [];
@@ -187,7 +242,7 @@ export function mapLayout(journey: Journey, locations: Readonly<Record<string, P
   return { markers, lines, unmapped };
 }
 
-/** How far a destination marker's preview keeps from its marker, and from the map's edges, in pixels (TRA-143). */
+/** How far a destination marker's preview keeps from its marker, and from the map's edges, in pixels (TRA-143), as a connection's popup does (TRA-175). */
 const PREVIEW_GAP = 6;
 const PREVIEW_MARGIN = 8;
 
@@ -197,9 +252,29 @@ const PREVIEW_MARGIN = 8;
  * it within the map. With room on neither side, it goes on the side with more, as close to the marker as the map allows.
  */
 export function previewPosition(point: Point, preview: Size, map: Size, radius: number): Point {
-  const within = (start: number, length: number, limit: number) => Math.round(Math.max(PREVIEW_MARGIN, Math.min(start, limit - PREVIEW_MARGIN - length)));
   const above = point.y - radius - PREVIEW_GAP - preview.height;
   const below = point.y + radius + PREVIEW_GAP;
   const y = above >= PREVIEW_MARGIN ? above : below + preview.height <= map.height - PREVIEW_MARGIN ? below : point.y > map.height / 2 ? above : below;
   return { x: within(point.x - preview.width / 2, preview.width, map.width), y: within(y, preview.height, map.height) };
+}
+
+/** Where something `length` long starts along a map `limit` long, moved as little as keeps it within the map's margins. */
+function within(start: number, length: number, limit: number): number {
+  return Math.round(Math.max(PREVIEW_MARGIN, Math.min(start, limit - PREVIEW_MARGIN - length)));
+}
+
+/**
+ * Where a connection's popup goes on a map of `map` size, as the point of its top left corner (TRA-175): above or below
+ * its transportation at `point`, of `badge` size, as a destination's preview goes beside its marker. Where the map has
+ * room for it neither above nor below, it goes beside the transportation instead, on the right or else the left, moved
+ * up or down as far as keeps it within the map, so it doesn't cover the transportation, where a click meant for the
+ * transportation could select View details. Only with room on no side does it go where a preview would.
+ */
+export function popupPosition(point: Point, popup: Size, map: Size, badge: Size): Point {
+  const near = previewPosition(point, popup, map, badge.height / 2);
+  if (near.y + popup.height <= point.y - badge.height / 2 || near.y >= point.y + badge.height / 2) return near;
+  const right = point.x + badge.width / 2 + PREVIEW_GAP;
+  const left = point.x - badge.width / 2 - PREVIEW_GAP - popup.width;
+  const x = right + popup.width <= map.width - PREVIEW_MARGIN ? right : left >= PREVIEW_MARGIN ? left : null;
+  return x === null ? near : { x: Math.round(x), y: within(point.y - popup.height / 2, popup.height, map.height) };
 }

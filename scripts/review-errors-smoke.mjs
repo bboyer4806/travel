@@ -1,4 +1,4 @@
-// Production HTTP regressions for TRA-73, TRA-75, TRA-89, TRA-94, TRA-115, TRA-122, TRA-133, TRA-139, TRA-154 and TRA-174. Run after pnpm build with Node 24.
+// Production HTTP regressions for TRA-73, TRA-75, TRA-89, TRA-94, TRA-115, TRA-122, TRA-133, TRA-139, TRA-154, TRA-174 and TRA-179. Run after pnpm build with Node 24.
 // All writes and failure injection use a new, isolated database under test-results.
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
@@ -219,6 +219,17 @@ for (const [label, firstPath] of [
         await imageRefused(await imageByUrl(url), 422, "Travel doesn't download photos from private, loopback or link-local addresses.");
       }
       await imageRefused(await imageByUrl("ftp://images.example.com/a.jpg"), 422, "Travel downloads photos only from http:// or https:// addresses.");
+      // TRA-179: a photo editor's preview of an image the browser can't show, here a HEIC photo, which the production build
+      // decodes with libheif's WebAssembly build, for a signed-in account's request from Travel's own page only.
+      const heic = readFileSync("tests/fixtures/images/rotated.heic");
+      const preview = (body, headers = {}) => server.request("/api/image-preview", { method: "POST", headers: { "Content-Type": "image/heic", Origin: appOrigin, ...headers }, body });
+      const previewed = await preview(heic);
+      assert.deepEqual([previewed.status, previewed.headers.get("content-type"), previewed.headers.get("cache-control")], [200, "image/webp", "no-store"]);
+      const { format: previewFormat, width: previewWidth, height: previewHeight } = await sharp(Buffer.from(await previewed.arrayBuffer())).metadata();
+      assert.deepEqual([previewFormat, previewWidth, previewHeight], ["webp", 48, 64], "a HEIC photo is previewed upright, as WebP");
+      await imageRefused(await preview(heic, { Cookie: "" }), 401, "Your session has ended. Sign in again to continue.");
+      await imageRefused(await preview(heic, { Origin: "https://elsewhere.example" }), 403, "Refresh the page and try again.");
+      await imageRefused(await preview(readFileSync("tests/fixtures/images/two-images.heic")), 422, "Choose a still image instead of an animated or multi-page image.");
       // Keep accounts/authentication available while causing page data reads to fail.
       // This changes only this test's disposable fixture, never application code/data.
       const db = new DatabaseSync(database);

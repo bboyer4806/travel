@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
+import { readFileSync } from "node:fs";
 import { Readable } from "node:stream";
 import test from "node:test";
 import sharp from "sharp";
@@ -44,6 +45,16 @@ test("an image added by URL downloads over HTTP or HTTPS and comes back as its s
   assert.equal(IMAGE_URL_DOWNLOAD_SECONDS, 15);
 });
 
+test("an image added by URL may be of any format uploads take, such as a HEIC photo or a bitmap nginx names as its own (TRA-179)", async () => {
+  const fixture = (name) => readFileSync(new URL(`./fixtures/images/${name}`, import.meta.url));
+  const heic = fixture("photo.heic"), bitmap = fixture("bmp-24.bmp");
+  const { fetch } = serve({ "https://images.example.com/IMG_0001.HEIC": ["image/heic", heic], "http://images.example.com/map.bmp": ["image/x-ms-bmp", bitmap] });
+  for (const [address, type, bytes] of [["https://images.example.com/IMG_0001.HEIC", "image/heic", heic], ["http://images.example.com/map.bmp", "image/x-ms-bmp", bitmap]]) {
+    const file = await downloadImageByUrl(address, fetch);
+    assert.deepEqual([file.type, Buffer.from(await file.arrayBuffer()).equals(bytes)], [type, true], "it comes back as its server sent it, for the editor to preview and save");
+  }
+});
+
 test("an image added by URL is refused, with why, when Travel can't download it or an upload of it would be refused", async () => {
   const png = await image("png", "#3b4f8a");
   // Addresses are checked before anything is requested.
@@ -60,11 +71,11 @@ test("an image added by URL is refused, with why, when Travel can't download it 
   // What the server answers, and what an upload of the image would be refused for.
   for (const [route, message] of [
     [undefined, /^The photo's server answered 404 Not Found\.$/],
-    [["text/html", Buffer.from("<html>")], /^This address isn't a JPEG, PNG or WebP image: its server says it is text\/html\.$/],
-    [["image/gif", Buffer.from("GIF89a")], /its server says it is image\/gif\.$/],
+    [["text/html", Buffer.from("<html>")], /^This address isn't a JPEG, PNG, WebP, AVIF, GIF, TIFF, BMP, or HEIC image: its server says it is text\/html\.$/],
+    [["image/svg+xml", Buffer.from("<svg/>")], /its server says it is image\/svg\+xml\.$/],
     [["image/png", Buffer.alloc(MAX_IMAGE_UPLOAD_BYTES + 1)], /^This photo is larger than 5 MB\.$/],
     [() => Object.assign(Readable.from([]), { statusCode: 307, headers: { location: "http://10.0.0.8/a.png" } }), /^Travel doesn't download photos from private/],
-    [["image/png", Buffer.from("not a png")], /^We couldn't read that image\. Choose a JPEG, PNG, or WebP image up to 20 megapixels\.$/],
+    [["image/png", Buffer.from("not a png")], /^We couldn't read that image\. It may be damaged, or not a JPEG, PNG, WebP, AVIF, GIF, TIFF, BMP, or HEIC image\.$/],
     [["image/png", Buffer.alloc(0)], /^That image is empty\. Choose another image\.$/],
   ]) {
     await assert.rejects(downloadImageByUrl("https://images.example.com/photo", serve({ "https://images.example.com/photo": route }).fetch), refusal(message), String(message));

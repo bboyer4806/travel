@@ -7,6 +7,8 @@ const nextConfig: NextConfig = {
   outputFileTracingIncludes: {
     "/*": ["node_modules/.pnpm/@img+sharp-*/node_modules/@img/sharp-*/lib/**/*"],
   },
+  // libheif's WebAssembly build decodes HEIC uploads (TRA-179). Node loads it as published, rather than from a bundle.
+  serverExternalPackages: ["libheif-js"],
   experimental: { serverActions: { bodySizeLimit: "16mb" } },
 };
 export default nextConfig;

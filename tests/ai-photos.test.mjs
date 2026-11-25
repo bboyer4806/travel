@@ -72,7 +72,7 @@ test("a proposal with a photo Travel can't download or use is refused, naming it
   // A photo is checked as an upload is, by prepareImage.
   const broken = photo(2, "https://images.example.com/broken.png");
   await assert.rejects(prepareAiPhotos([good, broken], serve({ ...files, [broken.url]: ["image/png", Buffer.from("not a png")] }).fetch),
-    refusal(/^Change 2: https:\/\/images\.example\.com\/broken\.png: We couldn't read that image\. Choose a JPEG, PNG, or WebP image up to 20 megapixels\.$/));
+    refusal(/^Change 2: https:\/\/images\.example\.com\/broken\.png: We couldn't read that image\. It may be damaged, or not a JPEG, PNG, WebP, AVIF, GIF, TIFF, BMP, or HEIC image\.$/));
   const empty = photo(1, "https://images.example.com/empty.jpg");
   await assert.rejects(prepareAiPhotos([empty], serve({ [empty.url]: ["image/jpeg", Buffer.alloc(0)] }).fetch), refusal(/^Change 1: https:\/\/images\.example\.com\/empty\.jpg: That image is empty\. Choose another image\.$/));
 });

@@ -352,7 +352,7 @@ test("an activity's details show its estimated time after its price, and an idea
 test("the Activities page shows each activity's estimated time on its card, after a clock, and nothing for one without (TRA-170)", (t) => {
   const { store, id } = vienna(t);
   const snapshot = store.getSnapshot();
-  const list = (category) => hosts({ type: CandidateList, props: { items: snapshot.candidates.filter((item) => item.category === category), category, destination: snapshot.destinations.find((item) => item.id === id), busy: false, onEdit() {}, onDelete() {}, onMutate() {} } });
+  const list = (category) => hosts({ type: CandidateList, props: { items: snapshot.candidates.filter((item) => item.category === category), category, destination: snapshot.destinations.find((item) => item.id === id), busy: false, onEdit() {}, onDelete() {}, onMutate() {}, like: () => null } });
   const cards = Object.fromEntries(list("activities").filter((node) => node.type === "article").map((card) => {
     const lines = hosts(card).filter((node) => node.type === "p").map((line) => [line.props.className, shownText(line)]);
     const time = hosts(card).find((node) => node.props.className === "idea-time");

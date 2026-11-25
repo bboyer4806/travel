@@ -5,7 +5,7 @@ import { RESTAURANT_TYPE_LABELS } from "./types.ts";
 import { climateAveragesText, climateFromJson, formatReferenceYears, MONTHS } from "./typical-weather.ts";
 import type { CoordinatesAccuracy } from "./coordinates";
 import type { EditableField } from "./editable-fields";
-import type { Category, Mutation, RestaurantType } from "./types";
+import type { Category, LikeKind, Mutation, RestaurantType } from "./types";
 import type { MonthlyClimate } from "./typical-weather";
 
 /**
@@ -18,7 +18,7 @@ import type { MonthlyClimate } from "./typical-weather";
  * Travel's own data, in the order a preview lists it. Sessions and the AI integration's tables are never read for a
  * proposal, and every other table must be listed here: tests check each column has a preview label.
  */
-export const DATA_TABLES = ["trips", "trip_images", "trip_shares", "trip_tags", "trip_order", "trip_stops", "legs", "layover_plans", "home_items", "packing_items", "destinations", "destination_entry_requirements", "destination_health_safety", "destination_climate", "destination_images", "candidates", "candidate_images", "churches", "church_images", "accounts"] as const;
+export const DATA_TABLES = ["trips", "trip_images", "trip_shares", "trip_tags", "trip_order", "trip_likes", "trip_stops", "legs", "layover_plans", "home_items", "packing_items", "destinations", "destination_entry_requirements", "destination_health_safety", "destination_climate", "destination_images", "destination_likes", "candidates", "candidate_images", "candidate_likes", "churches", "church_images", "church_likes", "accounts"] as const;
 export type DataTable = typeof DATA_TABLES[number];
 /** The photos of destinations, ideas and churches. The owner sees each photo a change adds, changes or deletes beside its record (TRA-122). */
 export const PHOTO_TABLES: readonly DataTable[] = ["destination_images", "candidate_images", "church_images"];
@@ -29,8 +29,8 @@ const LARGE_VERSION = ["large", "photoWidth", "largeWidth"];
  * their widths (TRA-154), and the Google account each authorization is bound to.
  */
 export const UNREAD_COLUMNS: Record<DataTable, string[]> = {
-  trips: [], trip_images: ["data", ...LARGE_VERSION], trip_shares: [], trip_tags: [], trip_order: [], trip_stops: [], legs: [], layover_plans: [], home_items: [], packing_items: [], destinations: [], destination_entry_requirements: [], destination_health_safety: [], destination_climate: [],
-  destination_images: ["data", "thumbnail", ...LARGE_VERSION], candidates: [], candidate_images: ["data", "thumbnail", ...LARGE_VERSION], churches: [], church_images: ["data", "thumbnail", ...LARGE_VERSION], accounts: ["googleSubject"],
+  trips: [], trip_images: ["data", ...LARGE_VERSION], trip_shares: [], trip_tags: [], trip_order: [], trip_likes: [], trip_stops: [], legs: [], layover_plans: [], home_items: [], packing_items: [], destinations: [], destination_entry_requirements: [], destination_health_safety: [], destination_climate: [],
+  destination_images: ["data", "thumbnail", ...LARGE_VERSION], destination_likes: [], candidates: [], candidate_images: ["data", "thumbnail", ...LARGE_VERSION], candidate_likes: [], churches: [], church_images: ["data", "thumbnail", ...LARGE_VERSION], church_likes: [], accounts: ["googleSubject"],
 };
 
 export type Value = string | number | null;
@@ -75,6 +75,9 @@ export const PREVIEW_COLUMNS: Record<DataTable, Record<string, [string, Format] 
   trip_shares: { tripId: null, accountId: null, sharedAt: null },
   trip_tags: { tripId: null, tagKey: null, name: null },
   trip_order: { accountId: null, tripId: null, position: ["Order", "order"] },
+  // Each like's record names its item and the account that likes it (TRA-31). Proposals never like anything, but a trip,
+  // destination, idea or church one deletes takes its likes with it.
+  trip_likes: { tripId: null, accountId: null },
   trip_stops: { id: null, tripId: null, destinationId: null, position: ["Order", "order"], arrivalDate: ["Arrival", "text"], departureDate: ["Departure", "text"], legacyArrivalDate: null, legacyDepartureDate: null, ...fieldColumns(EDITABLE_FIELDS.trip_stops) },
   legs: { id: null, tripId: null, fromId: null, toId: null, itineraryJson: ["Itinerary", "json"], linksJson: ["Research links", "json"], ...fieldColumns(EDITABLE_FIELDS.legs) },
   layover_plans: {
@@ -96,10 +99,13 @@ export const PREVIEW_COLUMNS: Record<DataTable, Record<string, [string, Format] 
   destination_health_safety: { destinationId: null, healthSafetyJson: ["Health and safety", "json"] },
   destination_climate: { destinationId: null, climateJson: ["Monthly averages", "climate"] },
   destination_images: { id: null, destinationId: null, version: null, position: ["Order", "order"], isMain: ["Primary photo", "flag"], focusX: null, focusY: null },
+  destination_likes: { destinationId: null, accountId: null },
   candidates: { id: null, destinationId: null, category: null, linksJson: ["Research links", "json"], position: ["Order", "order"], restaurantTypesJson: ["Restaurant types", "restaurantTypes"], ...COORDINATE_COLUMNS, ...fieldColumns(EDITABLE_FIELDS.candidates) },
   candidate_images: { id: null, candidateId: null, version: null, position: ["Order", "order"], isMain: ["Main photo", "flag"] },
+  candidate_likes: { candidateId: null, accountId: null },
   churches: { id: null, destinationId: null, massTimesJson: ["Mass times", "json"], ...COORDINATE_COLUMNS, ...fieldColumns(EDITABLE_FIELDS.churches) },
   church_images: { id: null, churchId: null, version: null, position: ["Order", "order"], isMain: ["Main photo", "flag"] },
+  church_likes: { churchId: null, accountId: null },
   accounts: { id: null, email: ["Email", "text"], name: ["Name", "text"], authorizedAt: null },
 };
 
@@ -165,6 +171,7 @@ export function previewChange(change: Mutation, effects: Effect[], before: Table
       case "trip_shares": return `${trip(row.tripId)}: shared with ${email(row.accountId)}`;
       case "trip_tags": return `${trip(row.tripId)}: tag “${row.name}”`;
       case "trip_order": return `${trip(row.tripId)}: place in ${email(row.accountId)}'s trip order`;
+      case "trip_likes": return `${trip(row.tripId)}: liked by ${email(row.accountId)}`;
       case "trip_stops": return `${trip(row.tripId)}: stay in ${byId("destinations", row.destinationId).city}`;
       case "legs": return travel(row.id);
       case "layover_plans": return `${travel(row.legId)}: plan for the layover in ${layoverPlace(row.legId, row.layoverId)}`;
@@ -175,10 +182,13 @@ export function previewChange(change: Mutation, effects: Effect[], before: Table
       case "destination_health_safety": return `${destination(row.destinationId)}: health and safety`;
       case "destination_climate": return `${destination(row.destinationId)}: monthly averages`;
       case "destination_images": return `${destination(row.destinationId)}: photo`;
+      case "destination_likes": return `${destination(row.destinationId)}: liked by ${email(row.accountId)}`;
       case "candidates": return idea(row.id);
       case "candidate_images": return `${idea(row.candidateId)}: photo`;
+      case "candidate_likes": return `${idea(row.candidateId)}: liked by ${email(row.accountId)}`;
       case "churches": return church(row.id);
       case "church_images": return `${church(row.churchId)}: photo`;
+      case "church_likes": return `${church(row.churchId)}: liked by ${email(row.accountId)}`;
       case "accounts": return `Account ${row.email}`;
     }
   };
@@ -294,5 +304,10 @@ export function operationTitle(change: Mutation): string {
     case "church.photos": return "Change a church's photos";
     case "candidate.coordinates": return change.coordinates ? `Set an idea's ${change.coordinates.accuracy} coordinates` : "Remove an idea's coordinates";
     case "church.coordinates": return change.coordinates ? `Set a church's ${change.coordinates.accuracy} coordinates` : "Remove a church's coordinates";
+    // Each person's own (TRA-31), so never proposed: aiChange refuses them.
+    case "trip.like": case "destination.like": case "candidate.like": case "church.like":
+      return (change.liked ? "Like " : "Remove a like from ") + LIKED[change.type];
   }
 }
+/** What each change that saves a like likes (TRA-31), as its title names it. */
+const LIKED: Record<`${LikeKind}.like`, string> = { "trip.like": "a trip", "destination.like": "a destination", "candidate.like": "an idea", "church.like": "a church" };

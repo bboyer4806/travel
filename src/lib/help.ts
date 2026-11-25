@@ -33,7 +33,7 @@ const IDEA_PAGES: Record<IdeaPage, PageHelp> = {
       "Choose hotel uses its price in the budget instead of the general nightly estimate. Select Included to go back to the estimate.",
       "The Accommodation budget's edit button sets the general nightly estimate, and in a trip, the stay's nights.",
       "Up and Down set the order of the list.",
-      "Hotels are shared by every trip that visits this destination.",
+      "A heart likes a hotel and shows how many people like it. Hotels and likes are shared by every trip that visits this destination.",
     ],
   },
   activities: {
@@ -44,7 +44,7 @@ const IDEA_PAGES: Record<IdeaPage, PageHelp> = {
       "Edit activities budget chooses a general amount for the whole stay or itemized activity costs.",
       "With itemized costs, Include in budget adds an activity's price. Switching methods keeps your amounts and selections.",
       "Mark as must do flags a priority without changing the budget. Up and Down set the order of the list.",
-      "Activities are shared by every trip that visits this destination.",
+      "A heart likes an activity and shows how many people like it. Activities and likes are shared by every trip that visits this destination.",
     ],
   },
   restaurants: {
@@ -55,7 +55,7 @@ const IDEA_PAGES: Record<IdeaPage, PageHelp> = {
       "Edit food budget chooses a daily food amount or itemized restaurant costs. In a trip, Edit destination nights sets the stay's nights.",
       "With itemized costs, Include in budget adds a restaurant's price. Switching methods keeps your amounts and selections.",
       "Mark as must do flags a priority without changing the budget. Up and Down set the order of the list.",
-      "Restaurants are shared by every trip that visits this destination.",
+      "A heart likes a restaurant and shows how many people like it. Restaurants and likes are shared by every trip that visits this destination.",
     ],
   },
   church: {
@@ -66,7 +66,7 @@ const IDEA_PAGES: Record<IdeaPage, PageHelp> = {
       "Mass times are only what you enter. Confirm them with the church before you go.",
       "In a trip, Church lists the Sundays of the stay, and a stay without a Sunday doesn't show it.",
       "Hide Church hides it in every trip without deleting anything, and Show Church brings it back.",
-      "Churches are shared by every trip that visits this destination.",
+      "A heart likes a church and shows how many people like it. Churches and likes are shared by every trip that visits this destination.",
     ],
   },
 };
@@ -84,7 +84,7 @@ const HELP: { [Route in SignedInRoute]: Route extends `${string}/[category]` ? R
       "Drag a trip by its handle, or press Space on it, then the arrow keys, then Space, in Custom order with every trip showing. New trips go last.",
       "Search by trip or city, select tags under Filter by tag to see only trips with every one, and choose Sort by to compare them without changing your order.",
       "Trips marked Shared by belong to someone else. You can change them, but only their owner can share or delete them.",
-      "Deleting a trip keeps its destinations, with their ideas and research, in Destinations.",
+      "A card's heart likes its trip and shows how many people like it. Deleting a trip keeps its destinations, ideas and research in Destinations.",
     ],
   },
   "/trips/[tripId]": {
@@ -93,7 +93,7 @@ const HELP: { [Route in SignedInRoute]: Route extends `${string}/[category]` ? R
       "Route map with arrows: point or tab to a destination for its photo; select transportation for details. Then stays, travel, home, packing list and USD cost.",
       "Edit trip changes its name, tagline, focus, dates, travelers, entry and visa fees, cities and headline image. Only its owner shares or deletes the trip.",
       "Add destination adds a city last, a + between cards there, one In your library with its research. Card arrows move it, the pencil edits, the trash removes it.",
-      "Each stay's nights set its dates; Typical weather opens on its month. An activity's star marks it Must do; its details step with Previous, Next or a swipe.",
+      "Nights set each stay's dates; Typical weather opens on its month. Hearts like the trip, places, ideas, churches; a star marks Must do; details step by swipe.",
       "Between the places: Edit adds transportation, a flight's airline and flight number, price and layovers. Plan layover times what you'll do during a layover.",
       "Packing list: Recommend items suggests what to pack, to review before adding; check items off as you pack. In a budget, Not set or Not estimated adds a cost.",
     ],
@@ -107,6 +107,7 @@ const HELP: { [Route in SignedInRoute]: Route extends `${string}/[category]` ? R
       "Search by city or trip, and select a card to open its destination.",
       "A destination's ideas, research and budget amounts are shared by every trip that visits it, and stay here when it leaves them.",
       "Destinations marked Shared by belong to the owner of a trip shared with you. You can change them, but not delete them.",
+      "A card's heart likes its destination and shows how many people like it, the same in every trip that visits it.",
     ],
   },
   "/destinations/[destinationId]": {
@@ -117,7 +118,7 @@ const HELP: { [Route in SignedInRoute]: Route extends `${string}/[category]` ? R
       "Map: places by address or coordinates; a dashed ring is approximate. Checkboxes filter them. Point or tab to a marker to preview it; select it for View details.",
       "Select an idea for details, where Previous, Next or a swipe shows other activities; an activity's star marks it Must do. Manage reorders, chooses, deletes.",
       "Select a heading, like Map, Budget or Church, to show or hide it. Entry requirements, Health and safety and Typical weather show Edit and Clear only when open.",
-      "In your trips lists each of your trips that visits it, with its nights and estimate. Its owner can delete it once no trip visits it.",
+      "Hearts like it, its ideas and churches. In your trips lists your trips that visit it, with nights and estimates. Its owner can delete it once no trip visits it.",
     ],
   },
   "/destinations/[destinationId]/[category]": IDEA_PAGES,

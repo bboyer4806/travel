@@ -100,6 +100,7 @@ function harness(ideas, width) {
   const props = {
     ideas, city: "Vienna", pages: "/destinations/vienna", busy: false,
     onView: (item) => calls.push(["view", item.id]), onAdd: (category) => calls.push(["add", category]), onBudgetEdit: (category) => calls.push(["budget", category]),
+    like: () => null,
   };
   /** The host elements an element renders to, rendering each component once, in order, so its hooks keep their places. */
   const hosts = (node) => {

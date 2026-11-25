@@ -121,6 +121,6 @@ test("an idea's and a church's main photo offer its large version at the width o
     assert.deepEqual(photos(CandidateGallery({ candidate: hotel, frame })), [offered(address("candidate"), address("candidate", "/large"), frame)]);
     assert.deepEqual(photos(CandidateGallery({ candidate: hotel, frame, imageKind: "church", browse: true })), [offered(address("church"), address("church", "/large"), frame)]);
   }
-  const cards = photos(DestinationIdeas({ ideas: [hotel], city: "Kyoto", pages: "/destinations/kyoto", busy: false, onView() {}, onAdd() {}, onBudgetEdit() {} }));
+  const cards = photos(DestinationIdeas({ ideas: [hotel], city: "Kyoto", pages: "/destinations/kyoto", busy: false, onView() {}, onAdd() {}, onBudgetEdit() {}, like: () => null }));
   assert.deepEqual(cards, [offered(address("candidate"), address("candidate", "/large"), CAROUSEL_CARD)]);
 });

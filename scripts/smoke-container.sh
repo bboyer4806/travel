@@ -95,6 +95,8 @@ db.prepare('INSERT INTO home_items(id,tripId,name,priceCents,notes,completed,cre
 // TRA-18: the trip's packing list, with one item packed.
 db.prepare('INSERT INTO packing_items(id,tripId,category,name,quantity,packed) VALUES(?,?,?,?,?,?)').run('a3000000-0000-4000-8000-000000000001','container-smoke','documents','Passport',2,1);
 db.prepare('INSERT INTO packing_items(id,tripId,category,name,quantity,packed) VALUES(?,?,?,?,?,?)').run('a3000000-0000-4000-8000-000000000002','container-smoke','clothing','Rain jacket or umbrella',2,0);
+// TRA-31: the editor likes the trip.
+db.prepare('INSERT INTO trip_likes(tripId,accountId) VALUES(?,?)').run('container-smoke','e1000000-0000-4000-8000-000000000001');
 // The owner's shared destination, and the trip's stop there, which shares its ID as each destination's first stop does.
 db.prepare('INSERT INTO destinations(id,ownerId,city,cityKey,notes,miscDailyMinor,miscCurrency,hotelNightlyMinor,hotelCurrency) VALUES(?,?,?,?,?,?,?,?,?)').run(destinationId, owner, 'Vienna', 'vienna', '', 3250, 'USD', 17525, 'USD');
 db.prepare('INSERT INTO trip_stops(id,tripId,destinationId,position,stay,nights,arrivalDate,departureDate) VALUES(?,?,?,?,?,?,?,?)').run(destinationId, 'container-smoke', destinationId, 0, 'Spring visit', 3, '2027-05-10', '2027-05-13');
@@ -208,6 +210,7 @@ try {
     {category:'documents',name:'Passport',quantity:2,packed:1},
     {category:'clothing',name:'Rain jacket or umbrella',quantity:2,packed:0},
   ], 'The packing list must persist');
+  assert.deepEqual(db.prepare('SELECT tripId,accountId FROM trip_likes').all().map(row => ({...row})), [{ tripId: 'container-smoke', accountId: 'e1000000-0000-4000-8000-000000000001' }], 'Likes must persist');
   assert.deepEqual({ ...db.prepare('SELECT accounts.email,city,cityKey,miscDailyMinor,miscCurrency,hotelNightlyMinor,hotelCurrency FROM destinations JOIN accounts ON accounts.id = destinations.ownerId WHERE destinations.id = ?').get(destinationId) }, { email: 'owner@example.test', city: 'Vienna', cityKey: 'vienna', miscDailyMinor: 3250, miscCurrency: 'USD', hotelNightlyMinor: 17525, hotelCurrency: 'USD' });
   assert.deepEqual({ ...db.prepare('SELECT activitiesBudgetMode,activitiesGeneralMinor,activitiesCurrency FROM destinations WHERE id = ?').get(destinationId) }, { activitiesBudgetMode: 'general', activitiesGeneralMinor: 22550, activitiesCurrency: 'USD' });
   assert.deepEqual({ ...db.prepare('SELECT foodBudgetMode,foodDailyMinor,foodCurrency FROM destinations WHERE id = ?').get(destinationId) }, { foodBudgetMode: 'daily', foodDailyMinor: 8025, foodCurrency: 'USD' });
@@ -588,6 +591,18 @@ try {
   assert.equal(db.prepare("SELECT packed FROM packing_items WHERE id = ?").get(packingItem).packed, 0, "A refused change leaves the item unpacked");
   assert.deepEqual(await mutation(pack, editor), { ok: true, id: packingItem });
   assert.equal(db.prepare("SELECT packed FROM packing_items WHERE id = ?").get(packingItem).packed, 1, "The editor packs the owner's item");
+  // Everyone who can open the trip likes it for themselves, once, through the same action, and nobody else can (TRA-31).
+  const likes = () => db.prepare("SELECT accounts.email FROM trip_likes JOIN accounts ON accounts.id = trip_likes.accountId WHERE tripId = ? ORDER BY accounts.email").all(saved.id).map((row) => row.email);
+  const likeTrip = { type: "trip.like", id: saved.id, liked: true };
+  assert.deepEqual(await mutation(likeTrip, outsider), notAvailable);
+  assert.deepEqual(likes(), [], "A refused like saves nothing");
+  assert.deepEqual(await mutation(likeTrip, editor), { ok: true, id: saved.id });
+  assert.deepEqual(await mutation(likeTrip, editor), { ok: true, id: saved.id });
+  assert.deepEqual(await mutation(likeTrip), { ok: true, id: saved.id });
+  assert.deepEqual(likes(), ["editor@example.test", "owner@example.test"], "Each account likes the trip once");
+  assert.deepEqual(await mutation({ ...likeTrip, liked: false }, editor), { ok: true, id: saved.id });
+  assert.deepEqual(likes(), ["owner@example.test"], "Removing the editor's like keeps the owner's");
+  assert.match(await (await get("/trips/" + saved.id, editor)).text(), /aria-pressed="false"><svg(?:(?!button)[\s\S])*?<\/svg><span class="sr-only">Like <!-- -->Container action smoke<!-- -->, <\/span>1<span class="sr-only"> like<\/span>/, "The editor sees the owner's like, not as their own");
   // Access shows the owner everyone the trip is shared with, and sends the editor only its owner and themselves.
   assert.match(await (await get("/access", owner)).text(), /first-timer@example\.test/, "The owner's Access lists everyone the trip is shared with");
   const sharedAccess = await (await get("/access", editor)).text();

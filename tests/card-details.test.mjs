@@ -159,6 +159,8 @@ const within = (node) => typeof node === "string" ? [] : [node, ...node.props.ch
 /** A rendered host element's text. */
 const text = (node) => typeof node === "string" ? node : node.props.children.map(text).join("");
 
+/** A destination's Like below its stay's notes (TRA-31), whose button these tests leave out. */
+const LIKE = ["div", "destination-like", ""];
 /** Each destination's name and what is below it on a trip's page as it loads now, in route order: each element's tag, class and text. */
 function destinationNames(store, tripId) {
   const { data, access, library } = store.getTripSnapshot(tripId);
@@ -170,10 +172,10 @@ test("a stay's notes show below its destination's name as saved, and without any
   const { store, tripId } = setup(t, tripInput({ name: "Spring in Austria" }));
   addDestination(store, tripId, { city: "Vienna", stay: "Three nights near the Ringstrasse" });
   addDestination(store, tripId, { city: "Salzburg", stay: "" });
-  // The text is as before, and only the placeholder has a class.
+  // The text is as before, and only the placeholder has a class. The destination's Like follows (TRA-31).
   assert.deepEqual(destinationNames(store, tripId), [
-    [["h3", undefined, "Vienna"], ["p", undefined, "Three nights near the Ringstrasse"]],
-    [["h3", undefined, "Salzburg"], ["p", "unknown", "Stay notes not added"]],
+    [["h3", undefined, "Vienna"], ["p", undefined, "Three nights near the Ringstrasse"], LIKE],
+    [["h3", undefined, "Salzburg"], ["p", "unknown", "Stay notes not added"], LIKE],
   ]);
 });
 
@@ -186,18 +188,18 @@ test("a destination's tagline shows whole, directly below its name on a trip's p
   addDestination(store, tripId, { city: "Salzburg", stay: "" });
   const graz = addDestination(store, tripId, { city: "Graz", stay: "", tagline: longest });
   assert.deepEqual(destinationNames(store, tripId), [
-    [["h3", undefined, "Vienna"], ["p", "tagline", "Where the Danube meets the Old Town"], ["p", undefined, "Three nights near the Ringstrasse"]],
-    [["h3", undefined, "Salzburg"], ["p", "unknown", "Stay notes not added"]],
-    [["h3", undefined, "Graz"], ["p", "tagline", longest], ["p", "unknown", "Stay notes not added"]],
+    [["h3", undefined, "Vienna"], ["p", "tagline", "Where the Danube meets the Old Town"], ["p", undefined, "Three nights near the Ringstrasse"], LIKE],
+    [["h3", undefined, "Salzburg"], ["p", "unknown", "Stay notes not added"], LIKE],
+    [["h3", undefined, "Graz"], ["p", "tagline", longest], ["p", "unknown", "Stay notes not added"], LIKE],
   ]);
   // The next load shows a changed tagline, and a cleared one leaves only the name and stay notes. Each moves with its destination.
   store.applyMutation(destinationEdit(vienna, { tagline: "Coffee, cake and the opera" }));
   store.applyMutation(destinationEdit(graz, { tagline: "" }));
   store.applyMutation({ type: "stop.move", id: vienna, direction: "down" });
   assert.deepEqual(destinationNames(store, tripId), [
-    [["h3", undefined, "Salzburg"], ["p", "unknown", "Stay notes not added"]],
-    [["h3", undefined, "Vienna"], ["p", "tagline", "Coffee, cake and the opera"], ["p", undefined, "Three nights near the Ringstrasse"]],
-    [["h3", undefined, "Graz"], ["p", "unknown", "Stay notes not added"]],
+    [["h3", undefined, "Salzburg"], ["p", "unknown", "Stay notes not added"], LIKE],
+    [["h3", undefined, "Vienna"], ["p", "tagline", "Coffee, cake and the opera"], ["p", undefined, "Three nights near the Ringstrasse"], LIKE],
+    [["h3", undefined, "Graz"], ["p", "unknown", "Stay notes not added"], LIKE],
   ]);
 });
 

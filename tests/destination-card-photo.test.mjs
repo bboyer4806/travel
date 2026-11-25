@@ -97,7 +97,8 @@ test("a destination's card shows only its primary photo, across its top and crop
   assert.deepEqual(image, { type: "img", src: photoUrl(store, lisbon, photos[1].id), alt: "", loading: "lazy", position: "20% 80%", text: "" }, "the city's name follows the photo, so the photo is decorative");
   assert.equal(withPhoto.shown.filter((node) => node.type === "img").length, 1, "no other photo shows");
   assert.equal(withPhoto.href, "/destinations/" + lisbon);
-  assert.deepEqual(withPhoto.outside, [], "the link is the whole card, so selecting the photo opens the destination");
+  // Only the card's Like (TRA-31), below the link, is outside it. The card's children are the rendered page's own list.
+  assert.deepEqual([...withPhoto.outside], [{ type: "div", className: "card-tools", text: "" }], "the link is the whole card above its Like, so selecting the photo opens the destination");
   assert.deepEqual(details, before[0].shown, "the card's name, trips and idea counts follow the photo as they were");
   assert.equal(withPhoto.text, before[0].text);
   // A destination without photos keeps its card exactly, with no frame or placeholder.

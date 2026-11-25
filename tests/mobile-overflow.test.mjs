@@ -33,6 +33,8 @@ test("what people and assistants write wraps within the screen, a long link or w
     // A layover plan's notes name the layover's place (TRA-45).
     ["../src/components/layover-plan.module.css", [".note"]],
     ["../src/app/ai/ai.module.css", [".change h2"]],
+    // A packing item's name, and a recommendation's name and reasons (TRA-18).
+    ["../src/components/packing-list.module.css", [".text", ".reviewItem > span"]],
   ]) {
     for (const selector of selectors) assert.deepEqual(values(file, selector, "overflow-wrap"), { "": "anywhere" }, selector);
   }

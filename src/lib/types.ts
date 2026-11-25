@@ -6,6 +6,7 @@ import type { EntryRequirements } from "./entry-requirements";
 import type { HealthSafety } from "./health-safety";
 import type { LayoverPlan, SavedLayoverPlan } from "./layover-plan";
 import type { MonthlyClimate } from "./typical-weather";
+import type { PackingCategory } from "./packing";
 /** How a destination budgets food and activities: from its ideas included in the budget, or from one amount. */
 export const FOOD_BUDGET_MODES = ["itemized", "daily"] as const;
 export type FoodBudgetMode = typeof FOOD_BUDGET_MODES[number];
@@ -27,6 +28,11 @@ export interface TypicalWeather { weatherHighF: number | null; weatherLowF: numb
  */
 export interface Trip { startDate: string | null; endDate: string | null; id: string; name: string; tagline: string; focus: string; dateLabel: string; homeCity: string; returnCity: string | null; travelers: number; entryVisaFeesCents: number | null; notes: string; createdAt: string; tags: string[]; image: TripImage | null; }
 export interface HomeItem { id: string; tripId: string; name: string; notes: string; priceCents: number | null; createdAt: string; }
+/**
+ * An item on a trip's packing list (TRA-18), one list for everyone who can open the trip: what it is, its category, how
+ * many to pack for the whole party, from 1, and whether it is packed.
+ */
+export interface PackingItem { id: string; tripId: string; category: PackingCategory; name: string; quantity: number; packed: boolean; }
 /**
  * A city's research, ideas, selections and budget amounts, shared by every trip that visits it. Each owner has one per city.
  * `cityFromSuggestion` records that `city` is the label of a city suggestion chosen for it, the only city shown shorter (TRA-76).
@@ -113,7 +119,7 @@ export interface MassTime { id: string; day: string; time: string; }
 /** A church. `coordinates` place it on its destination's map when its address isn't found or it has none (TRA-163), or are null (TRA-150). */
 export interface Church { id: string; destinationId: string; name: string; address: string; denomination: string; url: string; massTimes: MassTime[]; images: CandidateImage[]; mainImageId: string | null; coordinates: SavedCoordinates | null; }
 /** `tags` is one spelling of each tag on the trips the account can open, in alphabetical order, for a trip's page to reuse and the trip list to filter by. Destinations pages leave it empty. */
-export interface Snapshot { churches: Church[]; trips: Trip[]; homeItems: HomeItem[]; stops: TripStop[]; destinations: Destination[]; legs: TravelLeg[]; candidates: Candidate[]; tags: string[]; }
+export interface Snapshot { churches: Church[]; trips: Trip[]; homeItems: HomeItem[]; packingItems: PackingItem[]; stops: TripStop[]; destinations: Destination[]; legs: TravelLeg[]; candidates: Candidate[]; tags: string[]; }
 /** A save's values for the editable fields of the record a table holds (TRA-174). */
 type Fields<T extends keyof typeof EDITABLE_FIELDS> = FieldValues<(typeof EDITABLE_FIELDS)[T]>;
 /**
@@ -149,6 +155,15 @@ export type Mutation =
  | { type: "trip.order"; tripIds: string[] }
  | ({ type: "homeItem.save"; id: string; create?: true; tripId: string } & Fields<"home_items">)
  | { type: "homeItem.delete"; id: string; tripId: string }
+ // Adds an item to a trip's packing list, not packed, or changes a saved one's name, category and quantity, keeping
+ // whether it is packed (TRA-18).
+ | ({ type: "packingItem.save"; id: string; create?: true; tripId: string } & Fields<"packing_items">)
+ // Marks a packing item packed, or not, and changes nothing else.
+ | { type: "packingItem.pack"; id: string; tripId: string; packed: boolean }
+ | { type: "packingItem.delete"; id: string; tripId: string }
+ // Adds the items chosen from a review of recommendations to a trip's packing list, none packed, each with the ID the
+ // review gave it. Saved items stay as they are, and the same add sent again after a lost response adds nothing more.
+ | { type: "packingList.add"; tripId: string; items: ({ id: string } & Fields<"packing_items">)[] }
  // Changes a saved destination everywhere it is used, and with `stopId` that trip's stay notes and nights too.
  | ({ type: "destination.save"; id: string; stopId?: string } & DestinationFields & StopFields)
  // Saves a destination outside any trip. A city the account already has a destination for opens that one instead.

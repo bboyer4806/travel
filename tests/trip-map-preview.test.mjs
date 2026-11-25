@@ -18,7 +18,7 @@ const layout = {
     marker("destination-vienna", "destination", [250, 300], "Vienna, Austria", { number: 1, found: "Vienna, Vienna, Austria", photo }),
     marker("destination-salzburg", "destination", [30, 590], "Salzburg", { number: 2 }),
   ],
-  lines: [{ id: "out", points: [[40, 60], [250, 300]], badge: [110, 140], method: "Flight", from: "Wooster, OH", to: "Vienna, Austria", target: "connection-out", details: [{ term: "Transportation", value: "Flight" }] }],
+  lines: [{ id: "out", points: [[40, 60], [250, 300]], badge: [110, 140], arrows: [], method: "Flight", from: "Wooster, OH", to: "Vienna, Austria", target: "connection-out", details: [{ term: "Transportation", value: "Flight" }] }],
   unmapped: [],
 };
 const VIENNA = "Destination 1: Vienna, Austria", SALZBURG = "Destination 2: Salzburg";

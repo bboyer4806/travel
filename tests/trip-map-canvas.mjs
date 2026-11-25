@@ -5,9 +5,9 @@ import ts from "typescript";
 import * as photoFocus from "../src/lib/photo-focus.ts";
 import * as tripMap from "../src/lib/trip-map.ts";
 
-// The trip map itself (TRA-143, TRA-175), from the real map component, with a small hook harness, a stand-in for Leaflet
-// that records each marker and the listeners on it, a stand-in page that records focus, and a clock the test moves. No
-// browser or server is involved.
+// The trip map itself (TRA-143, TRA-175, TRA-176), from the real map component, with a small hook harness, a stand-in for
+// Leaflet that records each marker and the listeners on it, a stand-in page that records focus, and a clock the test moves.
+// No browser or server is involved.
 function load(path, require, globals = {}) {
   const exports = {};
   runInNewContext(ts.transpileModule(readFileSync(new URL(path, import.meta.url), "utf8"), {
@@ -256,5 +256,17 @@ export function mapCanvas(layout, size = { x: 600, y: 378 }) {
     }),
     /** The routes of the popups shown. */
     opened() { return this.popups().map((popup) => popup.route); },
+    /**
+     * The arrows on the connections' lines (TRA-176), as Leaflet places them: where each is, how it is turned, its size, how
+     * it stacks among the markers, and what can select it, reach it or hear it.
+     */
+    arrows: () => markers.flatMap((item) => {
+      const arrow = nodes(tree).find((node) => node.type === "portal" && node.props.container === item.options.icon.html)?.props.children;
+      return arrow?.props?.className === "arrow" ? [{
+        position: item.position, transform: arrow.props.style.transform, size: item.options.icon.iconSize, zIndexOffset: item.options.zIndexOffset,
+        keyboard: item.options.keyboard, interactive: item.options.interactive, title: item.options.title, label: item.element.attributes["aria-label"],
+        listeners: Object.keys(item.element.listeners), hidden: arrow.props["aria-hidden"],
+      }] : [];
+    }),
   };
 }

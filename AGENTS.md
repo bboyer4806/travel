@@ -124,7 +124,9 @@ Repeat passing checks when subsequent changes affect their coverage or required 
   limits. The trip map stores no coordinates and never guesses one: a place it can't find is listed below it. Each
   connection's transportation opens a popup (TRA-175) of the saved details `connectionDetails` lists, never others;
   `transitMinutes` gives a time in transit only from a Departure and Arrival saved with their UTC offsets, since Travel
-  never assumes a time zone.
+  never assumes a time zone. `mapLayout` gives each line an arrow for the way its connection goes (TRA-176), turned as
+  the map's Mercator projection draws the line; the canvas draws arrows below places and transportation, and nothing
+  selects them.
 - The destination map (TRA-130) is `src/components/destination-map.tsx`, with Leaflet in `destination-map-canvas.tsx`,
   loaded only in the browser, on each trip destination card and destination page. `destinationPlaces` and
   `destinationMapLayout` in `src/lib/destination-map.ts` decide what it shows, and `/api/destination-map/[destinationId]`

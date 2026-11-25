@@ -27,6 +27,12 @@ const zIndex: Record<MapMarker["kind"], number> = { roundTrip: 3000, departure: 
 const size: Record<MapMarker["kind"], number> = { roundTrip: 30, departure: 30, return: 30, destination: 30, layover: 22, stop: 22 };
 const BADGE_HEIGHT = 22;
 const badgeSize = (method: string): [number, number] => [12 + 17 * transportationIcons(method).length, BADGE_HEIGHT];
+// A connection's arrows (TRA-176) are the same size at every zoom, and below every place and transportation, which Leaflet
+// stacks by these offsets, so an arrow never covers one.
+const ARROW_SIZE = 16;
+const ARROW_Z_INDEX = -1000;
+/** What Leaflet places for connection `id`'s arrow `index`, its arrows in the order of its lines. */
+const arrowKey = (id: string, index: number) => "arrow-" + id + "-" + index;
 // How long a destination's preview, or a connection's popup opened by pointing to it, stays once the pointer leaves its
 // marker and the preview or popup, so the pointer can cross between the two (TRA-143, TRA-175).
 const PREVIEW_CLOSE_DELAY = 200;
@@ -47,7 +53,8 @@ const leaveConnection = (opened: Opened | null, id: string): Opened | null => op
  * A trip's journey on an OpenStreetMap map (TRA-44): Leaflet places each marker, and React draws what is in it. The map
  * frames every place when it opens and whenever the places change, and leaves zoom and panning alone otherwise.
  * Selecting a place's marker, by pointer, touch, Enter or Space, goes to what it stands for on the trip page. Markers are
- * drawn before the page paints, so what React renders into them never shows without them.
+ * drawn before the page paints, so what React renders into them never shows without them. Arrows on each connection's
+ * lines show the way it goes (TRA-176), below its places and transportation, and nothing selects them.
  *
  * A destination's marker shows a preview of it (TRA-143), its name and primary photo, while a mouse or pen is over the
  * marker or the preview, and while the keyboard is on the marker. It closes a moment after the pointer leaves both, when
@@ -66,7 +73,11 @@ export default function TripMapCanvas({ layout }: { layout: MapLayout }) {
   // The positions the map last framed.
   const framed = useRef("");
   // An element for each marker's content, which Leaflet places on the map and React renders into.
-  const elements = useMemo(() => new Map([...layout.markers.map((marker) => marker.key), ...layout.lines.map((line) => "line-" + line.id)].map((key) => {
+  const elements = useMemo(() => new Map([
+    ...layout.markers.map((marker) => marker.key),
+    ...layout.lines.map((line) => "line-" + line.id),
+    ...layout.lines.flatMap((line) => line.arrows.map((_arrow, index) => arrowKey(line.id, index))),
+  ].map((key) => {
     const element = document.createElement("span");
     element.className = styles.content;
     return [key, element];
@@ -138,6 +149,10 @@ export default function TripMapCanvas({ layout }: { layout: MapLayout }) {
       });
       return element;
     };
+    // Each connection's arrows show the way it goes along its lines (TRA-176), and Leaflet keeps them on their lines as the
+    // map zooms and moves. They are only drawn, below every place and transportation, so clicks, taps and the keyboard
+    // pass them by.
+    for (const line of layout.lines) line.arrows.forEach((arrow, index) => place(arrowKey(line.id, index), arrow.position, [ARROW_SIZE, ARROW_SIZE], "", "", null, ARROW_Z_INDEX));
     // The keyboard reaches places in travel order, then each connection's transportation.
     for (const marker of layout.markers) {
       const label = placeRole(marker.kind, marker.number) + ": " + marker.label;
@@ -242,6 +257,10 @@ export default function TripMapCanvas({ layout }: { layout: MapLayout }) {
     <div ref={container} className={styles.map} />
     {layout.markers.map((marker) => createPortal(<MarkerSymbol kind={marker.kind} number={marker.number} />, elements.get(marker.key)!, marker.key))}
     {layout.lines.map((line) => createPortal(<TransportationBadge method={line.method} />, elements.get("line-" + line.id)!, "line-" + line.id))}
+    {/* An arrowhead pointing east, turned the way its line goes. Each transportation's label tells screen readers the way. */}
+    {layout.lines.flatMap((line) => line.arrows.map((arrow, index) => createPortal(
+      <svg className={styles.arrow} viewBox="0 0 16 16" style={{ transform: "rotate(" + arrow.angle + "deg)" }} aria-hidden="true"><path d="M14 8 2 14l3.5-6L2 2z" /></svg>,
+      elements.get(arrowKey(line.id, index))!, arrowKey(line.id, index))))}
     {previewed && <div key={previewed.key} ref={preview} className={styles.preview} aria-hidden="true" onPointerEnter={() => setHovered({ key: previewed.key, leaving: false })} onPointerLeave={() => setHovered(leave)}>
       {/* Stored photos are resized and optimized on upload, and the thumbnail covers the preview's frame. */}
       {/* eslint-disable-next-line @next/next/no-img-element */}

@@ -93,7 +93,7 @@ test("each connection on the journey and the map carries its own saved details, 
 });
 
 const marker = (key, kind, position, label, extra = {}) => ({ key, kind, position, label, number: null, target: key, found: label, photo: null, ...extra });
-const line = (id, method, from, to, points, badge, saved = {}) => ({ id, method, from, to, points, badge, target: "connection-" + id, details: connectionDetails({ ...unsaved, method, ...saved }) });
+const line = (id, method, from, to, points, badge, saved = {}) => ({ id, method, from, to, points, badge, arrows: [], target: "connection-" + id, details: connectionDetails({ ...unsaved, method, ...saved }) });
 // The way out's flight, with every detail saved.
 const FLIGHT = { airline: "Delta", flightNumber: "DL 123", departure: "2026-12-01T18:00-05:00", arrival: "2026-12-02T08:30+01:00" };
 /**

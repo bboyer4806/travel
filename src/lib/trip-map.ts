@@ -48,8 +48,17 @@ export interface Point { x: number; y: number }
 /** A place the map shows. A departure and return at the same position show as one marker, `roundTrip`. */
 export interface MapMarker { key: string; kind: MapPlaceKind | "roundTrip"; position: Position; label: string; number: number | null; target: string | null; found: string; photo: MapPhoto | null }
 
-/** A connection's straight lines between the places it passes that the map shows, where its transportation shows, and its card's ID on the trip page. */
-export interface MapLine extends MapConnection { points: Position[]; badge: Position; target: string }
+/**
+ * An arrow on one of a connection's lines, which shows the way the connection goes (TRA-176): where it is, and the way it
+ * points on the map, in degrees clockwise from east, as CSS turns things.
+ */
+export interface MapArrow { position: Position; angle: number }
+
+/**
+ * A connection's straight lines between the places it passes that the map shows, where its transportation shows, an arrow
+ * on each line for the way it goes (TRA-176), and its card's ID on the trip page.
+ */
+export interface MapLine extends MapConnection { points: Position[]; badge: Position; arrows: MapArrow[]; target: string }
 
 /** A place the map doesn't show, and why: none is saved, no place has its name, or the lookup couldn't be made. */
 export interface UnmappedPlace { key: string; kind: MapPlaceKind | "roundTrip"; label: string; number: number | null; connection: string | null; reason: "notAdded" | "missing" | "unavailable" }
@@ -183,22 +192,49 @@ function along(from: Position, to: Position, fraction: number): Position {
 }
 
 /**
+ * How far right and down the map the straight line it draws from `from` to `to` goes, in Mercator's units, which every
+ * zoom scales alike: lines' lengths compare at any zoom, and each line points the same way at every zoom.
+ */
+function mapOffset(from: Position, to: Position): Point {
+  return { x: ((to[1] - from[1]) * Math.PI) / 180, y: mercatorY(from[0]) - mercatorY(to[0]) };
+}
+
+/**
  * Where a connection's transportation shows: a third of the way along its longest line, from where it leaves, so a
  * connection back along the same line shows its own apart from the one out.
  */
 function badgePosition(points: Position[]): Position {
   let longest = 0, length = -1;
   points.slice(1).forEach((point, index) => {
-    const segment = Math.hypot(mercatorY(point[0]) - mercatorY(points[index][0]), ((point[1] - points[index][1]) * Math.PI) / 180);
+    const { x, y } = mapOffset(points[index], point);
+    const segment = Math.hypot(x, y);
     if (segment > length) { longest = index; length = segment; }
   });
   return along(points[longest], points[longest + 1], 1 / 3);
 }
 
+/** How far along each of a connection's lines its arrow is, from where the line leaves (TRA-176). */
+const ARROW_ALONG = 5 / 6;
+
+/**
+ * The arrows that show which way a connection goes (TRA-176): one on each of its lines, pointing from where the line leaves
+ * toward where it arrives, five sixths of the way along it, near where it arrives. A connection's transportation shows a
+ * third of the way along its longest line from where it leaves, so a way out and back along the same line show their
+ * arrows at opposite ends, apart from each other and from both transportations. A line between places at the same
+ * position goes no way, so it has no arrow.
+ */
+function lineArrows(points: Position[]): MapArrow[] {
+  return points.slice(1).flatMap((to, index) => {
+    const from = points[index], { x, y } = mapOffset(from, to);
+    return x === 0 && y === 0 ? [] : [{ position: along(from, to, ARROW_ALONG), angle: (Math.atan2(y, x) * 180) / Math.PI }];
+  });
+}
+
 /**
  * What a trip's map shows for the locations found so far: a marker for each place found, the lines of each connection
- * between them, and the places it can't show. A place whose lookup hasn't answered is in none of them. Longitudes follow
- * the journey, each within 180° of the place found before it, so a line crosses the Pacific instead of the whole world.
+ * between them, with arrows for the way it goes, and the places it can't show. A place whose lookup hasn't answered is in
+ * none of them. Longitudes follow the journey, each within 180° of the place found before it, so a line crosses the
+ * Pacific instead of the whole world.
  */
 export function mapLayout(journey: Journey, locations: Readonly<Record<string, PlaceLocation | undefined>>): MapLayout {
   const positions = new Map<string, Position>();
@@ -225,7 +261,7 @@ export function mapLayout(journey: Journey, locations: Readonly<Record<string, P
   // A connection's lines join the places it passes that the map shows, never places of another connection.
   const lines: MapLine[] = journey.legs.flatMap(({ places, ...connection }) => {
     const points = places.flatMap((key) => { const position = positions.get(key); return position ? [position] : []; });
-    return points.length < 2 ? [] : [{ ...connection, points, badge: badgePosition(points), target: connectionTarget(connection.id) }];
+    return points.length < 2 ? [] : [{ ...connection, points, badge: badgePosition(points), arrows: lineArrows(points), target: connectionTarget(connection.id) }];
   });
   const unmapped: UnmappedPlace[] = journey.places.flatMap((place) => {
     if (positions.has(place.key)) return [];

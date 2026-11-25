@@ -4,7 +4,7 @@ import { request as httpsRequest } from "node:https";
 import { BlockList, isIP, type LookupFunction } from "node:net";
 import type { Readable } from "node:stream";
 
-import { formatMegabytes, IMAGE_UPLOAD_TYPES, MAX_IMAGE_UPLOAD_BYTES } from "./image-limits.ts";
+import { formatMegabytes, IMAGE_FORMAT_NAMES, IMAGE_UPLOAD_TYPES, MAX_IMAGE_UPLOAD_BYTES } from "./image-limits.ts";
 import { ImageValidationError } from "./image-upload.ts";
 
 /**
@@ -89,8 +89,8 @@ export const fetchPublic: PhotoFetch = (url, signal) => new Promise((resolve, re
 /**
  * Downloads a photo from an address of one of `protocols` as the file an upload would be, for prepareImage to check.
  * Follows up to MAX_IMAGE_REDIRECTS redirects, each checked as the address given is, and refuses a photo larger than an
- * upload may be or one its server doesn't call a JPEG, PNG or WebP image. When `signal` aborts, it stops and throws the
- * signal's reason.
+ * upload may be or one its server doesn't call an image of one of IMAGE_FORMATS (TRA-179). When `signal` aborts, it stops
+ * and throws the signal's reason.
  */
 export async function downloadImage(address: string, protocols: WebProtocols, signal: AbortSignal, fetch: PhotoFetch = fetchPublic): Promise<File> {
   let url = downloadAddress(address, protocols);
@@ -120,7 +120,7 @@ export async function downloadImage(address: string, protocols: WebProtocols, si
 async function photoFile(response: PhotoResponse, status: number): Promise<File> {
   if (status !== 200) throw new ImageValidationError(`The photo's server answered ${status}${STATUS_CODES[status] ? ` ${STATUS_CODES[status]}` : ""}.`);
   const type = (response.headers["content-type"] ?? "").split(";")[0].trim().toLowerCase();
-  if (!IMAGE_UPLOAD_TYPES.includes(type)) throw new ImageValidationError(`This address isn't a JPEG, PNG or WebP image${type ? `: its server says it is ${type}` : ""}.`);
+  if (!IMAGE_UPLOAD_TYPES.includes(type)) throw new ImageValidationError(`This address isn't a ${IMAGE_FORMAT_NAMES} image${type ? `: its server says it is ${type}` : ""}.`);
   const tooLarge = () => new ImageValidationError(`This photo is larger than ${formatMegabytes(MAX_IMAGE_UPLOAD_BYTES)}.`);
   if (Number(response.headers["content-length"]) > MAX_IMAGE_UPLOAD_BYTES) throw tooLarge();
   const chunks: Buffer[] = [];

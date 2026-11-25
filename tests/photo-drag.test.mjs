@@ -115,6 +115,7 @@ function harness(kind, item, { mouse = true, disabled = false } = {}) {
     return modules[name];
   };
   modules["./focus-after"] = load("../src/components/focus-after.ts", require);
+  modules["./file-preview"] = load("../src/components/file-preview.ts", require);
   modules["./photo-browsing"] = load("../src/components/photo-browsing.tsx", require);
   modules["./photo-drag"] = load("../src/components/photo-drag.ts", require, { window });
   const Editor = load(`../src/components/${editor.file}`, require)[editor.name];
@@ -151,7 +152,8 @@ function harness(kind, item, { mouse = true, disabled = false } = {}) {
     drop(number) { const event = dragEvent(); card(number).props.onDrop(event); render(); return event; },
     /** The drag of photo `id` ends: after its drop, or cancelled with Escape or by letting go away from the photos. */
     end(id) { picture(cards().find((node) => node.key === id)).props.onDragEnd(dragEvent()); render(); },
-    choose(files) { nodes.find((node) => node.type === "input" && node.props.type === "file").props.onChange({ currentTarget: { files, value: "" } }); render(); },
+    fileInput: () => nodes.find((node) => node.type === "input" && node.props.type === "file"),
+    choose(files) { this.fileInput().props.onChange({ currentTarget: { files, value: "" } }); render(); },
     click(label) { button(label).props.onClick({ currentTarget: {} }); render(); },
     error: () => text(byClass("error")[0]),
     /** Add image by URL as the editor offers it (TRA-139): its label and whether it is unavailable. */
@@ -257,8 +259,8 @@ for (const kind of Object.keys(editors)) {
         continue;
       }
       assert.equal(editor.hint(), kind === "destination"
-        ? "Add up to 10 photos. Choose a primary photo to show first and use Move left or Move right to arrange the gallery.JPEG, PNG, or WebP, up to 5 MB each and 15 MB of new photos per save."
-        : "Add up to 10 photos. Choose one main photo to show first.JPEG, PNG, or WebP, up to 5 MB each and 15 MB of new photos per save.");
+        ? "Add up to 10 photos. Choose a primary photo to show first and use Move left or Move right to arrange the gallery.JPEG, PNG, WebP, AVIF, GIF, TIFF, BMP, or HEIC, up to 5 MB each and 15 MB of new photos per save."
+        : "Add up to 10 photos. Choose one main photo to show first.JPEG, PNG, WebP, AVIF, GIF, TIFF, BMP, or HEIC, up to 5 MB each and 15 MB of new photos per save.");
       if (kind !== "destination") {
         assert.equal(editor.button("Move photo 1 right"), undefined, "idea and church editors keep their controls");
         continue;
@@ -288,14 +290,24 @@ test("a destination's Move left and Move right still arrange photos alongside dr
 });
 
 for (const kind of Object.keys(editors)) {
+  test(`a ${kind}'s photo editor takes new photos of every format by their types, or by their names when the browser gives none (TRA-179)`, () => {
+    const editor = harness(kind, saved(kind, 0));
+    assert.equal(editor.fileInput().props.accept, imageLimits.IMAGE_UPLOAD_ACCEPT, "the file picker offers every format, by type and extension");
+    const files = [new File(["heic"], "IMG_0001.HEIC", { type: "" }), new File(["jfif"], "photo.jfif", { type: "image/pjpeg" }), new File(["tiff"], "scan.tif", { type: "image/tiff" }), new File(["bmp"], "map.bmp", { type: "image/x-ms-bmp" })];
+    editor.choose(files);
+    assert.deepEqual([Array.from(editor.draft().images, (image) => image.file), editor.error()], [files, ""]);
+    editor.choose([new File(["notes"], "notes.txt", { type: "text/plain" })]);
+    assert.deepEqual([editor.draft().images.length, editor.error()], [4, "Choose JPEG, PNG, WebP, AVIF, GIF, TIFF, BMP, or HEIC photos. Your previous selections have been kept."]);
+  });
+
   test(`a ${kind}'s photo editor offers Add image by URL, whose image it adds as it adds a chosen file (TRA-139)`, () => {
     const item = saved(kind, 2, 2);
     const [a, b] = item.images.map((image) => image.id);
     const editor = harness(kind, item);
     assert.deepEqual(editor.byUrl(), { label: "Add image by URL", disabled: false });
     // A refused image keeps the draft and says why, as a refused file does.
-    assert.equal(editor.addByUrl(new File(["gif"], "a.gif", { type: "image/gif" })), false);
-    assert.deepEqual([editor.error(), editor.changes.length], ["Choose JPEG, PNG, or WebP photos. Your previous selections have been kept.", 0]);
+    assert.equal(editor.addByUrl(new File(["<svg/>"], "a.svg", { type: "image/svg+xml" })), false);
+    assert.deepEqual([editor.error(), editor.changes.length], ["Choose JPEG, PNG, WebP, AVIF, GIF, TIFF, BMP, or HEIC photos. Your previous selections have been kept.", 0]);
     const added = new File(["downloaded"], "Tour Eiffel.jpg", { type: "image/jpeg" });
     assert.equal(editor.addByUrl(added), true);
     const photo = editor.draft().images.at(-1);

@@ -93,7 +93,7 @@ function LocalEmergencyNumber({ emergencyNumber }: { emergencyNumber: EmergencyN
     <h5>Local Emergency Number</h5>
     {emergencyNumber ? <>
       <p className={styles.emergencyNumber}>{emergencyNumber.phone}</p>
-      <a className={"button danger " + styles.call} href={telephoneHref(emergencyNumber.phone)}><Phone size={18} aria-hidden="true" />Call {emergencyNumber.phone}</a>
+      <a className={"button secondary " + styles.call} href={telephoneHref(emergencyNumber.phone)}><Phone size={18} aria-hidden="true" />Call {emergencyNumber.phone}</a>
       <p className={styles.emergencySource}>Verified {formatCalendarDate(emergencyNumber.verifiedDate)} from <a href={emergencyNumber.sourceUrl} target="_blank" rel="noopener noreferrer">{siteName(emergencyNumber.sourceUrl)}<span className="sr-only"> (opens in a new tab)</span></a></p>
     </> : <p className={styles.emergencyNumberMissing}>Emergency number not verified</p>}
   </div>;

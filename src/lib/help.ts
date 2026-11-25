@@ -90,12 +90,12 @@ const HELP: { [Route in SignedInRoute]: Route extends `${string}/[category]` ? R
   "/trips/[tripId]": {
     title: "Trip",
     points: [
-      "Route map with arrows: point or tab to a destination for its photo; select transportation for details. Then stays with taglines and maps, travel, home and cost.",
-      "Edit trip changes its name, tagline, focus, dates, travelers, entry and visa fees, cities and headline image. Tags under its details group it in All trips.",
+      "Route map with arrows: point or tab to a destination for its photo; select transportation for details. Then stays, travel, home, packing list and USD cost.",
+      "Edit trip changes its name, tagline, focus, dates, travelers, entry and visa fees, cities and headline image. Only its owner shares or deletes the trip.",
       "Add destination adds a city last, a + between cards there, one In your library with its research. Card arrows move it, the pencil edits, the trash removes it.",
       "Each stay's nights set its dates; Typical weather opens on its month. An activity's star marks it Must do; its details step with Previous, Next or a swipe.",
       "Between the places: Edit adds transportation, a flight's airline and flight number, price and layovers. Plan layover times what you'll do during a layover.",
-      "The trip estimate adds every cost in USD for the whole party. Select Not set or Not estimated in a budget to add it. Only the owner shares or deletes the trip.",
+      "Packing list: Recommend items suggests what to pack, to review before adding; check items off as you pack. In a budget, Not set or Not estimated adds a cost.",
     ],
   },
   "/trips/[tripId]/destinations/[stopId]/[category]": IDEA_PAGES,

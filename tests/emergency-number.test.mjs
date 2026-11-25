@@ -14,7 +14,7 @@ import * as tripDates from "../src/lib/trip-dates.ts";
 import * as uuid from "../src/lib/uuid.ts";
 import { aiSetup, NOW } from "./ai-fixtures.mjs";
 import { addCity, addDestination, fileDatabase, setup, tripInput } from "./budget-fixtures.mjs";
-import { contrast, styles } from "./css-rules.mjs";
+import { contrast, cssRules, styles } from "./css-rules.mjs";
 import { createOwnedStore, OWNER_EMAIL } from "./owned-store.mjs";
 
 // TRA-173: each destination's local emergency number, such as 112 or 911, verified from an official or reliable source,
@@ -292,7 +292,7 @@ test("the section shows the verified number first, open or closed, large, with a
     assert.equal(heading.props.className, "section-heading");
     assert.equal(content.props.hidden, true, "the section starts closed");
     const box = emergency[0];
-    assert.equal(box.props.className, "emergency", "right after the heading, outside the content opening shows, in its red box");
+    assert.equal(box.props.className, "emergency", "right after the heading, outside the content opening shows, in its box");
     assert.equal(text(emergency.find((node) => node.type === "h5")), "Local Emergency Number");
     assert.equal(text(emergency.find((node) => node.props.className === "emergencyNumber")), number.phone, "the number in large text");
     const links = emergency.filter((node) => node.type === "a");
@@ -300,7 +300,7 @@ test("the section shows the verified number first, open or closed, large, with a
       [href, null, `Call ${number.phone}`],
       [number.sourceUrl, "_blank", "portugal.gov.pt (opens in a new tab)"],
     ], "Call opens the device's dialer with the number; the source opens in a new tab");
-    assert.equal(links[0].props.className, "button danger call");
+    assert.equal(links[0].props.className, "button secondary call", "Travel's secondary button, never its red danger button (TRA-183)");
     assert.equal(text(emergency.find((node) => node.props.className === "emergencySource")), `Verified ${tripDates.formatCalendarDate("2026-11-21")} from portugal.gov.pt (opens in a new tab)`);
     // The rest of the section is as before, the emergency contacts included.
     const inside = hosts(content);
@@ -340,21 +340,36 @@ test("the editor holds the number, its source and its verified date before the e
   for (const words of ["official or reliable source", "leave all three blank", "Add other emergency numbers as emergency contacts"]) assert.ok(text(hint).includes(words), words);
 });
 
-test("the number and its Call button stand out, readable on their colors, side by side on wider screens and stacked on phones (TRA-173)", () => {
-  const file = "../src/components/health-safety.module.css";
+test("the number stands out in large bold type beside Travel's secondary Call button, in a plain box without red, readable on its colors, side by side on wider screens and stacked on phones (TRA-173, TRA-183)", () => {
+  const [file, globals] = ["../src/components/health-safety.module.css", "../src/app/globals.css"];
+  const root = cssRules(globals).find(([selector]) => selector === ":root")[1];
+  /** A color as written, or the one its custom property is in :root. */
+  const color = (value) => /^#[0-9a-f]{6}$/i.test(value) ? value : root[/^var\((--[a-z-]+)\)$/.exec(value)[1]];
+  // TRA-183: where TRA-173 had a red border, background and heading, the box has the line and white of the section's other
+  // information and its heading Travel's ink, and nothing here changes the secondary button's colors, its hover included.
   const box = styles(file, [".emergency"], 1440);
-  const plain = styles(file, [".emergency", ".notVerified"], 1440);
-  const [background, red] = [box.background, box.border.split(" ").at(-1)];
-  // The heading in red, the number in ink and its source line muted, on the red box; the Call button's white on Travel's danger red.
-  assert.ok(contrast(styles(file, [".emergency h5"], 1440).color, background) >= 4.5);
-  assert.equal(styles(file, [".emergency h5"], 1440).color, red);
-  for (const color of ["#253d35", "#5f6b63"]) assert.ok(contrast(color, background) >= 4.5, `${color} on ${background}`);
-  assert.ok(contrast("#ffffff", "#9b3b32") >= 4.5 && contrast("#ffffff", styles(file, [".emergency .call:hover"], 1440).background) >= 4.5);
-  assert.equal(red, "#9b3b32", "the box is the Call button's red");
-  // Not verified, it is plain: muted heading on Travel's white.
-  assert.ok(contrast("#5f6b63", "#fffefb") >= 4.5 && plain.background === "var(--white)");
-  assert.ok(Number.parseInt(styles(file, [".emergencyNumber"], 390)["font-size"], 10) >= 32, "the number is large on every screen");
-  assert.ok(Number.parseInt(styles(file, [".emergency .call"], 390)["min-height"], 10) >= 44, "the Call button is easy to tap");
+  assert.deepEqual([box.border, box.background, styles(file, [".emergency h5"], 1440).color], ["1px solid var(--line)", "var(--white)", "var(--ink)"]);
+  for (const [selector, declarations] of cssRules(file).filter(([selector]) => selector.includes(".call"))) {
+    for (const property of ["color", "background", "background-color", "border", "border-color"]) assert.equal(declarations[property], undefined, `${selector} ${property}`);
+  }
+  // The heading, the number and an unverified number's message in ink, and the source line muted, on the box's white; the
+  // Call button's green on its own white and on its hover's.
+  const background = color(box.background);
+  for (const selector of [".emergency h5", ".emergencyNumber", ".emergencySource", ".emergencyNumberMissing"]) {
+    const text = color(styles(file, [selector], 1440).color);
+    assert.ok(contrast(text, background) >= 4.5, `${selector}: ${text} on ${background}`);
+  }
+  const button = styles(globals, [".button.secondary"], 1440);
+  for (const behind of [button.background, styles(globals, [".button.secondary:hover"], 1440).background]) {
+    assert.ok(contrast(color(button.color), color(behind)) >= 4.5, `Call: ${button.color} on ${behind}`);
+  }
+  // Not verified, it is as before: the same box, its heading muted.
+  assert.deepEqual(styles(file, [".emergency", ".notVerified"], 1440), box);
+  const muted = styles(file, [".emergency h5", ".notVerified h5"], 1440).color;
+  assert.ok(muted === "var(--muted)" && contrast(color(muted), background) >= 4.5, muted);
+  const number = styles(file, [".emergencyNumber"], 390);
+  assert.ok(Number.parseInt(number["font-size"], 10) >= 32 && number["font-weight"] === "700", "the number is large and bold on every screen");
+  for (const width of [390, 1440]) assert.ok(Number.parseInt(styles(file, [".emergency .call"], width)["min-height"], 10) >= 48, `the Call button is at least 48px high at ${width}px`);
   for (const width of [541, 780, 1440]) assert.equal(styles(file, [".emergency"], width)["grid-template-columns"], "minmax(0, 1fr) auto", `${width}px`);
   for (const width of [320, 390, 540]) {
     assert.equal(styles(file, [".emergency"], width)["grid-template-columns"], "minmax(0, 1fr)", `${width}px`);

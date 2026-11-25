@@ -1,14 +1,15 @@
 "use client";
 
-import { useEffect, useId, useRef, useState, type ChangeEvent, type PointerEvent } from "react";
+import { useId, useRef, useState, type ChangeEvent, type PointerEvent } from "react";
 import { ArrowLeft, ArrowRight, Check, Crop, ImagePlus, LocateFixed, RotateCcw, Trash2 } from "lucide-react";
-import { formatMegabytes, IMAGE_UPLOAD_TYPES, MAX_DESTINATION_IMAGES, MAX_GALLERY_UPLOAD_BYTES, MAX_IMAGE_UPLOAD_BYTES } from "@/lib/image-limits";
+import { formatMegabytes, IMAGE_FORMAT_NAMES, IMAGE_UPLOAD_ACCEPT, isImageUploadFile, MAX_DESTINATION_IMAGES, MAX_GALLERY_UPLOAD_BYTES, MAX_IMAGE_UPLOAD_BYTES } from "@/lib/image-limits";
 import { formatSavedDestinationLabel } from "@/lib/destination-label";
 import { createGalleryDraft, focusPhoto, galleryChanged, movePhoto, placePhoto, removePhoto, type DraftImage, type GalleryDraft } from "@/lib/gallery-draft";
 import { CENTERED, draggedFocus, objectPosition, photoFocus, type Size } from "@/lib/photo-focus";
 import { CARD, DIALOG, MAIN_COLUMN, photoSizes } from "@/lib/photo-sizes";
 import type { Destination, PhotoFocus, PhotoWidths } from "@/lib/types";
 import { randomUuid } from "@/lib/uuid";
+import { useFilePreview } from "./file-preview";
 import { controlOrNeighbor, useFocusAfter } from "./focus-after";
 import { AddImageByUrl } from "./image-by-url";
 import { neighborPhoto, PhotoArrows } from "./photo-browsing";
@@ -86,14 +87,9 @@ function SavedPhoto({ destinationId, image, alt, focus, full = false }: { destin
   return <img className={styles.image} src={full ? photoUrl(destinationId, image) : thumbnailUrl(destinationId, image)} {...sources} alt={alt} loading="lazy" decoding="async" width={240} height={160} style={{ objectPosition: objectPosition(focus) }} />;
 }
 
-/** A new photo before it is saved, cropped to fit its frame around its focal point (TRA-53). */
+/** A new photo before it is saved (TRA-179), cropped to fit its frame around its focal point (TRA-53). */
 function UploadPreview({ file, alt, focus }: { file: File; alt: string; focus: PhotoFocus }) {
-  const image = useRef<HTMLImageElement>(null);
-  useEffect(() => {
-    const previewUrl = URL.createObjectURL(file);
-    if (image.current) image.current.src = previewUrl;
-    return () => URL.revokeObjectURL(previewUrl);
-  }, [file]);
+  const image = useFilePreview(file);
   // eslint-disable-next-line @next/next/no-img-element
   return <img ref={image} className={styles.image} alt={alt} width={240} height={160} style={{ objectPosition: objectPosition(focus) }} />;
 }
@@ -129,13 +125,14 @@ export function DestinationGalleryEditor({ destination, draft, onChange, disable
   const cropIndex = crop ? draft.images.findIndex((image) => image.id === crop.id) : -1;
 
   /**
-   * Adds new photos, files chosen from the device or an image added by URL (TRA-139), checked as uploads are on the
-   * server. A refused batch keeps the draft and says why, and returns false.
+   * Adds new photos, files chosen from the device or an image added by URL (TRA-139), once each one's type or name says
+   * it is an image of one of the formats uploads take (TRA-179) and the photos are within the limits. Saving checks what
+   * each holds. A refused batch keeps the draft and says why, and returns false.
    */
   function add(files: File[]): boolean {
     let validationError = "";
     if (draft.images.length + files.length > MAX_DESTINATION_IMAGES) validationError = `Keep up to ${MAX_DESTINATION_IMAGES} photos. Remove a photo before adding more.`;
-    else if (files.some((file) => !IMAGE_UPLOAD_TYPES.includes(file.type.toLowerCase()))) validationError = "Choose JPEG, PNG, or WebP photos.";
+    else if (files.some((file) => !isImageUploadFile(file))) validationError = `Choose ${IMAGE_FORMAT_NAMES} photos.`;
     else if (files.some((file) => file.size === 0)) validationError = "One of these files is empty. Choose another photo.";
     else if (files.some((file) => file.size > MAX_IMAGE_UPLOAD_BYTES)) validationError = `Choose photos up to ${formatMegabytes(MAX_IMAGE_UPLOAD_BYTES)} each.`;
     else if ([...draft.images.flatMap((image) => image.file ? [image.file] : []), ...files].reduce((total, file) => total + file.size, 0) > MAX_GALLERY_UPLOAD_BYTES) validationError = `Add up to ${formatMegabytes(MAX_GALLERY_UPLOAD_BYTES)} of new photos at a time. Save these photos before adding more.`;
@@ -215,8 +212,8 @@ export function DestinationGalleryEditor({ destination, draft, onChange, disable
 
   return <fieldset className={styles.editor} disabled={disabled} aria-describedby={`${id}-hint`}>
     <legend>Destination photos <span className={styles.optional}>(optional)</span></legend>
-    <p id={`${id}-hint`} className={styles.hint}>Add up to {MAX_DESTINATION_IMAGES} photos. Choose a primary photo to show first and {drag.available && "drag photos or "}use Move left or Move right to arrange the gallery.<br />JPEG, PNG, or WebP, up to {formatMegabytes(MAX_IMAGE_UPLOAD_BYTES)} each and {formatMegabytes(MAX_GALLERY_UPLOAD_BYTES)} of new photos per save.</p>
-    <input ref={input} id={id} type="file" multiple accept={IMAGE_UPLOAD_TYPES.join(",")} onChange={choose} disabled={disabled} hidden aria-label="Choose destination photos" aria-describedby={`${id}-hint${error ? ` ${id}-error` : ""}`} />
+    <p id={`${id}-hint`} className={styles.hint}>Add up to {MAX_DESTINATION_IMAGES} photos. Choose a primary photo to show first and {drag.available && "drag photos or "}use Move left or Move right to arrange the gallery.<br />{IMAGE_FORMAT_NAMES}, up to {formatMegabytes(MAX_IMAGE_UPLOAD_BYTES)} each and {formatMegabytes(MAX_GALLERY_UPLOAD_BYTES)} of new photos per save.</p>
+    <input ref={input} id={id} type="file" multiple accept={IMAGE_UPLOAD_ACCEPT} onChange={choose} disabled={disabled} hidden aria-label="Choose destination photos" aria-describedby={`${id}-hint${error ? ` ${id}-error` : ""}`} />
     {/* TRA-53: the crop editor takes the photos' place, so nothing else changes the photos until Apply or Cancel. */}
     {crop && cropIndex >= 0 ? <div className={styles.crop} role="group" aria-labelledby={`${id}-crop-title`} aria-describedby={`${id}-crop-hint`}>
       <p id={`${id}-crop-title`} className={styles.cropTitle}>Adjust crop of photo {cropIndex + 1}</p>

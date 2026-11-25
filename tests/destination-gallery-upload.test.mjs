@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
+import { readFileSync } from "node:fs";
 import test from "node:test";
 import sharp from "sharp";
 import { prepareDestinationGallery } from "../src/lib/destination-gallery-upload.ts";
@@ -48,6 +49,23 @@ test("destination gallery JPEG, PNG and WebP files decode to bounded WebP indepe
     assert.equal(metadata.icc, undefined);
     assert.ok(photo.data.byteLength <= 2 * 1024 * 1024);
   }
+});
+
+test("destination photos may be of every new format, and one a save can't take refuses all of them (TRA-179)", async () => {
+  const image = (name) => readFileSync(new URL(`./fixtures/images/${name}`, import.meta.url));
+  const files = [
+    new File([await fixture("jpeg")], "photo.jpe", { type: "image/pjpeg" }), new File([await fixture("avif")], "photo.avif", { type: "image/avif" }),
+    new File([await fixture("gif")], "photo.gif", { type: "image/gif" }), new File([await fixture("tiff")], "scan.tif", { type: "" }),
+    new File([image("bmp-v5-alpha.bmp")], "map.bmp", { type: "image/x-ms-bmp" }), new File([image("display-p3.heic")], "IMG_0003.HEIC", { type: "image/heic" }),
+  ];
+  const { form, photos } = uploadForm(files);
+  const result = await prepareDestinationGallery(form);
+  assert.deepEqual(result.add.map((photo) => photo.id), photos.map((photo) => photo.id));
+  for (const photo of result.add) assert.equal((await sharp(photo.data).metadata()).format, "webp");
+  const { form: burst } = uploadForm([files[1], new File([image("two-images.heic")], "burst.heic", { type: "image/heic" })]);
+  await assert.rejects(prepareDestinationGallery(burst), { message: "Choose a still image instead of an animated or multi-page image." });
+  const { form: damaged } = uploadForm([files[4], new File([image("photo.heic").subarray(0, 400)], "damaged.heic", { type: "image/heic" })]);
+  await assert.rejects(prepareDestinationGallery(damaged), /couldn't read that image/);
 });
 
 test("malformed destination ordering is rejected before any file decoding", async () => {

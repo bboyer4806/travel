@@ -2,7 +2,8 @@
 
 import { useEffect, useId, useRef, useState, type KeyboardEvent } from "react";
 import { Link2 } from "lucide-react";
-import { formatMegabytes, MAX_IMAGE_UPLOAD_BYTES } from "@/lib/image-limits";
+import { formatMegabytes, IMAGE_FORMAT_NAMES, MAX_IMAGE_UPLOAD_BYTES } from "@/lib/image-limits";
+import { useFilePreview } from "./file-preview";
 import { controlOrNeighbor, useFocusAfter } from "./focus-after";
 import styles from "./image-by-url.module.css";
 
@@ -33,14 +34,9 @@ async function download(url: string, signal: AbortSignal): Promise<{ file: File 
   return { file: new File([blob], imageName(url), { type: blob.type }) };
 }
 
-/** The downloaded image, shown whole for review before it is used. */
+/** The downloaded image, shown whole for review before it is used, as Travel previews it when the browser can't (TRA-179). */
 function Preview({ file }: { file: File }) {
-  const image = useRef<HTMLImageElement>(null);
-  useEffect(() => {
-    const previewUrl = URL.createObjectURL(file);
-    if (image.current) image.current.src = previewUrl;
-    return () => URL.revokeObjectURL(previewUrl);
-  }, [file]);
+  const image = useFilePreview(file);
   // eslint-disable-next-line @next/next/no-img-element
   return <img ref={image} className={styles.image} alt="Preview of the image at this address" />;
 }
@@ -125,7 +121,7 @@ export function AddImageByUrl({ label, disabled, onAdd }: { label: string; disab
           onChange={(event) => { clear(); setAddress(event.currentTarget.value); }} onKeyDown={enter} aria-describedby={`${id}-hint${error ? ` ${id}-error` : ""}`} />
         <button type="button" className="button secondary small" onClick={() => void preview()}>Preview</button>
       </div>
-      <p id={`${id}-hint`} className={styles.hint}>The address of the image itself, not of the page it&apos;s on: a JPEG, PNG, or WebP image up to {formatMegabytes(MAX_IMAGE_UPLOAD_BYTES)}. Travel saves its own copy.</p>
+      <p id={`${id}-hint`} className={styles.hint}>The address of the image itself, not of the page it&apos;s on: a {IMAGE_FORMAT_NAMES} image up to {formatMegabytes(MAX_IMAGE_UPLOAD_BYTES)}. Travel saves its own copy.</p>
       {(downloading || file) && <p className={styles.status} role="status">{downloading ? "Downloading the image…" : "Check the image, then choose Use this image."}</p>}
       {error && <p id={`${id}-error`} className={styles.error} role="alert">{error}</p>}
       {file && <div className={styles.preview}><Preview file={file} /></div>}

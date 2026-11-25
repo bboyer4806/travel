@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 import test from "node:test";
-import { journeyAirportNames, journeyPlaceNames, mapLayout, placeRole, previewPosition, tripJourney } from "../src/lib/trip-map.ts";
+import { journeyAirportNames, journeyPlaceNames, mapLayout, placeRole, popupPosition, previewPosition, tripJourney } from "../src/lib/trip-map.ts";
 import { prepared, setup, tripInput } from "./budget-fixtures.mjs";
 
 const legSave = (id, overrides = {}) => ({ type: "leg.save", id, method: "", price: "", departure: "", arrival: "", url: "", notes: "", ...overrides });
@@ -38,9 +38,9 @@ test("a trip's journey lists its departure, destinations, itinerary stops and re
     ["return", "return", "Wooster, OH", "Wooster, OH", "connection-" + last.id, null, null],
   ]);
   assert.deepEqual(journey.legs, [
-    { id: first.id, method: "Flight", from: "Wooster, OH", to: "Vienna, Austria", places: ["departure", "itinerary-" + first.id + "-" + out.id, "itinerary-" + first.id + "-" + lunch.id, "destination-" + vienna] },
-    { id: middle.id, method: "Train", from: "Vienna, Austria", to: "Salzburg", places: ["destination-" + vienna, "destination-" + salzburg] },
-    { id: last.id, method: "Rental car, then flight", from: "Salzburg", to: "Wooster, OH", places: ["destination-" + salzburg, "itinerary-" + last.id + "-" + back.id, "return"] },
+    { id: first.id, method: "Flight", from: "Wooster, OH", to: "Vienna, Austria", details: [{ term: "Transportation", value: "Flight" }], places: ["departure", "itinerary-" + first.id + "-" + out.id, "itinerary-" + first.id + "-" + lunch.id, "destination-" + vienna] },
+    { id: middle.id, method: "Train", from: "Vienna, Austria", to: "Salzburg", details: [{ term: "Transportation", value: "Train" }], places: ["destination-" + vienna, "destination-" + salzburg] },
+    { id: last.id, method: "Rental car, then flight", from: "Salzburg", to: "Wooster, OH", details: [{ term: "Transportation", value: "Rental car, then flight" }], places: ["destination-" + salzburg, "itinerary-" + last.id + "-" + back.id, "return"] },
   ]);
   // A trip returning to its departing city looks the city up once.
   assert.deepEqual(journeyPlaceNames(journey), ["Wooster, OH", "Frankfurt (FRA)", "Lunch in Frankfurt", "Vienna, State of Vienna, Austria", "Salzburg", "Munich"]);
@@ -121,6 +121,24 @@ test("a destination's preview goes above its marker, below it where there's no r
   assert.deepEqual(previewPosition({ x: 171, y: 130 }, tall, phone, radius), { x: 91, y: 150 });
   // A preview larger than the map keeps its top left corner in view.
   assert.deepEqual(previewPosition({ x: 50, y: 50 }, { width: 400, height: 400 }, { width: 300, height: 300 }, radius), { x: 8, y: 8 });
+});
+
+test("a connection's popup goes above or below its transportation, or beside it where neither has room, never over it (TRA-175)", () => {
+  const map = { width: 600, height: 378 }, badge = { width: 46, height: 22 }, popup = { width: 240, height: 120 };
+  // Where a destination's preview would go, when that clears the transportation: above it, or below it near the top.
+  assert.deepEqual(popupPosition({ x: 300, y: 250 }, popup, map, badge), { x: 180, y: 113 });
+  assert.deepEqual(popupPosition({ x: 300, y: 100 }, popup, map, badge), { x: 180, y: 117 });
+  assert.deepEqual(popupPosition({ x: 300, y: 250 }, popup, map, badge), previewPosition({ x: 300, y: 250 }, popup, map, 11));
+  // Too tall for above or below the transportation in the middle of the map: on its right, 6 pixels from it, centered on it.
+  const tall = { width: 240, height: 260 };
+  assert.deepEqual(popupPosition({ x: 200, y: 189 }, tall, map, badge), { x: 229, y: 59 });
+  // Near the map's right edge, on its left, and near its top, moved down within the map.
+  assert.deepEqual(popupPosition({ x: 500, y: 189 }, tall, map, badge), { x: 231, y: 59 });
+  assert.deepEqual(popupPosition({ x: 200, y: 100 }, tall, map, badge), { x: 229, y: 8 });
+  // On a phone's map with room on no side, where a preview would go, as close to it as the map allows.
+  const phone = { width: 343, height: 298 }, phonePopup = { width: 220, height: 200 };
+  assert.deepEqual(popupPosition({ x: 171, y: 150 }, phonePopup, phone, badge), previewPosition({ x: 171, y: 150 }, phonePopup, phone, 11));
+  assert.deepEqual(popupPosition({ x: 171, y: 150 }, phonePopup, phone, badge), { x: 61, y: 8 });
 });
 
 test("a journey's departure, return and layovers may be airport codes, never its destinations or other stops (TRA-132)", (t) => {

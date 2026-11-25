@@ -1,3 +1,4 @@
+import { PACKING_CATEGORIES, PACKING_CATEGORY_LABELS } from "./packing.ts";
 import { MAX_NIGHTS } from "./trip-dates.ts";
 import { ACTIVITIES_BUDGET_MODES, FOOD_BUDGET_MODES } from "./types.ts";
 
@@ -69,6 +70,15 @@ export const EDITABLE_FIELDS = {
     name: { kind: "text", maxLength: 160, filled: true, label: "Name", description: "What it is." },
     price: { kind: "amount", noun: "Estimated price", column: "priceCents", label: "Price", description: "What it costs." },
     notes: { kind: "text", maxLength: 8000, label: "Notes", description: "Notes. Empty for none." },
+  },
+  // An item on a trip's packing list (TRA-18). Whether it is packed changes with packingItem.pack, never with its save.
+  packing_items: {
+    name: { kind: "text", maxLength: 160, filled: true, label: "Name", description: "What it is, such as Socks or Phone charger." },
+    category: {
+      kind: "choice", values: PACKING_CATEGORIES, invalid: "Choose a category for this item.", label: "Category",
+      description: `Its category on the list: ${PACKING_CATEGORIES.map((category) => `${category} (${PACKING_CATEGORY_LABELS[category]})`).join(", ")}.`,
+    },
+    quantity: { kind: "whole", min: 1, max: 9999, invalid: "Quantity must be a whole number from 1 to 9999.", label: "Quantity", description: "How many to pack for the whole party, from 1." },
   },
   destinations: {
     city: { kind: "text", maxLength: 120, filled: true, keep: true, label: "City", description: "The city." },

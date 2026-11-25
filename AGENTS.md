@@ -36,13 +36,13 @@ Use targeted checks while iterating. Before pushing, run the checks from
 `.github/workflows/check.yml`: `pnpm lint`, `pnpm typecheck`, `pnpm test` and `pnpm build`.
 CI also runs `bash scripts/smoke-container.sh`, which needs Docker and Bash and checks the
 container, persistent storage, sign-in enforcement, refusing a database it can't open, the health
-check Dokku runs, trip and destination isolation, and AI access limits. A Next.js build alone does
+check Dokku runs, trip and destination isolation, AI access limits, and decoding every image format uploads take (TRA-179). A Next.js build alone does
 not verify those.
 After building, CI runs `node scripts/review-errors-smoke.mjs` against disposable databases and
 fixture sessions to check production HTTP errors, recovery, cross-bundle save validation,
 connecting Claude through OAuth, MCP and the owner's Server Actions, proposing, showing,
-approving and rejecting photo changes, proposing, showing and approving trips' headline images (TRA-174), serving trips' headline images and their large versions only to accounts that can open them, and
-Add image by URL's refusals.
+approving and rejecting photo changes, proposing, showing and approving trips' headline images (TRA-174), serving trips' headline images and their large versions only to accounts that can open them,
+Add image by URL's refusals, and previewing a HEIC photo for a photo editor, with the preview's refusals (TRA-179).
 Fix regressions caused by your change; report unrelated baseline failures and blocked checks.
 Repeat passing checks when subsequent changes affect their coverage or required gates demand it.
 
@@ -113,6 +113,16 @@ Repeat passing checks when subsequent changes affect their coverage or required 
   proposal's photos wait in `ai_proposal_photos`, never in `changesJson`, until it is decided or expires,
   and the owner sees them through `/api/ai-proposal-images`. `trip.image` (TRA-174), a trip's headline image, works the
   same way, and a destination's headline image is its primary photo, which `destination.photos` changes.
+- Image formats (TRA-179) are `IMAGE_FORMATS` in `src/lib/image-limits.ts`, each with its extensions and types. Photo editors'
+  pickers offer `IMAGE_UPLOAD_ACCEPT`, editors take a file whose type or extension is one (`isImageUploadFile`), and messages
+  name them with `IMAGE_FORMAT_NAMES`. `prepareImage` goes by what a file holds, never its name or type, and refuses animated
+  and multi-page images, and ones over `MAX_IMAGE_PIXELS`, before decoding. Sharp decodes JPEG, PNG, WebP, GIF, TIFF and
+  AVIF; it reads HEIC headers but can't decode HEVC, so `decodeHeic` in `src/lib/heic.ts` does, with libheif-js (a
+  `serverExternalPackages` entry), and `readBmp` in `src/lib/bmp.ts` decodes bitmaps. Each hands sharp the pixels, with
+  the image's colour profile, through `pixelsTiff` in `src/lib/pixels.ts`. Editors show a new file with `useFilePreview`
+  in `src/components/file-preview.ts`, which asks `/api/image-preview` (`previewImage`) only when the browser can't show
+  it; component tests load it with stand-ins for `URL` and `fetch`. Formats sharp can't make for tests have fixtures in
+  `tests/fixtures/images`, described in its README.
 - Add image by URL (TRA-139) is `src/components/image-by-url.tsx`, in the destination, idea, church and trip image
   editors. `/api/image-url` downloads the image with `downloadImageByUrl` in `src/lib/image-url.ts`, through
   `src/lib/image-download.ts` over HTTP or HTTPS (proposals' photos stay HTTPS only), checks it with `prepareImage` and
@@ -121,7 +131,10 @@ Repeat passing checks when subsequent changes affect their coverage or required 
 - The trip map (TRA-44) is `src/components/trip-map.tsx`, with Leaflet in `trip-map-canvas.tsx`, loaded only in the
   browser. `tripJourney` and `mapLayout` in `src/lib/trip-map.ts` decide what it shows, and `/api/trip-map/[tripId]` looks
   the trip's saved names up with `locatePlaces` in `src/lib/location-search.ts`, within the city suggestions' Open-Meteo
-  limits. The trip map stores no coordinates and never guesses one: a place it can't find is listed below it.
+  limits. The trip map stores no coordinates and never guesses one: a place it can't find is listed below it. Each
+  connection's transportation opens a popup (TRA-175) of the saved details `connectionDetails` lists, never others;
+  `transitMinutes` gives a time in transit only from a Departure and Arrival saved with their UTC offsets, since Travel
+  never assumes a time zone.
 - The destination map (TRA-130) is `src/components/destination-map.tsx`, with Leaflet in `destination-map-canvas.tsx`,
   loaded only in the browser, on each trip destination card and destination page. `destinationPlaces` and
   `destinationMapLayout` in `src/lib/destination-map.ts` decide what it shows, and `/api/destination-map/[destinationId]`
@@ -180,6 +193,13 @@ Repeat passing checks when subsequent changes affect their coverage or required 
   both flights' times are the airport's wall-clock times in one IANA time zone, and every minute is the traveler's own
   estimate, starting at 0. Travel suggests no activities and supplies no estimates. A `leg.save` whose itinerary drops a
   layover or makes it a stop, and `clearLeg`, delete its plan, and deleting the leg cascades.
+- A trip's packing list (TRA-18) is its rows of `packing_items`, one list for everyone who can open the trip, shown by
+  `src/components/packing-list.tsx` on the trip's page. Each item's name, category (`PACKING_CATEGORIES` in
+  `src/lib/packing.ts`) and quantity for the whole party are `EDITABLE_FIELDS`; whether it is packed changes only with
+  `packingItem.pack`. `recommendPacking` there recommends items only on request, by fixed rules from the trip's saved
+  details alone, never looking anything up, and says what it assumed; recommendations are never saved. `packingReview`
+  leaves out items already on the list by name, and `packingList.add` adds only those chosen, under the IDs the review
+  gave them, never changing a saved item.
 - Application writes go through `mutatePlanner` in `src/app/actions.ts`, into `applyMutation`
   in `src/lib/store.ts`, or come from an approved AI proposal. A new ordinary field of an existing save goes in
   `EDITABLE_FIELDS` instead (TRA-174). A new operation adds a `Mutation`
@@ -188,7 +208,7 @@ Repeat passing checks when subsequent changes affect their coverage or required 
   title in `operationTitle`. `mutationScope` finds the trip or
   destination a change applies to from saved rows; a change it doesn't place is refused. Only `trip.order`, each
   account's own trip order, is for people alone: `aiChange` refuses it and it has no schema.
-- A save that adds a trip, an idea, a church or an At home item sends the
+- A save that adds a trip, an idea, a church, an At home item or a packing item sends the
   ID its editor gave it when it opened, with `create: true` (TRA-75). The store adds the item when no
   item has that ID, and the same save sent again after a lost response changes that item instead of
   adding another. Without `create`, a save changes a saved item and is refused when it no longer
@@ -277,7 +297,8 @@ schema and add a note for the new version, with only what its rollback adds to t
   `UNDO_SCHEMA_21` (then `UNDO_SCHEMA_20`) from `tests/owned-store.mjs`. AI integration tests use
   `aiSetup` from `tests/ai-fixtures.mjs`: an owner, a guest with an unshared trip, and a Claude connection,
   whose `propose` takes the photos a proposal adds as Travel prepared them. Downloads are tested with a
-  stand-in `PhotoFetch`, never a real website.
+  stand-in `PhotoFetch`, never a real website. Tests of the trip map itself draw the real component with `mapCanvas`
+  from `tests/trip-map-canvas.mjs`, a stand-in for Leaflet and the page.
 - Node runs that TypeScript by stripping types, without path aliases, as does the container's
   `scripts/start.mjs`, which checks the settings and opens and upgrades the database from `src/lib`
   before the server starts (TRA-78). Code in `src/lib` uses relative imports for values (type-only

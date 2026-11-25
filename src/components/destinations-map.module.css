@@ -1,0 +1,47 @@
+/* TRA-180: every saved destination on one map, below Saved destinations' heading and search and above its cards. */
+.section { margin-bottom: 32px; }
+.heading { margin: 0 0 8px; font-size: 21px; }
+.toggle { display: inline-flex; align-items: center; gap: 8px; min-height: 44px; padding: 0; border: 0; background: none; color: inherit; font: inherit; letter-spacing: inherit; text-align: left; }
+.toggle:hover { color: var(--orange); }
+.toggle svg { flex-shrink: 0; transition: transform .16s; }
+.toggle[aria-expanded="true"] svg { transform: rotate(180deg); }
+/* Leaflet's panes and controls stack within the frame, below the page's messages and dialogs. */
+.frame { position: relative; height: 380px; border: 1px solid var(--line); border-radius: 10px; overflow: hidden; background: var(--wash); isolation: isolate; }
+.map { position: absolute; inset: 0; }
+.frame :global(.leaflet-container) { background: var(--wash); font: 11px/1.5 Arial, Helvetica, sans-serif; }
+.message { position: absolute; inset: 0; display: grid; place-items: center; margin: 0; padding: 24px; color: var(--muted); font-size: 13px; text-align: center; }
+
+/* Leaflet centers a marker's element, sized for what it draws, on its point. */
+.anchor { outline: none; }
+.content { display: flex; width: 100%; height: 100%; align-items: center; justify-content: center; }
+/* A destination's marker, a pin on the trip map's destination green, and destinations sharing one, their count in ink. */
+.symbol { display: grid; place-items: center; width: 30px; height: 30px; border: 2px solid var(--white); border-radius: 50%; background: var(--green); color: var(--white); box-shadow: 0 2px 6px #15281d40; font: 700 12px/1 Arial, Helvetica, sans-serif; }
+.group { background: var(--ink); }
+.anchor:focus-visible .content > * { outline: 3px solid var(--ink); outline-offset: 2px; }
+
+/* Destinations sharing a marker, in its popup: each its name, opening its page, in the page's ink rather than the blue
+   Leaflet gives links in the map. */
+.popupList { display: grid; gap: 2px; min-width: 160px; margin: 0; padding: 0; list-style: none; }
+.frame .popupList a { display: inline-flex; align-items: center; min-height: 32px; color: var(--ink); font-size: 13px; font-weight: 600; text-decoration: underline; overflow-wrap: anywhere; }
+.frame .popupList a:hover { color: var(--orange); }
+/* A popup taller than the map has room for scrolls, its links inset so the scrolling area doesn't cut off their focus rings. */
+.frame :global(.leaflet-popup-scrolled) { margin: 7px 18px 7px 14px; padding: 6px; }
+
+.status { margin: 8px 0 0; color: var(--muted); font-size: 11px; }
+.status:empty { display: none; }
+
+.unmapped { margin-top: 18px; padding-top: 16px; border-top: 1px solid var(--line); }
+.unmapped h4 { margin: 0; font-size: 15px; }
+.unmapped > p { margin: 6px 0 10px; max-width: 640px; color: var(--muted); font-size: 12px; overflow-wrap: anywhere; }
+.unmapped ul { display: grid; gap: 6px; margin: 0 0 6px; padding: 0; list-style: none; }
+.unmapped li { display: grid; justify-items: start; font-size: 12px; overflow-wrap: anywhere; }
+.unmapped li a { display: inline-flex; align-items: center; min-height: 32px; max-width: 100%; font-weight: 600; text-decoration: underline; }
+.unmapped li a:hover { color: var(--orange); }
+.reason { color: var(--orange); font-size: 11px; }
+.credit { margin-top: 12px; color: var(--muted); font-size: 10px; overflow-wrap: anywhere; }
+.credit a { text-decoration: underline; }
+
+@media (max-width: 540px) {
+  .section { margin-bottom: 28px; }
+  .frame { height: 300px; }
+}

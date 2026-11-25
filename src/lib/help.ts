@@ -102,9 +102,9 @@ const HELP: { [Route in SignedInRoute]: Route extends `${string}/[category]` ? R
   "/destinations": {
     title: "Destinations",
     points: [
-      "Every city you've researched, in a trip or not, with its primary photo if it has one, the trips that visit it and how many ideas it has.",
+      "Every city you've researched, in a trip or not, on a map and as cards with its primary photo, the trips that visit it and how many ideas it has.",
       "New destination saves a city to research before it's in a trip. A city you already have opens instead.",
-      "Search by city or trip, and select a card to open its destination.",
+      "Search by city or trip filters the map and cards. Select a pin or card to open its destination; a numbered marker lists those whose pins would overlap.",
       "A destination's ideas, research and budget amounts are shared by every trip that visits it, and stay here when it leaves them.",
       "Destinations marked Shared by belong to the owner of a trip shared with you. You can change them, but not delete them.",
       "A card's heart likes its destination and shows how many people like it, the same in every trip that visits it.",

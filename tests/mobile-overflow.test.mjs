@@ -30,6 +30,8 @@ test("what people and assistants write wraps within the screen, a long link or w
     // A trip's focus on its card (TRA-168).
     [GLOBALS, [".trip-meta", ".destination-name p", ".list-intro", ".helper", ".form-error", ".destination-budget-total small", ".budget-breakdown dt small", ".budget-category dt small", ".trip-focus"]],
     ["../src/components/destination-map.module.css", [".unmapped > p", ".credit"]],
+    // The Destinations page's map: its Not on the map list and the names in a shared marker's popup (TRA-180).
+    ["../src/components/destinations-map.module.css", [".unmapped > p", ".unmapped li", ".frame .popupList a", ".credit"]],
     // A layover plan's notes name the layover's place (TRA-45).
     ["../src/components/layover-plan.module.css", [".note"]],
     ["../src/app/ai/ai.module.css", [".change h2"]],

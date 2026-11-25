@@ -53,6 +53,7 @@ import { TransportationIcons } from "@/components/transportation-icons";
 import TripMap from "@/components/trip-map";
 import { connectionTarget, tripJourney } from "@/lib/trip-map";
 import DestinationMap from "@/components/destination-map";
+import DestinationsMap from "@/components/destinations-map";
 import { destinationPlaces, type SavedPlace } from "@/lib/destination-map";
 import { MAIN_COLUMN, PAGE, type FrameWidths } from "@/lib/photo-sizes";
 import { calculateBudget, calculateDestinationBudget, tripVisits, unsetStayAmount, unsetTripAmount, type EstimateCategory, type UnsetAmount } from "@/lib/budget";
@@ -826,6 +827,11 @@ export default function PlannerApp({ initialData, initialBudgets, access = {}, d
         <section className="ideas-heading"><div><p className="eyebrow">EVERY PLACE YOU HAVE LOOKED INTO</p><h1>Destinations</h1><p className="hero-description">Each city keeps one set of hotels, activities, restaurants, and research, shared by every trip that visits it.</p></div><button className="button primary" onClick={() => open({ kind: "newDestination" })}><Plus size={17} />New destination</button></section>
         <section className="trips-section"><div className="section-heading"><div className="heading-inline"><h2>Saved destinations</h2><span className="count-pill">{data.destinations.length}</span></div>
           {data.destinations.length > 0 && <label className="search-field"><Search size={17} /><input aria-label="Search destinations" value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Find a city or trip" /></label>}</div>
+          {/* Every destination on one map, which the search filters with the cards (TRA-180). */}
+          <DestinationsMap destinations={data.destinations.map(({ id, city, cityFromSuggestion }) => {
+            const itemAccess = destinationAccess[id];
+            return { id, city, cityFromSuggestion, sharedBy: itemAccess?.role === "editor" ? memberLabel(itemAccess.owner) : null };
+          })} shown={visibleDestinations.map((item) => item.id)} />
           {data.destinations.length === 0 ? <div className="empty-state home-empty"><span className="empty-icon"><MapPin size={28} strokeWidth={1.5} /></span><h3>No destinations yet.</h3><p>Add a city to research it before it is in a trip. Destinations you add to trips appear here too, and stay here with everything saved for them even after they leave every trip.</p><button className="button secondary" onClick={() => open({ kind: "newDestination" })}><Plus size={17} />Add your first destination</button></div>
             : visibleDestinations.length === 0 ? <div className="empty-state"><h3>No destinations match that search.</h3><button className="text-button" onClick={() => setSearch("")}>Clear search</button></div>
             : <div className="trip-grid">{visibleDestinations.map((item, index) => {

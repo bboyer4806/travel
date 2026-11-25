@@ -156,6 +156,14 @@ Repeat passing checks when subsequent changes affect their coverage or required 
   `src/lib/place-search.ts`. That is the only code that asks Nominatim, whose usage policy it keeps: one request at a
   time, more than a second apart, named `TravelPlanner/1.0`, with answers kept for a day. A place is found only when
   exactly one place matches its address, or else its name, within 50 km; tests use a stand-in, never Nominatim.
+- The map of all destinations (TRA-180) is `src/components/destinations-map.tsx`, with Leaflet in
+  `destinations-map-canvas.tsx`, loaded only in the browser, on the Destinations page below Saved destinations' heading
+  and search. `destinationsMapLayout` and `destinationNames` in `src/lib/destinations-map.ts` decide what it shows: each
+  destination `getDestinationsOverview` gives the page, once by its ID, that the page's search shows, named as its card
+  names it. `markersAt` gives the markers for the map's zoom, with Leaflet's projection: destinations whose markers would
+  cover each other share one, whose popup links each. `/api/destinations-map` looks every destination the account can
+  open up by its saved city with `locatePlaces`, answering by ID with the city it looked up, so an answer for a renamed
+  city is never shown. It stores nothing and never guesses a location: a destination it can't find is listed below it.
 - Coordinates (TRA-150) are each idea's and church's `latitude`, `longitude`, `coordinatesAccuracy` (`exact` or
   `approximate`) and `coordinatesReview` columns, all set or none, read as `coordinates` and checked by
   `normalizeCoordinates` in `src/lib/coordinates.ts`. People change them only with `candidate.save` and `church.save`,

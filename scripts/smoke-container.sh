@@ -424,6 +424,8 @@ const aiPhotoRoute = "/api/ai-proposal-images/c2000000-0000-4000-8000-0000000000
 const tripMapRoute = "/api/trip-map/container-smoke";
 // Where the seeded destination's hotels, activities, restaurants and churches are on its map (TRA-130), likewise.
 const destinationMapRoute = "/api/destination-map/22222222-2222-4222-8222-222222222222";
+// Where every destination the account can open is on the Destinations page's map (TRA-180), which tells an account only of its own.
+const destinationsMapRoute = "/api/destinations-map";
 // The seeded destination's, idea's and church's photos, with their thumbnails (TRA-89), which go only to accounts that can open them.
 const photoRoutes = ["/api/destination-images/22222222-2222-4222-8222-222222222222?v=33333333-3333-4333-8333-333333333333",
   "/api/destination-images/22222222-2222-4222-8222-222222222222/a2000000-0000-4000-8000-000000000001?v=33333333-3333-4333-8333-333333333333",
@@ -432,7 +434,7 @@ const photoRoutes = ["/api/destination-images/22222222-2222-4222-8222-2222222222
   "/api/candidate-images/66666666-6666-4666-8666-666666666666/90000000-0000-4000-8000-000000000002/thumbnail?v=bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
   "/api/church-images/b1000000-0000-4000-8000-000000000001/b3000000-0000-4000-8000-000000000002?v=b4000000-0000-4000-8000-000000000001",
   "/api/church-images/b1000000-0000-4000-8000-000000000001/b3000000-0000-4000-8000-000000000002/thumbnail?v=b4000000-0000-4000-8000-000000000001"];
-const dataRoutes = [...photoRoutes, "/api/locations?q=Vienna", aiPhotoRoute, tripMapRoute, destinationMapRoute];
+const dataRoutes = [...photoRoutes, "/api/locations?q=Vienna", aiPhotoRoute, tripMapRoute, destinationMapRoute, destinationsMapRoute];
 async function assertRefused(label, headers) {
   for (const path of pages) {
     const response = await get(path, headers);
@@ -496,6 +498,10 @@ async function assertHidden(label, headers) {
   const destinationMap = await get(destinationMapRoute, headers);
   assert.equal(destinationMap.status, 404, `${label} must not find the destination's map`);
   assert.ok(!(await destinationMap.text()).includes("St. Stephen"), `${label} the destination's map must not include its places`);
+  // The Destinations page's map tells them of no destination of the seeded trip's, and looks nothing up for them.
+  const destinationsMap = await get(destinationsMapRoute, headers);
+  assert.equal(destinationsMap.status, 200, `${label} the Destinations map`);
+  assert.deepEqual(await destinationsMap.json(), { destinations: {} }, `${label} must not see the destination on the Destinations map`);
   // Only the designated owner manages AI assistants, and sees their proposals' photos.
   assert.ok((await (await get("/ai", headers)).text()).includes("This page has moved on."), `${label} must not find AI assistants`);
   assert.equal((await get(aiPhotoRoute, headers)).status, 404, `${label} must not see proposals' photos`);

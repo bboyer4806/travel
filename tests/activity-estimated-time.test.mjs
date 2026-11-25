@@ -15,6 +15,7 @@ import * as money from "../src/lib/money.ts";
 import * as photoSizes from "../src/lib/photo-sizes.ts";
 import { createStore, SCHEMA_VERSION, ValidationError } from "../src/lib/store.ts";
 import * as tripDates from "../src/lib/trip-dates.ts";
+import * as tripSort from "../src/lib/trip-sort.ts";
 import * as tripTags from "../src/lib/trip-tags.ts";
 import * as types from "../src/lib/types.ts";
 import * as uuid from "../src/lib/uuid.ts";
@@ -287,7 +288,7 @@ function load(file, require, globals = {}) {
 const element = (type, props) => ({ type, props });
 const icons = new Proxy({}, { get: (_, name) => "icon:" + String(name) });
 const unused = new Proxy({}, { get: () => () => null });
-const libraries = { "@/lib/budget": budget, "@/lib/coordinates": coordinates, "@/lib/destination-label": destinationLabel, "@/lib/estimated-time": estimatedTime, "@/lib/gallery-draft": galleryDraft, "@/lib/money": money, "@/lib/photo-sizes": photoSizes, "@/lib/trip-dates": tripDates, "@/lib/trip-tags": tripTags, "@/lib/types": types, "@/lib/uuid": uuid };
+const libraries = { "@/lib/budget": budget, "@/lib/coordinates": coordinates, "@/lib/destination-label": destinationLabel, "@/lib/estimated-time": estimatedTime, "@/lib/gallery-draft": galleryDraft, "@/lib/money": money, "@/lib/photo-sizes": photoSizes, "@/lib/trip-dates": tripDates, "@/lib/trip-sort": tripSort, "@/lib/trip-tags": tripTags, "@/lib/types": types, "@/lib/uuid": uuid };
 /** A require for components rendered once, with each hook's initial state. A CSS module's class names are their own names. */
 function stateless(name) {
   if (name.endsWith(".module.css")) return { default: new Proxy({}, { get: (_, key) => String(key) }) };

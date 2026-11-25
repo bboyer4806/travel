@@ -8,6 +8,7 @@ import * as budget from "../src/lib/budget.ts";
 import * as destinationLabel from "../src/lib/destination-label.ts";
 import * as money from "../src/lib/money.ts";
 import * as tripDates from "../src/lib/trip-dates.ts";
+import * as tripSort from "../src/lib/trip-sort.ts";
 import { addDestination, newItem, tripInput } from "./budget-fixtures.mjs";
 import { createOwnedStore } from "./owned-store.mjs";
 
@@ -129,7 +130,7 @@ const pageModules = {
   ...shared,
   "react": { useState: (initial) => [typeof initial === "function" ? initial() : initial, () => {}], useTransition: () => [false, () => {}], useId: () => "id", useRef: (current) => ({ current }), useEffect: () => {} },
   "next/link": { default: ({ children, ...props }) => element("a", { ...props, children }) },
-  "@/lib/budget": budget, "@/lib/destination-label": destinationLabel, "@/lib/money": money, "@/lib/trip-dates": tripDates,
+  "@/lib/budget": budget, "@/lib/destination-label": destinationLabel, "@/lib/money": money, "@/lib/trip-dates": tripDates, "@/lib/trip-sort": tripSort,
 };
 const pageRequire = (name) => name.endsWith(".module.css") ? cssModule : pageModules[name] ?? unused;
 pageModules["@/components/churches"] = load("../src/components/churches.tsx", pageRequire);

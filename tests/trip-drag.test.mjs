@@ -224,7 +224,7 @@ test("near the window's top or bottom, a dragged trip scrolls the page every fra
   assert.equal(list.frames.size, 0, "a trip picked up from the keyboard scrolls only to show its aim");
 });
 
-test("while trips can't move, as during a search, a save or with one trip, every handle is disabled and does nothing (TRA-16)", () => {
+test("while trips can't move, as during a search, a sort (TRA-177), a save or with one trip, every handle is disabled and does nothing (TRA-16)", () => {
   const list = harness({ enabled: false });
   assert.equal(list.handle(ROME).disabled, true);
   assert.equal(list.key(ROME, " ").defaultPrevented, false);

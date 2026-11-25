@@ -6,6 +6,7 @@ import { runInNewContext } from "node:vm";
 import ts from "typescript";
 import * as destinationLabel from "../src/lib/destination-label.ts";
 import * as photoFocus from "../src/lib/photo-focus.ts";
+import * as tripSort from "../src/lib/trip-sort.ts";
 import { createOwnedStore } from "./owned-store.mjs";
 import { addDestination, candidateInput, destinationEdit, prepared, tripInput } from "./budget-fixtures.mjs";
 
@@ -26,7 +27,7 @@ const modules = {
   "lucide-react": new Proxy({}, { get: (_, name) => "icon:" + String(name) }),
   // A link is the anchor the browser follows.
   "next/link": { default: ({ children, ...props }) => element("a", { ...props, children }) },
-  "@/lib/destination-label": destinationLabel, "@/lib/photo-focus": photoFocus,
+  "@/lib/destination-label": destinationLabel, "@/lib/photo-focus": photoFocus, "@/lib/trip-sort": tripSort,
 };
 // Every other module is one the cards don't use: each of its exports renders, and returns, nothing.
 const unused = new Proxy({}, { get: () => () => null });

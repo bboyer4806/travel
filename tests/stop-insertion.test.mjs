@@ -8,6 +8,7 @@ import * as destinationLabel from "../src/lib/destination-label.ts";
 import * as money from "../src/lib/money.ts";
 import { createStore, ValidationError } from "../src/lib/store.ts";
 import * as tripDates from "../src/lib/trip-dates.ts";
+import * as tripSort from "../src/lib/trip-sort.ts";
 import { addCity, addDestination, candidateInput, destination, destinationEdit, setup, stop, tripInput } from "./budget-fixtures.mjs";
 import { cssRules } from "./css-rules.mjs";
 
@@ -183,7 +184,7 @@ function tripPage(store, tripId) {
     // The page's save, made by the store as the signed-in owner. Each change sent is kept as this file's object, so it
     // compares as any other.
     "@/app/actions": { mutatePlanner: async (mutation) => { sent.push({ ...mutation }); return { ok: true, ...store.applyMutation(mutation) }; } },
-    "@/lib/budget": budget, "@/lib/destination-label": destinationLabel, "@/lib/money": money, "@/lib/trip-dates": tripDates,
+    "@/lib/budget": budget, "@/lib/destination-label": destinationLabel, "@/lib/money": money, "@/lib/trip-dates": tripDates, "@/lib/trip-sort": tripSort,
   };
   // Every other module is one the destinations and Add destination don't need: each of its exports renders, and returns, nothing.
   const unused = new Proxy({}, { get: () => () => null });

@@ -17,6 +17,7 @@ import { MAX_PACKING_ADD } from "./packing.ts";
 import { MAX_PHOTO_ZOOM, UNCROPPED } from "./photo-focus.ts";
 import { SESSION_DAYS } from "./session-cookie.ts";
 import { alreadyTagged, cleanTagName, MAX_TAG_LENGTH, tagKey } from "./trip-tags.ts";
+import { normalizeBestTime } from "./trip-best-time.ts";
 import { PLANNER_UPDATED } from "./planner-updated.ts";
 import { RESTAURANT_TYPES } from "./types.ts";
 import { ACCESS_TOKEN_MS, AUTHORIZATION_CODE_MS, CONNECTION_MS, PROPOSAL_MS, aiPlatform, isPkceChallenge, pkceMatches } from "./ai-auth.ts";
@@ -30,7 +31,8 @@ import type { EditableField, FieldValues } from "./editable-fields.ts";
 import type { EntryRequirements } from "./entry-requirements.ts";
 import type { HealthSafety } from "./health-safety.ts";
 import type { LayoverActivity, LayoverPlan, SavedLayoverPlan } from "./layover-plan.ts";
-import type { MonthlyClimate } from "./typical-weather.ts";
+import type { Month, MonthlyClimate } from "./typical-weather.ts";
+import type { BestTime } from "./trip-best-time.ts";
 import type { AiConnection, AiPhotoToAdd, AiProposal, DestinationFields, GalleryUpdate, LargePhoto, PhotoCrop, PhotoWidths, PreparedImage, StoredThumbnail, TripImage, TripImageUpdate } from "./types";
 import type { AccessEntry, AccessOverview, AuthorizedAccount, DestinationAccess, GoogleIdentity, LibraryDestination, TripAccess, TripMember, TripStop } from "./types";
 import type { Candidate, CandidateImage, Category, Church, MassTime, Destination, DestinationImage, HomeItem, PackingItem, StoredImage, ItineraryStop, Mutation, ResearchLink, RestaurantType, Snapshot, TravelLeg, Trip } from "./types";
@@ -53,7 +55,13 @@ const VISIBLE_TRIPS = "SELECT id FROM trips WHERE ownerId = ? UNION SELECT tripI
 /** The destinations an account owns or that a trip it can open visits, as SQL binding the account's ID three times. */
 const VISIBLE_DESTINATIONS = `SELECT id FROM destinations WHERE ownerId = ? UNION SELECT destinationId FROM trip_stops WHERE tripId IN (${VISIBLE_TRIPS})`;
 /** Every trip column but the owner's account ID, which stays on the server. */
-const TRIP_COLUMNS = "id, name, tagline, focus, dateLabel, homeCity, returnCity, travelers, entryVisaFeesCents, notes, createdAt, startDate";
+const TRIP_COLUMNS = "id, name, tagline, focus, dateLabel, homeCity, returnCity, travelers, entryVisaFeesCents, notes, createdAt, startDate, bestTimeMonthsJson, bestTimeReasons, bestTimeAvoid";
+/** A trip as TRIP_COLUMNS read it, with its Best time to go in three columns (TRA-178). */
+type TripRow = Omit<Trip, "tags" | "image" | "endDate" | "bestTime"> & { bestTimeMonthsJson: string; bestTimeReasons: string; bestTimeAvoid: string };
+/** A trip read with TRIP_COLUMNS, its Best time to go from its columns (TRA-178), without the tags, image and end date read apart. */
+function tripFromRow({ bestTimeMonthsJson, bestTimeReasons, bestTimeAvoid, ...trip }: TripRow): Omit<Trip, "tags" | "image" | "endDate"> {
+  return { ...trip, bestTime: { months: JSON.parse(bestTimeMonthsJson) as Month[], reasons: bestTimeReasons, avoid: bestTimeAvoid } };
+}
 /** Every destination column but its owner's account ID and its city key, which stay on the server. */
 const DESTINATION_COLUMNS = ["id", "city", "cityFromSuggestion", "tagline", "notes", "miscDailyMinor", "miscCurrency", "hotelNightlyMinor", "hotelCurrency", "activitiesBudgetMode", "activitiesGeneralMinor", "activitiesCurrency", "foodBudgetMode", "foodDailyMinor", "foodCurrency", "shoppingMinor", "shoppingCurrency", "weatherHighF", "weatherLowF", "weatherRainfall", "weatherPeriod", "weatherSource", "churchEnabled"]
   .map((column) => "destinations." + column).join(", ");
@@ -521,6 +529,12 @@ function validate(input: unknown): Mutation {
       if (new Set(tripIds.map((id) => id.toLowerCase())).size !== tripIds.length) throw new ValidationError("Each trip must appear once in the trip order.");
       return { type: value.type, tripIds };
     }
+    case "trip.bestTime": {
+      let bestTime: BestTime;
+      try { bestTime = normalizeBestTime(value.bestTime); }
+      catch (error) { throw new ValidationError(error instanceof Error ? error.message : "Enter a valid best time to go."); }
+      return { type: value.type, id: idField(value), bestTime };
+    }
     case "homeItem.save":
       return { type: value.type, id: saveIdField(value), create: createField(value), tripId: idField(value, "tripId"), ...readFields(EDITABLE_FIELDS.home_items, value) };
     case "homeItem.delete":
@@ -792,7 +806,7 @@ const LIVE: Make = { id: () => randomUUID(), now: () => new Date().toISOString()
  * The schema this build upgrades every database to, as SQLite's user_version. A schema change adds the next
  * upgrade in createStore and raises this to match; earlier upgrades keep their own numbers.
  */
-export const SCHEMA_VERSION = 49;
+export const SCHEMA_VERSION = 50;
 
 /** A destination as schema 20 saved it, inside one trip, with that trip's owner and name. */
 type TripDestinationRow = Omit<StoredDestination, "cityKey"> & Omit<TripStop, "destinationId"> & { tripName: string };
@@ -1603,6 +1617,15 @@ export function createStore(databasePath: string, ownerEmail: string) {
         PRAGMA user_version = 49;
       `);
     }
+    if (version < 50) {
+      // Each trip's Best time to go (TRA-178): the calendar months recommended for taking the whole trip, as a JSON list of
+      // their names in calendar order, why they are recommended, and the times to avoid. Every saved trip starts without
+      // any, so no trip looks different and none shows under a month filter on All trips. A replay keeps saved ones.
+      if (!hasColumn("trips", "bestTimeMonthsJson")) db.exec("ALTER TABLE trips ADD COLUMN bestTimeMonthsJson TEXT NOT NULL DEFAULT '[]';");
+      if (!hasColumn("trips", "bestTimeReasons")) db.exec("ALTER TABLE trips ADD COLUMN bestTimeReasons TEXT NOT NULL DEFAULT '';");
+      if (!hasColumn("trips", "bestTimeAvoid")) db.exec("ALTER TABLE trips ADD COLUMN bestTimeAvoid TEXT NOT NULL DEFAULT '';");
+      db.exec("PRAGMA user_version = 50;");
+    }
     if (version < SCHEMA_VERSION && db.prepare("PRAGMA foreign_key_check").get()) {
       throw new Error("This upgrade would leave saved items without the trip or destination they belong to. Nothing was changed; review the database against a backup before upgrading.");
     }
@@ -1672,7 +1695,7 @@ export function createStore(databasePath: string, ownerEmail: string) {
     const tags = tagsOf(ids);
     const images = imagesOf(ids);
     return db.prepare(`SELECT ${TRIP_COLUMNS} FROM trips${where} ORDER BY createdAt DESC, id`).all(...args).map((row) => {
-      const trip = row as unknown as Trip;
+      const trip = tripFromRow(row as unknown as TripRow);
       return { ...trip, tags: tags.get(trip.id) ?? [], image: images.get(trip.id) ?? null, endDate: sequenceDates(trip.startDate, orderedStops(trip.id)).endDate };
     });
   }
@@ -1781,7 +1804,7 @@ export function createStore(databasePath: string, ownerEmail: string) {
       LEFT JOIN trip_order ON trip_order.accountId = ? AND trip_order.tripId = trips.id
       LEFT JOIN trip_shares ON trip_shares.accountId = ? AND trip_shares.tripId = trips.id
       WHERE trips.id IN (${VISIBLE_TRIPS}) ORDER BY trip_order.position IS NULL, trip_order.position, coalesce(trip_shares.sharedAt, trips.createdAt), trips.id`)
-      .all(accountId, accountId, ...visible) as unknown as Trip[];
+      .all(accountId, accountId, ...visible).map((row) => tripFromRow(row as unknown as TripRow));
     const stops = db.prepare(`SELECT id, tripId, destinationId, position, nights FROM trip_stops WHERE tripId IN (${VISIBLE_TRIPS}) ORDER BY tripId, position, id`).all(...visible) as unknown as TripStop[];
     const visited = `SELECT destinationId FROM trip_stops WHERE tripId IN (${VISIBLE_TRIPS})`;
     const destinations = db.prepare(`SELECT id,city,cityFromSuggestion,miscDailyMinor,miscCurrency,hotelNightlyMinor,hotelCurrency,activitiesBudgetMode,activitiesGeneralMinor,activitiesCurrency,
@@ -2351,6 +2374,11 @@ export function createStore(databasePath: string, ownerEmail: string) {
         existing<Trip>("trips", input.id);
         saveTripImage(input.id, input.image && { data: input.image.data, large: input.image.large, card: UNCROPPED, banner: UNCROPPED }, make);
         return input.id;
+      // Only the Best time to go changes (TRA-178): never the trip's dates, destinations, travel or budget.
+      case "trip.bestTime":
+        existing<Trip>("trips", input.id);
+        db.prepare("UPDATE trips SET bestTimeMonthsJson = ?, bestTimeReasons = ?, bestTimeAvoid = ? WHERE id = ?").run(JSON.stringify(input.bestTime.months), input.bestTime.reasons, input.bestTime.avoid, input.id);
+        return input.id;
       case "trip.share": {
         // Sharing authorizes the email to sign in, even before that person ever has. Nothing is sent to them.
         const recipient = authorizeAccount(input.email, make);
@@ -2667,7 +2695,7 @@ export function createStore(databasePath: string, ownerEmail: string) {
   function mutationScope(input: Mutation): { trip: string | undefined } | { destination: string | undefined } {
     switch (input.type) {
       // Liking a trip, or a destination, idea or church, below, is a change to it, open to whoever can open it (TRA-31).
-      case "trip.save": case "trip.delete": case "trip.image": case "trip.like": return { trip: tripOf("trips", input.id) };
+      case "trip.save": case "trip.delete": case "trip.image": case "trip.bestTime": case "trip.like": return { trip: tripOf("trips", input.id) };
       // Adding a saved destination to a trip is a change to the trip. `authorize` also checks the account can open the destination.
       case "trip.share": case "trip.unshare": case "trip.tag": case "trip.untag": case "stop.add": case "stop.visit": return { trip: tripOf("trips", input.tripId) };
       // An account's own trip order names every trip it can open, not one, so nothing places it; authorize lets each

@@ -59,12 +59,12 @@ function legacyDatabase(path, version) {
     // Trips from before packing lists upgrade with none (TRA-18).
     packingItems: [],
     churches: [],
-    // Trips from before tags upgrade with none, without a headline image (TRA-133), a tagline (TRA-134), a focus (TRA-168)
-    // or entry and visa fees (TRA-159).
+    // Trips from before tags upgrade with none, without a headline image (TRA-133), a tagline (TRA-134), a focus (TRA-168),
+    // entry and visa fees (TRA-159) or a best time to go (TRA-178).
     tags: [],
     // Nothing upgrades liked (TRA-31), and likes are read for an account, never in a check's snapshot.
     likes: { trip: {}, destination: {}, candidate: {}, church: {} },
-    trips: db.prepare("SELECT * FROM trips").all().map((row) => ({ ...row, startDate: null, endDate: null, returnCity: version === 2 ? "Boston" : null, tags: [], image: null, tagline: "", focus: "", entryVisaFeesCents: null })),
+    trips: db.prepare("SELECT * FROM trips").all().map((row) => ({ ...row, startDate: null, endDate: null, returnCity: version === 2 ? "Boston" : null, tags: [], image: null, tagline: "", focus: "", entryVisaFeesCents: null, bestTime: { months: [], reasons: "", avoid: "" } })),
     // Each destination becomes a shared one, without a tagline (TRA-125), visited by a stop with its ID that keeps the trip's own details.
     destinations: db.prepare("SELECT * FROM destinations").all().map((row) => ({ id: row.id, city: row.city, cityFromSuggestion: false, tagline: "", notes: row.notes, imageVersion: null, miscDailyMinor: null, miscCurrency: null, hotelNightlyMinor: null, hotelCurrency: null, activitiesBudgetMode: "itemized", activitiesGeneralMinor: null, activitiesCurrency: null, foodBudgetMode: "itemized", foodDailyMinor: null, foodCurrency: null, shoppingMinor: null, shoppingCurrency: null, weatherHighF: null, weatherLowF: null, weatherRainfall: "", weatherPeriod: "", weatherSource: "", churchEnabled: false })),
     stops: db.prepare("SELECT * FROM destinations").all().map((row) => ({ id: row.id, tripId: row.tripId, destinationId: row.id, position: row.position, stay: row.stay, nights: null, arrivalDate: null, departureDate: null, legacyArrivalDate: null, legacyDepartureDate: null })),

@@ -2,6 +2,7 @@ import { ACCURACY_LABELS } from "./coordinates.ts";
 import { EDITABLE_FIELDS, fieldColumn } from "./editable-fields.ts";
 import { formatCurrency } from "./money.ts";
 import { RESTAURANT_TYPE_LABELS } from "./types.ts";
+import { hasBestTime } from "./trip-best-time.ts";
 import { climateAveragesText, climateFromJson, formatReferenceYears, MONTHS } from "./typical-weather.ts";
 import type { CoordinatesAccuracy } from "./coordinates";
 import type { EditableField } from "./editable-fields";
@@ -69,7 +70,11 @@ export function fieldColumns(fields: Record<string, EditableField>): Record<stri
  * from the contract (TRA-174). Hidden columns still count when approving: a proposal makes exactly the rows it previewed, or nothing.
  */
 export const PREVIEW_COLUMNS: Record<DataTable, Record<string, [string, Format] | null>> = {
-  trips: { id: null, createdAt: null, ownerId: ["Owner", "account"], ...fieldColumns(EDITABLE_FIELDS.trips) },
+  // A trip's Best time to go reads as its section labels it (TRA-178).
+  trips: {
+    id: null, createdAt: null, ownerId: ["Owner", "account"], ...fieldColumns(EDITABLE_FIELDS.trips),
+    bestTimeMonthsJson: ["Recommended months", "json"], bestTimeReasons: ["Why these months", "text"], bestTimeAvoid: ["Times to avoid", "text"],
+  },
   // A headline image shows as its current and proposed images instead (TRA-174).
   trip_images: { tripId: null, version: null, cardFocusX: null, cardFocusY: null, cardZoom: null, bannerFocusX: null, bannerFocusY: null, bannerZoom: null },
   trip_shares: { tripId: null, accountId: null, sharedAt: null },
@@ -266,6 +271,7 @@ export function operationTitle(change: Mutation): string {
     case "trip.save": return `${change.create ? "Add" : "Change"} the trip “${change.name}”`;
     case "trip.delete": return "Delete a trip";
     case "trip.image": return change.image ? "Set a trip's headline image" : "Remove a trip's headline image";
+    case "trip.bestTime": return hasBestTime(change.bestTime) ? "Save a trip's best time to go" : "Clear a trip's best time to go";
     case "trip.share": return `Share a trip with ${change.email}`;
     case "trip.unshare": return `Stop sharing a trip with ${change.email}`;
     case "trip.tag": return `Tag a trip “${change.name}”`;

@@ -7,6 +7,7 @@ import type { HealthSafety } from "./health-safety";
 import type { LayoverPlan, SavedLayoverPlan } from "./layover-plan";
 import type { MonthlyClimate } from "./typical-weather";
 import type { PackingCategory } from "./packing";
+import type { BestTime } from "./trip-best-time";
 /** How a destination budgets food and activities: from its ideas included in the budget, or from one amount. */
 export const FOOD_BUDGET_MODES = ["itemized", "daily"] as const;
 export type FoodBudgetMode = typeof FOOD_BUDGET_MODES[number];
@@ -25,8 +26,10 @@ export interface TypicalWeather { weatherHighF: number | null; weatherLowF: numb
  * `focus` is what the trip is mostly about, saved as typed and shown after Focus: on its card on All trips, or empty for none (TRA-168).
  * `entryVisaFeesCents` is the whole party's entry and visa fees for the whole trip, one estimate in USD cents, or null while
  * not set (TRA-159).
+ * `bestTime` is the months recommended for taking the whole trip, why, and the times to avoid, with no months and empty
+ * notes while not researched (TRA-178).
  */
-export interface Trip { startDate: string | null; endDate: string | null; id: string; name: string; tagline: string; focus: string; dateLabel: string; homeCity: string; returnCity: string | null; travelers: number; entryVisaFeesCents: number | null; notes: string; createdAt: string; tags: string[]; image: TripImage | null; }
+export interface Trip { startDate: string | null; endDate: string | null; id: string; name: string; tagline: string; focus: string; dateLabel: string; homeCity: string; returnCity: string | null; travelers: number; entryVisaFeesCents: number | null; notes: string; createdAt: string; tags: string[]; image: TripImage | null; bestTime: BestTime; }
 export interface HomeItem { id: string; tripId: string; name: string; notes: string; priceCents: number | null; createdAt: string; }
 /**
  * An item on a trip's packing list (TRA-18), one list for everyone who can open the trip: what it is, its category, how
@@ -153,6 +156,9 @@ export type Mutation =
  // ChatGPT or Claude proposal, by the new ID the proposal keeps it under (TRA-174). A new image starts uncropped. Only
  // those proposals make it; people change the image with the trip's save.
  | { type: "trip.image"; id: string; image: ({ id: string } & PreparedImage) | null }
+ // Replaces a trip's Best time to go with a whole record, and changes nothing else: never its dates, destinations or
+ // itinerary (TRA-178). No months and empty notes clear it.
+ | { type: "trip.bestTime"; id: string; bestTime: BestTime }
  | { type: "trip.delete"; id: string }
  | { type: "trip.share"; tripId: string; email: string }
  | { type: "trip.unshare"; tripId: string; email: string }

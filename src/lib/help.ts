@@ -82,7 +82,7 @@ const HELP: { [Route in SignedInRoute]: Route extends `${string}/[category]` ? R
       "Your trips and the trips shared with you, in your own order, each with any tagline and focus below its name, and its destinations, dates and estimated budget.",
       "New trip starts a trip with just a name. Select a trip's card to plan it, or Edit to change its name, tagline, focus, dates, cities and headline image.",
       "Drag a trip by its handle, or press Space on it, then the arrow keys, then Space, in Custom order with every trip showing. New trips go last.",
-      "Search by trip or city, select tags under Filter by tag to see only trips with every one, and choose Sort by to compare them without changing your order.",
+      "Search by trip or city; pick tags for trips with every one, and months under Best time to go for trips best in any. Sort by compares, keeping your order.",
       "Trips marked Shared by belong to someone else. You can change them, but only their owner can share or delete them.",
       "A card's heart likes its trip and shows how many people like it. Deleting a trip keeps its destinations, ideas and research in Destinations.",
     ],
@@ -90,11 +90,11 @@ const HELP: { [Route in SignedInRoute]: Route extends `${string}/[category]` ? R
   "/trips/[tripId]": {
     title: "Trip",
     points: [
-      "Route map with arrows: point or tab to a destination for its photo; select transportation for details. Then stays, travel, home, packing list and USD cost.",
+      "Route map with arrows: point or tab to a destination for its photo; select transportation for details. Then stays, travel, best time, home, packing, USD cost.",
       "Edit trip changes its name, tagline, focus, dates, travelers, entry and visa fees, cities and headline image. Only its owner shares or deletes the trip.",
       "Add destination adds a city last, a + between cards there, one In your library with its research. Card arrows move it, the pencil edits, the trash removes it.",
       "Nights set each stay's dates; Typical weather opens on its month. Hearts like the trip, places, ideas, churches; a star marks Must do; details step by swipe.",
-      "Between the places: Edit adds transportation, a flight's airline and flight number, price and layovers. Plan layover times what you'll do during a layover.",
+      "Between the places: Edit adds transportation, flight details, price and layovers; Plan layover times a layover. Best time to go picks the trip's best months.",
       "Packing list: Recommend items suggests what to pack, to review before adding; check items off as you pack. In a budget, Not set or Not estimated adds a cost.",
     ],
   },

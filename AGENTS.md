@@ -70,11 +70,18 @@ Repeat passing checks when subsequent changes affect their coverage or required 
   `getHomeOverview` follows. `trip.order` saves an account's whole order and is refused unless it names every trip the
   account can open, once each. A trip it hasn't placed, as one created or shared since, comes last, in the order the
   account got it; unsharing removes the trip's place in that account's order.
-- Sort by on All trips (TRA-177) is `sortTrips` in `src/lib/trip-sort.ts`, applied to the trips matching the search and
-  tag filters from what `getHomeOverview` already loads. It only orders what the page shows: it saves nothing, starts in
+- Sort by on All trips (TRA-177) is `sortTrips` in `src/lib/trip-sort.ts`, applied to the trips matching the search, tag
+  and month filters from what `getHomeOverview` already loads. It only orders what the page shows: it saves nothing, starts in
   Custom order each time the page opens, and keeps the account's order among equal values. Unknown values sort last
   either way, never as zero, and only a city suggestion's label gives a destination's country (`destinationCountry`).
   Trips move only in Custom order while every trip shows.
+- A trip's Best time to go (TRA-178) is its `bestTimeMonthsJson`, `bestTimeReasons` and `bestTimeAvoid` columns, read as
+  `bestTime` and changed only by `trip.bestTime` with a whole record, checked by `normalizeBestTime` in
+  `src/lib/trip-best-time.ts`: any of the 12 `MONTHS` by full name, each once, kept in calendar order, and two optional
+  notes. It is a record of its own, not `EDITABLE_FIELDS`, and saving it changes nothing else of the trip.
+  `src/components/trip-best-time.tsx` shows and edits it on the trip's page, and All trips' month filter shows the trips
+  `recommendedFor` any selected month, with the search and every selected tag; it saves nothing, and none is selected
+  each time the page opens. Travel never works out months itself.
 - Destinations are shared by their owner's trips (TRA-105). Each owner has one per city
   (`destinations.cityKey`, from `destinationKey` in `src/lib/destination-label.ts`), and trips visit
   them through `trip_stops`, which keep each trip's order, stay notes, nights and dates. A destination

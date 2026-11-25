@@ -7,6 +7,7 @@ import ts from "typescript";
 import * as budget from "../src/lib/budget.ts";
 import * as destinationLabel from "../src/lib/destination-label.ts";
 import * as money from "../src/lib/money.ts";
+import * as tripBestTime from "../src/lib/trip-best-time.ts";
 import * as tripDates from "../src/lib/trip-dates.ts";
 import * as tripSort from "../src/lib/trip-sort.ts";
 import * as tripTags from "../src/lib/trip-tags.ts";
@@ -231,7 +232,6 @@ test("an older database upgrades to schema 49 with nothing liked and nothing els
   undo.exec("DROP TABLE trip_likes; DROP TABLE destination_likes; DROP TABLE candidate_likes; DROP TABLE church_likes; PRAGMA user_version = 48;");
   undo.close();
   let store = createStore(path, OWNER);
-  assert.equal(SCHEMA_VERSION, 49);
   assert.deepEqual(store.getSnapshot(), before, "every trip, destination, idea and church is as it was");
   assert.deepEqual(tripLikes(store, first.owner, first.tripId), { trip: {}, destination: {}, candidate: {}, church: {} }, "nothing is liked");
   like(store, first.friend, "church", first.church);
@@ -244,7 +244,7 @@ test("an older database upgrades to schema 49 with nothing liked and nothing els
   assert.deepEqual(tripLikes(store, first.friend, first.tripId).church, { [first.church]: { count: 1, liked: true } });
   const db = new DatabaseSync(path, { readOnly: true });
   t.after(() => db.close());
-  assert.equal(db.prepare("PRAGMA user_version").get().user_version, 49);
+  assert.equal(db.prepare("PRAGMA user_version").get().user_version, SCHEMA_VERSION);
 });
 
 // The Like itself, and the pages that show it, rendered by their components from what the store gives each page. No
@@ -357,7 +357,7 @@ function plannerPage(save, read) {
         }
       },
     },
-    "@/lib/budget": budget, "@/lib/destination-label": destinationLabel, "@/lib/money": money, "@/lib/trip-dates": tripDates, "@/lib/trip-sort": tripSort, "@/lib/trip-tags": tripTags, "@/lib/types": types,
+    "@/lib/budget": budget, "@/lib/destination-label": destinationLabel, "@/lib/money": money, "@/lib/trip-dates": tripDates, "@/lib/trip-sort": tripSort, "@/lib/trip-tags": tripTags, "@/lib/trip-best-time": tripBestTime, "@/lib/types": types,
     // Dragging trips into order (TRA-16) is tested in trip-drag.test.mjs. Here no card or handle takes a drag's props.
     "@/components/trip-drag": { useTripDrag: () => ({ card: () => ({}), handle: () => ({}), announcement: "" }) },
     // Each destination's map shows nothing, but keeps how it opens a place's details, as its markers do (TRA-130).

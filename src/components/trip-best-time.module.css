@@ -1,0 +1,42 @@
+/* TRA-178: a trip's Best time to go, its editor's months, and All trips' month filter. */
+.section { margin-top: 44px; }
+.description { margin: -6px 0 18px; color: var(--muted); font-size: 12px; line-height: 1.65; }
+.empty { padding: 30px 20px; }
+.details { display: grid; gap: 16px; margin: 0; padding: 20px; border: 1px solid var(--line); border-radius: 8px; background: var(--white); }
+.details dt { color: var(--muted); font-size: 11px; font-weight: 600; }
+.details dd { min-width: 0; margin: 6px 0 0; }
+.note { font-size: 13px; line-height: 1.7; white-space: pre-wrap; overflow-wrap: anywhere; }
+.none { color: var(--muted); font-size: 12px; }
+.months { display: flex; flex-wrap: wrap; gap: 6px; margin: 0; padding: 0; list-style: none; }
+.months li { display: inline-flex; align-items: center; min-height: 26px; padding: 2px 10px; border-radius: 999px; background: var(--wash); color: var(--green); font-size: 12px; font-weight: 600; line-height: 1.4; }
+
+/* The editor's months: a checkbox for each, in calendar order, four to a row in the dialog and two on phones. */
+.picker { min-width: 0; margin: 0; padding: 0; border: 0; }
+.picker legend { padding: 0; font-size: 12px; font-weight: 600; }
+.choices { display: grid; grid-template-columns: repeat(auto-fill, minmax(118px, 1fr)); gap: 8px; margin-top: 7px; }
+.choice { display: flex; align-items: center; gap: 8px; min-height: 40px; padding: 0 12px; border: 1px solid #ccd6c7; border-radius: 5px; background: #fffffc; font-size: 13px; cursor: pointer; }
+.choice:has(input:checked) { border-color: #7e9c72; background: var(--wash); }
+.choice:has(input:disabled) { cursor: default; opacity: .6; }
+.choice input { flex-shrink: 0; width: 17px; height: 17px; margin: 0; accent-color: var(--green); }
+.hint { display: block; margin-top: 7px; color: var(--muted); font-size: 10px; line-height: 1.55; }
+
+/* All trips' month filter, below Filter by tag and styled as it is. Each month is wide enough for its check, so choosing
+   one never moves the others. */
+.filter { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: -8px 0 24px; }
+.filterLabel { margin-right: 4px; color: var(--muted); font-size: 11px; font-weight: 600; }
+.filterMonths { display: flex; flex-wrap: wrap; gap: 6px; }
+/* Text changes color with the background, so a toggled month never flashes white on white. */
+.filterMonth { display: inline-flex; align-items: center; justify-content: center; gap: 5px; min-width: 64px; min-height: 32px; padding: 5px 8px; border: 1px solid #d4dbcd; border-radius: 999px; background: var(--white); color: var(--green); font-size: 12px; font-weight: 600; line-height: 1.4; transition: background .16s, border-color .16s, color .16s; }
+.filterMonth:hover { background: #eef1e8; }
+.filterMonth[aria-pressed="true"] { border-color: var(--green); background: var(--green); color: white; }
+
+@media (max-width: 540px) {
+  /* TRA-156: the trip page's spacing on phones, 28px between its sections and 12px inside its boxes. */
+  .section { margin-top: 28px; }
+  .details { padding: 12px; }
+  .choice { min-height: 44px; }
+  /* The months fill the width below their label, four to a row, at a touchscreen's size. */
+  .filterLabel { flex-basis: 100%; }
+  .filterMonths { display: grid; flex-basis: 100%; grid-template-columns: repeat(4, 1fr); }
+  .filterMonth { min-width: 0; min-height: 44px; }
+}

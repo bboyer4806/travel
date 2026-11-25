@@ -146,6 +146,7 @@ test("people a trip is shared with change everything in it, but only its owner d
 
   change({ type: "trip.save", id: tripId, name: "Portugal together", startDate: "2027-05-03", dateLabel: "Spring", homeCity: "Boston", travelers: 3, notes: "Edited together", image: { data: webp, large: null, card: { focusX: 20, focusY: 80, zoom: 2 }, banner: UNCROPPED } });
   change({ type: "trip.tag", tripId, name: "Together" });
+  change({ type: "trip.bestTime", id: tripId, bestTime: { months: ["September", "May"], reasons: "Mild and quiet", avoid: "August crowds" } });
   change({ type: "leg.save", id: legs[0], method: "Train", price: "45", departure: "", arrival: "", url: "", notes: "" });
   change({ type: "leg.clear", id: legs[1] });
   change({ type: "candidate.save", ...newItem(), destinationId: porto, category: "restaurants", name: "Cantinho", price: "60", address: "", url: "", notes: "", included: true });
@@ -173,6 +174,10 @@ test("people a trip is shared with change everything in it, but only its owner d
   assert.equal(asOwner.data.trips[0].name, "Portugal together");
   assert.deepEqual(asOwner.data.trips[0].image.card, { focusX: 20, focusY: 80, zoom: 2 }, "the trip's headline image too (TRA-133)");
   assert.deepEqual(asOwner.data.trips[0].tags, ["Together"]);
+  // Its Best time to go too, on both accounts' All trips, where their month filters find it (TRA-178).
+  const bestTime = { months: ["May", "September"], reasons: "Mild and quiet", avoid: "August crowds" };
+  assert.deepEqual(asOwner.data.trips[0].bestTime, bestTime);
+  for (const account of [owner, editor]) assert.deepEqual(store.getHomeOverview(account).data.trips.find((item) => item.id === tripId).bestTime, bestTime);
   assert.equal(asOwner.data.destinations.find((item) => item.id === porto).notes, "Port wine");
   assert.equal(asOwner.data.destinations.find((item) => item.id === porto).healthSafety.localSafety, "Watch for pickpockets");
   assert.deepEqual(store.getDestinationPhoto(owner, porto, portoPhoto.id).data, webp);
@@ -211,6 +216,7 @@ test("an account a trip isn't shared with can neither read nor change any part o
     { type: "trip.unshare", tripId, email: "editor@example.com" },
     { type: "trip.tag", tripId, name: "Mine" },
     { type: "trip.untag", tripId, name: "Mine" },
+    { type: "trip.bestTime", id: tripId, bestTime: { months: ["May"], reasons: "Mine", avoid: "" } },
     { type: "homeItem.save", ...newItem(), tripId, name: "Mine", price: "", notes: "" },
     { type: "homeItem.save", id: homeItem, tripId, name: "Mine", price: "", notes: "" },
     { type: "homeItem.delete", id: homeItem, tripId },

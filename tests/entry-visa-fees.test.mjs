@@ -8,6 +8,7 @@ import * as budget from "../src/lib/budget.ts";
 import * as destinationLabel from "../src/lib/destination-label.ts";
 import * as money from "../src/lib/money.ts";
 import { SCHEMA_VERSION } from "../src/lib/store.ts";
+import * as tripBestTime from "../src/lib/trip-best-time.ts";
 import * as tripDates from "../src/lib/trip-dates.ts";
 import * as tripSort from "../src/lib/trip-sort.ts";
 import * as tripTags from "../src/lib/trip-tags.ts";
@@ -256,7 +257,7 @@ function plannerPage(store, pageProps) {
     "next/navigation": { useRouter: () => ({ push() {}, refresh() {} }), unstable_isUnrecognizedActionError: () => false },
     // The page's save, made by the store as the signed-in owner. Each change sent is kept as this file's object.
     "@/app/actions": { mutatePlanner: async (mutation) => { sent.push({ ...mutation }); return { ok: true, ...store.applyMutation(mutation) }; } },
-    "@/lib/budget": budget, "@/lib/destination-label": destinationLabel, "@/lib/money": money, "@/lib/trip-dates": tripDates, "@/lib/trip-sort": tripSort, "@/lib/trip-tags": tripTags,
+    "@/lib/budget": budget, "@/lib/destination-label": destinationLabel, "@/lib/money": money, "@/lib/trip-dates": tripDates, "@/lib/trip-sort": tripSort, "@/lib/trip-tags": tripTags, "@/lib/trip-best-time": tripBestTime,
     // Dragging trips into order (TRA-16) is tested in trip-drag.test.mjs. Here no card or handle takes a drag's props.
     "@/components/trip-drag": { useTripDrag: () => ({ card: () => ({}), handle: () => ({}), announcement: "" }) },
   };

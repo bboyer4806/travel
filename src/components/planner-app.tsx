@@ -15,7 +15,7 @@ import { HealthSafetyPanel, HealthSafetyEditor } from "@/components/health-safet
 import { healthSafetyFromForm, providerDraft, type EmergencyContact, type MedicalProviderDraft } from "@/lib/health-safety";
 import { ChurchOptions, ChurchEditor, ChurchDetails, ChurchSection } from "@/components/churches";
 import { MonthlyClimateEditor, TypicalWeatherPanel, TypicalWeatherEditor } from "@/components/typical-weather";
-import { monthlyClimateFromForm } from "@/lib/typical-weather";
+import { monthlyClimateFromForm, type Month } from "@/lib/typical-weather";
 import { DestinationCardPhoto, DestinationGallery, DestinationGalleryEditor } from "@/components/destination-gallery";
 import CandidateList from "@/components/candidate-list";
 import { carouselOrder, DestinationIdeas, IdeaDetails, priceNotes, selectionLabels } from "@/components/destination-ideas";
@@ -40,6 +40,8 @@ import { controlOrNeighbor, useFocusAfter, useFocusFallback } from "@/components
 import { ArrowDown, ArrowLeft, ArrowRight, ArrowUp, BedDouble, Binoculars, CalendarDays, CheckCircle2, CircleAlert, CircleHelp, Compass, GripVertical, MapPin, MoreHorizontal, Pencil, Plane, Plus, Search, Share2, Trash2, UserPlus, Users, Utensils, Wallet, X } from "lucide-react";
 import TripSharing, { memberLabel } from "@/components/trip-sharing";
 import { TripTagFilter, TripTagList, TripTagsEditor } from "@/components/trip-tags";
+import { BestMonthFilter, BestTimeFields, BestTimeSection } from "@/components/trip-best-time";
+import { bestTimeFromForm, hasBestTime, recommendedFor } from "@/lib/trip-best-time";
 import { useTripDrag } from "@/components/trip-drag";
 import { hasEveryTag, tagKey } from "@/lib/trip-tags";
 import { sortTrips, TRIP_SORTS, type TripSort } from "@/lib/trip-sort";
@@ -61,6 +63,8 @@ import type { FoodBudgetMode, ActivitiesBudgetMode, Budget, Candidate, Church, M
 
 type Editor =
   | { kind: "trip"; item?: Trip }
+  // A trip's Best time to go (TRA-178), saved apart from its other details.
+  | { kind: "bestTime"; item: Trip }
   // A saved destination; with a stop it also edits that trip's stay.
   | { kind: "destination"; item: Destination; stop?: TripStop }
   // A city to add to the trip: last, or from a + between its cards, directly before the stop `before` (TRA-153). Only
@@ -165,6 +169,15 @@ function climateClearing(label: string): string {
   return "This removes the monthly averages, with their source and reference years, for " + label + ", in every trip that visits it. Its other typical weather stays.";
 }
 
+/**
+ * Why All trips shows no trip: none matches what is used of the search, the selected tags, every one of which a trip must
+ * have, and the selected months, any of which it must be recommended for (TRA-178).
+ */
+function noMatchingTrips(search: boolean, tags: boolean, months: boolean): string {
+  const unmet = [search && "match that search", tags && "have every selected tag", months && "are recommended for any selected month"].filter((part) => part !== false);
+  return "No trips " + (unmet.length === 1 ? unmet[0] : unmet.slice(0, -1).join(", ") + " and " + unmet[unmet.length - 1]) + ".";
+}
+
 /** Deleting a shared trip removes it for everyone it was shared with, so its confirmation says so. */
 function sharedDeleteNote(access: TripAccess): string {
   return access.role === "owner" && access.sharedWith.length > 0 ? " Everyone you shared it with will lose it too." : "";
@@ -213,6 +226,8 @@ export default function PlannerApp({ initialData, initialBudgets, access = {}, d
   const [search, setSearch] = useState("");
   // The trip list's selected tag filters, as tag keys.
   const [tagFilter, setTagFilter] = useState<string[]>([]);
+  // The trip list's selected months under Best time to go (TRA-178), each time the page opens none. Nothing saves them.
+  const [monthFilter, setMonthFilter] = useState<Month[]>([]);
   // How the trip list is sorted (TRA-177): Custom order, the account's own order, each time the page opens, until
   // another sort is chosen. No sort saves anything.
   const [tripSort, setTripSort] = useState<TripSort>("custom");
@@ -459,6 +474,7 @@ export default function PlannerApp({ initialData, initialBudgets, access = {}, d
     switch (editor.kind) {
       case "delete": void perform(editor.mutation, "Removed from your notebook.", editor.redirect); break;
       case "trip": void perform({ type: "trip.save", ...itemToSave(editor.item), name: text("name"), tagline: text("tagline"), focus: text("focus"), startDate: text("startDate") || null, dateLabel: text("dateLabel"), homeCity: text("homeCity"), returnCity: fields.has("differentReturn") ? text("returnCity") : null, travelers: Number(text("travelers")), entryVisaFeesAmount: text("entryVisaFeesAmount"), notes: text("notes") }, undefined, undefined, tripImageForm(tripImage, editor.item?.image ?? null)); break;
+      case "bestTime": void perform({ type: "trip.bestTime", id: editor.item.id, bestTime: bestTimeFromForm(fields) }, "Best time to go saved."); break;
       case "entryRequirements": {
         void perform({ type: "destination.entryRequirements", id: editor.item.id, requirements: entryRequirementsFromForm(fields, researchLinks) }, "Entry requirements saved.");
         break;
@@ -554,6 +570,7 @@ export default function PlannerApp({ initialData, initialBudgets, access = {}, d
     }
   }
   const pageTitle = editor?.kind === "delete" ? editor.title : editor?.kind === "trip" ? (editor.item ? "Edit trip" : "A new adventure")
+    : editor?.kind === "bestTime" ? (hasBestTime(editor.item.bestTime) ? "Edit best time to go" : "Add best time to go")
     : editor?.kind === "church" ? (editor.item ? "Edit church" : "Add a church")
     : editor?.kind === "entryRequirements" ? "Edit entry requirements"
     : editor?.kind === "healthSafety" ? "Edit health and safety"
@@ -707,11 +724,13 @@ export default function PlannerApp({ initialData, initialBudgets, access = {}, d
   // Selected tags no trip has any longer drop out of the filter.
   const filterTags = data.tags.filter((tag) => tagFilter.includes(tagKey(tag)));
   const toggleTagFilter = (tag: string) => setTagFilter((keys) => keys.includes(tagKey(tag)) ? keys.filter((key) => key !== tagKey(tag)) : [...keys, tagKey(tag)]);
-  // A trip shows when it matches the search and has every selected tag, in the order Sort by chooses (TRA-177).
-  const visibleTrips = sortTrips(data.trips.filter((item) => hasEveryTag(item.tags, filterTags) && [item.name, item.dateLabel, ...tripPlaces(item.id).flatMap((place) => [place.city, formatSavedDestinationLabel(place)])].join(" ").toLowerCase().includes(search.toLowerCase())),
+  const toggleMonthFilter = (month: Month) => setMonthFilter((months) => months.includes(month) ? months.filter((item) => item !== month) : [...months, month]);
+  // A trip shows when it matches the search, has every selected tag and is recommended for any selected month (TRA-178),
+  // in the order Sort by chooses (TRA-177).
+  const visibleTrips = sortTrips(data.trips.filter((item) => hasEveryTag(item.tags, filterTags) && recommendedFor(item.bestTime.months, monthFilter) && [item.name, item.dateLabel, ...tripPlaces(item.id).flatMap((place) => [place.city, formatSavedDestinationLabel(place)])].join(" ").toLowerCase().includes(search.toLowerCase())),
     tripSort, { stops: data.stops, destinations: data.destinations, budgets: homeBudgets });
   // Trips move only in Custom order while every trip shows, so the list is the account's whole order (TRA-16, TRA-177).
-  const filtered = search !== "" || filterTags.length > 0;
+  const filtered = search !== "" || filterTags.length > 0 || monthFilter.length > 0;
   const sorted = tripSort !== "custom";
   const tripDrag = useTripDrag(visibleTrips, placeTrip, !filtered && !sorted && visibleTrips.length > 1 && !busy && !refreshing);
   const visibleDestinations = data.destinations.filter((item) => [item.city, formatSavedDestinationLabel(item), ...visitsOf(item.id).map((visit) => visit.trip.name)].join(" ").toLowerCase().includes(search.toLowerCase()));
@@ -729,14 +748,15 @@ export default function PlannerApp({ initialData, initialBudgets, access = {}, d
         <section className="trips-section"><div className="section-heading"><div className="heading-inline"><h2>Your possibilities</h2><span className="count-pill">{data.trips.length}</span></div>
           {data.trips.length > 0 && <label className="search-field"><Search size={17} /><input aria-label="Search trips" value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Find a trip or city" /></label>}</div>
           {data.tags.length > 0 && <TripTagFilter tags={data.tags} selected={filterTags} onToggle={toggleTagFilter} onClear={() => setTagFilter([])} />}
+          {data.trips.length > 0 && <BestMonthFilter selected={monthFilter} onToggle={toggleMonthFilter} onClear={() => setMonthFilter([])} />}
           {data.trips.length > 0 && <label className="trip-sort"><span>Sort by</span><select value={tripSort} onChange={(event) => setTripSort(event.target.value as TripSort)}>
             {Object.entries(TRIP_SORTS).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label>}
-          {(filtered || sorted) && visibleTrips.length > 0 && data.trips.length > 1 && <p className="helper trip-order-note">{sorted && filtered ? "Choose Custom order and clear the search and tag filters to drag trips into a new order."
-            : sorted ? "Choose Custom order to drag trips into a new order." : "Clear the search and tag filters to drag trips into a new order."}</p>}
+          {(filtered || sorted) && visibleTrips.length > 0 && data.trips.length > 1 && <p className="helper trip-order-note">{sorted && filtered ? "Choose Custom order and clear the search and filters to drag trips into a new order."
+            : sorted ? "Choose Custom order to drag trips into a new order." : "Clear the search and filters to drag trips into a new order."}</p>}
           <p id={tripDragHelp} className="sr-only">Drag to move this trip, or press Space, move it with the arrow keys, and press Space again to drop it. Escape cancels.</p>
           <p className="sr-only" aria-live="assertive" aria-atomic="true">{tripDrag.announcement}</p>
           {data.trips.length === 0 ? <div className="empty-state home-empty"><span className="empty-icon"><MapPin size={28} strokeWidth={1.5} /></span><h3>Every trip starts with a possibility.</h3><p>A weekend away? A place you have always wanted to see?<br />Add your first trip and work out the details as you go.</p><button className="button secondary" onClick={() => open({ kind: "trip" })}><Plus size={17} />Create your first trip</button></div>
-            : visibleTrips.length === 0 ? <div className="empty-state"><h3>{!filterTags.length ? "No trips match that search." : search ? "No trips match that search and every selected tag." : "No trips have every selected tag."}</h3>{search && <button className="text-button" onClick={() => setSearch("")}>Clear search</button>}{filterTags.length > 0 && <button className="text-button" onClick={() => setTagFilter([])}>Clear tag filters</button>}</div>
+            : visibleTrips.length === 0 ? <div className="empty-state"><h3>{noMatchingTrips(search !== "", filterTags.length > 0, monthFilter.length > 0)}</h3>{search && <button className="text-button" onClick={() => setSearch("")}>Clear search</button>}{filterTags.length > 0 && <button className="text-button" onClick={() => setTagFilter([])}>Clear tag filters</button>}{monthFilter.length > 0 && <button className="text-button" onClick={() => setMonthFilter([])}>Clear month filters</button>}</div>
             : <div className="trip-grid">{visibleTrips.map((item, index) => {
               const places = tripPlaces(item.id);
               const estimate = homeBudgets[item.id];
@@ -782,6 +802,8 @@ export default function PlannerApp({ initialData, initialBudgets, access = {}, d
           <section className="travel-section"><div className="section-heading"><div><p className="eyebrow">GETTING THERE & BACK</p><h2>Between the places</h2></div><Plane size={25} strokeWidth={1.3} /></div>
             {visits.length === 0 ? <p className="section-description">Your travel connections will appear once you add a destination.</p> : <div className="travel-list">{tripLegs.map((leg) => <article className="travel-card" key={leg.id} id={connectionTarget(leg.id)} tabIndex={-1}><TransportationIcons method={leg.method} /><div className="travel-content"><h3>{legName(leg.fromId, "from")} <ArrowRight size={15} aria-hidden="true" /><span className="sr-only">to</span> {legName(leg.toId, "to")}</h3><p>{leg.method || "Travel details to be decided"}{leg.departure && " · " + leg.departure}{leg.arrival && " → " + leg.arrival}</p><FlightDetails leg={leg} />{leg.notes && <p className="preserve-lines">{leg.notes}</p>}<ResearchLinks links={leg.links ?? []} /><ConnectionItinerary legId={leg.id} stops={leg.itinerary ?? []} plans={leg.layoverPlans} disabled={busy} onPlan={(layover) => open({ kind: "layover", leg, layover })} onRemovePlan={(layover) => confirmDelete({ type: "leg.layoverPlan", id: leg.id, layoverId: layover.id, plan: null }, "Remove the layover plan for " + layover.place + "?", "Its flight times, airport time and activities are removed. The layover stays in the connection, and nothing else changes.")} /><span className={leg.priceCents === null ? "price unknown" : "price"}>{displayPrice(leg.priceCents)}{leg.priceCents === null && " · Needs estimate"}</span>{leg.miscCents !== null && <span className="price">Miscellaneous spending: {formatCurrency(leg.miscCents, "USD")}</span>}</div><div className="travel-tools"><button className="text-button" aria-label={"Edit travel from " + legName(leg.fromId, "from") + " to " + legName(leg.toId, "to")} onClick={() => open({ kind: "leg", item: leg })}><Pencil size={14} />Edit</button>{(leg.method || leg.airline || leg.flightNumber || leg.priceCents !== null || leg.miscCents !== null || leg.notes || leg.url || leg.departure || leg.arrival || (leg.itinerary?.length ?? 0) > 0 || (leg.links?.length ?? 0) > 0) && <button className="text-button muted" onClick={() => confirmDelete({ type: "leg.clear", id: leg.id }, "Clear this travel plan?", "The connection will remain in your route, with its price, miscellaneous spending, travel details, links, itinerary, and layover plans cleared.")}>Clear</button>}</div></article>)}</div>}
           </section>
+          {/* The trip's Best time to go (TRA-178): months for the whole trip, apart from each destination's typical weather. */}
+          <BestTimeSection bestTime={trip.bestTime} busy={busy} onEdit={() => open({ kind: "bestTime", item: trip })} />
           <HomeItems items={data.homeItems.filter((item) => item.tripId === trip.id)} busy={busy}
             onAdd={() => open({ kind: "homeItem" })}
             onEdit={(item) => open({ kind: "homeItem", item })}
@@ -862,6 +884,7 @@ export default function PlannerApp({ initialData, initialBudgets, access = {}, d
       {/* A trip visits its owner's destinations, so the saved ones it offers, those the account can open, come with everything saved for them (TRA-142). */}
       {editor.kind === "addStop" && <LocationField compactDestination library={library} label="City or destination" name="city" required disabled={busy} placeholder="Start typing a city, e.g. Vienna" helpText="Choose a suggestion or enter any destination." hint={"A destination marked In your library is " + (tripAccess?.role === "editor" ? memberLabel(tripAccess.owner) + "’s, added" : "added") + " with everything saved for it. One already in this trip opens instead."} />}
       {editor.kind === "newDestination" && <LocationField compactDestination label="City or destination" name="city" required disabled={busy} placeholder="Start typing a city, e.g. Vienna" helpText="Choose a suggestion or enter any destination." hint="If you already have this destination, its page opens instead." />}
+      {editor.kind === "bestTime" && <BestTimeFields bestTime={editor.item.bestTime} disabled={busy} />}
       {editor.kind === "church" && <ChurchEditor item={editor.item} massTimes={massTimes} onTimesChange={setMassTimes} gallery={candidateGallery} onGalleryChange={setCandidateGallery} busy={busy} />}
       {editor.kind === "entryRequirements" && <EntryRequirementsEditor requirements={editor.item.entryRequirements} sources={researchLinks} onSourcesChange={setResearchLinks} disabled={busy} />}
       {editor.kind === "healthSafety" && <HealthSafetyEditor healthSafety={editor.item.healthSafety} contacts={emergencyContacts} onContactsChange={setEmergencyContacts} providers={medicalProviders} onProvidersChange={setMedicalProviders} sources={researchLinks} onSourcesChange={setResearchLinks} disabled={busy} />}

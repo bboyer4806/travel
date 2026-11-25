@@ -6,6 +6,7 @@ import ts from "typescript";
 import * as budget from "../src/lib/budget.ts";
 import * as destinationLabel from "../src/lib/destination-label.ts";
 import * as money from "../src/lib/money.ts";
+import * as tripBestTime from "../src/lib/trip-best-time.ts";
 import * as tripDates from "../src/lib/trip-dates.ts";
 import * as tripSort from "../src/lib/trip-sort.ts";
 import * as tripTags from "../src/lib/trip-tags.ts";
@@ -136,7 +137,7 @@ const modules = {
   "next/link": { default: ({ children, ...props }) => element("a", { ...props, children }) },
   "@/lib/budget": budget, "@/lib/destination-label": destinationLabel, "@/lib/money": money, "@/lib/trip-dates": tripDates, "@/lib/trip-sort": tripSort,
   // All trips shows the trips that have every selected tag: with none selected, every trip.
-  "@/lib/trip-tags": tripTags,
+  "@/lib/trip-tags": tripTags, "@/lib/trip-best-time": tripBestTime,
 };
 // Every other module is one the cards' text doesn't use: each of its exports renders, and returns, nothing.
 const unused = new Proxy({}, { get: () => () => null });

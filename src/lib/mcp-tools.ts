@@ -6,6 +6,7 @@ import { EMERGENCY_CONTACT_MAX_LENGTH, EMERGENCY_NUMBER_MAX_LENGTH, HEALTH_SAFET
 import { AI_PHOTO_DOWNLOAD_SECONDS, formatMegabytes, IMAGE_FORMAT_NAMES, MAX_AI_PROPOSAL_PHOTOS, MAX_CANDIDATE_IMAGES, MAX_DESTINATION_IMAGES, MAX_GALLERY_UPLOAD_BYTES, MAX_IMAGE_UPLOAD_BYTES } from "./image-limits.ts";
 import { MAX_PACKING_ADD } from "./packing.ts";
 import { MAX_TAG_LENGTH } from "./trip-tags.ts";
+import { BEST_TIME_NOTE_LENGTH } from "./trip-best-time.ts";
 import { CLIMATE_LIMITS, MONTHS } from "./typical-weather.ts";
 import { RESTAURANT_TYPES } from "./types.ts";
 import type { EditableField } from "./editable-fields.ts";
@@ -122,6 +123,18 @@ const CHANGES = [
       description: "The new image, or null to remove the saved one.",
     },
   }, ["id", "image"]),
+  change("trip.bestTime", "Replaces a trip's Best time to go, and nothing else: the calendar months best for taking the whole trip, considering every destination on it, why, and the times to avoid. It never changes the trip's dates, destinations or itinerary. On All trips, a month filter shows a trip recommended for any selected month. Base it on research you can name about every destination, such as weather, events, festivals and crowds, never guesses.", {
+    id: id("The trip's id."),
+    bestTime: {
+      type: "object", additionalProperties: false, required: ["months", "reasons", "avoid"],
+      properties: {
+        months: { type: "array", maxItems: 12, uniqueItems: true, items: { type: "string", enum: MONTHS }, description: "The recommended months, each once, written in full, in any order: any of the 12, all of them, or none. They replace the saved ones, and Travel lists them in calendar order." },
+        reasons: text("Why those months are best for the whole trip, such as their weather, activities, festivals and crowds. Empty for none.", BEST_TIME_NOTE_LENGTH),
+        avoid: text("Times of year that suit the trip less, and why. Empty for none.", BEST_TIME_NOTE_LENGTH),
+      },
+      description: "The whole record, replacing the saved one. No months and empty text clear it.",
+    },
+  }, ["id", "bestTime"]),
   change("trip.delete", "Deletes a trip with its stays, travel, At home items, packing list, tags and sharing. The destinations it visits stay, with everything saved for them.", { id: id("The trip's id.") }, ["id"]),
   change("trip.share", "Shares a trip with a Google account's email address, which can then sign in to Travel and change the trip. Nothing is sent to them.", { tripId: id("The trip's id."), email: text("Their Google account's email address.", 254) }, ["tripId", "email"]),
   change("trip.unshare", "Ends an account's access to a trip. The account can still sign in, and the trip is unchanged.", { tripId: id("The trip's id."), email: text("The email address it is shared with.", 254) }, ["tripId", "email"]),
@@ -326,7 +339,7 @@ export const TOOLS = [
   },
   {
     name: "get_trip", title: "Get a trip", annotations: readOnly, inputSchema: input({ trip_id: id("The trip's id.") }),
-    description: "One trip with everything on its page: its tagline, its headline image's version and crops in image, or null without one, which get_photo shows, stays, travel between them with a flight's airline and flightNumber and each layover's plan in layoverPlans, At home items, its packing list in packing, each item with its category, quantity for the whole party and whether it is packed, the destinations it visits with their hotels, activities, restaurants, churches and research, and its estimated budget. Amounts are whole USD cents for the whole party; null is not estimated. Each idea's and church's coordinates are null, or place it on its destination's map when its address isn't found or it has none, unless review is true: its address changed after they were saved, so the map doesn't use them.",
+    description: "One trip with everything on its page: its tagline, its best time to go in bestTime, with its recommended months, why and the times to avoid, its headline image's version and crops in image, or null without one, which get_photo shows, stays, travel between them with a flight's airline and flightNumber and each layover's plan in layoverPlans, At home items, its packing list in packing, each item with its category, quantity for the whole party and whether it is packed, the destinations it visits with their hotels, activities, restaurants, churches and research, and its estimated budget. Amounts are whole USD cents for the whole party; null is not estimated. Each idea's and church's coordinates are null, or place it on its destination's map when its address isn't found or it has none, unless review is true: its address changed after they were saved, so the map doesn't use them.",
   },
   {
     name: "list_destinations", title: "List destinations", annotations: readOnly, inputSchema: noInput,

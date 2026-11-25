@@ -6,6 +6,7 @@ import ts from "typescript";
 import * as budget from "../src/lib/budget.ts";
 import * as destinationLabel from "../src/lib/destination-label.ts";
 import * as money from "../src/lib/money.ts";
+import * as tripBestTime from "../src/lib/trip-best-time.ts";
 import * as tripDates from "../src/lib/trip-dates.ts";
 import * as tripSort from "../src/lib/trip-sort.ts";
 import * as tripTags from "../src/lib/trip-tags.ts";
@@ -268,7 +269,7 @@ function homePage(store) {
     "next/link": { default: ({ children, ...props }) => element("a", { ...props, children }) },
     "next/navigation": { useRouter: () => ({ push() {}, refresh() {} }), unstable_isUnrecognizedActionError: () => false },
     "@/app/actions": { mutatePlanner: async (mutation) => { sent.push(mutation); return { ok: true, ...store.applyMutation(mutation) }; } },
-    "@/lib/budget": budget, "@/lib/destination-label": destinationLabel, "@/lib/money": money, "@/lib/trip-dates": tripDates, "@/lib/trip-sort": tripSort, "@/lib/trip-tags": tripTags,
+    "@/lib/budget": budget, "@/lib/destination-label": destinationLabel, "@/lib/money": money, "@/lib/trip-dates": tripDates, "@/lib/trip-sort": tripSort, "@/lib/trip-tags": tripTags, "@/lib/trip-best-time": tripBestTime,
     // Dragging itself is tested in trip-drag.test.mjs. Here the list keeps the trips it was given and whether they may move.
     "@/components/trip-drag": { useTripDrag: (trips, place, enabled) => { drag = { trips: trips.map((item) => item.name), enabled }; return { card: () => ({}), handle: () => ({}), announcement: "" }; } },
   };
@@ -371,10 +372,10 @@ test("a sort orders only the trips matching the search and every selected tag, a
   assert.deepEqual(page.cards(), ["Rome", "Lisbon", "Alps"]);
   page.search("o");
   assert.deepEqual(page.cards(), ["Rome", "Lisbon"], "Alps's name and cities have no o");
-  assert.deepEqual([page.drag().enabled, page.note()], [false, "Choose Custom order and clear the search and tag filters to drag trips into a new order."]);
+  assert.deepEqual([page.drag().enabled, page.note()], [false, "Choose Custom order and clear the search and filters to drag trips into a new order."]);
   page.choose("custom");
   assert.deepEqual(page.cards(), ["Rome", "Lisbon"], "matching trips in the account's order");
-  assert.deepEqual([page.drag().enabled, page.note()], [false, "Clear the search and tag filters to drag trips into a new order."]);
+  assert.deepEqual([page.drag().enabled, page.note()], [false, "Clear the search and filters to drag trips into a new order."]);
   page.search("");
   page.toggleTag("Europe");
   assert.deepEqual([page.cards(), page.drag().enabled, page.note()], [["Alps", "Kyoto", "Rome", "Lisbon"], true, undefined]);

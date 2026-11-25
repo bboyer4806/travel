@@ -140,7 +140,7 @@ export const EDITABLE_FIELDS = {
     url: { kind: "url", label: null, description: "A website, https:// or http://. Empty for none." },
     notes: { kind: "text", maxLength: 8000, label: "Notes", description: "Notes. Empty for none." },
     included: { kind: "boolean", label: "Included", description: "Whether it is in the budget: for a hotel, whether it is the chosen one." },
-    mustDo: { kind: "boolean", keep: true, label: "Must do", description: "Must do, for activities and restaurants only. Left out keeps it." },
+    mustDo: { kind: "boolean", keep: true, label: "Must do", description: "Whether it is Must do, for a hotel, activity or restaurant alike. Left out keeps it." },
   },
 } as const satisfies Record<string, Record<string, EditableField>>;
 

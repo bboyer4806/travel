@@ -43,8 +43,9 @@
 .price { margin: 10px 14px 14px; font-size: 14px; font-weight: 600; color: var(--green); }
 .price.unknown { color: var(--muted); font-weight: 400; }
 .chosen { position: absolute; top: 8px; left: 8px; }
-/* TRA-161: an activity's Must do star, at the top right of its card's photo, opposite In the plan. Its circle keeps it
-   clear on any photo, as the arrows' does, and Must do fills its star in orange. Touchscreens get a 44-pixel target. */
+/* TRA-161, TRA-181: each hotel's, activity's and restaurant's Must do star, at the top right of its card's photo, opposite
+   Chosen stay or In the plan. Its circle keeps it clear on any photo, as the arrows' does, and Must do fills its star in
+   orange. Touchscreens get a 44-pixel target. */
 .star { position: absolute; top: 8px; right: 8px; display: grid; place-items: center; width: 36px; height: 36px; padding: 0; border: 1px solid #d4dbcd; border-radius: 50%; background: var(--white); color: var(--muted); box-shadow: 0 4px 12px #233d351f; }
 .star:hover:not(:disabled) { background: #eef1e8; }
 .star[aria-pressed="true"] { color: var(--orange); }

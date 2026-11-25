@@ -45,8 +45,8 @@ export function carouselOrder(ideas: Candidate[]): Candidate[] {
 /**
  * A destination's Hotels, Activities and Restaurants, below its budget (TRA-120). Each section starts expanded on every
  * page load and opens and closes on its own; toggling saves nothing. Its carousel shows the ideas chosen for the budget
- * first, then the rest, each group in its saved order. Selecting a card shows that idea's details, and an activity's
- * star marks it Must do, or not (TRA-161). Each card has its idea's Like, `like` (TRA-31). Each section edits its
+ * first, then the rest, each group in its saved order. Selecting a card shows that idea's details, and each idea's star
+ * marks it Must do, or not (TRA-161, TRA-181). Each card has its idea's Like, `like` (TRA-31). Each section edits its
  * category's budget, adds an idea, and links to its full page under `pages`, where ideas are reordered and deleted.
  */
 export function DestinationIdeas({ ideas, city, pages, busy, onView, onAdd, onBudgetEdit, onMustDo, like }: {
@@ -59,7 +59,7 @@ export function DestinationIdeas({ ideas, city, pages, busy, onView, onAdd, onBu
   onView: (item: Candidate) => void;
   onAdd: (category: Category) => void;
   onBudgetEdit: (category: Category) => void;
-  /** Saves an activity as Must do, or not, from its star, `control`. */
+  /** Saves a hotel, activity or restaurant as Must do, or not, from its star, `control`. */
   onMustDo: (item: Candidate, control: HTMLButtonElement) => void;
   /** An idea's Like (TRA-31). */
   like: (item: Candidate) => ReactNode;
@@ -91,9 +91,10 @@ function IdeaSection({ category, ideas, city, href, busy, onView, onAdd, onBudge
 /**
  * One card per idea, scrolled sideways by its arrows, or by swiping or scrolling. The arrows loop (TRA-127): Next at the
  * end returns to the start, and Previous at the start goes to the end. Swiping and scrolling stop at either end. Each
- * activity's star sits over its card's photo, beside the card rather than in it, so selecting the star saves its Must do
- * without showing the activity's details (TRA-161). It shows what is saved: filled for Must do, outlined otherwise. Each
- * idea's Like sits over the bottom of its card's photo the same way, so selecting it shows no details either (TRA-31).
+ * idea's star, a hotel's and a restaurant's as an activity's (TRA-181), sits over its card's photo, beside the card rather
+ * than in it, so selecting the star saves its Must do without showing the idea's details (TRA-161). It shows what is
+ * saved: filled for Must do, outlined otherwise. Each idea's Like sits over the bottom of its card's photo the same way,
+ * so selecting it shows no details either (TRA-31).
  */
 function Carousel({ category, ideas, busy, onView, onMustDo, like }: { category: Category; ideas: Candidate[]; busy: boolean; onView: (item: Candidate) => void; onMustDo: (item: Candidate, control: HTMLButtonElement) => void; like: (item: Candidate) => ReactNode }) {
   const track = useRef<HTMLUListElement>(null);
@@ -135,8 +136,8 @@ function Carousel({ category, ideas, busy, onView, onMustDo, like }: { category:
           <span className={item.priceCents === null ? styles.price + " " + styles.unknown : styles.price}>{price(item)}</span>
           {item.included && <span className={"selection-tag chosen " + styles.chosen}><Check size={12} aria-hidden="true" />{chosen[category]}</span>}
         </button>
-        {category === "activities" && <button type="button" className={styles.star} aria-label={"Must do for " + item.name} aria-pressed={item.mustDo} disabled={busy}
-          onClick={(event) => onMustDo(item, event.currentTarget)}><Star size={18} fill={item.mustDo ? "currentColor" : "none"} aria-hidden="true" /></button>}
+        <button type="button" className={styles.star} aria-label={"Must do for " + item.name} aria-pressed={item.mustDo} disabled={busy}
+          onClick={(event) => onMustDo(item, event.currentTarget)}><Star size={18} fill={item.mustDo ? "currentColor" : "none"} aria-hidden="true" /></button>
         <span className={styles.likeSlot}>{like(item)}</span>
         </li>;
       })}
@@ -161,7 +162,7 @@ export function IdeaDetails({ item }: { item: Candidate }) {
     <div><dt>{subjects[category]} photos</dt><dd>{item.images.length ? <CandidateGallery candidate={item} frame={DIALOG} /> : "Not added"}</dd></div>
     <div><dt>Website and research links</dt><dd>{item.links.length ? <ResearchLinks links={item.links} /> : "Not added"}</dd></div>
     <div><dt>Notes</dt><dd className="preserve-lines">{item.notes || "Not added"}</dd></div>
-    {category !== "hotels" && <div><dt>Must do</dt><dd>{item.mustDo ? "Yes" : "No"}</dd></div>}
+    <div><dt>Must do</dt><dd>{item.mustDo ? "Yes" : "No"}</dd></div>
     <div><dt>{selectionLabels[category]}</dt><dd>{item.included ? "Yes" : "No"}</dd></div>
   </dl>;
 }

@@ -43,11 +43,11 @@ export default function CandidateList({ items, category, destination, busy, onEd
         <h2>{item.name}</h2>
         {item.description && <p className="idea-description">{item.description}</p>}
         <RestaurantTypeTags types={item.restaurantTypes} className="idea-types" />
-        {category !== "hotels" && <button className={item.mustDo ? "button selected-button small must-do" : "button secondary small must-do"}
+        <button className={item.mustDo ? "button selected-button small must-do" : "button secondary small must-do"}
           disabled={busy} aria-pressed={item.mustDo}
           onClick={(event) => onMutate({ type: "candidate.mustDo", id: item.id, mustDo: !item.mustDo }, item.mustDo ? "Must do removed." : "Marked as must do.", event.currentTarget)}>
           <Star size={15} fill={item.mustDo ? "currentColor" : "none"} />{item.mustDo ? "Must do" : "Mark as must do"}<span className="sr-only"> for {item.name}</span>
-        </button>}
+        </button>
         {/* An activity's estimated time, only when it has one (TRA-170). */}
         {item.estimatedMinutes !== null && <p className="idea-time"><Clock size={15} aria-hidden="true" /><span className="sr-only">Estimated time: </span>{formatEstimatedTime(item.estimatedMinutes)}</p>}
         {item.address && <p className="idea-address"><MapPin size={15} />{item.address}</p>}

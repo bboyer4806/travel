@@ -305,7 +305,7 @@ const CHANGES = [
     links,
   }, ["id", "destinationId", "category"], EDITABLE_FIELDS.candidates),
   change("candidate.move", "Moves an idea one place up or down its list.", { id: id("The idea's id."), direction }, ["id", "direction"]),
-  change("candidate.mustDo", "Marks an activity or restaurant Must do, or not.", { id: id("The idea's id."), mustDo: flag("Whether it is Must do.") }, ["id", "mustDo"]),
+  change("candidate.mustDo", "Marks a hotel, activity or restaurant Must do, or not.", { id: id("The idea's id."), mustDo: flag("Whether it is Must do.") }, ["id", "mustDo"]),
   change("candidate.include", "Includes an idea in the budget, or leaves it out. Including a hotel chooses it, leaving out the others.", { id: id("The idea's id."), included: flag("Whether it is included.") }, ["id", "included"]),
   change("candidate.delete", "Deletes an idea with its photos.", { id: id("The idea's id.") }, ["id"]),
   change("destination.photos", "Changes a destination's photos and nothing else: adds photos from their addresses, removes saved ones, chooses the primary photo and puts them in order. The primary photo is the destination's headline image, which its page shows first and its card in Destinations shows across its top. Removing it makes the first remaining photo primary, as in Travel's photo editor.", {

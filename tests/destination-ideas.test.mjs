@@ -149,9 +149,37 @@ test("cards show details, and each section edits its budget, adds an idea and li
     assert.deepEqual(sections[name].filter((node) => node.type === "a").map((link) => [link.props.href, text(link)]), [["/trips/trip/destinations/stop/" + category, "Manage " + category + " in Vienna"]]);
   }
   assert.deepEqual(calls, [["view", ideas.chosen], ["budget", "hotels"], ["add", "hotels"], ["budget", "activities"], ["add", "activities"], ["budget", "restaurants"], ["add", "restaurants"]]);
-  // Each activity's Must do star, beside its card, is tested in must-do-star.test.mjs (TRA-161).
-  assert.deepEqual(sections.Activities.filter((node) => node.type === "button" && !byClass([node], "card").length && !byClass([node], "arrow").length && !byClass([node], "star").length).map(text),
-    ["Activities(3)", "Edit budget for activities in Vienna", "Add activity in Vienna"]);
+  // Each idea's Must do star, beside its card, is tested below and in must-do-star.test.mjs (TRA-161, TRA-181).
+  const others = (name) => sections[name].filter((node) => node.type === "button" && !byClass([node], "card").length && !byClass([node], "arrow").length && !byClass([node], "star").length).map(text);
+  assert.deepEqual(others("Hotels"), ["Hotels(3)", "Edit budget for hotels in Vienna", "Add hotel in Vienna"]);
+  assert.deepEqual(others("Activities"), ["Activities(3)", "Edit budget for activities in Vienna", "Add activity in Vienna"]);
+});
+
+test("every hotel, activity and restaurant card in a destination's carousels has a Must do star beside it, which marks its idea without showing it (TRA-181)", (t) => {
+  const { store, id, ideas } = seed(t);
+  const bistro = store.applyMutation(candidateInput(id, "restaurants", { name: "Bistro", price: "", included: false, mustDo: true })).id;
+  store.applyMutation({ type: "candidate.mustDo", id: ideas.first, mustDo: true });
+  const calls = [];
+  const sections = hosts({ type: DestinationIdeas, props: {
+    ideas: store.getSnapshot().candidates.filter((item) => item.destinationId === id), city: "Vienna", pages: "/destinations/vienna", busy: false,
+    onView: (item) => calls.push(["view", item.id]), onAdd() {}, onBudgetEdit() {}, onMustDo: (item, control) => calls.push(["mustDo", item.id, control]), like: () => null,
+  } }).filter((node) => node.type === "section");
+  // One star for each card, in the carousel's order, filled and pressed for Must do, for screen readers named by its idea.
+  assert.deepEqual(Object.fromEntries(sections.map((section) => [section.props["aria-label"], byClass(hosts(section), "star").map((star) => {
+    const [icon] = hosts(star.props.children);
+    return [star.type, star.props.type, star.props["aria-label"], star.props["aria-pressed"], icon.type, icon.props.fill];
+  })])), {
+    Hotels: [["button", "button", "Must do for Chosen hotel", false, "icon:Star", "none"], ["button", "button", "Must do for First hotel", true, "icon:Star", "currentColor"], ["button", "button", "Must do for Third hotel", false, "icon:Star", "none"]],
+    Activities: [["button", "button", "Must do for Palace", true, "icon:Star", "currentColor"], ["button", "button", "Must do for Museum", false, "icon:Star", "none"], ["button", "button", "Must do for Opera", false, "icon:Star", "none"]],
+    Restaurants: [["button", "button", "Must do for Bistro", true, "icon:Star", "currentColor"]],
+  });
+  // Beside its card, not in it, so selecting it marks its idea, with the star to focus again, and shows nothing.
+  for (const section of sections) {
+    for (const card of byClass(hosts(section), "card")) assert.deepEqual(byClass(hosts(card), "star"), []);
+    const [star] = byClass(hosts(section), "star");
+    star.props.onClick({ currentTarget: star });
+  }
+  assert.deepEqual(calls.map(([kind, item, control]) => [kind, item, control.props["aria-label"]]), [["mustDo", ideas.chosen, "Must do for Chosen hotel"], ["mustDo", ideas.palace, "Must do for Palace"], ["mustDo", bistro, "Must do for Bistro"]]);
 });
 
 test("an idea's details show what its editor saves, read only", (t) => {
@@ -183,8 +211,12 @@ test("an idea's details show what its editor saves, read only", (t) => {
     ["Hotel photos", "Not added"],
     ["Website and research links", "Not added"],
     ["Notes", "Not added"],
+    // A hotel's Must do too, as its editor has it (TRA-181), apart from choosing it.
+    ["Must do", "No"],
     ["Choose this hotel for the budget", "No"],
   ]);
+  store.applyMutation({ type: "candidate.mustDo", id: hotel, mustDo: true });
+  assert.deepEqual(details(hotel).slice(-2), [["Must do", "Yes"], ["Choose this hotel for the budget", "No"]]);
   // A new address leaves the saved coordinates waiting to be checked, and the details say why the map doesn't use them.
   store.applyMutation(candidateInput(id, "activities", { id: saved, name: "Walking tour", price: "45.50", address: "Graben 1", included: true }));
   assert.deepEqual(details(saved).find(([name]) => name === "Coordinates"), ["Coordinates", "48.20849, 16.37208Approximate. The address changed after they were saved, so the map doesn't use them until they're confirmed in the editor."]);
@@ -243,13 +275,18 @@ test("a destination card's names say what it shows, and its Church headings sit 
   store.applyMutation({ type: "destination.save", id, city: "Vienna, Vienna, Austria", cityFromSuggestion: true });
   const budget = hosts({ type: DestinationBudget, props: { snapshot: store.getSnapshot(), visit: visit(store, id), stop: stop(store, id), onShoppingEdit() {}, onMiscellaneousEdit() {} } });
   assert.deepEqual(byClass(budget, "budget-category-action").map(text), ["Edit shopping budget for Vienna, Austria", "Edit miscellaneous budget for Vienna, Austria"]);
-  // The Must do toggle's name is the label it shows, then the activity's name.
-  const activities = store.getSnapshot().candidates.filter((item) => item.category === "activities");
-  const toggles = byClass(hosts({ type: CandidateList, props: { items: activities, category: "activities", destination: visit(store, id), busy: false, onEdit() {}, onDelete() {}, onMutate() {}, like: () => null } }), "must-do");
-  assert.deepEqual(toggles.map((toggle) => [shownText(toggle), text(toggle), toggle.props["aria-pressed"], toggle.props["aria-label"]]), [
+  // The Must do toggle's name is the label it shows, then the idea's name, a hotel's as an activity's (TRA-181).
+  const toggles = (category) => byClass(hosts({ type: CandidateList, props: { items: store.getSnapshot().candidates.filter((item) => item.category === category), category, destination: visit(store, id), busy: false, onEdit() {}, onDelete() {}, onMutate() {}, like: () => null } }), "must-do")
+    .map((toggle) => [shownText(toggle), text(toggle), toggle.props["aria-pressed"], toggle.props["aria-label"]]);
+  assert.deepEqual(toggles("activities"), [
     ["Mark as must do", "Mark as must do for Opera", false, undefined],
     ["Must do", "Must do for Palace", true, undefined],
     ["Mark as must do", "Mark as must do for Museum", false, undefined],
+  ]);
+  assert.deepEqual(toggles("hotels"), [
+    ["Mark as must do", "Mark as must do for First hotel", false, undefined],
+    ["Mark as must do", "Mark as must do for Chosen hotel", false, undefined],
+    ["Mark as must do", "Mark as must do for Third hotel", false, undefined],
   ]);
   // At level 5, as the card's Church section passes them below its h4, the Sundays and each church are h5 headings and
   // its Mass times h6, styled by class.

@@ -63,11 +63,11 @@ for (const category of ["hotels", "activities", "restaurants"]) {
   });
 }
 
-test("Must do can be saved, toggled and cleared independently of budgets and order", t => {
+test("Must do can be saved, toggled and cleared for hotels, activities and restaurants, independently of budgets and order", t => {
   const store = createOwnedStore(":memory:");
   t.after(() => store.close());
   const { tripId, destinationId } = seed(store);
-  for (const category of ["activities", "restaurants"]) {
+  for (const category of ["hotels", "activities", "restaurants"]) {
     const id = store.applyMutation(ideaInput(destinationId, category, "Priority", { mustDo: true, price: "" })).id;
     const otherId = store.applyMutation(ideaInput(destinationId, category, "Alternative")).id;
     assert.equal(list(store, destinationId, category)[0].mustDo, true);
@@ -94,12 +94,17 @@ test("Must do can be saved, toggled and cleared independently of budgets and ord
     }
     assert.deepEqual(store.getSnapshot(), before);
   }
-  const hotel = store.applyMutation(ideaInput(destinationId, "hotels", "Stay", { included: true })).id;
+  // A Must do hotel isn't chosen, and the chosen one stays chosen, and the only one, whether it is Must do or not (TRA-181).
+  const [priority, chosen] = list(store, destinationId, "hotels");
+  assert.deepEqual([priority.mustDo, priority.included, chosen.mustDo, chosen.included], [true, false, false, true]);
+  const budget = calculateBudget(store.getSnapshot(), tripId);
+  store.applyMutation({ type: "candidate.mustDo", id: chosen.id, mustDo: true });
+  store.applyMutation({ type: "candidate.mustDo", id: priority.id, mustDo: false });
+  assert.deepEqual(list(store, destinationId, "hotels").map(item => [item.id, item.included, item.mustDo]), [[priority.id, false, false], [chosen.id, true, true]]);
+  assert.deepEqual(calculateBudget(store.getSnapshot(), tripId), budget, "the chosen hotel's price still supplies the accommodation");
   const before = store.getSnapshot();
-  assert.throws(() => store.applyMutation({ type: "candidate.mustDo", id: hotel, mustDo: true }), /activities and restaurants/);
-  assert.throws(() => store.applyMutation(ideaInput(destinationId, "hotels", "Another stay", { included: true, mustDo: true })), /activities and restaurants/);
   assert.throws(() => store.applyMutation({ type: "candidate.mustDo", id: randomUUID(), mustDo: true }), ValidationError);
-  assert.deepEqual(store.getSnapshot(), before, "rejected priority cannot replace the selected hotel");
+  assert.deepEqual(store.getSnapshot(), before);
 });
 
 test("schema 15 upgrade retains alphabetical lists; replay, reopen and online backup retain new choices", t => {
@@ -153,4 +158,77 @@ test("schema 15 upgrade retains alphabetical lists; replay, reopen and online ba
   assert.equal(observer.prepare("PRAGMA integrity_check").get().integrity_check, "ok");
   assert.deepEqual(observer.prepare("PRAGMA foreign_key_check").all(), []);
   observer.close();
+});
+
+test("schema 50 databases upgrade keeping every idea's Must do and hotels unmarked; replay, reopen and online backup keep a hotel marked since (TRA-181)", t => {
+  const path = fileDatabase(t);
+  let store = createOwnedStore(path);
+  const { tripId, destinationId } = seed(store);
+  const photoId = randomUUID();
+  const ideas = {
+    chosen: store.applyMutation(ideaInput(destinationId, "hotels", "Chosen stay", { included: true, gallery: { add: [{ id: photoId, ...prepared(image) }], remove: [], mainImageId: photoId }, coordinates: { latitude: 48.20849, longitude: 16.37208, accuracy: "exact" } })).id,
+    other: store.applyMutation(ideaInput(destinationId, "hotels", "Other stay")).id,
+    tour: store.applyMutation(ideaInput(destinationId, "activities", "Tour", { mustDo: true })).id,
+    museum: store.applyMutation(ideaInput(destinationId, "activities", "Museum")).id,
+    bistro: store.applyMutation(ideaInput(destinationId, "restaurants", "Bistro", { mustDo: true, restaurantTypes: ["dinner"] })).id,
+  };
+  store.applyMutation({ type: "candidate.move", id: ideas.museum, direction: "up" });
+  store.applyMutation({ type: "candidate.like", id: ideas.other, liked: true });
+  const saved = store.getSnapshot();
+  const budget = calculateBudget(saved, tripId);
+  store.close();
+  // Schema 50 refused Must do for hotels with a check on the column.
+  const legacy = new DatabaseSync(path);
+  legacy.exec(`
+    ALTER TABLE candidates RENAME COLUMN mustDo TO laterMustDo;
+    ALTER TABLE candidates ADD COLUMN mustDo INTEGER NOT NULL DEFAULT 0 CHECK(mustDo IN (0,1) AND (category != 'hotels' OR mustDo = 0));
+    UPDATE candidates SET mustDo = laterMustDo;
+    ALTER TABLE candidates DROP COLUMN laterMustDo;
+    PRAGMA user_version = 50;
+  `);
+  assert.throws(() => legacy.exec("UPDATE candidates SET mustDo = 1 WHERE category = 'hotels'"), /CHECK constraint failed/);
+  legacy.close();
+
+  store = createOwnedStore(path);
+  assert.deepEqual(store.getSnapshot(), saved, "every idea keeps its Must do, order, selection, price, photos, links and coordinates");
+  assert.deepEqual(list(store, destinationId, "hotels").map(item => item.mustDo), [false, false], "every hotel starts unmarked");
+  assert.deepEqual(store.getTripSnapshot(tripId).data.likes.candidate[ideas.other], { count: 1, liked: true }, "and keeps its likes");
+  assert.deepEqual(Buffer.from(store.getCandidatePhoto(ideas.chosen, photoId).data), image);
+  // A hotel can be Must do now, from its star or its editor, and the chosen hotel stays chosen.
+  store.applyMutation({ type: "candidate.mustDo", id: ideas.other, mustDo: true });
+  store.applyMutation(ideaInput(destinationId, "hotels", "Chosen stay", { id: ideas.chosen, included: true, mustDo: true }));
+  assert.deepEqual(list(store, destinationId, "hotels").map(item => [item.name, item.included, item.mustDo]), [["Chosen stay", true, true], ["Other stay", false, true]]);
+  assert.deepEqual(calculateBudget(store.getSnapshot(), tripId), budget);
+  const later = store.getSnapshot();
+  // A replay of schema 51, also after the schema 1 build resets the schema version, keeps it, as a restart does.
+  for (const version of [50, 1, SCHEMA_VERSION]) {
+    store.close();
+    const replay = new DatabaseSync(path);
+    replay.exec(`PRAGMA user_version = ${version};`);
+    replay.close();
+    store = createOwnedStore(path);
+    assert.deepEqual(store.getSnapshot(), later, `opening at schema ${version} keeps what was saved`);
+  }
+  const backupPath = join(path, "..", "backup.sqlite");
+  const result = spawnSync(process.execPath, ["scripts/backup.mjs", backupPath], { env: { ...process.env, TRAVEL_DATABASE_PATH: path }, encoding: "utf8" });
+  store.close();
+  assert.equal(result.status, 0, result.stderr);
+  const restored = createOwnedStore(backupPath);
+  try {
+    assert.deepEqual(restored.getSnapshot(), later);
+    assert.deepEqual(Buffer.from(restored.getCandidatePhoto(ideas.chosen, photoId).data), image);
+  } finally { restored.close(); }
+  const observer = new DatabaseSync(path);
+  try {
+    assert.equal(observer.prepare("PRAGMA user_version").get().user_version, SCHEMA_VERSION);
+    // One Must do column, still only 0 or 1, and the table's indexes.
+    const columns = observer.prepare("PRAGMA table_info(candidates)").all().filter(info => /mustdo/i.test(info.name));
+    assert.deepEqual(columns.map(({ name, type, notnull, dflt_value }) => ({ name, type, notnull, dflt_value })), [{ name: "mustDo", type: "INTEGER", notnull: 1, dflt_value: "0" }]);
+    observer.exec("BEGIN");
+    assert.throws(() => observer.prepare("UPDATE candidates SET mustDo = 2 WHERE id = ?").run(ideas.tour), /CHECK constraint failed/);
+    observer.exec("ROLLBACK");
+    assert.deepEqual(observer.prepare("SELECT name FROM sqlite_master WHERE type = 'index' AND tbl_name = 'candidates' AND sql IS NOT NULL ORDER BY name").all().map(row => row.name), ["candidate_order", "candidates_destination", "selected_hotel"]);
+    assert.equal(observer.prepare("PRAGMA integrity_check").get().integrity_check, "ok");
+    assert.deepEqual(observer.prepare("PRAGMA foreign_key_check").all(), []);
+  } finally { observer.close(); }
 });

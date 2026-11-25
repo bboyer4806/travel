@@ -101,7 +101,7 @@ test("what an idea is has at most 120 characters, and a refused save keeps the s
   // A save refused for any other reason keeps it too, even one refused after the idea's details are written.
   for (const [input, message] of [
     [candidateInput(id, "hotels", { id: hotelId, description: "Not saved", name: " " }), "Please enter name."],
-    [candidateInput(id, "hotels", { id: hotelId, description: "Not saved", mustDo: true }), "Must do is available for activities and restaurants only."],
+    [candidateInput(id, "hotels", { id: hotelId, description: "Not saved", restaurantTypes: ["dinner"] }), "Restaurant types are available for restaurants only."],
     [candidateInput(id, "hotels", { id: hotelId, description: "Not saved", gallery: { add: [], remove: [randomUUID()] } }), "A photo has changed or no longer exists. Refresh and try again."],
   ]) {
     assert.throws(() => store.applyMutation(input), refusal(message), JSON.stringify(input));

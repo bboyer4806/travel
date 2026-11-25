@@ -806,7 +806,7 @@ const LIVE: Make = { id: () => randomUUID(), now: () => new Date().toISOString()
  * The schema this build upgrades every database to, as SQLite's user_version. A schema change adds the next
  * upgrade in createStore and raises this to match; earlier upgrades keep their own numbers.
  */
-export const SCHEMA_VERSION = 50;
+export const SCHEMA_VERSION = 51;
 
 /** A destination as schema 20 saved it, inside one trip, with that trip's owner and name. */
 type TripDestinationRow = Omit<StoredDestination, "cityKey"> & Omit<TripStop, "destinationId"> & { tripName: string };
@@ -1625,6 +1625,20 @@ export function createStore(databasePath: string, ownerEmail: string) {
       if (!hasColumn("trips", "bestTimeReasons")) db.exec("ALTER TABLE trips ADD COLUMN bestTimeReasons TEXT NOT NULL DEFAULT '';");
       if (!hasColumn("trips", "bestTimeAvoid")) db.exec("ALTER TABLE trips ADD COLUMN bestTimeAvoid TEXT NOT NULL DEFAULT '';");
       db.exec("PRAGMA user_version = 50;");
+    }
+    if (version < 51) {
+      // Every hotel, activity and restaurant can be Must do (TRA-181). Schema 16's check on the column refused it for
+      // hotels, and SQLite can't change a column's check, so the upgrade puts a column checking only for 0 or 1 in its
+      // place, at the end of the table, with every saved value: no idea's Must do changes, so every hotel starts unmarked.
+      // Ideas' other values, their order, photos, links and likes, and the table's indexes and references are unchanged.
+      // A replay swaps the column again, keeping every saved value.
+      db.exec(`
+        ALTER TABLE candidates RENAME COLUMN mustDo TO previousMustDo;
+        ALTER TABLE candidates ADD COLUMN mustDo INTEGER NOT NULL DEFAULT 0 CHECK(mustDo IN (0,1));
+        UPDATE candidates SET mustDo = previousMustDo;
+        ALTER TABLE candidates DROP COLUMN previousMustDo;
+        PRAGMA user_version = 51;
+      `);
     }
     if (version < SCHEMA_VERSION && db.prepare("PRAGMA foreign_key_check").get()) {
       throw new Error("This upgrade would leave saved items without the trip or destination they belong to. Nothing was changed; review the database against a backup before upgrading.");
@@ -2603,7 +2617,6 @@ export function createStore(databasePath: string, ownerEmail: string) {
         const links = savedLinks(input, before, make.id);
         const url = links[0]?.url ?? "";
         const mustDo = input.mustDo === undefined ? (before?.mustDo ?? 0) : Number(input.mustDo);
-        if (input.category === "hotels" && mustDo) throw new ValidationError("Must do is available for activities and restaurants only.");
         if (input.category !== "restaurants" && input.restaurantTypes?.length) throw new ValidationError("Restaurant types are available for restaurants only.");
         if (input.category !== "activities" && input.estimatedMinutes) throw new ValidationError("Estimated time is available for activities only.");
         const restaurantTypesJson = input.restaurantTypes === undefined ? (before?.restaurantTypesJson ?? "[]") : JSON.stringify(input.restaurantTypes);
@@ -2632,8 +2645,7 @@ export function createStore(databasePath: string, ownerEmail: string) {
         return input.id;
       }
       case "candidate.mustDo": {
-        const candidate = existing<StoredCandidate>("candidates", input.id);
-        if (candidate.category === "hotels") throw new ValidationError("Must do is available for activities and restaurants only.");
+        existing<StoredCandidate>("candidates", input.id);
         db.prepare("UPDATE candidates SET mustDo = ? WHERE id = ?").run(Number(input.mustDo), input.id);
         return input.id;
       }

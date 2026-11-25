@@ -19,6 +19,9 @@
 .stop { border-color: var(--orange); color: var(--orange); }
 .badge { display: inline-flex; align-items: center; height: 22px; padding: 0 7px; border: 1px solid #c3cfbb; border-radius: 11px; background: var(--white); color: #4f6f55; box-shadow: 0 1px 4px #15281d30; }
 .badgeIcons { display: flex; align-items: center; gap: 4px; }
+/* An arrow on a connection's line (TRA-176): an arrowhead in the lines' green, outlined in white so it shows on its line
+   and the map, turned the way the connection goes. It is the same for every transportation and at every zoom. */
+.arrow { display: block; width: 16px; height: 16px; fill: var(--green); stroke: var(--white); stroke-width: 2px; stroke-linejoin: round; paint-order: stroke; }
 .anchor:focus-visible .content > * { outline: 3px solid var(--ink); outline-offset: 2px; }
 /* A destination marker's preview (TRA-143): its name below its primary photo, the same size for every destination, beside
    the marker within the map. It covers the map's places and lines, and its zoom buttons and credit stay above it. */

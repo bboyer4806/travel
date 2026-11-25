@@ -285,7 +285,7 @@ function mapCanvas() {
 test("the map frames the trip when it opens and when its places change, and nothing else moves it (TRA-144)", () => {
   const map = mapCanvas();
   const marker = (key, kind, position, number = null) => ({ key, kind, position, label: key, number, target: key, found: key, photo: null });
-  const layout = (...markers) => ({ markers, lines: [{ id: "out", points: markers.map((item) => item.position), badge: markers[0].position, method: "Flight", from: "ORD", to: "Vienna", target: "connection-out" }], unmapped: [] });
+  const layout = (...markers) => ({ markers, lines: [{ id: "out", points: markers.map((item) => item.position), badge: markers[0].position, arrows: [], method: "Flight", from: "ORD", to: "Vienna", target: "connection-out" }], unmapped: [] });
   const ord = marker("ORD", "departure", [41.9786, -87.9048]), vienna = marker("Vienna", "destination", [48.2085, 16.3721], 1);
   map.render({ layout: layout(ord, vienna) });
   assert.deepEqual(map.calls, [["fitBounds", [[41.9786, -87.9048], [48.2085, 16.3721]], 11]]);

@@ -121,7 +121,10 @@ Repeat passing checks when subsequent changes affect their coverage or required 
 - The trip map (TRA-44) is `src/components/trip-map.tsx`, with Leaflet in `trip-map-canvas.tsx`, loaded only in the
   browser. `tripJourney` and `mapLayout` in `src/lib/trip-map.ts` decide what it shows, and `/api/trip-map/[tripId]` looks
   the trip's saved names up with `locatePlaces` in `src/lib/location-search.ts`, within the city suggestions' Open-Meteo
-  limits. The trip map stores no coordinates and never guesses one: a place it can't find is listed below it.
+  limits. The trip map stores no coordinates and never guesses one: a place it can't find is listed below it. Each
+  connection's transportation opens a popup (TRA-175) of the saved details `connectionDetails` lists, never others;
+  `transitMinutes` gives a time in transit only from a Departure and Arrival saved with their UTC offsets, since Travel
+  never assumes a time zone.
 - The destination map (TRA-130) is `src/components/destination-map.tsx`, with Leaflet in `destination-map-canvas.tsx`,
   loaded only in the browser, on each trip destination card and destination page. `destinationPlaces` and
   `destinationMapLayout` in `src/lib/destination-map.ts` decide what it shows, and `/api/destination-map/[destinationId]`
@@ -277,7 +280,8 @@ schema and add a note for the new version, with only what its rollback adds to t
   `UNDO_SCHEMA_21` (then `UNDO_SCHEMA_20`) from `tests/owned-store.mjs`. AI integration tests use
   `aiSetup` from `tests/ai-fixtures.mjs`: an owner, a guest with an unshared trip, and a Claude connection,
   whose `propose` takes the photos a proposal adds as Travel prepared them. Downloads are tested with a
-  stand-in `PhotoFetch`, never a real website.
+  stand-in `PhotoFetch`, never a real website. Tests of the trip map itself draw the real component with `mapCanvas`
+  from `tests/trip-map-canvas.mjs`, a stand-in for Leaflet and the page.
 - Node runs that TypeScript by stripping types, without path aliases, as does the container's
   `scripts/start.mjs`, which checks the settings and opens and upgrades the database from `src/lib`
   before the server starts (TRA-78). Code in `src/lib` uses relative imports for values (type-only

@@ -145,7 +145,8 @@ async function openTripMap(t) {
     },
     AbortController,
   });
-  const show = () => render(TripMap, { tripId, journey });
+  // Shown again with the trip's journey as last read, or as read again after a save.
+  const show = (next = journey) => render(TripMap, { tripId, journey: next });
   const status = (tree) => nodes(tree).find((node) => node.props?.role === "status").props.children;
   let tree = show();
   for (let i = 0; i < 100 && status(tree) !== ""; i++) {
@@ -153,7 +154,7 @@ async function openTripMap(t) {
     tree = show();
   }
   assert.equal(status(tree), "", "the trip's places are found");
-  return { tree, show, tripId, journey, lookups, requests, answers };
+  return { tree, show, store, tripId, journey, lookups, requests, answers };
 }
 
 test("the trip map has no airport search, and only the trip's own places are looked up (TRA-144)", async (t) => {
@@ -200,6 +201,22 @@ test("a saved airport code such as ORD is still shown at its airport, with every
   assert.equal(nodes(tree).some((node) => node.props?.className === "unmapped"), false, "nothing is listed under Not on the map");
   // Airport codes need no lookup: only the names are looked up.
   assert.deepEqual(lookups.sort(), ["Melk", "Salzburg", "Vienna"]);
+});
+
+test("the map gives each connection's transportation its saved details, and follows saved changes without looking places up again (TRA-175)", async (t) => {
+  const { tree, show, store, tripId, requests } = await openTripMap(t);
+  const lines = (tree) => copy(nodes(tree).find((node) => node.type === "TripMapCanvas").props.layout.lines).map(({ from, to, target, details }) => [from, to, target, details.map(({ term, value }) => term + ": " + value)]);
+  const legs = store.getSnapshot().legs.filter((leg) => leg.tripId === tripId);
+  const out = legs.find((leg) => leg.fromId === null);
+  assert.deepEqual(lines(tree), [
+    ["ORD", "Vienna", "connection-" + out.id, ["Transportation: Flight"]],
+    ["Vienna", "Salzburg", "connection-" + legs.find((leg) => leg.method === "Train").id, ["Transportation: Train"]],
+    ["Salzburg", "CLE", "connection-" + legs.find((leg) => leg.toId === null).id, ["Transportation: Flight"]],
+  ]);
+  store.applyMutation({ ...legSave(out.id, "Flight", out.itinerary), airline: "Austrian", flightNumber: "OS 66", departure: "2026-12-01T17:05-06:00", arrival: "2026-12-02T09:20+01:00" });
+  const refreshed = show(tripMap.tripJourney(store.getTripSnapshot(tripId).data, tripId));
+  assert.deepEqual(lines(refreshed)[0].at(-1), ["Transportation: Flight", "Airline: Austrian", "Flight number: OS 66", "Departure: 2026-12-01T17:05-06:00", "Arrival: 2026-12-02T09:20+01:00", "Time in transit: 9 h 15 min"]);
+  assert.deepEqual(requests, ["/api/trip-map/" + tripId], "the same places, so nothing is looked up again");
 });
 
 test("the map follows its heading directly, with no instructions, at the page's section spacing (TRA-145)", async (t) => {
@@ -253,8 +270,9 @@ function mapCanvas() {
     "react-dom": { createPortal: (child) => child },
     leaflet: { default: L },
     "leaflet/dist/leaflet.css": {},
+    "lucide-react": icons,
     "@/components/destination-gallery": {},
-    "@/components/transportation-icons": { transportationLabel: (method) => method },
+    "@/components/transportation-icons": { TransportationIcons: "TransportationIcons", transportationLabel: (method) => method },
     "@/components/trip-map-symbols": icons,
     "@/lib/photo-focus": {},
     "@/lib/transportation-methods": { transportationIcons: () => ["plane"] },

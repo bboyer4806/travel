@@ -253,7 +253,7 @@ Repeat passing checks when subsequent changes affect their coverage or required 
   photo, up to 2560 × 1920 with its width and the photo's (TRA-154): `prepareImage` returns them as a `PreparedImage`,
   and every save of a photo, an AI proposal's included, carries them, `large` null for none. A trip's headline image
   keeps the photo and its large version, without a thumbnail, since it shows only cropped in its card and banner.
-  Gallery thumbnails, editor previews, and the maps' previews and popups (TRA-143, TRA-152) load each photo's
+  Gallery thumbnails, editor previews, and the maps' previews and popups (TRA-143, TRA-152, TRA-188) load each photo's
   `/thumbnail` route; every frame that shows the photo itself offers its `/large` route too, with `photoSizes` from
   `src/lib/photo-sizes.ts` and the frame's widths there, which follow `globals.css`: a layout change updates them. A
   photo saved before schema 32 has a NULL thumbnail, so `storedThumbnailResponse` makes one with `makeThumbnail` for

@@ -304,7 +304,8 @@ function within(start: number, length: number, limit: number): number {
  * its transportation at `point`, of `badge` size, as a destination's preview goes beside its marker. Where the map has
  * room for it neither above nor below, it goes beside the transportation instead, on the right or else the left, moved
  * up or down as far as keeps it within the map, so it doesn't cover the transportation, where a click meant for the
- * transportation could select View details. Only with room on no side does it go where a preview would.
+ * transportation could select View details. Only with room on no side does it go where a preview would. A destination's
+ * map places its markers' previews the same way, with the marker as `badge` (TRA-188).
  */
 export function popupPosition(point: Point, popup: Size, map: Size, badge: Size): Point {
   const near = previewPosition(point, popup, map, badge.height / 2);

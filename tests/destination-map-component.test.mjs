@@ -5,6 +5,7 @@ import { runInNewContext } from "node:vm";
 import ts from "typescript";
 import * as destinationLabel from "../src/lib/destination-label.ts";
 import * as destinationMap from "../src/lib/destination-map.ts";
+import * as tripMap from "../src/lib/trip-map.ts";
 import { cssRules } from "./css-rules.mjs";
 
 // Run the destination map's components with a small hook harness and stand-ins for fetch and Leaflet: no browser or
@@ -12,7 +13,7 @@ import { cssRules } from "./css-rules.mjs";
 const compile = (path) => ts.transpileModule(readFileSync(new URL(path, import.meta.url), "utf8"), {
   compilerOptions: { module: ts.ModuleKind.CommonJS, jsx: ts.JsxEmit.ReactJSX, target: ts.ScriptTarget.ES2022 },
 }).outputText;
-const jsx = (type, props) => ({ type, props });
+const jsx = (type, props, key) => ({ type, props, key });
 const nodes = (node) => !node || typeof node !== "object" ? [] : [node, ...[node.props?.children].flat(Infinity).flatMap(nodes)];
 const text = (node) => typeof node === "string" || typeof node === "number" ? String(node) : !node || typeof node !== "object" ? "" : [node.props?.children].flat(Infinity).map(text).join("");
 // A CSS module's class names are their own names. Values from a component are copied into this test's realm to compare.
@@ -25,8 +26,11 @@ const gallery = { exports: {} };
 runInNewContext(compile("../src/components/candidate-gallery.tsx"), { exports: gallery.exports, require: () => new Proxy({}, { get: () => () => null }) });
 const { thumbnailUrl } = gallery.exports;
 
-/** Hooks that keep their state between renders, running effects after each render whose dependencies changed. */
-function hooks() {
+/**
+ * Hooks that keep their state between renders, running effects after each render whose dependencies changed. After each
+ * render, `attach` sets refs, as React does before effects run.
+ */
+function hooks(attach = () => {}) {
   const slots = [];
   let cursor = 0, pending = [];
   const effect = (run, deps) => {
@@ -56,6 +60,7 @@ function hooks() {
       cursor = 0;
       pending = [];
       const tree = component(props);
+      attach(tree);
       for (const run of pending) run();
       return tree;
     },
@@ -237,13 +242,49 @@ test("a destination with nothing saved, or that the map can't find, says so inst
   assert.deepEqual(nowhere.unmapped().filter((line) => !destinationMap.MAP_CATEGORIES.some((category) => destinationMap.MAP_CATEGORY_LABELS[category] === line)), saved.map((place) => place.name + "View details for " + place.name));
 });
 
-/** The map itself, `height` pixels tall, with a stand-in for Leaflet that records its markers, popups and framing. */
+/**
+ * The map itself, 640 pixels wide and `height` tall, with a stand-in for Leaflet that records its markers, popups and
+ * framing, a stand-in page that records focus and the keys listened for, and a clock the test moves. A marker's position
+ * is where the stand-in draws it, as [y, x] in pixels from the map's top left corner, once the map has moved by `offset`.
+ */
 function mapCanvas(height = 340) {
-  const { react, render } = hooks();
-  const calls = [], markers = [];
+  const calls = [], markers = [], mapEvents = {}, keyListeners = [], timers = new Map();
+  let now = 0, lastTimer = 0, offset = { x: 0, y: 0 }, rendered = new Map(), props, tree;
+  const { react, render } = hooks((rendering) => {
+    // React sets each ref to its element, the same one while it stays rendered, and to null once it's gone. A preview
+    // measures 200 pixels wide, and for each place 40 tall, or 140 with its photo, up to its CSS's limit of the map's
+    // height less 16 pixels.
+    const withRefs = nodes(rendering).filter((node) => node.props?.ref);
+    const measure = (node) => node.props.className !== "preview" ? {} : { offsetWidth: 200,
+      offsetHeight: Math.min(height - 16, nodes(node).filter((child) => child.type === "li").reduce((sum, entry) => sum + (nodes(entry).some((child) => child.type === "img") ? 140 : 40), 0)) };
+    const next = new Map(withRefs.map((node) => [node.key, rendered.get(node.key) ?? { ref: node.props.ref, ...measure(node), style: {}, contains(other) { return other === this; } }]));
+    for (const [key, element] of rendered) if (!next.has(key)) element.ref.current = null;
+    for (const node of withRefs) node.props.ref.current = next.get(node.key);
+    rendered = next;
+  });
   const document = { body: { name: "body" }, activeElement: null };
-  const focusable = (name) => ({ name, focus(options) { document.activeElement = this; calls.push(["focus", name, { ...options }]); }, setAttribute(key, value) { this[key] = value; } });
-  const instance = { on() {}, remove() {}, getSize: () => ({ x: 640, y: height }), fitBounds: (bounds, options) => calls.push(["fitBounds", Array.from(bounds, (position) => [...position]), options.maxZoom]) };
+  // Focusing an element records how, and, as in a browser, blurs the element that had focus, then focuses it.
+  const focusable = (name) => ({
+    name, listeners: {}, focusVisible: false,
+    focus(options) {
+      calls.push(["focus", name, { ...options }]);
+      const previous = document.activeElement;
+      if (previous === this) return;
+      for (const listener of previous?.listeners?.blur ?? []) listener({});
+      document.activeElement = this;
+      for (const listener of this.listeners.focus ?? []) listener({});
+    },
+    setAttribute(key, value) { this[key] = value; },
+    addEventListener(type, listener) { (this.listeners[type] ??= []).push(listener); },
+    matches(selector) { assert.equal(selector, ":focus-visible"); return this.focusVisible; },
+  });
+  const instance = {
+    on(names, handler) { for (const name of names.split(" ")) mapEvents[name] = handler; },
+    remove() {},
+    getSize: () => ({ x: 640, y: height }),
+    fitBounds: (bounds, options) => calls.push(["fitBounds", Array.from(bounds, (position) => [...position]), options.maxZoom]),
+    latLngToContainerPoint: ([y, x]) => ({ x: x + offset.x, y: y + offset.y }),
+  };
   const group = { addTo() { return this; }, clearLayers() { markers.length = 0; } };
   const L = {
     map: () => instance,
@@ -281,6 +322,7 @@ function mapCanvas(height = 340) {
         leaflet: { default: L },
         "leaflet/dist/leaflet.css": {},
         "@/lib/destination-map": destinationMap,
+        "@/lib/trip-map": tripMap,
         "./candidate-gallery": { thumbnailUrl },
         "./destination-map-symbols": { PlaceSymbol: "symbol", GroupSymbol: "group" },
         "./destination-map.module.css": { default: styles },
@@ -298,9 +340,89 @@ function mapCanvas(height = 340) {
         const popup = { button: focusable("View details"), close: focusable("close"), listeners, addEventListener: (type, listener) => { listeners[type] = listener; }, removeEventListener: (type) => { delete listeners[type]; }, querySelector: () => popup.button };
         return popup;
       },
+      addEventListener: (type, listener) => { assert.equal(type, "keydown"); keyListeners.push(listener); },
+      removeEventListener: (type, listener) => keyListeners.splice(keyListeners.indexOf(listener), 1),
     },
+    setTimeout: (run, delay) => { timers.set(++lastTimer, { run, at: now + delay }); return lastTimer; },
+    clearTimeout: (id) => timers.delete(id),
   });
-  return { calls, markers, document, render: (props) => render(loaded.exports.default, props) };
+  // Renders again, as React does after each change of state.
+  const update = () => { tree = render(loaded.exports.default, props); return tree; };
+  const markerFor = (label) => markers.find((item) => item.element["aria-label"] === label);
+  const previewNode = () => nodes(tree).find((node) => node.props?.className === "preview");
+  return {
+    calls, markers, document,
+    render(next) { props = next; return update(); },
+    tree: () => tree,
+    marker: markerFor,
+    /** Dispatches a DOM event to the marker labeled `label`. */
+    fire(label, type, event = {}) {
+      for (const listener of markerFor(label).element.listeners[type] ?? []) listener(event);
+      update();
+    },
+    /** Focuses a marker, by keyboard when `visible`, as `:focus-visible` tells, or by a click or tap. */
+    focus(label, visible) {
+      markerFor(label).element.focusVisible = visible;
+      markerFor(label).element.focus();
+      update();
+    },
+    /** The keyboard leaving the marker labeled `label` for the rest of the page. */
+    blur(label) {
+      document.activeElement = document.body;
+      this.fire(label, "blur");
+    },
+    /** The pointer reaching or leaving the preview. */
+    hoverPreview(entering) {
+      previewNode().props[entering ? "onPointerEnter" : "onPointerLeave"]();
+      update();
+    },
+    previewElement: () => previewNode().props.ref.current,
+    key(key) {
+      for (const listener of [...keyListeners]) listener({ key });
+      update();
+    },
+    listening: () => keyListeners.length,
+    /** Moves the clock on, running each timer that comes due. */
+    wait(ms) {
+      now += ms;
+      for (const [id, timer] of [...timers]) if (timer.at <= now) { timers.delete(id); timer.run(); }
+      update();
+    },
+    /** Leaflet's event as the map starts or stops moving, with where it moves the map's markers. */
+    mapEvent(name, moved = offset) {
+      offset = moved;
+      mapEvents[name]();
+      update();
+    },
+    /** Leaflet opening or closing a marker's popup, as a click, tap or Enter on it does, or a click elsewhere on the map. */
+    popup(label, open) {
+      markerFor(label)[open ? "openPopup" : "closePopup"]();
+      update();
+    },
+    /** Presses a key on a marker, or in its popup when `inPopup`, and whether its default was prevented. */
+    press(label, key, inPopup = false) {
+      let prevented = false;
+      const event = { key, preventDefault() { prevented = true; } };
+      if (inPopup) markerFor(label).popup.listeners.keydown(event);
+      else markerFor(label).handlers.keydown({ originalEvent: event });
+      update();
+      return prevented;
+    },
+    /**
+     * The previews shown, as people see them: each place's photo's address, or null, name and category, how screen readers
+     * and the keyboard know the preview, and where it is.
+     */
+    previews: () => nodes(tree).filter((node) => node.props?.className === "preview").map((node) => {
+      const { style } = node.props.ref.current;
+      return {
+        places: nodes(node).filter((child) => child.type === "li").map((entry) => [nodes(entry).find((child) => child.type === "img")?.props.src ?? null,
+          text(nodes(entry).find((child) => child.type === "strong")), text(nodes(entry).find((child) => child.props?.className === "previewCategory"))]),
+        hidden: node.props["aria-hidden"], tabIndex: node.props.tabIndex, left: style.left, top: style.top,
+      };
+    }),
+    /** The names of the places each preview shown has. */
+    shown() { return this.previews().map((preview) => preview.places.map(([, name]) => name)); },
+  };
 }
 
 const sacher = { key: "48.20406,16.36949", position: [48.20406, 16.36949], places: [
@@ -523,4 +645,253 @@ test("a place's new primary photo reaches its marker's popup without looking any
   await map.update({ places: places.map((place) => place.id === "h1" ? { ...place, photo: lobby } : place.id === "c1" ? { ...place, photo: nave } : place) });
   assert.deepEqual(photos(), [["h1", lobby], ["a1", null], ["c1", nave]]);
   assert.equal(map.requests.length, 1, "photos aren't looked up");
+});
+
+// TRA-188: each marker's preview of its places, as the trip map previews a destination (TRA-143). Each position is the
+// point the stand-in's map draws the marker at, as [y, x] in pixels from the map's top left corner.
+const facade = { id: "photo-facade", version: "v4" };
+const crypt = { id: "photo-crypt", version: "v3" };
+const at = (id, category, name, photo, details = {}) => ({ id, category, name, address: "", coordinates: null, found: name + ", Vienna", approximate: false, photo, ...details });
+const sacherWien = { key: "sacher", position: [250, 300], places: [at("h1", "hotels", "Hotel Sacher Wien", lobby)] };
+const central = { key: "central", position: [30, 600], places: [at("r1", "restaurants", "Café Central", null)] };
+// A hotel, a tour, a café shown at approximate coordinates and the cathedral share a marker, all but the café with a photo.
+const stephansplatz = { key: "stephansplatz", position: [170, 320], places: [
+  at("h2", "hotels", "Hotel Stephansdom", facade),
+  at("a2", "activities", "Catacombs tour", crypt),
+  at("r2", "restaurants", "Café Dom", null, { found: null, approximate: true }),
+  at("c1", "churches", "St. Stephen's Cathedral", nave),
+] };
+const SACHER = "Hotel: Hotel Sacher Wien", CENTRAL = "Restaurant: Café Central";
+const STEPHANSPLATZ = "Hotel: Hotel Stephansdom; Activity: Catacombs tour; Restaurant: Café Dom (approximate location); Church: St. Stephen's Cathedral";
+/** The map of Hotel Sacher, Café Central and Stephansplatz, 640 by 340 pixels. */
+const previewMap = () => {
+  const map = mapCanvas();
+  map.render({ markers: [sacherWien, central, stephansplatz], onView() {} });
+  return map;
+};
+
+test("hovering a marker previews its place's primary photo, the thumbnail its popup shows, with its name and category, above the marker (TRA-188)", () => {
+  const map = previewMap();
+  assert.deepEqual(map.previews(), []);
+  // Every marker has a preview, and keeps its label and tooltip.
+  assert.deepEqual(map.markers.map((marker) => [marker.element["aria-label"], Object.keys(marker.element.listeners)]), [SACHER, CENTRAL, STEPHANSPLATZ].map((label) => [label, ["pointerenter", "pointerleave", "focus", "blur"]]));
+  assert.equal(map.marker(SACHER).options.title, SACHER + "\nShown at Hotel Sacher Wien, Vienna");
+  map.fire(SACHER, "pointerenter", { pointerType: "mouse" });
+  assert.deepEqual(map.previews(), [{
+    places: [["/api/candidate-images/h1/photo-lobby/thumbnail?v=v1", "Hotel Sacher Wien", "Hotel"]],
+    // Screen readers hear the place in the marker's label, so the preview, which repeats it, is hidden from them, and the
+    // keyboard never stops on it.
+    hidden: "true", tabIndex: -1,
+    // Centered 6 pixels above the 30-pixel marker at 300, 250, 200 pixels wide and 140 tall with its photo.
+    left: "200px", top: "89px",
+  }]);
+  // The same photo the marker's popup shows, decorative since the place's name follows it, loaded once the preview shows.
+  const popup = nodes(map.tree()).find((node) => node.type === "portal" && node.props.container === map.marker(SACHER).popup);
+  const [popupPhoto] = nodes(popup).filter((node) => node.type === "img");
+  const [photo] = nodes(nodes(map.tree()).find((node) => node.props?.className === "preview")).filter((node) => node.type === "img");
+  assert.equal(photo.props.src, popupPhoto.props.src);
+  assert.deepEqual(copy(photo.props), { className: "previewPhoto", src: popupPhoto.props.src, alt: "", decoding: "async" });
+});
+
+test("a place without photos previews its name and category alone, below its marker near the map's top and inside its edge (TRA-188)", () => {
+  const map = previewMap();
+  map.fire(CENTRAL, "pointerenter", { pointerType: "pen" });
+  // With no room above the marker at 600, 30, the preview, 40 pixels tall, goes below it, 8 pixels inside the map's right edge.
+  assert.deepEqual(map.previews(), [{ places: [[null, "Café Central", "Restaurant"]], hidden: "true", tabIndex: -1, left: "432px", top: "51px" }]);
+});
+
+test("places sharing a marker each show in its preview with their own photos and categories, and one taller than the map fills its height beside the marker and scrolls (TRA-188)", () => {
+  const map = previewMap();
+  map.fire(STEPHANSPLATZ, "pointerenter", { pointerType: "mouse" });
+  assert.deepEqual(map.previews(), [{
+    // In the marker's order, a church's photo from its own gallery, and the café, at approximate coordinates, without one.
+    // Like every place's, the café's preview names no address.
+    places: [
+      ["/api/candidate-images/h2/photo-facade/thumbnail?v=v4", "Hotel Stephansdom", "Hotel"],
+      ["/api/candidate-images/a2/photo-crypt/thumbnail?v=v3", "Catacombs tour", "Activity"],
+      [null, "Café Dom", "Restaurant"],
+      ["/api/church-images/c1/photo-nave/thumbnail?v=v2", "St. Stephen's Cathedral", "Church"],
+    ],
+    // 460 pixels of places, limited to the map's 340 less 16, from 8 pixels below its top. With room neither above nor
+    // below the marker at 320, 170, it goes 6 pixels to the right of it, as a connection's popup does on the trip map
+    // (TRA-175), rather than over the marker, where it would take the click meant for the marker.
+    hidden: "true", tabIndex: -1, left: "341px", top: "8px",
+  }]);
+  assert.equal(map.previewElement().offsetHeight, 324);
+  // Near the map's right edge, it goes to the left of the marker instead.
+  const east = mapCanvas();
+  east.render({ markers: [{ ...stephansplatz, position: [170, 520] }], onView() {} });
+  east.fire(STEPHANSPLATZ, "pointerenter", { pointerType: "mouse" });
+  assert.deepEqual(east.previews().map((preview) => [preview.left, preview.top]), [["299px", "8px"]]);
+});
+
+test("a preview is the trip map's size, smaller on phones, scrolls within the map's margins, and is above the markers and below the map's controls (TRA-188)", () => {
+  const rules = cssRules("../src/components/destination-map.module.css");
+  const rule = (selector) => rules.filter(([selectors]) => selectors === selector).map(([, declarations, atRule]) => [atRule, declarations]);
+  const [[, preview], [phone, phonePreview]] = rule(".preview");
+  const trip = cssRules("../src/components/trip-map.module.css").filter(([selectors]) => selectors === ".preview").map(([, declarations]) => declarations.width);
+  assert.deepEqual([preview.width, phonePreview.width], trip, "200 pixels wide, and 160 on phones, as the trip map's");
+  assert.equal(phone, "@media(max-width:540px)");
+  // As tall as the map less the 8 pixels previewPosition keeps from its top and bottom edges, scrolling what is taller.
+  assert.deepEqual([preview["max-height"], preview["overflow-y"]], ["calc(100% - 16px)", "auto"]);
+  assert.deepEqual(tripMap.popupPosition({ x: 320, y: 170 }, { width: 200, height: 340 - 16 }, { width: 640, height: 340 }, { width: 30, height: 30 }), { x: 341, y: 8 });
+  // Above Leaflet's panes, its markers and popups among them, and below its zoom buttons and credit.
+  const leaflet = cssRules("../node_modules/leaflet/dist/leaflet.css");
+  const zIndex = (selector) => Number(leaflet.find(([selectors, declarations]) => selectors.split(",").map((part) => part.trim()).includes(selector) && "z-index" in declarations)[1]["z-index"]);
+  assert.ok(zIndex(".leaflet-pane") < Number(preview["z-index"]) && Number(preview["z-index"]) < zIndex(".leaflet-top"));
+  // Every photo fills the same 2:1 frame, cropped rather than stretched, and names wrap within the preview.
+  const [[, photo]] = rule(".previewPhoto");
+  assert.deepEqual([photo.width, photo["aspect-ratio"], photo["object-fit"]], ["100%", "2 / 1", "cover"]);
+  assert.equal(rule(".previewName")[0][1]["overflow-wrap"], "anywhere");
+});
+
+test("the preview stays while the pointer moves between the marker and the preview, and closes a moment after it leaves both (TRA-188)", () => {
+  const map = previewMap();
+  map.fire(SACHER, "pointerenter", { pointerType: "mouse" });
+  // Leaving the marker for the preview, across the gap between them.
+  map.fire(SACHER, "pointerleave");
+  map.wait(150);
+  assert.deepEqual(map.shown(), [["Hotel Sacher Wien"]]);
+  map.hoverPreview(true);
+  map.wait(5000);
+  assert.deepEqual(map.shown(), [["Hotel Sacher Wien"]], "open as long as the pointer is on the preview");
+  // Back to the marker, then away from both.
+  map.hoverPreview(false);
+  map.fire(SACHER, "pointerenter", { pointerType: "mouse" });
+  map.wait(5000);
+  assert.deepEqual(map.shown(), [["Hotel Sacher Wien"]]);
+  map.fire(SACHER, "pointerleave");
+  map.wait(199);
+  assert.deepEqual(map.shown(), [["Hotel Sacher Wien"]]);
+  map.wait(1);
+  assert.deepEqual(map.shown(), [], "closed once the pointer has been off both for 200 ms");
+  // A quick move straight from the marker onto the preview: React tells the preview first, then the marker hears of it.
+  map.fire(SACHER, "pointerenter", { pointerType: "mouse" });
+  map.hoverPreview(true);
+  map.fire(SACHER, "pointerleave", { relatedTarget: map.previewElement() });
+  map.wait(5000);
+  assert.deepEqual(map.shown(), [["Hotel Sacher Wien"]]);
+  map.hoverPreview(false);
+  map.wait(200);
+  assert.deepEqual(map.shown(), []);
+  // From one marker straight to another, the preview follows at once and stays.
+  map.fire(SACHER, "pointerenter", { pointerType: "mouse" });
+  map.fire(SACHER, "pointerleave");
+  map.fire(CENTRAL, "pointerenter", { pointerType: "mouse" });
+  assert.deepEqual(map.shown(), [["Café Central"]]);
+  map.wait(5000);
+  assert.deepEqual(map.shown(), [["Café Central"]]);
+});
+
+test("the keyboard reaching a marker previews it without opening its popup, until the keyboard moves on or Escape closes it (TRA-188)", () => {
+  const map = previewMap();
+  // A click or tap focuses the marker too, on its way to its popup, without a preview.
+  map.focus(SACHER, false);
+  assert.deepEqual(map.shown(), []);
+  map.blur(SACHER);
+  map.focus(SACHER, true);
+  assert.deepEqual(map.previews().map((preview) => [preview.places.map(([, name]) => name), preview.left, preview.top]), [[["Hotel Sacher Wien"], "200px", "89px"]], "the same preview as hovering shows");
+  assert.equal(map.marker(SACHER).open, false);
+  map.blur(SACHER);
+  map.focus(CENTRAL, true);
+  assert.deepEqual(map.shown(), [["Café Central"]]);
+  map.blur(CENTRAL);
+  assert.deepEqual(map.shown(), []);
+  // Escape closes it with the keyboard still on the marker, opening nothing. Other keys don't.
+  map.focus(SACHER, true);
+  map.key("Shift");
+  assert.deepEqual(map.shown(), [["Hotel Sacher Wien"]]);
+  map.key("Escape");
+  assert.deepEqual(map.shown(), []);
+  assert.equal(map.marker(SACHER).open, false);
+  assert.equal(map.document.activeElement, map.marker(SACHER).element);
+  assert.equal(map.listening(), 0, "Escape is listened for only while a preview shows");
+  // Escape closes a hovered preview too, which shows again once the pointer comes back.
+  map.fire(CENTRAL, "pointerenter", { pointerType: "mouse" });
+  map.key("Escape");
+  assert.deepEqual(map.shown(), []);
+  map.fire(CENTRAL, "pointerleave");
+  map.fire(CENTRAL, "pointerenter", { pointerType: "mouse" });
+  assert.deepEqual(map.shown(), [["Café Central"]]);
+});
+
+test("while the map moves, as when Leaflet brings a marker the keyboard reaches into view, the preview waits for it (TRA-188)", () => {
+  const map = previewMap();
+  // Leaflet starts moving the map as the marker takes focus, before the map's own listener hears of it.
+  map.mapEvent("movestart");
+  map.focus(SACHER, true);
+  assert.deepEqual(map.shown(), []);
+  // Once it stops, the preview shows above the marker where the map moved it.
+  map.mapEvent("moveend", { x: -100, y: 50 });
+  assert.deepEqual(map.previews().map((preview) => [preview.left, preview.top]), [["100px", "139px"]]);
+  map.mapEvent("zoomstart");
+  assert.deepEqual(map.shown(), []);
+  map.mapEvent("moveend", { x: 0, y: 0 });
+  assert.deepEqual(map.previews().map((preview) => [preview.left, preview.top]), [["200px", "89px"]]);
+});
+
+test("touch shows no preview, and opening a marker's popup, by click, tap, Enter or Space, closes the preview, none showing until it closes (TRA-188)", () => {
+  const map = previewMap();
+  map.fire(SACHER, "pointerenter", { pointerType: "touch" });
+  assert.deepEqual(map.shown(), [], "a tap has no hover");
+  // A click on a marker whose preview shows opens its popup as before, which closes the preview.
+  map.fire(SACHER, "pointerenter", { pointerType: "mouse" });
+  map.popup(SACHER, true);
+  assert.ok(map.marker(SACHER).open);
+  assert.deepEqual(map.shown(), []);
+  assert.equal(map.document.activeElement.name, "View details", "the popup takes focus as before");
+  // While it is open, neither the pointer nor the keyboard shows a preview, which would cover it.
+  map.fire(SACHER, "pointerleave");
+  map.fire(CENTRAL, "pointerenter", { pointerType: "mouse" });
+  map.focus(STEPHANSPLATZ, true);
+  assert.deepEqual(map.shown(), []);
+  map.fire(CENTRAL, "pointerleave");
+  map.popup(SACHER, false);
+  assert.deepEqual(map.shown(), []);
+  // Once it closes, the pointer reaching a marker shows its preview again.
+  map.fire(CENTRAL, "pointerenter", { pointerType: "mouse" });
+  assert.deepEqual(map.shown(), [["Café Central"]]);
+  map.fire(CENTRAL, "pointerleave");
+  map.wait(200);
+  // Space, as Enter, opens the popup of a marker the keyboard previews, and closes the preview.
+  map.blur(STEPHANSPLATZ);
+  map.focus(SACHER, true);
+  assert.deepEqual(map.shown(), [["Hotel Sacher Wien"]]);
+  assert.ok(map.press(SACHER, " "));
+  assert.ok(map.marker(SACHER).open);
+  assert.deepEqual(map.shown(), []);
+  // Escape in the popup closes it and returns focus to the marker, as before, which shows no preview then.
+  assert.ok(map.press(SACHER, "Escape", true));
+  assert.ok(!map.marker(SACHER).open);
+  assert.equal(map.document.activeElement, map.marker(SACHER).element);
+  assert.deepEqual(map.shown(), []);
+  assert.equal(map.listening(), 0);
+  // The keyboard moving on and back previews it again.
+  map.blur(SACHER);
+  map.focus(SACHER, true);
+  assert.deepEqual(map.shown(), [["Hotel Sacher Wien"]]);
+});
+
+test("drawing the markers again, as when a checkbox hides or shows places, closes the preview until the pointer or keyboard comes back (TRA-188)", () => {
+  const map = previewMap();
+  map.fire(SACHER, "pointerenter", { pointerType: "mouse" });
+  assert.deepEqual(map.shown(), [["Hotel Sacher Wien"]]);
+  // Unchecking Hotels removes the hotel's marker, and its preview with it.
+  map.render({ markers: [central], onView() {} });
+  assert.deepEqual(map.shown(), []);
+  assert.equal(map.listening(), 0);
+  // Checking Hotels again draws every marker anew, without a preview until the pointer reaches one.
+  const redrawn = [sacherWien, central, stephansplatz].map((marker) => ({ ...marker }));
+  map.render({ markers: redrawn, onView() {} });
+  assert.deepEqual(map.shown(), []);
+  map.fire(SACHER, "pointerenter", { pointerType: "mouse" });
+  assert.deepEqual(map.shown(), [["Hotel Sacher Wien"]]);
+  // The same for the keyboard's preview: a redraw, as when a place's lookup answers, closes it.
+  map.fire(SACHER, "pointerleave");
+  map.wait(200);
+  map.focus(CENTRAL, true);
+  assert.deepEqual(map.shown(), [["Café Central"]]);
+  map.render({ markers: redrawn.map((marker) => ({ ...marker })), onView() {} });
+  assert.deepEqual(map.shown(), []);
+  assert.equal(map.listening(), 0);
 });

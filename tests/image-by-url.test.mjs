@@ -30,7 +30,7 @@ const notJson = (status) => ({ ok: false, status, json: async () => { throw new 
  * may also turn the field's button off, as an editor whose photos it fills does.
  */
 function harness({ label = "Add image by URL", disabled = false, accept = () => true } = {}) {
-  const hooks = [], effects = [], focused = [], added = [], downloads = [], objectUrls = [];
+  const hooks = [], effects = [], focused = [], added = [], downloads = [], objectUrls = [], previews = [];
   let cursor = 0, nodes = [];
   const element = (type, props, key) => ({ type, props, key });
   // The elements the component holds refs to, the same element from render to render, as the browser's are.
@@ -39,7 +39,8 @@ function harness({ label = "Add image by URL", disabled = false, accept = () => 
   const neighbor = { focus() { focused.push("the editor's next control"); } };
   const domElement = (node) => {
     const key = node.props.id ?? (text(node) || node.type);
-    if (!domElements.has(key)) domElements.set(key, { focus() { focused.push(text(this.node)); }, parentElement: { querySelector(selector) { assert.equal(selector, "button:not(:disabled)"); return neighbor; } } });
+    if (!domElements.has(key)) domElements.set(key, { listeners: {}, addEventListener(type, listener) { this.listeners[type] = listener; }, removeEventListener(type, listener) { if (this.listeners[type] === listener) delete this.listeners[type]; },
+      focus() { focused.push(text(this.node)); }, parentElement: { querySelector(selector) { assert.equal(selector, "button:not(:disabled)"); return neighbor; } } });
     const dom = domElements.get(key);
     dom.node = node;
     dom.disabled = Boolean(node.props.disabled);
@@ -90,6 +91,9 @@ function harness({ label = "Add image by URL", disabled = false, accept = () => 
     downloads.push(download);
     init.signal.addEventListener("abort", () => reject(Object.assign(new Error("The operation was aborted."), { name: "AbortError" })));
   });
+  // Travel's previews of images the browser can't show (TRA-179), which wait until the test answers them.
+  const previewFetch = (path, init) => new Promise((resolve) => previews.push({ path, method: init.method, body: init.body, answer: resolve }));
+  modules["./file-preview"] = load("../src/components/file-preview.ts", require, { URL: BrowserURL, fetch: previewFetch });
   const component = load("../src/components/image-by-url.tsx", require, { URL: BrowserURL, File, AbortController, fetch });
   const { AddImageByUrl } = component;
   let props = { label, disabled, onAdd: (file) => { added.push(file); return accept(file, { disable: () => { props = { ...props, disabled: true }; } }); } };
@@ -113,7 +117,9 @@ function harness({ label = "Add image by URL", disabled = false, accept = () => 
   const input = () => nodes.find((node) => node.type === "input");
   render();
   return {
-    component, added, downloads, focused, objectUrls, button,
+    component, added, downloads, focused, objectUrls, previews, button,
+    /** The preview's image failing to show, as the browser's does for a format it can't decode. */
+    imageError: () => domElements.get("img").listeners.error(),
     toggle: () => nodes[1],
     panel: () => nodes.find((node) => node.props.role === "group"),
     input,
@@ -147,7 +153,7 @@ test("Add image by URL opens a field for an image's address, which takes focus, 
   const address = field.input();
   assert.deepEqual([address.props.id, address.props.autoFocus], ["url-address", true], "the address takes focus as it appears");
   assert.deepEqual([address.props.type, address.props.inputMode, address.props.autoComplete, address.props.spellCheck, address.props.placeholder], ["text", "url", "off", false, "https://"]);
-  assert.match(text(field.panel()), /The address of the image itself, not of the page it's on: a JPEG, PNG, or WebP image up to 5 MB\. Travel saves its own copy\./);
+  assert.match(text(field.panel()), /The address of the image itself, not of the page it's on: a JPEG, PNG, WebP, AVIF, GIF, TIFF, BMP, or HEIC image up to 5 MB\. Travel saves its own copy\./);
   assert.equal(field.button("Use this image"), undefined, "nothing to use yet");
   // Previewing nothing asks for an address and asks Travel for nothing.
   field.click("Preview");
@@ -185,6 +191,24 @@ test("Preview, or Enter in the address, shows the downloaded image, and Use this
   assert.deepEqual([field.input().props.value, field.preview(), field.error()], ["", undefined, ""]);
 });
 
+test("an image the browser can't show, such as a HEIC photo outside Safari, shows as Travel would save it, and the editor gets the image itself (TRA-179)", async () => {
+  const field = harness();
+  field.click("Add image by URL");
+  field.type("https://images.example.com/IMG_0001.HEIC");
+  field.click("Preview");
+  await field.answer(image("heic bytes", "image/heic"));
+  assert.deepEqual([field.previewSource(), field.previews.length], ["blob:preview-1", 0], "the browser is asked to show it first");
+  const heic = field.objectUrls[0].file;
+  field.imageError();
+  assert.deepEqual(field.previews.map(({ path, method, body }) => [path, method, body]), [["/api/image-preview", "POST", heic]], "it can't, so Travel previews it");
+  field.previews[0].answer({ ok: true, blob: async () => new Blob(["webp bytes"], { type: "image/webp" }) });
+  await later();
+  assert.deepEqual([field.previewSource(), field.objectUrls[1].file.type], ["blob:preview-2", "image/webp"]);
+  field.click("Use this image");
+  assert.deepEqual(field.added, [heic], "the editor gets the HEIC photo, which saving prepares");
+  assert.deepEqual(field.objectUrls.map(({ revoked }) => revoked), [true, true], "both previews are released");
+});
+
 test("an image the editor refuses stays in the field, where Cancel discards it", async () => {
   const field = harness({ accept: () => false });
   field.click("Add image by URL");
@@ -203,8 +227,8 @@ test("Travel's refusal shows as it says, and an answer without one, or a dropped
   field.click("Add image by URL");
   field.type("https://example.com/gallery");
   field.click("Preview");
-  await field.answer(refused(422, "This address isn't a JPEG, PNG or WebP image: its server says it is text/html."));
-  assert.deepEqual([field.error(), field.preview(), field.button("Use this image"), field.status()], ["This address isn't a JPEG, PNG or WebP image: its server says it is text/html.", undefined, undefined, ""]);
+  await field.answer(refused(422, "This address isn't a JPEG, PNG, WebP, AVIF, GIF, TIFF, BMP, or HEIC image: its server says it is text/html."));
+  assert.deepEqual([field.error(), field.preview(), field.button("Use this image"), field.status()], ["This address isn't a JPEG, PNG, WebP, AVIF, GIF, TIFF, BMP, or HEIC image: its server says it is text/html.", undefined, undefined, ""]);
   field.click("Preview");
   assert.equal(field.error(), "", "previewing again clears the error");
   await field.answer(refused(401, "Your session has ended. Sign in again to continue."));

@@ -3,7 +3,7 @@ import { EDITABLE_FIELDS } from "./editable-fields.ts";
 import { ENTRY_REQUIREMENT_FIELDS } from "./entry-requirements.ts";
 import { LAYOVER_BUFFERS, MAX_LAYOVER_ACTIVITIES, MAX_LAYOVER_MINUTES } from "./layover-plan.ts";
 import { EMERGENCY_CONTACT_MAX_LENGTH, EMERGENCY_NUMBER_MAX_LENGTH, HEALTH_SAFETY_FIELDS, MAX_EMERGENCY_CONTACTS, MAX_SOURCES, MEDICAL_PROVIDER_MAX_LENGTH, PROVIDER_CHECKS, SHORT_NOTICE_CARE, US_ADVISORY_LEVELS, usAdvisoryLabel } from "./health-safety.ts";
-import { AI_PHOTO_DOWNLOAD_SECONDS, formatMegabytes, MAX_AI_PROPOSAL_PHOTOS, MAX_CANDIDATE_IMAGES, MAX_DESTINATION_IMAGES, MAX_GALLERY_UPLOAD_BYTES, MAX_IMAGE_UPLOAD_BYTES } from "./image-limits.ts";
+import { AI_PHOTO_DOWNLOAD_SECONDS, formatMegabytes, IMAGE_FORMAT_NAMES, MAX_AI_PROPOSAL_PHOTOS, MAX_CANDIDATE_IMAGES, MAX_DESTINATION_IMAGES, MAX_GALLERY_UPLOAD_BYTES, MAX_IMAGE_UPLOAD_BYTES } from "./image-limits.ts";
 import { MAX_TAG_LENGTH } from "./trip-tags.ts";
 import { CLIMATE_LIMITS, MONTHS } from "./typical-weather.ts";
 import { RESTAURANT_TYPES } from "./types.ts";
@@ -91,7 +91,7 @@ function gallery(owner: string, maxImages: number, main: string, ordered: boolea
           type: "object", additionalProperties: false, required: ["id", "url"],
           properties: {
             id: id(`A new UUID for the photo, which mainImageId${ordered ? " and order" : ""} can name.`),
-            url: text(`The https:// address of the image file itself, not of a page showing it: a JPEG, PNG or WebP image of up to ${formatMegabytes(MAX_IMAGE_UPLOAD_BYTES)} on a public website.`, 2048),
+            url: text(`The https:// address of the image file itself, not of a page showing it: a still ${IMAGE_FORMAT_NAMES} image of up to ${formatMegabytes(MAX_IMAGE_UPLOAD_BYTES)} on a public website.`, 2048),
           },
         },
       },
@@ -113,7 +113,7 @@ const CHANGES = [
       type: ["object", "null"], additionalProperties: false, required: ["id", "url"],
       properties: {
         id: id("A new UUID for the image."),
-        url: text(`The https:// address of the image file itself, not of a page showing it: a JPEG, PNG or WebP image of up to ${formatMegabytes(MAX_IMAGE_UPLOAD_BYTES)} on a public website.`, 2048),
+        url: text(`The https:// address of the image file itself, not of a page showing it: a still ${IMAGE_FORMAT_NAMES} image of up to ${formatMegabytes(MAX_IMAGE_UPLOAD_BYTES)} on a public website.`, 2048),
       },
       description: "The new image, or null to remove the saved one.",
     },

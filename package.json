@@ -17,6 +17,7 @@
   },
   "dependencies": {
     "leaflet": "1.9.4",
+    "libheif-js": "1.23.5",
     "lucide-react": "^0.468.0",
     "next": "16.4.5",
     "react": "19.2.8",

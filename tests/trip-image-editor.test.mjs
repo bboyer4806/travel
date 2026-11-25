@@ -75,7 +75,7 @@ const FRAMES = { card: { width: 320, height: 160 }, banner: { width: 600, height
 
 /** The editor for `trip`'s headline image, whose changes replace its draft as the planner's do. */
 function harness(trip) {
-  const hooks = [], effects = [], changes = [], captured = [], focused = [];
+  const hooks = [], effects = [], changes = [], captured = [], focused = [], previews = [];
   let cursor = 0, nodes = [], draft = createTripImageDraft(trip?.image ?? null), disabled = false;
   const element = (type, props, key) => ({ type, props, key });
   // The elements components hold refs to, which stay the same element from render to render, as the browser's do.
@@ -130,7 +130,10 @@ function harness(trip) {
   };
   modules["./focus-after"] = load("../src/components/focus-after.ts", require, { document });
   const URL = { createObjectURL: (blob) => "blob:" + blob.name, revokeObjectURL() {} };
-  const Editor = load("../src/components/trip-image.tsx", require, { URL }).TripImageEditor;
+  // Travel's previews of images the browser can't show (TRA-179), which wait until the test answers them.
+  const fetch = (path, init) => new Promise((resolve) => previews.push({ path, method: init.method, body: init.body, answer: resolve }));
+  modules["./file-preview"] = load("../src/components/file-preview.ts", require, { URL, fetch });
+  const Editor = load("../src/components/trip-image.tsx", require).TripImageEditor;
   /** The host elements an element renders to, rendering each component once, in order, so its hooks keep their places. */
   const hosts = (node) => {
     if (!node || typeof node !== "object") return [];
@@ -152,7 +155,9 @@ function harness(trip) {
   };
   render();
   return {
-    changes, captured, focused, button,
+    changes, captured, focused, previews, button,
+    /** The previews' image failing to show, as the browser's does for a format it can't decode. */
+    imageError: () => domElements.get("img").listeners.error(),
     /** The draft, as plain objects of this test's own, since those the component makes have its context's prototypes. */
     draft: () => draft && { ...draft, card: { ...draft.card }, banner: { ...draft.banner } },
     form: () => tripImageForm(draft, trip?.image ?? null),
@@ -200,6 +205,7 @@ function harness(trip) {
       render();
     },
     fileInput: () => domElements.get("input"),
+    accept: () => nodes.find((node) => node.type === "input" && node.props.type === "file").props.accept,
     setDisabled(value) { disabled = value; render(); },
     /** Add image by URL as the editor offers it (TRA-139): its label and whether it is unavailable. */
     byUrl: () => { const { label, disabled } = nodes.find((node) => node.type === "AddImageByUrl").props; return { label, disabled }; },
@@ -285,11 +291,11 @@ test("a saved image can be cropped anew, replaced or removed, and Undo image cha
   assert.deepEqual(editor.draft(), trip.image);
 });
 
-test("a file that isn't a JPEG, PNG or WebP image up to 5 MB is refused at once, keeping the draft", () => {
+test("a file whose type and name say it isn't an image of a format uploads take, or larger than 5 MB, is refused at once, keeping the draft", () => {
   const trip = { id: randomUUID(), image: saved() };
   const editor = harness(trip);
   for (const [refused, message] of [
-    [file("trip.gif", "image/gif"), "Choose a JPEG, PNG, or WebP image."],
+    [file("trip.svg", "image/svg+xml"), "Choose a JPEG, PNG, WebP, AVIF, GIF, TIFF, BMP, or HEIC image."],
     [file("trip.png", "image/png", 0), "That image is empty. Choose another image."],
     [file("trip.webp", "image/webp", imageLimits.MAX_IMAGE_UPLOAD_BYTES + 1), "Choose an image up to 5 MB."],
   ]) {
@@ -301,7 +307,24 @@ test("a file that isn't a JPEG, PNG or WebP image up to 5 MB is refused at once,
   assert.equal(editor.error(), "", "an accepted file clears the error");
   const empty = harness({ id: randomUUID(), image: null });
   empty.choose([file("trip.txt", "text/plain")]);
-  assert.deepEqual([empty.error(), empty.draft()], ["Choose a JPEG, PNG, or WebP image.", null]);
+  assert.deepEqual([empty.error(), empty.draft()], ["Choose a JPEG, PNG, WebP, AVIF, GIF, TIFF, BMP, or HEIC image.", null]);
+});
+
+test("a headline image of every format is taken by its type, or by its name when the browser gives none, and one the browser can't show is previewed as Travel would save it (TRA-179)", async () => {
+  const editor = harness({ id: randomUUID(), image: null });
+  assert.equal(editor.accept(), imageLimits.IMAGE_UPLOAD_ACCEPT, "the file picker offers every format, by type and extension");
+  for (const [name, type] of [["photo.jfif", "image/pjpeg"], ["scan.tiff", "image/tiff"], ["map.bmp", "image/bmp"], ["photo.avif", "image/avif"], ["IMG_0001.HEIC", ""]]) {
+    const chosen = file(name, type);
+    editor.choose([chosen]);
+    assert.deepEqual([editor.draft()?.file, editor.error()], [chosen, ""], name);
+  }
+  assert.deepEqual([editor.image("card").src, editor.previews.length], ["blob:IMG_0001.HEIC", 0], "the browser is asked to show it first");
+  editor.imageError();
+  assert.deepEqual(editor.previews.map(({ path, method, body }) => [path, method, body]), [["/api/image-preview", "POST", editor.draft().file]], "it can't, so Travel previews it");
+  editor.previews[0].answer({ ok: true, blob: async () => new File(["webp"], "preview.webp", { type: "image/webp" }) });
+  for (let turn = 0; turn < 5; turn++) await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(editor.image("banner").src, "blob:preview.webp", "the preview shows Travel's WebP, to crop as any image");
+  assert.equal(editor.form().get("image").name, "IMG_0001.HEIC", "saving uploads the photo itself, for the server to prepare");
 });
 
 test("while the trip saves, the image's controls are disabled and dragging moves nothing", () => {
@@ -321,7 +344,7 @@ test("Add image by URL adds or replaces the headline image as a chosen file does
   const editor = harness({ id: randomUUID(), image: null });
   assert.deepEqual(editor.byUrl(), { label: "Add image by URL", disabled: false });
   assert.equal(editor.addByUrl(file("page.html", "text/html")), false);
-  assert.deepEqual([editor.error(), editor.draft()], ["Choose a JPEG, PNG, or WebP image.", null], "a refused image says why, as a refused file does");
+  assert.deepEqual([editor.error(), editor.draft()], ["Choose a JPEG, PNG, WebP, AVIF, GIF, TIFF, BMP, or HEIC image.", null], "a refused image says why, as a refused file does");
   const downloaded = file("Tour Eiffel.jpg");
   assert.equal(editor.addByUrl(downloaded), true);
   assert.deepEqual([editor.draft(), editor.error(), editor.titles()], [{ file: downloaded, card: UNCROPPED, banner: UNCROPPED }, "", ["Trip card", "Trip page banner"]], "it shows in both previews, to crop as any new image");

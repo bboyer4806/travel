@@ -4,7 +4,7 @@ import { createServer } from "node:net";
 import { Readable } from "node:stream";
 import test from "node:test";
 import { downloadAddress, downloadImage, isPublicAddress, MAX_IMAGE_REDIRECTS, publicLookup } from "../src/lib/image-download.ts";
-import { MAX_IMAGE_UPLOAD_BYTES } from "../src/lib/image-limits.ts";
+import { IMAGE_UPLOAD_TYPES, MAX_IMAGE_UPLOAD_BYTES } from "../src/lib/image-limits.ts";
 import { ImageValidationError } from "../src/lib/image-upload.ts";
 
 const PRIVATE = /^Travel doesn't download photos from private, loopback or link-local addresses\.$/;
@@ -130,13 +130,21 @@ test("a download follows a few redirects, each checked as the address given is, 
   await assert.rejects(download("https://images.example.com/a", nowhere.fetch), refusal(/^The photo's server answered 303 without saying where the photo is\.$/));
 });
 
+test("a download takes an image of every format uploads take, as its server names it (TRA-179)", async () => {
+  for (const type of IMAGE_UPLOAD_TYPES) {
+    const photo = await download("https://images.example.com/a", fake({ "https://images.example.com/a": () => respond(200, { "content-type": `${type.toUpperCase()}; charset=binary` }, [Buffer.from("bytes")]) }).fetch);
+    assert.deepEqual([photo.type, await photo.text()], [type, "bytes"], type);
+  }
+});
+
 test("a download refuses what isn't an image, what is larger than an upload may be, and what can't be reached", async () => {
   const cases = [
     [() => respond(404), /^The photo's server answered 404 Not Found\.$/],
     [() => respond(500), /^The photo's server answered 500 Internal Server Error\.$/],
-    [() => respond(200, { "content-type": "text/html; charset=utf-8" }, [Buffer.from("<html>")]), /^This address isn't a JPEG, PNG or WebP image: its server says it is text\/html\.$/],
-    [() => respond(200, { "content-type": "image/gif" }, [Buffer.from("GIF89a")]), /its server says it is image\/gif\.$/],
-    [() => respond(200, {}, [Buffer.from("?")]), /^This address isn't a JPEG, PNG or WebP image\.$/],
+    [() => respond(200, { "content-type": "text/html; charset=utf-8" }, [Buffer.from("<html>")]), /^This address isn't a JPEG, PNG, WebP, AVIF, GIF, TIFF, BMP, or HEIC image: its server says it is text\/html\.$/],
+    // An image of another format, such as SVG, which can hold script, isn't downloaded (TRA-179).
+    [() => respond(200, { "content-type": "image/svg+xml" }, [Buffer.from("<svg/>")]), /its server says it is image\/svg\+xml\.$/],
+    [() => respond(200, {}, [Buffer.from("?")]), /^This address isn't a JPEG, PNG, WebP, AVIF, GIF, TIFF, BMP, or HEIC image\.$/],
   ];
   for (const [route, message] of cases) await assert.rejects(download("https://images.example.com/a", fake({ "https://images.example.com/a": route }).fetch), refusal(message), String(message));
 

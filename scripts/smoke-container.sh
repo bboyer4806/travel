@@ -132,6 +132,24 @@ db.exec('COMMIT;');
 db.close();
 JS
 
+# Every image format uploads take decodes in the built image, HEIC with libheif's WebAssembly build, so a decoder missing
+# from the release fails it (TRA-179).
+docker cp tests/fixtures/images "$container:/tmp/image-fixtures"
+docker exec -i "$container" node --input-type=module <<'JS'
+import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
+import sharp from 'sharp';
+import { prepareImage } from '/app/src/lib/image-upload.ts';
+const fixture = (name) => readFileSync('/tmp/image-fixtures/' + name);
+const made = (format) => sharp({ create: { width: 40, height: 30, channels: 3, background: '#285f56' } })[format]().toBuffer();
+const upload = (bytes) => { const form = new FormData(); form.set('image', new File([bytes], 'image')); return prepareImage(form); };
+for (const [format, bytes] of [['JPEG', await made('jpeg')], ['PNG', await made('png')], ['WebP', await made('webp')], ['AVIF', await made('avif')], ['GIF', await made('gif')], ['TIFF', await made('tiff')],
+  ['BMP', fixture('bmp-24.bmp')], ['HEIC', fixture('photo.heic')], ['HEIC in Display P3', fixture('display-p3.heic')]]) {
+  assert.equal((await sharp((await upload(bytes)).data).metadata()).format, 'webp', format + ' must decode in the container');
+}
+await assert.rejects(upload(fixture('two-images.heic')), { message: 'Choose a still image instead of an animated or multi-page image.' });
+JS
+
 # Replace the container, keeping the explicitly mounted volume.
 docker rm -f "$container" >/dev/null
 start
@@ -422,6 +440,10 @@ async function assertRefused(label, headers) {
   const imageByUrl = await fetch(origin + "/api/image-url", { method: "POST", headers: { ...headers, "Content-Type": "application/json", Origin: origin }, body: JSON.stringify({ url: "https://images.example.com/a.jpg" }), signal: signal() });
   assert.equal(imageByUrl.status, 401, `${label} Add image by URL must be refused`);
   assert.ok(!imageByUrl.headers.get("content-type")?.startsWith("image/"), `${label} Add image by URL must not return image bytes`);
+  // A photo editor's preview of an image (TRA-179) decodes nothing for a request without a current session.
+  const preview = await fetch(origin + "/api/image-preview", { method: "POST", headers: { ...headers, "Content-Type": "image/heic", Origin: origin }, body: "not an image", signal: signal() });
+  assert.equal(preview.status, 401, `${label} image previews must be refused`);
+  assert.ok(!preview.headers.get("content-type")?.startsWith("image/"), `${label} image previews must not return image bytes`);
   await assertMcpRefused(label, headers);
 }
 // The MCP endpoint takes only an AI connection's access token: no session, current or not, opens it (TRA-115).

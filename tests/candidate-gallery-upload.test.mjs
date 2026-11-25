@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
+import { readFileSync } from "node:fs";
 import test from "node:test";
 import sharp from "sharp";
 import { prepareCandidateGallery } from "../src/lib/candidate-gallery-upload.ts";
@@ -53,6 +54,22 @@ test("multiple JPEG, PNG, and WebP files are decoded to ordered, bounded WebP ph
     const thumbnail = await sharp(photo.thumbnail).metadata();
     assert.deepEqual([thumbnail.format, thumbnail.width, thumbnail.height], ["webp", 40, 20]);
   }
+});
+
+test("a gallery save takes photos of every new format, in order, and is refused whole for one photo it can't take (TRA-179)", async () => {
+  const image = (name) => readFileSync(new URL(`./fixtures/images/${name}`, import.meta.url));
+  const files = [
+    new File([await fixture("jpeg")], "photo.jfif", { type: "" }), new File([await fixture("avif")], "photo.avif", { type: "image/avif" }),
+    new File([await fixture("gif")], "photo.gif", { type: "image/gif" }), new File([await fixture("tiff")], "scan.tiff", { type: "image/tiff" }),
+    new File([image("bmp-24.bmp")], "map.bmp", { type: "image/bmp" }), new File([image("photo.heic")], "IMG_0001.HEIC", { type: "" }),
+  ];
+  const { form, photos } = uploadForm(files);
+  const result = await prepareCandidateGallery(form);
+  assert.deepEqual(result.add.map((photo) => photo.id), photos.map((photo) => photo.id));
+  for (const photo of result.add) assert.deepEqual([(await sharp(photo.data).metadata()).format, (await sharp(photo.thumbnail).metadata()).format], ["webp", "webp"]);
+  // An animated photo among them refuses the save, so none of its photos is added.
+  const { form: animated } = uploadForm([files[0], new File([image("animated.png")], "spinner.png", { type: "image/png" }), files[5]]);
+  await assert.rejects(prepareCandidateGallery(animated), { message: "Choose a still image instead of an animated or multi-page image." });
 });
 
 test("malformed gallery manifests and invalid or duplicate identifiers are rejected", async () => {

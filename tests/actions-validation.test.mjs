@@ -81,8 +81,8 @@ test("invalid images retain their upload validation and never reach storage", as
   let writes = 0;
   const action = actionHarness({ applyMutation() { writes++; } }, { id: "owner" });
   const form = new FormData();
-  form.set("image", new File(["svg"], "image.svg", { type: "image/svg+xml" }));
-  assert.deepEqual(await action.save({ type: "destination.save" }, form), { ok: false, error: "Choose a JPEG, PNG, or WebP image." });
+  form.set("image", new File(['<svg xmlns="http://www.w3.org/2000/svg" width="10" height="10"/>'], "image.svg", { type: "image/svg+xml" }));
+  assert.deepEqual(await action.save({ type: "destination.save" }, form), { ok: false, error: "Choose a JPEG, PNG, WebP, AVIF, GIF, TIFF, BMP, or HEIC image." });
   assert.equal(writes, 0);
   assert.equal(action.logged.length, 0);
 });
@@ -117,9 +117,9 @@ test("a trip's headline image comes only from the trip editor's form, as a valid
   }
   // An upload that isn't an image is refused before anything is saved.
   const svg = new FormData();
-  svg.set("image", new File(["<svg/>"], "trip.svg", { type: "image/svg+xml" }));
+  svg.set("image", new File(['<svg xmlns="http://www.w3.org/2000/svg" width="10" height="10"/>'], "trip.svg", { type: "image/svg+xml" }));
   svg.set("crops", JSON.stringify({ card: crop, banner: crop }));
-  assert.deepEqual(await action.save({ ...trip, id: created.id, name: "Not saved" }, svg), { ok: false, error: "Choose a JPEG, PNG, or WebP image." });
+  assert.deepEqual(await action.save({ ...trip, id: created.id, name: "Not saved" }, svg), { ok: false, error: "Choose a JPEG, PNG, WebP, AVIF, GIF, TIFF, BMP, or HEIC image." });
   assert.equal(savedTrip().name, trip.name);
   // New crops for the saved image, then its removal, through the form.
   const recrop = new FormData();

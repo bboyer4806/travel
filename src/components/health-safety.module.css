@@ -6,17 +6,16 @@
 .toggle svg { transition: transform .16s; }
 .toggle[aria-expanded="true"] svg { transform: rotate(180deg); }
 .content { margin-top: 12px; }
-/* TRA-173: the local emergency number, first in the section whether it is open or closed. Verified, it is in red, its
-   number large beside a Call button at least 48px high; not verified, it is plain. Its text is at least 4.5:1 against it. */
-.emergency { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 4px 16px; margin-top: 12px; padding: 12px 16px; border: 2px solid #9b3b32; border-radius: 8px; background: #fff4f2; }
-.emergency h5 { grid-column: 1 / -1; margin: 0; color: #9b3b32; font-size: 13px; font-weight: 600; }
+/* TRA-173: the local emergency number, first in the section whether it is open or closed. Verified, its number is large
+   and bold beside a Call button at least 48px high; not verified, its heading is muted. TRA-183: never red, but in the
+   plain box of the section's other information, with Travel's secondary button to call. Its text is at least 4.5:1 against it. */
+.emergency { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 4px 16px; margin-top: 12px; padding: 12px 16px; border: 1px solid var(--line); border-radius: 8px; background: var(--white); }
+.emergency h5 { grid-column: 1 / -1; margin: 0; color: var(--ink); font-size: 13px; font-weight: 600; }
 .emergencyNumber { margin: 0; color: var(--ink); font-size: 34px; font-weight: 700; line-height: 1.15; overflow-wrap: anywhere; }
 .emergency .call { min-height: 48px; padding: 12px 22px; font-size: 16px; white-space: normal; overflow-wrap: anywhere; }
-.emergency .call:hover { background: #7f2f28; }
 .emergencySource { grid-column: 1 / -1; margin: 0; color: var(--muted); font-size: 12px; overflow-wrap: anywhere; }
 .emergencySource a { text-decoration: underline; text-underline-offset: 2px; }
 .emergencySource a:hover { color: var(--orange); }
-.notVerified { border: 1px solid var(--line); background: var(--white); }
 .notVerified h5 { color: var(--muted); }
 .emergencyNumberMissing { grid-column: 1 / -1; margin: 0; color: var(--ink); font-size: 16px; font-weight: 600; }
 .emergencyEditor { margin-bottom: 18px; }

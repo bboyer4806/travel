@@ -2,11 +2,12 @@
 
 import { useEffect, useEffectEvent, useId, useRef, useState, type ChangeEvent, type PointerEvent } from "react";
 import { ImagePlus, RotateCcw, Trash2 } from "lucide-react";
-import { formatMegabytes, IMAGE_UPLOAD_TYPES, MAX_IMAGE_UPLOAD_BYTES } from "@/lib/image-limits";
+import { formatMegabytes, IMAGE_FORMAT_NAMES, IMAGE_UPLOAD_ACCEPT, isImageUploadFile, MAX_IMAGE_UPLOAD_BYTES } from "@/lib/image-limits";
 import { cropStyle, draggedFocus, MAX_PHOTO_ZOOM, UNCROPPED, type Size } from "@/lib/photo-focus";
 import { CARD, CARD_PREVIEW, DIALOG, PAGE, photoSizes, type FrameWidths } from "@/lib/photo-sizes";
 import { createTripImageDraft, tripImageChanged, type TripImageDraft } from "@/lib/trip-image-draft";
 import type { PhotoCrop, PhotoWidths, Trip, TripImageCrops } from "@/lib/types";
+import { useFilePreview } from "./file-preview";
 import { useFocusAfter } from "./focus-after";
 import { AddImageByUrl } from "./image-by-url";
 import styles from "./trip-image.module.css";
@@ -44,17 +45,11 @@ export function TripImageView({ trip, frame }: { trip: TripWithImage; frame: Fra
 }
 
 /**
- * The draft's image, a new one from its file or the saved one from its address, cropped as `crop` says. A saved image
- * offers its large version as `sources` says (TRA-154).
+ * The draft's image, a new one from its file (TRA-179) or the saved one from its address, cropped as `crop` says. A
+ * saved image offers its large version as `sources` says (TRA-154).
  */
 function DraftImage({ source, sources, crop, alt }: { source: File | string; sources: { srcSet?: string; sizes?: string }; crop: PhotoCrop; alt: string }) {
-  const image = useRef<HTMLImageElement>(null);
-  useEffect(() => {
-    if (typeof source === "string") return;
-    const previewUrl = URL.createObjectURL(source);
-    if (image.current) image.current.src = previewUrl;
-    return () => URL.revokeObjectURL(previewUrl);
-  }, [source]);
+  const image = useFilePreview(typeof source === "string" ? null : source);
   // eslint-disable-next-line @next/next/no-img-element
   return <img ref={image} src={typeof source === "string" ? source : undefined} {...sources} alt={alt} style={cropStyle(crop)} />;
 }
@@ -146,11 +141,12 @@ export function TripImageEditor({ trip, draft, onChange, disabled }: { trip?: Tr
   const large = draft && "version" in draft && trip && saved?.widths ? { url: largeUrl(trip.id, draft.version), widths: saved.widths } : null;
 
   /**
-   * A new image, a file chosen from the device or an image added by URL (TRA-139), checked as uploads are on the server,
-   * replaces the draft's and starts uncropped. A refused image keeps the draft and says why, and returns false.
+   * A new image, a file chosen from the device or an image added by URL (TRA-139), replaces the draft's and starts
+   * uncropped, once its type or name says it is an image of one of the formats uploads take (TRA-179) and its size is
+   * within the limit. Saving checks what it holds. A refused image keeps the draft and says why, and returns false.
    */
   function addImage(file: File): boolean {
-    const refused = !IMAGE_UPLOAD_TYPES.includes(file.type.toLowerCase()) ? "Choose a JPEG, PNG, or WebP image."
+    const refused = !isImageUploadFile(file) ? `Choose a ${IMAGE_FORMAT_NAMES} image.`
       : file.size === 0 ? "That image is empty. Choose another image."
       : file.size > MAX_IMAGE_UPLOAD_BYTES ? `Choose an image up to ${formatMegabytes(MAX_IMAGE_UPLOAD_BYTES)}.` : "";
     if (refused) {
@@ -176,8 +172,8 @@ export function TripImageEditor({ trip, draft, onChange, disabled }: { trip?: Tr
 
   return <fieldset className={styles.editor} disabled={disabled} aria-describedby={`${id}-hint`}>
     <legend>Headline image <span className={styles.optional}>(optional)</span></legend>
-    <p id={`${id}-hint`} className={styles.hint}>Shown across the top of the trip&apos;s card on All trips and as a banner on its page. Drag each preview to choose what it shows, and zoom with its slider.<br />JPEG, PNG, or WebP, up to {formatMegabytes(MAX_IMAGE_UPLOAD_BYTES)}.</p>
-    <input ref={input} type="file" accept={IMAGE_UPLOAD_TYPES.join(",")} onChange={choose} disabled={disabled} hidden aria-label="Choose a headline image" />
+    <p id={`${id}-hint`} className={styles.hint}>Shown across the top of the trip&apos;s card on All trips and as a banner on its page. Drag each preview to choose what it shows, and zoom with its slider.<br />{IMAGE_FORMAT_NAMES}, up to {formatMegabytes(MAX_IMAGE_UPLOAD_BYTES)}.</p>
+    <input ref={input} type="file" accept={IMAGE_UPLOAD_ACCEPT} onChange={choose} disabled={disabled} hidden aria-label="Choose a headline image" />
     {draft && source && <div className={styles.previews}>
       <CropPreview id={`${id}-card`} frame="card" label="Trip card" source={source} large={large} crop={draft.card} disabled={disabled} onCrop={(card) => onChange({ ...draft, card })} />
       <CropPreview id={`${id}-banner`} frame="banner" label="Trip page banner" source={source} large={large} crop={draft.banner} disabled={disabled} onCrop={(banner) => onChange({ ...draft, banner })} />

@@ -36,13 +36,13 @@ Use targeted checks while iterating. Before pushing, run the checks from
 `.github/workflows/check.yml`: `pnpm lint`, `pnpm typecheck`, `pnpm test` and `pnpm build`.
 CI also runs `bash scripts/smoke-container.sh`, which needs Docker and Bash and checks the
 container, persistent storage, sign-in enforcement, refusing a database it can't open, the health
-check Dokku runs, trip and destination isolation, and AI access limits. A Next.js build alone does
+check Dokku runs, trip and destination isolation, AI access limits, and decoding every image format uploads take (TRA-179). A Next.js build alone does
 not verify those.
 After building, CI runs `node scripts/review-errors-smoke.mjs` against disposable databases and
 fixture sessions to check production HTTP errors, recovery, cross-bundle save validation,
 connecting Claude through OAuth, MCP and the owner's Server Actions, proposing, showing,
-approving and rejecting photo changes, proposing, showing and approving trips' headline images (TRA-174), serving trips' headline images and their large versions only to accounts that can open them, and
-Add image by URL's refusals.
+approving and rejecting photo changes, proposing, showing and approving trips' headline images (TRA-174), serving trips' headline images and their large versions only to accounts that can open them,
+Add image by URL's refusals, and previewing a HEIC photo for a photo editor, with the preview's refusals (TRA-179).
 Fix regressions caused by your change; report unrelated baseline failures and blocked checks.
 Repeat passing checks when subsequent changes affect their coverage or required gates demand it.
 
@@ -118,6 +118,16 @@ Repeat passing checks when subsequent changes affect their coverage or required 
   proposal's photos wait in `ai_proposal_photos`, never in `changesJson`, until it is decided or expires,
   and the owner sees them through `/api/ai-proposal-images`. `trip.image` (TRA-174), a trip's headline image, works the
   same way, and a destination's headline image is its primary photo, which `destination.photos` changes.
+- Image formats (TRA-179) are `IMAGE_FORMATS` in `src/lib/image-limits.ts`, each with its extensions and types. Photo editors'
+  pickers offer `IMAGE_UPLOAD_ACCEPT`, editors take a file whose type or extension is one (`isImageUploadFile`), and messages
+  name them with `IMAGE_FORMAT_NAMES`. `prepareImage` goes by what a file holds, never its name or type, and refuses animated
+  and multi-page images, and ones over `MAX_IMAGE_PIXELS`, before decoding. Sharp decodes JPEG, PNG, WebP, GIF, TIFF and
+  AVIF; it reads HEIC headers but can't decode HEVC, so `decodeHeic` in `src/lib/heic.ts` does, with libheif-js (a
+  `serverExternalPackages` entry), and `readBmp` in `src/lib/bmp.ts` decodes bitmaps. Each hands sharp the pixels, with
+  the image's colour profile, through `pixelsTiff` in `src/lib/pixels.ts`. Editors show a new file with `useFilePreview`
+  in `src/components/file-preview.ts`, which asks `/api/image-preview` (`previewImage`) only when the browser can't show
+  it; component tests load it with stand-ins for `URL` and `fetch`. Formats sharp can't make for tests have fixtures in
+  `tests/fixtures/images`, described in its README.
 - Add image by URL (TRA-139) is `src/components/image-by-url.tsx`, in the destination, idea, church and trip image
   editors. `/api/image-url` downloads the image with `downloadImageByUrl` in `src/lib/image-url.ts`, through
   `src/lib/image-download.ts` over HTTP or HTTPS (proposals' photos stay HTTPS only), checks it with `prepareImage` and

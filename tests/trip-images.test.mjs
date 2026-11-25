@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
+import { readFileSync } from "node:fs";
 import { DatabaseSync } from "node:sqlite";
 import test from "node:test";
 import sharp from "sharp";
@@ -207,6 +208,13 @@ test("the trip editor's form gives a new image prepared as uploads are, new crop
   assert.deepEqual(added.large.widths, { photo: 600, large: 960 });
   const version = randomUUID();
   assert.deepEqual(await prepareTripImage(form({ crops: JSON.stringify({ version, card, banner }) })), { version, card, banner });
+  // TRA-179: a HEIC photo or a bitmap, whatever type the browser gives it, is prepared as every upload is.
+  for (const [name, size] of [["rotated.heic", [48, 64]], ["bmp-24.bmp", [16, 8]]]) {
+    const image = new File([readFileSync(new URL(`./fixtures/images/${name}`, import.meta.url))], name, { type: "" });
+    const headline = await prepareTripImage(form({ image, crops: JSON.stringify({ card, banner }) }));
+    const metadata = await sharp(headline.data).metadata();
+    assert.deepEqual([metadata.format, metadata.width, metadata.height, headline.large, headline.card], ["webp", ...size, null, card], name);
+  }
 });
 
 test("a malformed trip image form, or a file that isn't an image, is refused before anything is saved", async () => {
@@ -220,7 +228,7 @@ test("a malformed trip image form, or a file that isn't an image, is refused bef
   const twice = form({ crops });
   twice.append("crops", crops);
   await assert.rejects(prepareTripImage(twice), ImageValidationError);
-  await assert.rejects(prepareTripImage(form({ crops, image: new File(["<svg/>"], "trip.svg", { type: "image/svg+xml" }) })), { message: "Choose a JPEG, PNG, or WebP image." });
+  await assert.rejects(prepareTripImage(form({ crops, image: new File(['<svg xmlns="http://www.w3.org/2000/svg" width="10" height="10"/>'], "trip.svg", { type: "image/svg+xml" }) })), { message: "Choose a JPEG, PNG, WebP, AVIF, GIF, TIFF, BMP, or HEIC image." });
   await assert.rejects(prepareTripImage(form({ crops, image: new File(["not really a PNG"], "trip.png", { type: "image/png" }) })), /couldn't read that image/);
   await assert.rejects(prepareTripImage("not a form"), ImageValidationError);
 });

@@ -25,6 +25,20 @@
 .preview { position: absolute; z-index: 500; width: 200px; overflow: hidden; border-radius: 8px; background: var(--white); box-shadow: 0 4px 14px #15281d40; }
 .previewPhoto { display: block; width: 100%; aspect-ratio: 2 / 1; object-fit: cover; background: var(--wash); }
 .previewName { display: block; padding: 7px 10px 8px; color: var(--ink); font: 700 13px/1.3 Arial, Helvetica, sans-serif; overflow-wrap: anywhere; }
+/* A connection's popup (TRA-175): its transportation's icons and route, its saved details and View details, beside its
+   transportation within the map, as a destination's preview is beside its marker. It covers the map's places, lines,
+   zoom buttons and credits while it shows, so nothing hides View details, and scrolls within the map when it is taller
+   than the map has room for. Its padding holds View details' focus ring. */
+.popup { position: absolute; z-index: 1100; width: 240px; max-width: calc(100% - 16px); max-height: calc(100% - 16px); overflow-y: auto; padding: 10px 12px 8px; border-radius: 8px; background: var(--white); box-shadow: 0 4px 14px #15281d40; color: var(--ink); font: 12px/1.4 Arial, Helvetica, sans-serif; overflow-wrap: anywhere; }
+.popupTitle { display: flex; align-items: flex-start; gap: 8px; margin: 0; }
+.popupIcons { display: flex; flex-shrink: 0; align-items: center; gap: 4px; height: 17px; color: #4f6f55; }
+.popupTitle strong { min-width: 0; font-size: 13px; line-height: 1.3; }
+.popupTitle strong svg { vertical-align: -2px; }
+.popupDetails { display: grid; gap: 3px; margin: 8px 0 0; }
+.popupDetails > div { display: flex; gap: 8px; min-width: 0; }
+.popupDetails dt { flex-shrink: 0; color: var(--muted); }
+.popupDetails dd { min-width: 0; margin: 0; }
+.popup :global(.text-button) { min-height: 32px; margin-top: 2px; }
 
 .legend { list-style: none; display: flex; flex-wrap: wrap; gap: 8px 18px; margin: 12px 0 0; padding: 0; color: var(--muted); font-size: 11px; }
 .legend li { display: inline-flex; align-items: center; gap: 8px; }
@@ -48,4 +62,5 @@
   .section { margin-bottom: 28px; }
   .frame { height: 300px; }
   .preview { width: 160px; }
+  .popup { width: 220px; }
 }

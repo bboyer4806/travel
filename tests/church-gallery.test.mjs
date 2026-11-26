@@ -5,14 +5,18 @@ import test from "node:test";
 import { runInNewContext } from "node:vm";
 import ts from "typescript";
 import * as coordinates from "../src/lib/coordinates.ts";
+import * as estimatedTime from "../src/lib/estimated-time.ts";
 import * as galleryDraft from "../src/lib/gallery-draft.ts";
 import * as imageLimits from "../src/lib/image-limits.ts";
+import * as money from "../src/lib/money.ts";
 import * as photoSizes from "../src/lib/photo-sizes.ts";
+import * as types from "../src/lib/types.ts";
 import * as uuid from "../src/lib/uuid.ts";
 
-// TRA-136: the actual Church section, church details and idea gallery, run with a small hook harness that keeps their
-// state between renders, as React does, given pointer events as a browser dispatches them. No browser is involved, and
-// the harness has no fetch, so a save attempt would fail the test.
+// TRA-136: the actual churches on a destination's Church page, church details and idea gallery, run with a small hook
+// harness that keeps their state between renders, as React does, given pointer events as a browser dispatches them. No
+// browser is involved, and the harness has no fetch, so a save attempt would fail the test. TRA-182: and the churches'
+// cards in a destination's Churches carousel.
 function load(file, require) {
   const exports = {};
   runInNewContext(ts.transpileModule(readFileSync(new URL(file, import.meta.url), "utf8"), {
@@ -48,12 +52,16 @@ function harness(view) {
         if (!(index in hooks)) hooks[index] = { current: initial };
         return hooks[index];
       },
+      useId: () => "id" + cursor++,
+      // A carousel's arrows measure its list in a browser only (TRA-127), tested in destination-ideas-navigation.test.mjs.
+      useEffect() { cursor++; },
     },
     "react/jsx-runtime": { jsx: element, jsxs: element, Fragment: "fragment" },
     "lucide-react": new Proxy({}, { get: (_, name) => "icon:" + String(name) }),
+    "next/link": { default: "a" },
     // Add image by URL (TRA-139), tested in image-by-url.test.mjs, stands in as an element showing what the editor gives it.
     "./image-by-url": { AddImageByUrl: (props) => ({ type: "AddImageByUrl", props }) },
-    "@/lib/coordinates": coordinates, "@/lib/gallery-draft": galleryDraft, "@/lib/image-limits": imageLimits, "@/lib/photo-sizes": photoSizes, "@/lib/uuid": uuid,
+    "@/lib/coordinates": coordinates, "@/lib/estimated-time": estimatedTime, "@/lib/gallery-draft": galleryDraft, "@/lib/image-limits": imageLimits, "@/lib/money": money, "@/lib/photo-sizes": photoSizes, "@/lib/types": types, "@/lib/uuid": uuid,
   };
   const require = (name) => {
     // A CSS module's class names are their own names.
@@ -67,6 +75,9 @@ function harness(view) {
   modules["./photo-drag"] = load("../src/components/photo-drag.ts", require);
   modules["./candidate-gallery"] = load("../src/components/candidate-gallery.tsx", require);
   modules["./place-location"] = load("../src/components/place-location.tsx", require);
+  modules["./research-links"] = load("../src/components/research-links.tsx", require);
+  modules["./restaurant-types"] = load("../src/components/restaurant-types.tsx", require);
+  modules["./destination-ideas"] = load("../src/components/destination-ideas.tsx", require);
   const components = { ...load("../src/components/churches.tsx", require), CandidateGallery: modules["./candidate-gallery"].CandidateGallery };
   /** The host elements an element renders to, rendering each component once, in order, so its hooks keep their places. Each component's element keeps what it rendered. */
   const hosts = (node) => {
@@ -133,14 +144,19 @@ function photo(owner, number) {
   return { alt: `${owner.name}, photo ${number}`, id: images[number - 1].id, count: several ? `${number} / ${images.length}` : "", pressed: several ? [number] : [], main: images[number - 1].id === mainImageId };
 }
 
-/** A destination's Church section listing `churches`, as its card and Church page show it, recording what its controls ask for in `calls`. */
-const section = (churches, calls = []) => ({ ChurchOptions }) => ({ type: ChurchOptions, props: { items: churches, headingLevel: 5, busy: false, onAdd: () => calls.push(["add"]), onEdit: (item) => calls.push(["edit", item.id]), onDelete: (item) => calls.push(["delete", item.id]), like: () => null } });
-/** A church's details, as its marker on the destination map opens them (TRA-130). */
+/** A destination's churches as its Church page lists them, recording what their controls ask for in `calls`. */
+const churchPage = (churches, calls = []) => ({ ChurchOptions }) => ({ type: ChurchOptions, props: { items: churches, headingLevel: 5, busy: false, onAdd: () => calls.push(["add"]), onEdit: (item) => calls.push(["edit", item.id]), onDelete: (item) => calls.push(["delete", item.id]), like: () => null } });
+/** A church's details, as its card in its destination's carousel (TRA-182) and its marker on the destination map (TRA-130) open them. */
 const details = (church) => ({ ChurchDetails }) => ({ type: ChurchDetails, props: { item: church } });
+/** A destination's Churches on its card, listing `churches` in its carousel (TRA-182), recording the churches whose details its cards ask for in `calls`. */
+const carousel = (churches, calls = []) => ({ ChurchSection }) => ({ type: ChurchSection, props: {
+  churches, label: "Vienna", href: "/destinations/vienna/church", hideId: "church-visibility-vienna", busy: false, onAdd() {}, onHide() {},
+  onView: (item) => calls.push(["view", item.id]), like: (item) => ({ type: "button", props: { className: "like", children: "Like " + item.name } }),
+} });
 
 test("a church without photos keeps its card and details as they were, with no gallery or empty frame (TRA-136)", () => {
   const church = savedChurch(0);
-  const card = harness(section([church])).nodes();
+  const card = harness(churchPage([church])).nodes();
   assert.deepEqual(card.filter((node) => node.type === "img" || hasClass(node, "gallery") || hasClass(node, "hero")), [], "no photo, gallery or frame");
   assert.deepEqual(card.filter((node) => node.type === "button").map((node) => node.props["aria-label"]), ["Edit St. Stephen's Cathedral", "Delete St. Stephen's Cathedral"], "only the card's own controls");
   const sheet = harness(details(church)).nodes();
@@ -150,7 +166,7 @@ test("a church without photos keeps its card and details as they were, with no g
 
 test("a church with one photo shows it as before, on its card and in its details, with no arrows, thumbnails, counter or swiping (TRA-136)", () => {
   const church = savedChurch(1);
-  for (const view of [section([church]), details(church)]) {
+  for (const view of [churchPage([church]), details(church)]) {
     const photos = gallery(harness(view));
     const { group, contents, hero } = photos.parts();
     assert.deepEqual([group.props.role, group.props["aria-label"]], ["group", "Photos of St. Stephen's Cathedral"]);
@@ -162,7 +178,7 @@ test("a church with one photo shows it as before, on its card and in its details
 
 test("a church with two or more photos has Previous and Next on its main photo, named for the church, before its thumbnails (TRA-136)", () => {
   for (const count of [2, 3, 10]) {
-    const photos = gallery(harness(section([savedChurch(count)])));
+    const photos = gallery(harness(churchPage([savedChurch(count)])));
     const { contents, hero, thumbnails, arrow } = photos.parts();
     const [previous, next] = [arrow("previous"), arrow("next")];
     assert.deepEqual([previous.props.type, previous.props.className, previous.props["aria-label"]], ["button", "arrow previous", "Previous photo of St. Stephen's Cathedral"]);
@@ -180,7 +196,7 @@ test("Previous and Next step through a church's photos in saved order and loop, 
   const church = savedChurch(3, 2);
   const saved = structuredClone(church);
   const calls = [];
-  const photos = gallery(harness(section([church], calls)));
+  const photos = gallery(harness(churchPage([church], calls)));
   assert.deepEqual(photos.shown(), photo(church, 2), "the gallery opens on its main photo");
   for (const [direction, number] of [["next", 3], ["next", 1], ["next", 2], ["previous", 1], ["previous", 3], ["previous", 2]]) {
     photos.press(direction);
@@ -192,7 +208,7 @@ test("Previous and Next step through a church's photos in saved order and loop, 
   photos.press("previous");
   assert.deepEqual(photos.shown(), photo(church, 3));
   const pair = savedChurch(2);
-  const two = gallery(harness(section([pair])));
+  const two = gallery(harness(churchPage([pair])));
   for (const [direction, number] of [["next", 2], ["next", 1], ["previous", 2], ["previous", 1]]) {
     two.press(direction);
     assert.deepEqual(two.shown(), photo(pair, number), `with two photos, ${direction} shows photo ${number}`);
@@ -205,7 +221,7 @@ test("swiping a church's main photo to the left shows the next photo and to the 
   const church = savedChurch(3, 2);
   const saved = structuredClone(church);
   const calls = [];
-  const photos = gallery(harness(section([church], calls)));
+  const photos = gallery(harness(churchPage([church], calls)));
   for (const [across, number] of [[-80, 3], [-80, 1], [120, 3], [40, 2], [-40, 3]]) {
     photos.swipe(across);
     assert.deepEqual(photos.shown(), photo(church, number), `a ${across} pixel swipe shows photo ${number}`);
@@ -224,7 +240,7 @@ test("swiping a church's main photo to the left shows the next photo and to the 
 
 test("a church's main photo doesn't swipe for a short or mostly vertical move, a mouse, a second finger, or a touch the browser takes (TRA-136)", () => {
   const church = savedChurch(3);
-  const photos = gallery(harness(section([church])));
+  const photos = gallery(harness(churchPage([church])));
   photos.swipe(-39);
   photos.swipe(39);
   photos.swipe(-60, { down: 90 });
@@ -240,7 +256,7 @@ test("a church's main photo doesn't swipe for a short or mostly vertical move, a
 
 test("each church's photos browse on their own (TRA-136)", () => {
   const first = savedChurch(3), second = savedChurch(2, 2, "Votivkirche");
-  const ui = harness(section([first, second]));
+  const ui = harness(churchPage([first, second]));
   gallery(ui, 1).press("next");
   gallery(ui, 2).swipe(-80);
   assert.deepEqual(gallery(ui, 1).shown(), photo(first, 2));
@@ -268,4 +284,77 @@ test("hotel, activity and restaurant galleries keep their thumbnails, with no ar
   photos.view(3);
   assert.deepEqual(photos.shown(), photo(idea, 3), "thumbnails choose the photo shown, as before");
   assert.match(photos.parts().contents.find((node) => node.type === "img").props.src, /^\/api\/candidate-images\//);
+});
+
+/** An element's text, with what each component in it rendered, including what only screen readers read. */
+const renderedText = (node) => node === null || node === undefined || typeof node === "boolean" ? "" : typeof node !== "object" ? String(node)
+  : Array.isArray(node) ? node.map(renderedText).join("") : typeof node.type === "function" ? renderedText(node.rendered) : renderedText(node.props.children);
+/** What a church's card in its destination's carousel shows (TRA-182): what fills its photo's frame, and its text, each by class. */
+function cardOf(card) {
+  const parts = inside(card);
+  const [content] = inside(parts.find((node) => hasClass(node, "photo")));
+  return {
+    photo: content.type === "img" ? { src: content.props.src, srcSet: content.props.srcSet, sizes: content.props.sizes, alt: content.props.alt, size: [content.props.width, content.props.height] } : content.type,
+    text: parts.filter((node) => hasClass(node, "name") || hasClass(node, "description")).map((node) => [node.props.className, text(node)]),
+  };
+}
+
+test("each church's card in its destination's Churches carousel shows its main photo as every carousel card does, or the church icon in a frame of the same size, with its name and denomination (TRA-182)", () => {
+  const several = savedChurch(3, 2);
+  const one = savedChurch(1, 1, "Votivkirche");
+  one.images[0].widths = { photo: 1600, large: 2560 };
+  const none = { ...savedChurch(0, 1, "Karlskirche"), denomination: "" };
+  const cards = harness(carousel([several, one, none])).nodes().filter((node) => hasClass(node, "card"));
+  const address = (church, image, path = "") => `/api/church-images/${church.id}/${image.id}${path}?v=${image.version}`;
+  // Its main photo, whatever its place among the church's photos, offered with its large version at a carousel card's
+  // width when it has one (TRA-154), as an idea's card's photo is.
+  assert.deepEqual(cards.map(cardOf), [
+    { photo: { src: address(several, several.images[1]), srcSet: undefined, sizes: undefined, alt: "", size: [400, 300] }, text: [["name", "St. Stephen's Cathedral"], ["description", "Roman Catholic"]] },
+    { photo: { src: address(one, one.images[0]), srcSet: `${address(one, one.images[0])} 1600w, ${address(one, one.images[0], "/large")} 2560w`, sizes: "calc((200px) * 1)", alt: "", size: [400, 300] }, text: [["name", "Votivkirche"], ["description", "Roman Catholic"]] },
+    { photo: "icon:Church", text: [["name", "Karlskirche"]] },
+  ]);
+  // Each card is its photo's frame, the frame of every idea's card, then its name and denomination: no gallery, thumbnails
+  // or arrows of its own, and none of an idea card's star, price or budget selection.
+  assert.deepEqual(cards.map((card) => inside(card).map((node) => node.props.className ?? node.type)), [
+    ["photo", "img", "cardText", "name", "description"], ["photo", "img", "cardText", "name", "description"], ["photo", "icon:Church", "cardText", "name"],
+  ]);
+});
+
+test("selecting a church's card shows that church's details, changing nothing, and its Like sits beside the card, over its photo (TRA-182)", () => {
+  const first = savedChurch(3, 2), second = savedChurch(0, 1, "Votivkirche");
+  const saved = structuredClone([first, second]);
+  const calls = [];
+  const ui = harness(carousel([first, second], calls));
+  const cards = () => ui.nodes().filter((node) => hasClass(node, "card"));
+  assert.deepEqual(cards().map((card) => [card.type, card.props.type]), [["button", "button"], ["button", "button"]], "each card is a button, for a mouse, touch or the keyboard");
+  cards()[1].props.onClick();
+  ui.render();
+  cards()[0].props.onClick();
+  assert.deepEqual(calls, [["view", second.id], ["view", first.id]], "each shows its own church's details");
+  assert.deepEqual([first, second], saved, "selecting changes no photo, their order, the main photo or any other detail");
+  // Each place in the carousel holds the card and its Like, beside the card rather than in it, so selecting the Like shows
+  // no details (TRA-31), and nothing else, such as a star.
+  assert.deepEqual(ui.nodes().filter((node) => node.type === "li").map((item) => inside(item).filter((node) => node.type === "button" || hasClass(node, "likeSlot")).map((node) => node.props.className)),
+    [["card", "likeSlot", "like"], ["card", "likeSlot", "like"]]);
+  assert.deepEqual(ui.nodes().filter((node) => hasClass(node, "likeSlot")).map(text), ["Like St. Stephen's Cathedral", "Like Votivkirche"]);
+  // The ideas' carousels' arrows, named for churches.
+  assert.deepEqual(ui.nodes().filter((node) => hasClass(node, "arrow")).map((node) => node.props["aria-label"]), ["Previous churches", "Next churches"]);
+});
+
+test("a church's details, opened from its card, show its address, coordinates, denomination, website, Mass times and photos, read only (TRA-182)", () => {
+  const church = { ...savedChurch(2), coordinates: { latitude: 48.20849, longitude: 16.37208, accuracy: "exact", review: false },
+    massTimes: [{ id: randomUUID(), day: "Sunday", time: "10:15 AM" }, { id: randomUUID(), day: "Saturday", time: "6:00 PM" }] };
+  const sheet = harness(details(church)).nodes();
+  const rows = [...sheet.find((node) => node.type === "dl").props.children].map((row) => row.props.children);
+  assert.deepEqual(rows.slice(0, -1).map(([term, value]) => [text(term), renderedText(value)]), [
+    ["Location or address", "Stephansplatz 3, Vienna"],
+    ["Coordinates", "48.20849, 16.37208Exact"],
+    ["Denomination", "Roman Catholic"],
+    ["Website", "Church website for St. Stephen's Cathedral (opens in a new tab)"],
+    ["Mass times", "Sunday10:15 AMSaturday6:00 PM"],
+  ]);
+  const [term, value] = rows.at(-1);
+  assert.equal(text(term), "Church photos");
+  assert.deepEqual(inside(value).filter((node) => hasClass(node, "gallery")).map((node) => node.props["aria-label"]), ["Photos of St. Stephen's Cathedral"], "its photos, which browse as on its Church page");
+  assert.equal(sheet.some((node) => node.type === "input" || node.type === "textarea"), false, "nothing in them edits it");
 });

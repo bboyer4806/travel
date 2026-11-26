@@ -81,7 +81,7 @@ function IdeaSection({ category, ideas, city, href, busy, onView, onAdd, onBudge
       </div>
     </div>
     <div id={contentId} className={styles.content} hidden={!expanded}>
-      {ideas.length ? <Carousel category={category} ideas={carouselOrder(ideas)} busy={busy} onView={onView} onMustDo={onMustDo} like={like} />
+      {ideas.length ? <Carousel name={name.toLowerCase()} items={carouselOrder(ideas)} card={(item) => <IdeaCard category={category} item={item} busy={busy} onView={onView} onMustDo={onMustDo} like={like} />} />
         : <p className={styles.empty}>No {name.toLowerCase()} saved yet.</p>}
       <Link className={"text-button " + styles.manage} href={href}>Manage {name.toLowerCase()}<span className="sr-only"> in {city}</span></Link>
     </div>
@@ -89,14 +89,12 @@ function IdeaSection({ category, ideas, city, href, busy, onView, onAdd, onBudge
 }
 
 /**
- * One card per idea, scrolled sideways by its arrows, or by swiping or scrolling. The arrows loop (TRA-127): Next at the
- * end returns to the start, and Previous at the start goes to the end. Swiping and scrolling stop at either end. Each
- * idea's star, a hotel's and a restaurant's as an activity's (TRA-181), sits over its card's photo, beside the card rather
- * than in it, so selecting the star saves its Must do without showing the idea's details (TRA-161). It shows what is
- * saved: filled for Must do, outlined otherwise. Each idea's Like sits over the bottom of its card's photo the same way,
- * so selecting it shows no details either (TRA-31).
+ * A destination's cards, one for each of `items` in order, holding what `card` gives it, scrolled sideways by its arrows,
+ * named for what the cards show, `name`, or by swiping or scrolling. The arrows loop (TRA-127): Next at the end returns to
+ * the start, and Previous at the start goes to the end. Swiping and scrolling stop at either end. Its Hotels, Activities
+ * and Restaurants share it with its Churches (TRA-182).
  */
-function Carousel({ category, ideas, busy, onView, onMustDo, like }: { category: Category; ideas: Candidate[]; busy: boolean; onView: (item: Candidate) => void; onMustDo: (item: Candidate, control: HTMLButtonElement) => void; like: (item: Candidate) => ReactNode }) {
+export function Carousel<Item extends { id: string }>({ name, items, card }: { name: string; items: Item[]; card: (item: Item) => ReactNode }) {
   const track = useRef<HTMLUListElement>(null);
   // Both arrows work while the cards overflow the list, at either end too. Until the list is measured, neither does.
   const [overflows, setOverflows] = useState(false);
@@ -108,7 +106,7 @@ function Carousel({ category, ideas, busy, onView, onMustDo, like }: { category:
     const resizing = new ResizeObserver(() => setOverflows(list.scrollWidth - list.clientWidth > 1));
     resizing.observe(list);
     return () => resizing.disconnect();
-  }, [ideas.length]);
+  }, [items.length]);
   /** Scrolls the cards a list's width in `direction`, or from the end it points to, within a pixel, to the other end. */
   const scroll = (direction: -1 | 1) => {
     const list = track.current!;
@@ -117,33 +115,39 @@ function Carousel({ category, ideas, busy, onView, onMustDo, like }: { category:
     else if (direction === -1 && list.scrollLeft <= 1) list.scrollTo({ left: last });
     else list.scrollBy({ left: direction * list.clientWidth });
   };
-  const Icon = icons[category];
-  const name = labels[category].toLowerCase();
   return <div className={styles.carousel}>
     <button type="button" className={styles.arrow + " " + styles.previous} aria-label={"Previous " + name} disabled={!overflows} onClick={() => scroll(-1)}><ChevronLeft size={20} aria-hidden="true" /></button>
-    <ul ref={track} className={styles.track}>
-      {ideas.map((item) => {
-        const photo = item.images.find((image) => image.id === item.mainImageId) ?? item.images[0];
-        return <li key={item.id}><button type="button" className={styles.card} onClick={() => onView(item)}>
-          <span className={styles.photo}>
-            {/* Stored photos are resized and optimized on upload. */}
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            {photo ? <img src={photoUrl(item.id, photo, "candidate")} {...photoSizes(photoUrl(item.id, photo, "candidate"), largeUrl(item.id, photo, "candidate"), photo.widths, CAROUSEL_CARD)} alt="" loading="lazy" decoding="async" width={400} height={300} /> : <Icon size={30} strokeWidth={1.3} aria-hidden="true" />}
-          </span>
-          <span className={styles.name}>{item.name}</span>
-          {item.description && <span className={styles.description}>{item.description}</span>}
-          <RestaurantTypeTags types={item.restaurantTypes} className={styles.types} />
-          <span className={item.priceCents === null ? styles.price + " " + styles.unknown : styles.price}>{price(item)}</span>
-          {item.included && <span className={"selection-tag chosen " + styles.chosen}><Check size={12} aria-hidden="true" />{chosen[category]}</span>}
-        </button>
-        <button type="button" className={styles.star} aria-label={"Must do for " + item.name} aria-pressed={item.mustDo} disabled={busy}
-          onClick={(event) => onMustDo(item, event.currentTarget)}><Star size={18} fill={item.mustDo ? "currentColor" : "none"} aria-hidden="true" /></button>
-        <span className={styles.likeSlot}>{like(item)}</span>
-        </li>;
-      })}
-    </ul>
+    <ul ref={track} className={styles.track}>{items.map((item) => <li key={item.id}>{card(item)}</li>)}</ul>
     <button type="button" className={styles.arrow + " " + styles.next} aria-label={"Next " + name} disabled={!overflows} onClick={() => scroll(1)}><ChevronRight size={20} aria-hidden="true" /></button>
   </div>;
+}
+
+/**
+ * An idea's card in its category's carousel. Each idea's star, a hotel's and a restaurant's as an activity's (TRA-181),
+ * sits over its card's photo, beside the card rather than in it, so selecting the star saves its Must do without showing
+ * the idea's details (TRA-161). It shows what is saved: filled for Must do, outlined otherwise. Each idea's Like sits over
+ * the bottom of its card's photo the same way, so selecting it shows no details either (TRA-31).
+ */
+function IdeaCard({ category, item, busy, onView, onMustDo, like }: { category: Category; item: Candidate; busy: boolean; onView: (item: Candidate) => void; onMustDo: (item: Candidate, control: HTMLButtonElement) => void; like: (item: Candidate) => ReactNode }) {
+  const photo = item.images.find((image) => image.id === item.mainImageId) ?? item.images[0];
+  const Icon = icons[category];
+  return <>
+    <button type="button" className={styles.card} onClick={() => onView(item)}>
+      <span className={styles.photo}>
+        {/* Stored photos are resized and optimized on upload. */}
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        {photo ? <img src={photoUrl(item.id, photo, "candidate")} {...photoSizes(photoUrl(item.id, photo, "candidate"), largeUrl(item.id, photo, "candidate"), photo.widths, CAROUSEL_CARD)} alt="" loading="lazy" decoding="async" width={400} height={300} /> : <Icon size={30} strokeWidth={1.3} aria-hidden="true" />}
+      </span>
+      <span className={styles.name}>{item.name}</span>
+      {item.description && <span className={styles.description}>{item.description}</span>}
+      <RestaurantTypeTags types={item.restaurantTypes} className={styles.types} />
+      <span className={item.priceCents === null ? styles.price + " " + styles.unknown : styles.price}>{price(item)}</span>
+      {item.included && <span className={"selection-tag chosen " + styles.chosen}><Check size={12} aria-hidden="true" />{chosen[category]}</span>}
+    </button>
+    <button type="button" className={styles.star} aria-label={"Must do for " + item.name} aria-pressed={item.mustDo} disabled={busy}
+      onClick={(event) => onMustDo(item, event.currentTarget)}><Star size={18} fill={item.mustDo ? "currentColor" : "none"} aria-hidden="true" /></button>
+    <span className={styles.likeSlot}>{like(item)}</span>
+  </>;
 }
 
 /**

@@ -49,11 +49,12 @@ const ideaModules = {
   "./restaurant-types": load("../src/components/restaurant-types.tsx"),
   "./place-location": load("../src/components/place-location.tsx"),
 };
-const { DestinationIdeas, IdeaDetails } = load("../src/components/destination-ideas.tsx", ideaModules);
+const destinationIdeas = load("../src/components/destination-ideas.tsx", ideaModules);
+const { DestinationIdeas, IdeaDetails } = destinationIdeas;
 const { default: CandidateList } = load("../src/components/candidate-list.tsx", ideaModules);
 const { RestaurantTypesField } = ideaModules["./restaurant-types"];
 const { DestinationBudget } = load("../src/components/destination-budget.tsx", { "@/components/focus-after": { useFocusFallback: () => null } });
-const { ChurchOptions } = load("../src/components/churches.tsx", { "./candidate-gallery": ideaModules["./candidate-gallery"], "./focus-after": load("../src/components/focus-after.ts"), "./place-location": ideaModules["./place-location"] });
+const { ChurchOptions } = load("../src/components/churches.tsx", { "./candidate-gallery": ideaModules["./candidate-gallery"], "./destination-ideas": destinationIdeas, "./focus-after": load("../src/components/focus-after.ts"), "./place-location": ideaModules["./place-location"] });
 const { ChurchSundays } = load("../src/components/church-sundays.tsx");
 
 /** The host elements an element renders to, with every component rendered. */
@@ -269,7 +270,7 @@ test("the destination budget no longer links to the idea pages, and keeps its ot
   ]);
 });
 
-test("a destination card's names say what it shows, and its Church headings sit below the card's h4 (TRA-95)", (t) => {
+test("a destination card's names say what it shows, and Church headings sit below their section's h4 (TRA-95)", (t) => {
   const { store, id } = seed(t);
   // A city chosen from the suggestions shows shorter, and the budget's editors name it that way.
   store.applyMutation({ type: "destination.save", id, city: "Vienna, Vienna, Austria", cityFromSuggestion: true });
@@ -288,8 +289,9 @@ test("a destination card's names say what it shows, and its Church headings sit 
     ["Mark as must do", "Mark as must do for Chosen hotel", false, undefined],
     ["Mark as must do", "Mark as must do for Third hotel", false, undefined],
   ]);
-  // At level 5, as the card's Church section passes them below its h4, the Sundays and each church are h5 headings and
-  // its Mass times h6, styled by class.
+  // At level 5, as the Church section passes them below its h4, the Sundays and each church are h5 headings and its Mass
+  // times h6, styled by class: the Sundays on a destination's card and Church page, and the churches on its Church page,
+  // since its card shows them in a carousel (TRA-182).
   const headings = (element) => hosts(element).filter((node) => /^h[1-6]$/.test(node.type)).map((node) => [node.type, text(node), node.props.className]);
   const churches = (items) => ({ type: ChurchOptions, props: { items, headingLevel: 5, busy: false, onAdd() {}, onEdit() {}, onDelete() {}, like: () => null } });
   assert.deepEqual(headings({ type: ChurchSundays, props: { destination: stop(store, id), headingLevel: 5 } }), [["h5", "Sundays during your stay", "heading"]]);

@@ -370,6 +370,8 @@ function plannerPage(save, read) {
   modules["@/components/focus-after"] = modules["./focus-after"] = load("../src/components/focus-after.ts", require);
   modules["@/components/like-button"] = load("../src/components/like-button.tsx", require);
   modules["@/components/destination-ideas"] = load("../src/components/destination-ideas.tsx", require);
+  // Churches show in the ideas' carousel (TRA-182).
+  modules["./destination-ideas"] = modules["@/components/destination-ideas"];
   modules["@/components/candidate-list"] = load("../src/components/candidate-list.tsx", require);
   modules["@/components/churches"] = load("../src/components/churches.tsx", require);
   const { default: PlannerApp } = load("../src/components/planner-app.tsx", require);
@@ -433,13 +435,14 @@ test("a trip's page shows the Like of the trip, its destinations, their ideas an
     ["Like Taberna, 0 likes", false],
     ["Like Sé, 0 likes", false],
   ], "the trip's heading, the destination's card, each idea's card and the church's card");
-  // The trip's Like leads its heading's buttons, the destination's follows its stay's notes, and each idea's sits beside
-  // its card, over its photo, so selecting it never shows the idea's details.
+  // The trip's Like leads its heading's buttons, the destination's follows its stay's notes, and each idea's and church's
+  // sits beside its card in its carousel (TRA-182), over its photo, so selecting it never shows the details.
   assert.equal(page.holder(page.like("Portugal")).props.className, "heading-actions");
   assert.equal(page.holder(page.like("Lisbon")).props.className, "destination-like");
-  assert.equal(page.holder(page.like("Alfama guesthouse")).props.className, "likeSlot");
-  assert.ok(!within(page.card("Alfama guesthouse")).includes(page.like("Alfama guesthouse")));
-  assert.equal(page.holder(page.like("Sé")).props.className, "idea-tools");
+  for (const name of ["Alfama guesthouse", "Sé"]) {
+    assert.equal(page.holder(page.like(name)).props.className, "likeSlot");
+    assert.ok(!within(page.card(name)).includes(page.like(name)));
+  }
 
   page.select(page.like("Alfama guesthouse"));
   assert.deepEqual(page.sent, [{ type: "candidate.like", id: hotel, liked: true }], "saved at once, with no Save or confirmation");
@@ -508,9 +511,14 @@ test("an idea's and a church's details show its Like above what is saved for it 
   assert.deepEqual(footer.props.children.slice(0, 1).map((child) => [child.type, child.props.role, text(child)]), [["p", "alert", "We couldn't save your changes. Please try again."]]);
   assert.deepEqual(page.dialog().likes, [["Like Alfama guesthouse, 1 like", true]]);
 
-  // A church's details, from its marker on the map, show its Like the same way, and keep showing after it saves.
+  // A church's details, from its card in the destination's Churches carousel (TRA-182) or its marker on the map, show its
+  // Like the same way, and keep showing after it saves.
+  const closeDialog = () => page.select(within(page.all().find((node) => node.type === "dialog")).find((node) => node.type === "button" && text(node) === "Close"));
   page.reload();
-  page.select(within(page.all().find((node) => node.type === "dialog")).find((node) => node.type === "button" && text(node) === "Close"));
+  closeDialog();
+  page.select(page.card("Sé"));
+  assert.deepEqual(page.dialog(), { title: "Sé", likes: [["Like Sé, 1 like", true]] });
+  closeDialog();
   const churchDetails = page.openChurch(church);
   assert.deepEqual(churchDetails, { title: "Sé", likes: [["Like Sé, 1 like", true]] });
   page.select(dialogLike());

@@ -1,3 +1,6 @@
+/* TRA-182: a church's card in its destination's carousel ends with its name and denomination, with the room below them
+   an idea's card has below its price. */
+.cardText { padding-bottom: 14px; }
 /* What the church is, in ink as what an idea is on its card (TRA-51). */
 .denomination { color: var(--ink); font-size: 14px; line-height: 1.5; margin: 12px 0; overflow-wrap: anywhere; }
 .website { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; text-decoration: underline; margin: 8px 0; }

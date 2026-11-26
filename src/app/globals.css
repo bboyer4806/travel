@@ -882,11 +882,6 @@ button svg,a svg {
 .destination-trips strong {
   color:var(--ink)
 }
-.destination-tools {
-  display:flex;
-  gap:0;
-  flex-wrap:wrap
-}
 .destination-notes {
   margin:14px 0 0 55px;
   color:var(--muted);
@@ -1478,9 +1473,6 @@ button svg,a svg {
 .destination-top {
   gap:10px
 }
-.destination-tools {
-  max-width:66px
-}
 .budget-panel {
   padding:20px
 }
@@ -1576,9 +1568,6 @@ button svg,a svg {
   margin-top:17px
 }
 .budget-breakdown {
-  max-width:none
-}
-.destination-tools {
   max-width:none
 }
 .trip-heading {
@@ -1763,10 +1752,6 @@ button svg,a svg {
 .destination-tools {
   margin-left:auto;
   margin-top:-3px
-}
-.destination-tools .icon-button {
-  width:26px;
-  height:29px
 }
 .stop-number {
   width:29px;
@@ -2338,8 +2323,8 @@ button.nav-link { border:0; background:none; }
    sections are 28px apart, and its headings have 16px of room. Its 18px margins, which the header and footer share on
    every page, its fonts and its controls are unchanged, as are other pages and wider screens. Panels and At home items
    have theirs in their own styles, and a card's main photo takes back its padding (destination-gallery.module.css). A
-   destination's name needs 8px more room beside its buttons, the 8px its card gains, so they wrap below it at the same
-   widths as before, under 323px, rather than squeezing it into a narrow column beside them. */
+   destination's name needs 8px more room beside its options button (TRA-55), the 8px its card gains, so the button
+   wraps below it at the same widths as before, rather than squeezing it into a narrow column beside the button. */
 @media(max-width:540px) {
   .trip-page .trip-heading { padding:20px 0; margin-bottom:20px; }
   .trip-page .trip-main>section>.section-heading { margin-bottom:16px; }

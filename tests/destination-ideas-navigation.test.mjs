@@ -43,8 +43,11 @@ function scroller(cards, width) {
   return list;
 }
 
-/** A destination's Hotels, Activities and Restaurants showing `ideas`, with each carousel's list `width` pixels wide. */
-function harness(ideas, width) {
+/**
+ * A destination's Hotels, Activities and Restaurants showing `ideas`, or with `churches`, its Churches showing them
+ * (TRA-182), with each carousel's list `width` pixels wide.
+ */
+function harness(ideas, width, churches) {
   const hooks = [];
   const observers = new Set();
   const calls = [];
@@ -96,12 +99,17 @@ function harness(ideas, width) {
     observe() { observers.add(this); }
     disconnect() { observers.delete(this); }
   }
-  const { DestinationIdeas } = load("../src/components/destination-ideas.tsx", require, { ResizeObserver });
-  const props = {
+  modules["./destination-ideas"] = load("../src/components/destination-ideas.tsx", require, { ResizeObserver });
+  const { DestinationIdeas } = modules["./destination-ideas"];
+  const { ChurchSection } = load("../src/components/churches.tsx", require);
+  const view = churches ? { type: ChurchSection, props: {
+    churches, label: "Vienna", href: "/destinations/vienna/church", hideId: "church-visibility-vienna", busy: false,
+    onAdd: () => calls.push(["add", "church"]), onHide: () => calls.push(["hide"]), onView: (item) => calls.push(["view", item.id]), like: () => null,
+  } } : { type: DestinationIdeas, props: {
     ideas, city: "Vienna", pages: "/destinations/vienna", busy: false,
     onView: (item) => calls.push(["view", item.id]), onAdd: (category) => calls.push(["add", category]), onBudgetEdit: (category) => calls.push(["budget", category]),
     like: () => null,
-  };
+  } };
   /** The host elements an element renders to, rendering each component once, in order, so its hooks keep their places. */
   const hosts = (node) => {
     if (!node || typeof node !== "object") return [];
@@ -113,7 +121,7 @@ function harness(ideas, width) {
   const render = () => {
     cursor = 0;
     effects = [];
-    nodes = hosts({ type: DestinationIdeas, props });
+    nodes = hosts(view);
     for (const node of nodes) if (node.type === "ul" && node.props.ref && !node.props.ref.current) node.props.ref.current = scroller([node.props.children].flat().length, width);
     for (const effect of effects) effect();
   };
@@ -226,4 +234,39 @@ test("a destination's Hotels, Activities and Restaurants carousels each loop on 
   }
   assert.deepEqual(["Hotels", "Activities", "Restaurants"].map((name) => page.carousel(name).list.scrolls), [8, 5, 12].map((cards) => [["scrollTo", { left: cardsWidth(cards) - 640 }]]),
     "each Previous went from the start of its own list to its end");
+});
+
+/** `count` saved churches of a destination, without photos. */
+const savedChurches = (count) => Array.from({ length: count }, (_, position) => ({
+  id: randomUUID(), destinationId: "vienna", name: `Church ${position + 1}`, address: "", denomination: "", url: "", massTimes: [], images: [], mainImageId: null, coordinates: null,
+}));
+
+test("a destination's Churches carousel loops as its ideas' carousels do, and swiping or scrolling stops at either end (TRA-182)", () => {
+  const churches = savedChurches(8);
+  const before = structuredClone(churches);
+  const page = harness([], 640, churches);
+  const section = "Churches in Vienna";
+  assert.deepEqual(page.arrows(section), unavailable("churches"), "until the list is measured, neither arrow works");
+  page.measure();
+  assert.deepEqual(page.arrows(section), working("churches"), "at the start, both arrows work");
+  const { list } = page.carousel(section);
+  const end = cardsWidth(8) - 640;
+  for (const [direction, scroll, left] of [
+    ["next", ["scrollBy", { left: 640 }], 640], ["next", ["scrollBy", { left: 640 }], end], ["next", ["scrollTo", { left: 0 }], 0],
+    ["previous", ["scrollTo", { left: end }], end], ["previous", ["scrollBy", { left: -640 }], end - 640],
+  ]) {
+    const from = list.scrollLeft;
+    list.scrolls.length = 0;
+    page.press(section, direction);
+    assert.deepEqual([list.scrolls, list.scrollLeft], [[scroll], left], `${direction} from ${from}`);
+    assert.deepEqual(page.arrows(section), working("churches"), `both arrows still work at ${left}`);
+  }
+  list.scrolls.length = 0;
+  for (const left of [0, end]) page.swipe(section, left);
+  assert.deepEqual([list.scrolls, list.scrollLeft], [[], end], "swiping or scrolling to either end scrolls nothing more");
+  assert.deepEqual(churches, before, "browsing changes no church or its order");
+  assert.deepEqual(page.calls, [], "and opens no details");
+  const few = harness([], 640, savedChurches(2));
+  few.measure();
+  assert.deepEqual(few.arrows(section), unavailable("churches"), "churches that all fit leave both arrows unavailable");
 });

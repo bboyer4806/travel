@@ -55,7 +55,7 @@ import { connectionTarget, tripJourney } from "@/lib/trip-map";
 import DestinationMap from "@/components/destination-map";
 import DestinationsMap from "@/components/destinations-map";
 import { destinationPlaces, type SavedPlace } from "@/lib/destination-map";
-import { MAIN_COLUMN, PAGE, type FrameWidths } from "@/lib/photo-sizes";
+import { PAGE } from "@/lib/photo-sizes";
 import { calculateBudget, calculateDestinationBudget, tripVisits, unsetStayAmount, unsetTripAmount, type EstimateCategory, type UnsetAmount } from "@/lib/budget";
 import { formatCurrency, MAX_AMOUNT_DOLLARS, minorAmountValue } from "@/lib/money";
 import { ShoppingBudgetEditor, FoodBudgetEditor, FoodSummary, ActivitiesBudgetEditor, ActivitiesSummary, AccommodationBudgetEditor, AccommodationSummary, CurrencyTotals, DestinationBudget, DestinationBudgetEditor, MiscellaneousBudgetEditor, StayNightsEditor, type KeepFocus } from "@/components/destination-budget";
@@ -96,7 +96,7 @@ type Editor =
   // An idea's details, read only, from its destination's carousels (TRA-120) and map (TRA-130). An activity's, and its
   // editor opened from them, step through its destination's activities (TRA-160).
   | { kind: "ideaDetails"; item: Candidate }
-  // A church's details, read only, from its destination's map (TRA-130).
+  // A church's details, read only, from its card in its destination's Churches carousel (TRA-182) or its map (TRA-130).
   | { kind: "churchDetails"; item: Church }
   | { kind: "church"; destinationId: string; item?: Church }
   | { kind: "homeItem"; item?: HomeItem }
@@ -606,11 +606,14 @@ export default function PlannerApp({ initialData, initialBudgets, access = {}, d
     const label = next ? "Add a destination before " + formatSavedDestinationLabel(next.visit) : "Add a destination after " + formatSavedDestinationLabel(visits[index - 1].visit);
     return <div className="stop-insertion" key={next ? "insert-" + next.stop.id : "insert-last"}><button type="button" className="button secondary" aria-label={label} onClick={() => open({ kind: "addStop", before: next?.stop })}><Plus size={16} aria-hidden="true" /></button></div>;
   }
+  /** Where a destination's Hotels, Activities, Restaurants and Church pages are: under its trip's stop, or in Destinations. */
+  const ideaPages = (place: Destination, stay?: TripStop) => stay ? "/trips/" + stay.tripId + "/destinations/" + stay.id : "/destinations/" + place.id;
   /**
-   * A destination's Church section. In a trip, that stay's dates decide whether it can appear and which Sundays it lists.
-   * `photoFrame` is how wide each church's photo is: across the page on its Church page, or a destination's card (TRA-154).
+   * A destination's churches. In a trip, that stay's dates decide whether they can appear and which Sundays come first.
+   * On a destination's card they show as its Hotels, Activities and Restaurants do, linking to its Church page (TRA-182).
+   * There, where `church` is set, they are the page and always show, each with its Edit and Delete (TRA-169).
    */
-  function renderChurch(place: Destination, photoFrame: FrameWidths, stay?: TripStop) {
+  function renderChurch(place: Destination, stay?: TripStop) {
     if (stay && !churchDateEligible(stay)) return null;
     // Show Church and Hide Church replace each other, so saving one focuses the other by the ID they share. It names the
     // stay when there is one: a trip the schema 21 upgrade left visiting a city twice has a Church section on both cards.
@@ -618,24 +621,30 @@ export default function PlannerApp({ initialData, initialBudgets, access = {}, d
     const findToggle = () => document.getElementById(toggle);
     const label = formatSavedDestinationLabel(place);
     if (!place.churchEnabled) return <div className="church-visibility"><p className="helper">Church is hidden. Saved churches and photos are kept.</p><button type="button" id={toggle} className="text-button" disabled={busy} onClick={(event) => saveFrom(event.currentTarget, { type: "destination.churchVisibility", id: place.id, enabled: true }, "Church shown.", findToggle)}>Show Church<span className="sr-only"> for {label}</span></button></div>;
-    // The Sundays and church headings are h5, below this h4 (TRA-95). On a destination's card its heading opens and closes
-    // them; on its Church page, where `church` is set, they are the page and always show (TRA-169).
-    return <ChurchSection label={label} collapsible={!church} actions={<div className="heading-actions"><button type="button" className="text-button" disabled={busy} onClick={() => open({ kind: "church", destinationId: place.id })}><Plus size={15} />Add church</button><button type="button" id={toggle} className="text-button" disabled={busy} onClick={(event) => saveFrom(event.currentTarget, { type: "destination.churchVisibility", id: place.id, enabled: false }, "Church hidden. Your churches and photos are saved.", findToggle)}>Hide Church</button></div>}>
-      {stay && <ChurchSundays destination={stay} headingLevel={5} />}
-      <ChurchOptions items={data.churches.filter((item) => item.destinationId === place.id)} headingLevel={5} photoFrame={photoFrame} busy={busy} onAdd={() => open({ kind: "church", destinationId: place.id })} onEdit={(item) => open({ kind: "church", item, destinationId: place.id })} onDelete={(item) => confirmDelete({ type: "church.delete", id: item.id, destinationId: place.id }, "Delete “" + item.name + "”?", "This church and its photos will be removed from this destination, in every trip that visits it.")}
+    const items = data.churches.filter((item) => item.destinationId === place.id);
+    const add = () => open({ kind: "church", destinationId: place.id });
+    const hide = (control: HTMLButtonElement) => saveFrom(control, { type: "destination.churchVisibility", id: place.id, enabled: false }, "Church hidden. Your churches and photos are saved.", findToggle);
+    // The Sundays heading, and on the Church page each church's, are h5, below the section's h4 (TRA-95).
+    const sundays = stay && <ChurchSundays destination={stay} headingLevel={5} />;
+    if (!church) return <ChurchSection churches={items} label={label} href={ideaPages(place, stay) + "/church"} hideId={toggle} busy={busy} sundays={sundays}
+      onAdd={add} onHide={hide} onView={(item) => open({ kind: "churchDetails", item })} like={(item) => renderLike("church", item.id, item.name)} />;
+    return <section className="destination-church" aria-label={"Church in " + label}>
+      <div className="budget-section-heading"><h4>Church</h4><div className="heading-actions"><button type="button" className="text-button" disabled={busy} onClick={add}><Plus size={15} />Add church</button><button type="button" id={toggle} className="text-button" disabled={busy} onClick={(event) => hide(event.currentTarget)}>Hide Church</button></div></div>
+      {sundays}
+      <ChurchOptions items={items} headingLevel={5} photoFrame={PAGE} busy={busy} onAdd={add} onEdit={(item) => open({ kind: "church", item, destinationId: place.id })} onDelete={(item) => confirmDelete({ type: "church.delete", id: item.id, destinationId: place.id }, "Delete “" + item.name + "”?", "This church and its photos will be removed from this destination, in every trip that visits it.")}
         like={(item) => renderLike("church", item.id, item.name)} />
-    </ChurchSection>;
+    </section>;
   }
   /** A destination's Hotels, Activities, Restaurants or Church page, from a trip's stop or from Destinations. */
   function renderIdeas(place: Destination, stay: TripStop | undefined, back: { href: string; label: string }) {
     const visit: DestinationVisit = { ...place, nights: stay?.nights ?? null };
-    const pages = stay ? "/trips/" + stay.tripId + "/destinations/" + stay.id : "/destinations/" + place.id;
+    const pages = ideaPages(place, stay);
     const label = formatSavedDestinationLabel(place);
     return <>
       <Link href={back.href} className="breadcrumb"><ArrowLeft size={16} />{back.label}</Link>
       <section className="ideas-heading"><div><p className="eyebrow">{label.toUpperCase()} · THE POSSIBILITIES</p><h1>{category ? labels[category] : "Church"}</h1><p className="hero-description">{category ? descriptions[category] : "Keep church options and Mass times for your visit."}</p></div>{!category && place.churchEnabled && (!stay || churchDateEligible(stay)) && <button className="button primary" disabled={busy} onClick={() => open({ kind: "church", destinationId: place.id })}><Plus size={17} />Add church</button>}</section>
       <nav className="category-tabs" aria-label="Destination ideas">{categories.map((kind) => { const Icon = categoryIcons[kind]; return <Link key={kind} href={pages + "/" + kind} className={category === kind ? "selected" : ""} aria-current={category === kind ? "page" : undefined}><Icon size={18} />{labels[kind]}<span>{data.candidates.filter((item) => item.destinationId === place.id && item.category === kind).length}</span></Link>; })}</nav>
-      {church && <><p className="helper">{stay ? "Church plans are managed on this destination’s trip card." : "Church plans are managed on this destination’s page."} Mass times are manually recorded and have not been verified.</p>{renderChurch(place, PAGE, stay)}{stay && !churchDateEligible(stay) && <p className="helper">This stay does not include Sunday. Saved churches and photos are kept for future plans.</p>}</>}
+      {church && <><p className="helper">Churches are shared by every trip that visits {label}. Mass times are manually recorded and have not been verified.</p>{renderChurch(place, stay)}{stay && !churchDateEligible(stay) && <p className="helper">This stay does not include Sunday. Saved churches and photos are kept for future plans.</p>}</>}
       {category && <>
       {category === "hotels" && <section className="hotel-budget-panel" aria-label="Accommodation budget"><div className="section-heading"><h2>Accommodation budget</h2><button className="button secondary small" onClick={() => open({ kind: "accommodationBudget", item: place, stop: stay })}><Pencil size={15} />{stay ? "Edit estimate & nights" : "Edit nightly estimate"}</button></div><AccommodationSummary snapshot={data} destination={visit} /></section>}
       {category === "activities" && <section className="hotel-budget-panel" aria-label="Activities budget"><div className="section-heading"><h2>Activities budget</h2><button className="button secondary small" onClick={() => open({ kind: "activitiesBudget", item: place })}><Pencil size={15} />Edit activities budget</button></div><ActivitiesSummary snapshot={data} destination={place} /><p className="helper">{place.activitiesBudgetMode === "general" ? "Your general amount supplies the budget. Activity selections are saved for itemized mode." : "Only included activity costs supply the budget. Your general amount stays saved."} Adding, editing, or removing activities never switches methods.</p></section>}
@@ -657,7 +666,7 @@ export default function PlannerApp({ initialData, initialBudgets, access = {}, d
    */
   function renderIdeaSections(place: Destination, stay?: TripStop) {
     return <DestinationIdeas ideas={data.candidates.filter((item) => item.destinationId === place.id)} city={formatSavedDestinationLabel(place)} busy={busy}
-      pages={stay ? "/trips/" + stay.tripId + "/destinations/" + stay.id : "/destinations/" + place.id}
+      pages={ideaPages(place, stay)}
       onView={(item) => open({ kind: "ideaDetails", item })}
       onAdd={(kind) => open({ kind: "candidate", destinationId: place.id, category: kind })}
       onBudgetEdit={(kind) => open(kind === "hotels" ? { kind: "accommodationBudget", item: place, stop: stay } : kind === "activities" ? { kind: "activitiesBudget", item: place } : { kind: "foodBudget", item: place, nights: stay?.nights ?? null })}
@@ -682,8 +691,8 @@ export default function PlannerApp({ initialData, initialBudgets, access = {}, d
     return steps && <ActivitySteps index={steps.index} count={steps.list.length} name={item.name} disabled={busy} onStep={stepActivity} />;
   }
   /**
-   * A church's details, read only, below its Like (TRA-31), with Close (TRA-130), as an idea's details are. Its card in the
-   * Church section edits it.
+   * A church's details, read only, below its Like (TRA-31), with Close (TRA-130), as an idea's details are. Its card on its
+   * destination's Church page edits it.
    */
   function renderChurchDetails(item: Church) {
     return <><div className="dialog-body"><div className="details-like">{renderLike("church", item.id, item.name)}</div><ChurchDetails item={item} /></div>
@@ -707,7 +716,7 @@ export default function PlannerApp({ initialData, initialBudgets, access = {}, d
           <EntryRequirementsPanel requirements={place.entryRequirements} disabled={busy} onEdit={() => open({ kind: "entryRequirements", item: place })} onClear={() => confirmDelete({ type: "destination.entryRequirements", id: place.id, requirements: null }, "Clear entry requirements?", "This removes the recorded requirements, sources, and last checked date for " + label + ", in every trip that visits it.")} />
           <HealthSafetyPanel healthSafety={place.healthSafety} disabled={busy} onEdit={() => open({ kind: "healthSafety", item: place })} onClear={() => confirmDelete({ type: "destination.healthSafety", id: place.id, healthSafety: null }, "Clear health and safety?", "This removes the local emergency number, recorded advisories, precautions, safety guidance, emergency contacts, non-emergency medical providers, sources, and last checked date for " + label + ", in every trip that visits it.")} />
           <TypicalWeatherPanel weather={place} disabled={busy} onEdit={() => open({ kind: "weather", item: place })} onEditClimate={() => open({ kind: "climate", item: place })} onClearClimate={() => confirmDelete({ type: "destination.climate", id: place.id, climate: null }, "Clear monthly averages?", climateClearing(label))} />
-          {renderChurch(place, MAIN_COLUMN)}
+          {renderChurch(place)}
         </article>
       </div>
       <aside className="budget-panel"><span className="budget-symbol"><Plane size={23} strokeWidth={1.4} /></span><p className="eyebrow">WHERE IT FITS</p><h2>In your trips</h2>
@@ -795,7 +804,7 @@ export default function PlannerApp({ initialData, initialBudgets, access = {}, d
                 <EntryRequirementsPanel requirements={visit.entryRequirements} stay={visitStop} disabled={busy} onEdit={() => open({ kind: "entryRequirements", item: visit })} onClear={() => confirmDelete({ type: "destination.entryRequirements", id: visit.id, requirements: null }, "Clear entry requirements?", "This removes the recorded requirements, sources, and last checked date for " + label + ", in every trip that visits it.")} />
                 <HealthSafetyPanel healthSafety={visit.healthSafety} disabled={busy} onEdit={() => open({ kind: "healthSafety", item: visit })} onClear={() => confirmDelete({ type: "destination.healthSafety", id: visit.id, healthSafety: null }, "Clear health and safety?", "This removes the local emergency number, recorded advisories, precautions, safety guidance, emergency contacts, non-emergency medical providers, sources, and last checked date for " + label + ", in every trip that visits it.")} />
                 <TypicalWeatherPanel weather={visit} stay={visitStop} disabled={busy} onEdit={() => open({ kind: "weather", item: visit })} onEditClimate={() => open({ kind: "climate", item: visit })} onClearClimate={() => confirmDelete({ type: "destination.climate", id: visit.id, climate: null }, "Clear monthly averages?", climateClearing(label))} />
-                {renderChurch(visit, MAIN_COLUMN, visitStop)}
+                {renderChurch(visit, visitStop)}
               </article>]; })}{renderStopInsertion(visits.length)}</div>}
             {visits.length > 1 && <p className="helper">Use the arrows to change your route. Affected travel connections will need new details.</p>}
             {visits.length > 0 && <p className="helper">A destination’s ideas, research, photos, selections, and budget amounts are shared with every trip that visits it, and with Destinations. Each trip keeps its own nights, dates, stay notes, and travel connections.</p>}

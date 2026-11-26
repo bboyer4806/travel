@@ -14,7 +14,7 @@ export const CARD: FrameWidths = [[540, "100vw - 36px"], [780, "(100vw - 70px) /
 /**
  * Across a destination's card in the main column of its trip's or its own page, beside the budget until 780 pixels. On
  * phones a trip's cards show it edge to edge (TRA-155), and a destination's own page 34 pixels narrower, too little to
- * change which version a phone loads. A church's card in the card nearly spans it.
+ * change which version a phone loads.
  */
 export const MAIN_COLUMN: FrameWidths = [[540, "100vw - 38px"], [780, "100vw - 86px"], [1080, "100vw - 434px"], [1360, "100vw - 494px"], [null, "866px"]];
 /** An idea's card on its category's page: two columns, one from 540 pixels. */
@@ -23,7 +23,7 @@ export const HALF_PAGE: FrameWidths = [[540, "100vw - 80px"], [780, "(100vw - 64
 export const DIALOG: FrameWidths = [[540, "100vw - 64px"], [592, "100vw - 88px"], [null, "504px"]];
 /** The trip editor's preview of a trip's card, at most 320 pixels wide. */
 export const CARD_PREVIEW: FrameWidths = [[384, "100vw - 64px"], [null, "320px"]];
-/** A card in a destination's Hotels, Activities or Restaurants carousel. */
+/** A card in a destination's Hotels, Activities, Restaurants or Churches carousel. */
 export const CAROUSEL_CARD: FrameWidths = [[null, "200px"]];
 
 /**

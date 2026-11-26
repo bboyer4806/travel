@@ -61,7 +61,7 @@ const IDEA_PAGES: Record<IdeaPage, PageHelp> = {
   church: {
     title: "Church",
     points: [
-      "Churches you might attend at this destination, with their Mass times. A church's arrows, or a swipe across its photo, show its other photos.",
+      "Churches you might attend here, with their Mass times; Manage churches opens this page. A church's arrows, or a swipe across its photo, show its other photos.",
       "Add church saves one, with its address, coordinates, website, Mass times and photos. The pencil edits a church and the trash can deletes it.",
       "Mass times are only what you enter. Confirm them with the church before you go.",
       "In a trip, Church lists the Sundays of the stay, and a stay without a Sunday doesn't show it.",
@@ -116,8 +116,8 @@ const HELP: { [Route in SignedInRoute]: Route extends `${string}/[category]` ? R
       "One city's research, shared by every trip that visits it: photos, notes, budget, ideas, entry requirements, health and safety, weather and churches.",
       "Edit destination changes its city, tagline, budget amounts, photos and notes. In Typical weather, select a month on the chart for its averages.",
       "Map: places by address or coordinates; a dashed ring is approximate. Checkboxes filter them. Point or tab to a marker to preview it; select it for View details.",
-      "Select an idea for details, where Previous, Next or a swipe shows other activities; each idea's star marks it Must do. Manage reorders, chooses, deletes.",
-      "Select a heading, like Map, Budget or Church, to show or hide it. Entry requirements, Health and safety and Typical weather show Edit and Clear only when open.",
+      "Select an idea or church for details; Previous, Next or a swipe shows other activities, and an idea's star marks it Must do. Manage reorders, chooses, deletes.",
+      "Select a heading, like Map or Churches, to show or hide it. Entry requirements, Health and safety and Typical weather show Edit and Clear only when open.",
       "Hearts like it, its ideas and churches. In your trips lists your trips that visit it, with nights and estimates. Its owner can delete it once no trip visits it.",
     ],
   },

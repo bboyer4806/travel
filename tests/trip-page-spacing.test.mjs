@@ -72,14 +72,14 @@ const PHONES = [320, 360, 375, 390, 414, 448, 540];
 const WIDER = [541, 600, 780, 1024, 1440];
 /** The rules a trip's page takes for a part: every page's, then its own, and the spacing they give it on phones. */
 const SPACING = [
-  // Every box has 12px of padding: the destination cards, the panels in them, Sundays and churches, At home items and the
-  // estimate. The panels in a card are 12px apart, below its budget, which lines up with the rest of the card.
+  // Every box has 12px of padding: the destination cards, the panels in them, among them Churches as Hotels, Activities and
+  // Restaurants (TRA-182), its Sundays, At home items and the estimate. The panels in a card are 12px apart, below its
+  // budget, which lines up with the rest of the card.
   [GLOBALS, [".destination-card", ".trip-page .destination-card"], { padding: "12px" }],
   [GLOBALS, [".destination-budget", ".trip-page .destination-budget"], { margin: "0 0 12px" }],
   [IDEAS, [".section", ":global(.trip-page) .section"], { padding: "12px", margin: "12px 0" }],
   ...PANELS.map((file) => [file, [".panel", ":global(.trip-page) .panel"], { padding: "12px", margin: "12px 0" }]),
   [SUNDAYS, [".panel", ":global(.trip-page) .panel"], { padding: "12px", "margin-bottom": "12px" }],
-  [GLOBALS, [".idea-card", ".destination-church .idea-card", ".trip-page .destination-church .idea-card"], { padding: "12px" }],
   [HOME, [".card"], { padding: "12px" }],
   [PACKING, [".progress"], { padding: "12px" }],
   [PACKING, [".group"], { padding: "12px" }],

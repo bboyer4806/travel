@@ -80,7 +80,9 @@ modules["./candidate-gallery"] = load("../src/components/candidate-gallery.tsx")
 const { TripImageView } = load("../src/components/trip-image.tsx");
 const { DestinationCardPhoto, DestinationGallery } = load("../src/components/destination-gallery.tsx");
 const { CandidateGallery } = modules["./candidate-gallery"];
-const { DestinationIdeas } = load("../src/components/destination-ideas.tsx");
+modules["./destination-ideas"] = load("../src/components/destination-ideas.tsx");
+const { DestinationIdeas } = modules["./destination-ideas"];
+const { ChurchSection } = load("../src/components/churches.tsx");
 
 /** Each photo an element renders: its address, and the versions and sizes it offers. */
 function photos(node) {
@@ -123,4 +125,8 @@ test("an idea's and a church's main photo offer its large version at the width o
   }
   const cards = photos(DestinationIdeas({ ideas: [hotel], city: "Kyoto", pages: "/destinations/kyoto", busy: false, onView() {}, onAdd() {}, onBudgetEdit() {}, like: () => null }));
   assert.deepEqual(cards, [offered(address("candidate"), address("candidate", "/large"), CAROUSEL_CARD)]);
+  // A church's card in its destination's Churches carousel too (TRA-182).
+  const church = { id: hotel.id, name: "Kiyomizu-dera", denomination: "", images: [photo], mainImageId: photo.id };
+  const churchCards = photos(ChurchSection({ churches: [church], label: "Kyoto", href: "/destinations/kyoto/church", hideId: "church-visibility-kyoto", busy: false, onAdd() {}, onHide() {}, onView() {}, like: () => null }));
+  assert.deepEqual(churchCards, [offered(address("church"), address("church", "/large"), CAROUSEL_CARD)]);
 });

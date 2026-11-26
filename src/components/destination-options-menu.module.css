@@ -1,0 +1,17 @@
+/* TRA-55: a trip destination card's options, a three-dot button where its Move up, Move down, Edit and Delete were. Its
+   menu floats over the card in the style of city suggestions, right-aligned with the button so it stays within the card,
+   below or above it as the component places it. It shows above Send feedback (z-index 30), as city suggestions do. The
+   menu's actions are its own buttons, each an icon and its name. Touchscreens get 44-pixel targets. */
+.options { position: relative; display: flex; }
+.button[aria-expanded="true"] { background: #e9ede2; color: var(--green); }
+.menu { position: absolute; right: 0; z-index: 31; display: flex; flex-direction: column; min-width: 160px; margin: 0; padding: 3px; overflow-y: auto; overscroll-behavior: contain; border: 1px solid var(--line); border-radius: 6px; background: #fffffc; box-shadow: 0 5px 18px #172c351a; }
+.item { display: flex; flex: none; align-items: center; gap: 10px; width: 100%; min-height: 36px; padding: 8px 10px; border: 0; border-radius: 4px; background: transparent; color: var(--ink); font-size: 13px; line-height: 1.4; text-align: left; white-space: nowrap; }
+.item > svg { color: var(--green); }
+.item:hover:not(:disabled), .item:focus-visible { background: #edf2e7; }
+/* Inside the menu's edge, which would clip the outline buttons have elsewhere. */
+.item:focus-visible { outline-offset: -2px; }
+
+@media (pointer: coarse) {
+  .options .button { width: 44px; height: 44px; }
+  .item { min-height: 44px; }
+}

@@ -92,7 +92,7 @@ const HELP: { [Route in SignedInRoute]: Route extends `${string}/[category]` ? R
     points: [
       "Route map with arrows: point or tab to a destination for its photo; select transportation for details. Then stays, travel, best time, home, packing, USD cost.",
       "Edit trip changes its name, tagline, focus, dates, travelers, entry and visa fees, cities and headline image. Only its owner shares or deletes the trip.",
-      "Add destination adds a city last, a + between cards there, one In your library with its research. Card arrows move it, the pencil edits, the trash removes it.",
+      "Add destination adds a city last, a + between cards there, one In your library with its research. A card's three-dot menu moves, edits or removes it.",
       "Nights set each stay's dates; Typical weather opens on its month. Hearts like the trip, places, ideas, churches; a star marks Must do; details step by swipe.",
       "Between the places: Edit adds transportation, flight details, price and layovers; Plan layover times a layover. Best time to go picks the trip's best months.",
       "Packing list: Recommend items suggests what to pack, to review before adding; check items off as you pack. In a budget, Not set or Not estimated adds a cost.",

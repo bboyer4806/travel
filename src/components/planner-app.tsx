@@ -28,8 +28,9 @@ import { RestaurantTypesField } from "@/components/restaurant-types";
 import { PlaceLocationFields } from "@/components/place-location";
 import { coordinatesFromForm } from "@/lib/coordinates";
 import TripRouteFields from "@/components/trip-route-fields";
-import { ConnectionItinerary, ConnectionItineraryEditor } from "@/components/connection-itinerary";
+import { ConnectionItinerary, ConnectionItineraryEditor, groupAlongTheWay, type ItineraryGroup } from "@/components/connection-itinerary";
 import { FlightDetails, TransportationFields } from "@/components/connection-flight";
+import { isFlight } from "@/lib/transportation-methods";
 import { LayoverPlanEditor } from "@/components/layover-plan";
 import { layoverPlanDraft, layoverPlanFromDraft, type LayoverPlanDraft } from "@/lib/layover-plan";
 import { ResearchLinks, ResearchLinksEditor } from "@/components/research-links";
@@ -206,6 +207,8 @@ export default function PlannerApp({ initialData, initialBudgets, access = {}, d
   const [refreshing, startRefresh] = useTransition();
   const focusAfterSave = useFocusAfter(!busy && !refreshing);
   const [itinerary, setItinerary] = useState<ItineraryStop[]>([]);
+  // A connection's Transportation as typed in its editor, which decides whether its layovers show with its flight (TRA-184).
+  const [legMethod, setLegMethod] = useState("");
   // The layover plan editor's draft (TRA-45): the saved plan, or a new one with every estimate at 0.
   const [layoverDraft, setLayoverDraft] = useState<LayoverPlanDraft>(() => layoverPlanDraft(undefined));
   const [massTimes, setMassTimes] = useState<MassTime[]>([]);
@@ -275,7 +278,7 @@ export default function PlannerApp({ initialData, initialBudgets, access = {}, d
     if (busy) return;
     // An activity's editor opens with the links and photos of the draft its dialog kept for it, if any (TRA-160).
     const draft = value.kind === "candidate" ? value.draft : undefined;
-    if (value.kind === "leg") setItinerary(value.item.itinerary ?? []);
+    if (value.kind === "leg") { setItinerary(value.item.itinerary ?? []); setLegMethod(value.item.method); }
     if (value.kind === "layover") setLayoverDraft(layoverPlanDraft(value.leg.layoverPlans.find((plan) => plan.layoverId === value.layover.id)));
     if (value.kind === "leg" || value.kind === "candidate") setResearchLinks(draft?.links ?? value.item?.links ?? []);
     if (value.kind === "entryRequirements") setResearchLinks(value.item.entryRequirements?.sources ?? []);
@@ -608,6 +611,13 @@ export default function PlannerApp({ initialData, initialBudgets, access = {}, d
     const label = next ? "Add a destination before " + formatSavedDestinationLabel(next.visit) : "Add a destination after " + formatSavedDestinationLabel(visits[index - 1].visit);
     return <div className="stop-insertion" key={next ? "insert-" + next.stop.id : "insert-last"}><button type="button" className="button secondary" aria-label={label} onClick={() => open({ kind: "addStop", before: next?.stop })}><Plus size={16} aria-hidden="true" /></button></div>;
   }
+  /**
+   * One part of a connection's itinerary on its card in Between the places (TRA-184): a flight's layovers, directly below
+   * its airline and flight number, or what Stops along the way shows. Each layover has its plan, or Plan layover (TRA-45).
+   */
+  function renderItinerary(leg: TravelLeg, group: ItineraryGroup) {
+    return <ConnectionItinerary group={group} legId={leg.id} stops={leg.itinerary ?? []} plans={leg.layoverPlans} disabled={busy} onPlan={(layover) => open({ kind: "layover", leg, layover })} onRemovePlan={(layover) => confirmDelete({ type: "leg.layoverPlan", id: leg.id, layoverId: layover.id, plan: null }, "Remove the layover plan for " + layover.place + "?", "Its flight times, airport time and activities are removed. The layover stays in the connection, and nothing else changes.")} />;
+  }
   /** Where a destination's Hotels, Activities, Restaurants and Church pages are: under its trip's stop, or in Destinations. */
   const ideaPages = (place: Destination, stay?: TripStop) => stay ? "/trips/" + stay.tripId + "/destinations/" + stay.id : "/destinations/" + place.id;
   /**
@@ -812,7 +822,7 @@ export default function PlannerApp({ initialData, initialBudgets, access = {}, d
             {visits.length > 0 && <p className="helper">A destination’s ideas, research, photos, selections, and budget amounts are shared with every trip that visits it, and with Destinations. Each trip keeps its own nights, dates, stay notes, and travel connections.</p>}
           </section>
           <section className="travel-section"><div className="section-heading"><div><p className="eyebrow">GETTING THERE & BACK</p><h2>Between the places</h2></div><Plane size={25} strokeWidth={1.3} /></div>
-            {visits.length === 0 ? <p className="section-description">Your travel connections will appear once you add a destination.</p> : <div className="travel-list">{tripLegs.map((leg) => <article className="travel-card" key={leg.id} id={connectionTarget(leg.id)} tabIndex={-1}><TransportationIcons method={leg.method} /><div className="travel-content"><h3>{legName(leg.fromId, "from")} <ArrowRight size={15} aria-hidden="true" /><span className="sr-only">to</span> {legName(leg.toId, "to")}</h3><p>{leg.method || "Travel details to be decided"}{leg.departure && " · " + leg.departure}{leg.arrival && " → " + leg.arrival}</p><FlightDetails leg={leg} />{leg.notes && <p className="preserve-lines">{leg.notes}</p>}<ResearchLinks links={leg.links ?? []} /><ConnectionItinerary legId={leg.id} stops={leg.itinerary ?? []} plans={leg.layoverPlans} disabled={busy} onPlan={(layover) => open({ kind: "layover", leg, layover })} onRemovePlan={(layover) => confirmDelete({ type: "leg.layoverPlan", id: leg.id, layoverId: layover.id, plan: null }, "Remove the layover plan for " + layover.place + "?", "Its flight times, airport time and activities are removed. The layover stays in the connection, and nothing else changes.")} /><span className={leg.priceCents === null ? "price unknown" : "price"}>{displayPrice(leg.priceCents)}{leg.priceCents === null && " · Needs estimate"}</span>{leg.miscCents !== null && <span className="price">Miscellaneous spending: {formatCurrency(leg.miscCents, "USD")}</span>}</div><div className="travel-tools"><button className="text-button" aria-label={"Edit travel from " + legName(leg.fromId, "from") + " to " + legName(leg.toId, "to")} onClick={() => open({ kind: "leg", item: leg })}><Pencil size={14} />Edit</button>{(leg.method || leg.airline || leg.flightNumber || leg.priceCents !== null || leg.miscCents !== null || leg.notes || leg.url || leg.departure || leg.arrival || (leg.itinerary?.length ?? 0) > 0 || (leg.links?.length ?? 0) > 0) && <button className="text-button muted" onClick={() => confirmDelete({ type: "leg.clear", id: leg.id }, "Clear this travel plan?", "The connection will remain in your route, with its price, miscellaneous spending, travel details, links, itinerary, and layover plans cleared.")}>Clear</button>}</div></article>)}</div>}
+            {visits.length === 0 ? <p className="section-description">Your travel connections will appear once you add a destination.</p> : <div className="travel-list">{tripLegs.map((leg) => <article className="travel-card" key={leg.id} id={connectionTarget(leg.id)} tabIndex={-1}><TransportationIcons method={leg.method} /><div className="travel-content"><h3>{legName(leg.fromId, "from")} <ArrowRight size={15} aria-hidden="true" /><span className="sr-only">to</span> {legName(leg.toId, "to")}</h3><p>{leg.method || "Travel details to be decided"}{leg.departure && " · " + leg.departure}{leg.arrival && " → " + leg.arrival}</p><FlightDetails leg={leg} />{isFlight(leg.method) && renderItinerary(leg, "layovers")}{leg.notes && <p className="preserve-lines">{leg.notes}</p>}<ResearchLinks links={leg.links ?? []} />{renderItinerary(leg, groupAlongTheWay(isFlight(leg.method)))}<span className={leg.priceCents === null ? "price unknown" : "price"}>{displayPrice(leg.priceCents)}{leg.priceCents === null && " · Needs estimate"}</span>{leg.miscCents !== null && <span className="price">Miscellaneous spending: {formatCurrency(leg.miscCents, "USD")}</span>}</div><div className="travel-tools"><button className="text-button" aria-label={"Edit travel from " + legName(leg.fromId, "from") + " to " + legName(leg.toId, "to")} onClick={() => open({ kind: "leg", item: leg })}><Pencil size={14} />Edit</button>{(leg.method || leg.airline || leg.flightNumber || leg.priceCents !== null || leg.miscCents !== null || leg.notes || leg.url || leg.departure || leg.arrival || (leg.itinerary?.length ?? 0) > 0 || (leg.links?.length ?? 0) > 0) && <button className="text-button muted" onClick={() => confirmDelete({ type: "leg.clear", id: leg.id }, "Clear this travel plan?", "The connection will remain in your route, with its price, miscellaneous spending, travel details, links, itinerary, and layover plans cleared.")}>Clear</button>}</div></article>)}</div>}
           </section>
           {/* The trip's Best time to go (TRA-178): months for the whole trip, apart from each destination's typical weather. */}
           <BestTimeSection bestTime={trip.bestTime} busy={busy} onEdit={() => open({ kind: "bestTime", item: trip })} />
@@ -915,13 +925,15 @@ export default function PlannerApp({ initialData, initialBudgets, access = {}, d
       {editor.kind === "activitiesBudget" && <ActivitiesBudgetEditor destination={editor.item} disabled={busy} />}
       {editor.kind === "leg" && <>
         <p className="form-route wide">{legName(editor.item.fromId, "from")} <ArrowRight size={16} aria-hidden="true" /><span className="sr-only">to</span> {legName(editor.item.toId, "to")}</p>
-        <TransportationFields key={editor.item.id} leg={editor.item} />
+        {/* A flight's layovers are part of its flight, below its airline and flight number; its other stops stay under Stops along the way (TRA-184). */}
+        <TransportationFields key={editor.item.id} leg={editor.item} method={legMethod} onMethodChange={setLegMethod}
+          layovers={<ConnectionItineraryEditor group="layovers" stops={itinerary} onChange={setItinerary} planned={editor.item.layoverPlans.map((plan) => plan.layoverId)} disabled={busy} />} />
         <Field label="Estimated price (USD)" wide hint="Total for the whole party for the full connection, including itinerary stops. Leave blank if unknown."><input name="price" type="number" className="no-spin-buttons" min="0" max={MAX_AMOUNT_DOLLARS} step="0.01" defaultValue={minorAmountValue(editor.item.priceCents, "USD")} placeholder="Not estimated" /></Field>
         <Field label="Miscellaneous spending (USD)" wide hint="Airport meals, drinks, snacks, and layover purchases: the total for the whole party for the full connection, including layovers, apart from its price. Leave blank if not estimated."><input name="miscAmount" type="number" className="no-spin-buttons" min="0" max={MAX_AMOUNT_DOLLARS} step="0.01" defaultValue={minorAmountValue(editor.item.miscCents, "USD")} placeholder="Not estimated" /></Field>
         <Field label="Departure"><input name="departure" defaultValue={editor.item.departure} maxLength={120} placeholder="Date, time, or general plan" /></Field>
         <Field label="Arrival"><input name="arrival" defaultValue={editor.item.arrival} maxLength={120} placeholder="Date, time, or general plan" /></Field>
         <ResearchLinksEditor links={researchLinks} onChange={setResearchLinks} disabled={busy} /><Notes value={editor.item.notes} />
-        <ConnectionItineraryEditor stops={itinerary} onChange={setItinerary} planned={editor.item.layoverPlans.map((plan) => plan.layoverId)} disabled={busy} />
+        <ConnectionItineraryEditor group={groupAlongTheWay(isFlight(legMethod))} stops={itinerary} onChange={setItinerary} planned={editor.item.layoverPlans.map((plan) => plan.layoverId)} disabled={busy} />
       </>}
       {editor.kind === "layover" && <>
         <p className="form-route wide">{legName(editor.leg.fromId, "from")} <ArrowRight size={16} aria-hidden="true" /><span className="sr-only">to</span> {legName(editor.leg.toId, "to")}</p>

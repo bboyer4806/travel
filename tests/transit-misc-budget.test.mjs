@@ -230,3 +230,26 @@ test("a connection's nights spent traveling change neither its price nor its spe
   }
   assert.deepEqual(before, [[[120050, 4525], [80000, null]], 200050, 4525]);
 });
+
+test("a flight's miles change neither its price nor the trip's estimate, and never stand in for an unknown price (TRA-186)", (t) => {
+  const { store, tripId } = setup(t);
+  addDestination(store, tripId, { city: "London", nights: 2, hotelNightlyAmount: "100", miscDailyAmount: "10" });
+  const [outbound, home] = legsOf(store, tripId).map((leg) => leg.id);
+  const budget = () => calculateBudget(store.getSnapshot(), tripId);
+  store.applyMutation(legSave(outbound, { price: "1250", miscAmount: "45.25" }));
+  store.applyMutation(legSave(home, { price: "800" }));
+  const priced = budget();
+  assert.deepEqual([priced.travelCents, priced.transitMiscCents, priced.complete], [205000, 4525, true]);
+  for (const milesRequired of [85000, 0, 120000, null]) {
+    store.applyMutation(legSave(outbound, { price: "1250", miscAmount: "45.25", milesRequired }));
+    assert.deepEqual(budget(), priced, `${milesRequired} miles: the estimate counts the price alone`);
+    assert.deepEqual(store.getHomeOverview().budgets[tripId], priced, `${milesRequired} miles: as does the trip list's`);
+  }
+  // Miles without a price leave the price unknown, and the connection missing from a partial estimate.
+  store.applyMutation(legSave(outbound, { price: "", miscAmount: "45.25" }));
+  const unpriced = budget();
+  store.applyMutation(legSave(outbound, { price: "", miscAmount: "45.25", milesRequired: 85000 }));
+  assert.equal(store.getSnapshot().legs.find((leg) => leg.id === outbound).priceCents, null, "miles never fill in the price");
+  assert.deepEqual(budget(), unpriced);
+  assert.deepEqual([unpriced.travelCents, unpriced.travelMissingCount, unpriced.complete], [80000, 1, false]);
+});

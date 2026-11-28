@@ -8,7 +8,8 @@ import styles from "./connection-flight.module.css";
 /*
  * A flight's airline and flight number (TRA-147): in its connection's editor, below Transportation, and on its card in
  * Between the places. Both show only while the connection's transportation names an airplane, and stay saved when it
- * doesn't, so naming a flight again shows them again. The flight's layovers show with them (TRA-184).
+ * doesn't, so naming a flight again shows them again. The flight's layovers show with them (TRA-184). Its estimated
+ * miles required (TRA-186) show the same way, beside its price instead, so the two ways of paying show together.
  */
 
 type FlightLeg = Pick<TravelLeg, "method" | "airline" | "flightNumber">;
@@ -31,6 +32,26 @@ export function TransportationFields({ leg, method, onMethodChange, layovers }: 
       {flight && layovers}
     </div>
   </>;
+}
+
+/**
+ * A flight's Estimated miles required (TRA-186), which its connection's editor shows directly below Estimated price (USD).
+ * It is the whole party's airline miles for the whole connection, a whole number, or blank when unknown, and the trip
+ * estimate never counts it. Like Airline and Flight number, it shows only while `method` names an airplane, so changing
+ * the transportation never clears it. Hidden, it is also disabled, so a save leaves it out, which keeps the saved number,
+ * and nothing typed in it can stop the save, as a hidden field the browser finds invalid would, without saying why.
+ */
+export function FlightMilesField({ leg, method }: { leg: Pick<TravelLeg, "milesRequired">; method: string }) {
+  const flight = isFlight(method);
+  return <div className="wide" hidden={!flight}>
+    <label className="field"><span>Estimated miles required</span><input name="milesRequired" type="number" inputMode="numeric" className="no-spin-buttons" min="0" max={Number.MAX_SAFE_INTEGER} step="1" defaultValue={leg.milesRequired ?? ""} placeholder="Not estimated" disabled={!flight} /><small>Airline miles instead of the price: the total for the whole party for the full connection, including layovers. The trip estimate counts only the price. Leave blank if unknown.</small></label>
+  </div>;
+}
+
+/** A flight's estimated miles on its card, below its price, once entered, such as 125,000 miles required (TRA-186). A connection that isn't a flight shows none. */
+export function FlightMiles({ leg }: { leg: Pick<TravelLeg, "method" | "milesRequired"> }) {
+  if (!isFlight(leg.method) || leg.milesRequired === null) return null;
+  return <span className="price">{`${leg.milesRequired.toLocaleString("en-US")} ${leg.milesRequired === 1 ? "mile" : "miles"} required`}</span>;
 }
 
 /** A flight's airline and flight number on its card, each only once entered. A connection that isn't a flight shows neither. */

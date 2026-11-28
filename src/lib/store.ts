@@ -807,7 +807,7 @@ const LIVE: Make = { id: () => randomUUID(), now: () => new Date().toISOString()
  * The schema this build upgrades every database to, as SQLite's user_version. A schema change adds the next
  * upgrade in createStore and raises this to match; earlier upgrades keep their own numbers.
  */
-export const SCHEMA_VERSION = 52;
+export const SCHEMA_VERSION = 53;
 
 /** A destination as schema 20 saved it, inside one trip, with that trip's owner and name. */
 type TripDestinationRow = Omit<StoredDestination, "cityKey"> & Omit<TripStop, "destinationId"> & { tripName: string };
@@ -1651,6 +1651,13 @@ export function createStore(databasePath: string, ownerEmail: string) {
       if (!hasColumn("legs", "travelNights")) db.exec("ALTER TABLE legs ADD COLUMN travelNights INTEGER NOT NULL DEFAULT 0 CHECK(travelNights BETWEEN 0 AND 3652058);");
       db.exec("PRAGMA user_version = 52;");
     }
+    if (version < 53) {
+      // Each travel connection's estimated miles required (TRA-186): a flight's airline miles for the whole party, apart
+      // from its price, which stays its cash price, and never counted in any budget. Every saved connection starts without
+      // them, NULL, so no trip looks different and no estimate changes. A replay keeps saved miles.
+      if (!hasColumn("legs", "milesRequired")) db.exec(`ALTER TABLE legs ADD COLUMN milesRequired INTEGER CHECK(milesRequired BETWEEN 0 AND ${Number.MAX_SAFE_INTEGER});`);
+      db.exec("PRAGMA user_version = 53;");
+    }
     if (version < SCHEMA_VERSION && db.prepare("PRAGMA foreign_key_check").get()) {
       throw new Error("This upgrade would leave saved items without the trip or destination they belong to. Nothing was changed; review the database against a backup before upgrading.");
     }
@@ -2259,7 +2266,7 @@ export function createStore(databasePath: string, ownerEmail: string) {
   }
   function clearLeg(id: string) {
     const before = existing<StoredLeg>("legs", id);
-    db.prepare("UPDATE legs SET method = '', airline = '', flightNumber = '', priceCents = NULL, miscCents = NULL, departure = '', arrival = '', travelNights = 0, url = '', notes = '', itineraryJson = '[]', linksJson = '[]' WHERE id = ?").run(id);
+    db.prepare("UPDATE legs SET method = '', airline = '', flightNumber = '', priceCents = NULL, milesRequired = NULL, miscCents = NULL, departure = '', arrival = '', travelNights = 0, url = '', notes = '', itineraryJson = '[]', linksJson = '[]' WHERE id = ?").run(id);
     // Its layovers go with its itinerary, and so do their plans (TRA-45).
     db.prepare("DELETE FROM layover_plans WHERE legId = ?").run(id);
     // Its nights spent traveling go too, which moves its trip's later dates earlier (TRA-185).
@@ -2598,7 +2605,9 @@ export function createStore(databasePath: string, ownerEmail: string) {
         const itineraryJson = input.itinerary === undefined ? before.itineraryJson : JSON.stringify(input.itinerary);
         const links = savedLinks(input, before, make.id);
         const misc = input.miscAmount === undefined ? before.miscCents : miscCents(input.miscAmount);
-        db.prepare("UPDATE legs SET method = ?, airline = ?, flightNumber = ?, priceCents = ?, miscCents = ?, departure = ?, arrival = ?, travelNights = ?, url = ?, notes = ?, itineraryJson = ?, linksJson = ? WHERE id = ?").run(input.method, input.airline ?? before.airline, input.flightNumber ?? before.flightNumber, priceCents(input.price), misc, input.departure, input.arrival, input.travelNights ?? before.travelNights, links[0]?.url ?? "", input.notes, itineraryJson, JSON.stringify(links), input.id);
+        // Null clears a flight's miles (TRA-186); only leaving them out keeps the saved number.
+        const miles = input.milesRequired === undefined ? before.milesRequired : input.milesRequired;
+        db.prepare("UPDATE legs SET method = ?, airline = ?, flightNumber = ?, priceCents = ?, milesRequired = ?, miscCents = ?, departure = ?, arrival = ?, travelNights = ?, url = ?, notes = ?, itineraryJson = ?, linksJson = ? WHERE id = ?").run(input.method, input.airline ?? before.airline, input.flightNumber ?? before.flightNumber, priceCents(input.price), miles, misc, input.departure, input.arrival, input.travelNights ?? before.travelNights, links[0]?.url ?? "", input.notes, itineraryJson, JSON.stringify(links), input.id);
         // A layover the new itinerary removes, or makes another kind of stop, takes its plan with it (TRA-45).
         if (input.itinerary !== undefined) {
           const layovers = input.itinerary.filter((stop) => stop.kind === "layover").map((stop) => stop.id);

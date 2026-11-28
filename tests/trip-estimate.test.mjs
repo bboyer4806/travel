@@ -135,3 +135,17 @@ test("the trip estimate ends with its note, without a paragraph about what it in
   ]);
   assert.deepEqual(within(panel).filter((node) => node.props.className === "helper"), [], "no explanation follows the note");
 });
+
+test("nights spent traveling change no amount: the trip estimate, each stay's budget and the trip's card stay as they were (TRA-185)", (t) => {
+  const { store, tripId } = plan(t);
+  const panel = () => estimate(tripPage(store, tripId)).props.children.map(text);
+  const stays = () => budget.tripVisits(store.getSnapshot(), tripId).map(({ visit }) => [visit.nights, budget.calculateDestinationBudget(store.getSnapshot(), visit), budget.calculateAccommodation(store.getSnapshot(), visit).totalMinor]);
+  const before = { panel: panel(), budget: budget.calculateBudget(store.getSnapshot(), tripId), card: store.getHomeOverview().budgets[tripId], stays: stays() };
+  store.applyMutation(tripInput({ id: tripId, name: "Spring in Austria", travelers: 2, startDate: "2027-04-02" }));
+  const legs = store.getTripSnapshot(tripId).data.legs;
+  // An overnight flight there, a night train between, and a red-eye home: four nights spent traveling.
+  legs.forEach((leg, index) => store.applyMutation({ type: "leg.save", id: leg.id, method: "Flight", price: "900", miscAmount: "60", departure: "", arrival: "", url: "", notes: "", travelNights: [1, 2, 1][index] }));
+  assert.equal(store.getSnapshot().trips[0].endDate, "2027-04-13", "the trip is four days longer");
+  assert.deepEqual({ panel: panel(), budget: budget.calculateBudget(store.getSnapshot(), tripId), card: store.getHomeOverview().budgets[tripId], stays: stays() }, before,
+    "no hotel night, daily amount, travel price or total changes, and each stay keeps its nights");
+});

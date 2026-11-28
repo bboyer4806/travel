@@ -286,10 +286,18 @@ Repeat passing checks when subsequent changes affect their coverage or required 
   it, in `globals.css` and in components' styles as `:global(.trip-page)`, change only spacing, up to 540px wide. What
   depends on a padding follows it: a card's photo takes it back, a carousel's arrows stay within it, and a destination's
   name keeps its room beside its buttons. Pages sharing its styles, such as a destination's page, keep theirs; tests check.
-- Trip startDate and each stop's nights are schedule inputs. Use `src/lib/trip-dates.ts`
-  for ordered read-only destination dates and trip end; retain legacy date columns for migration review.
-  Hotels use nights; daily food/miscellaneous use `nightsToBudgetDays` (zero nights = one day).
-  Never parse free-text stay notes. Church eligibility is separate from persistent manual visibility.
+- Trip startDate, each stop's nights and each connection's `travelNights` (TRA-185) are schedule inputs. Use
+  `src/lib/trip-dates.ts` for ordered read-only destination dates and trip end: `routeDays` places the route on the trip's
+  days, each connection leaving when the stay before it departs and arriving its nights spent traveling later, and
+  `sequenceDates` dates them, both from every connection in the route (`routeLegs`); retain legacy date columns for
+  migration review. Hotels use nights; daily food/miscellaneous use `nightsToBudgetDays` (zero nights = one day); nights
+  spent traveling are no stay's and add no cost. Never parse free-text stay notes. Church eligibility is separate from
+  persistent manual visibility.
+- A trip's Calendar (TRA-185) is `tripCalendar` in `src/lib/trip-calendar.ts`, shown read only by
+  `src/components/trip-calendar.tsx` after Between the places: its days from Day 1, dated once the trip has a start
+  date, from `routeDays` alone, with each night at a stay or traveling, never both. Nothing is stored for it. After a stay
+  whose nights are unknown it lists the rest of the route without days, and it lists at most `MAX_CALENDAR_DAYS`. Clearing
+  a connection, as `leg.clear` and city changes do, resets its nights spent traveling and works its trip's dates out again.
 - Feedback uses `/api/feedback` and server-only Jira configuration. Local testing must use
   `scripts/jira-feedback-stub.mjs`, never real Jira. Do not expose credentials or log messages.
   Its limits count per signed-in account, which the route passes to the handler (TRA-92).

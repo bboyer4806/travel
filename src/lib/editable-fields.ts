@@ -119,6 +119,11 @@ export const EDITABLE_FIELDS = {
     },
     departure: { kind: "text", maxLength: 120, label: "Departure", description: "When it leaves. Empty for none." },
     arrival: { kind: "text", maxLength: 120, label: "Arrival", description: "When it arrives. Empty for none." },
+    // Nights spent on the way (TRA-185), which move the trip's later days and dates, and count as no stay's nights or cost.
+    travelNights: {
+      kind: "whole", min: 0, max: MAX_NIGHTS, keep: true, invalid: `Nights spent traveling must be a whole number between 0 and ${MAX_NIGHTS}.`, label: "Nights spent traveling",
+      description: "How many nights are spent traveling on it, from 0, such as 1 for an overnight flight or train. Each moves the trip's later days and dates one day later, and none counts as a destination's night or adds any cost. Left out keeps the saved number.",
+    },
     // Its first research link, which the proposal's page shows with the others.
     url: { kind: "url", label: null, description: "A booking or research link, https:// or http://. Empty for none." },
     notes: { kind: "text", maxLength: 8000, label: "Notes", description: "Notes. Empty for none." },

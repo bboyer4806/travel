@@ -4,7 +4,7 @@ import { ChevronDown } from "lucide-react";
 import { formatCalendarDate, sequenceDates } from "@/lib/trip-dates";
 import { useId, useRef, useState, type ReactNode } from "react";
 import { useFocusFallback } from "@/components/focus-after";
-import type { FoodBudgetMode, ActivitiesBudgetMode, Candidate, Destination, DestinationVisit, Snapshot, Trip, TripStop } from "@/lib/types";
+import type { FoodBudgetMode, ActivitiesBudgetMode, Candidate, Destination, DestinationVisit, Snapshot, TravelLeg, Trip, TripStop } from "@/lib/types";
 import { calculateFoodBudget, calculateFoodEstimate, calculateActivitiesBudget, calculateAccommodation, calculateDestinationBudget, calculateHotelEstimate, calculateMiscellaneous, type StayCategory } from "@/lib/budget";
 import { formatCurrency, MAX_AMOUNT_DOLLARS, minorAmountValue, parseMinorAmount } from "@/lib/money";
 import { formatSavedDestinationLabel } from "@/lib/destination-label";
@@ -190,8 +190,11 @@ export function DestinationBudget({ snapshot, visit, stop, onShoppingEdit, onMis
   </div>;
 }
 
-/** One trip's stay at a destination while it is edited: the trip, its stops in route order, and the stop. */
-type TripStay = { trip: Trip; stops: TripStop[]; stop: TripStop };
+/**
+ * One trip's stay at a destination while it is edited: the trip, its stops in route order, its connections, whose nights
+ * spent traveling its dates count too (TRA-185), and the stop.
+ */
+type TripStay = { trip: Trip; stops: TripStop[]; legs: TravelLeg[]; stop: TripStop };
 
 /** A stay's nights while editing: the text as typed, and `value`, the number previews use, unknown while blank or outside a trip. */
 function useStayNights(stay: TripStay | undefined) {
@@ -204,7 +207,7 @@ function StayNightsField({ stay, nights }: { stay: TripStay; nights: ReturnType<
   const previewStops = stay.stops.map((stop) => stop.id === stay.stop.id ? { ...stop, nights: nights.value } : stop);
   let dates = { arrivalDate: null as string | null, departureDate: null as string | null };
   let dateError = "";
-  try { dates = sequenceDates(stay.trip.startDate, previewStops).destinations.find((stop) => stop.id === stay.stop.id) ?? dates; }
+  try { dates = sequenceDates(stay.trip.startDate, previewStops, stay.legs).destinations.find((stop) => stop.id === stay.stop.id) ?? dates; }
   catch (cause) { dateError = cause instanceof Error ? cause.message : "Enter valid nights."; }
   return <>
     <label className="field wide"><span>Nights</span><input name="nights" type="number" min="0" max="3652058" step="1" value={nights.input} onChange={(event) => nights.setInput(event.target.value)} placeholder="Unknown" /><small>Zero is a same-day visit. Leave blank if undecided.</small></label>
@@ -307,7 +310,7 @@ export function StayNightsEditor({ stay, disabled }: { stay: TripStay; disabled:
 export function DestinationDates({ stop }: { stop: Pick<TripStop, "arrivalDate" | "departureDate" | "nights" | "legacyArrivalDate" | "legacyDepartureDate"> }) {
   const complete = !!stop.arrivalDate && !!stop.departureDate;
   return <div className="destination-dates"><p>{stop.nights === null ? "Nights unknown" : stop.nights + (stop.nights === 1 ? " night" : " nights")}</p><dl className="misc-breakdown"><div><dt>Arrival</dt><dd>{formatCalendarDate(stop.arrivalDate)}</dd></div><div><dt>Departure</dt><dd>{formatCalendarDate(stop.departureDate)}</dd></div></dl>
-    <p className="helper">{complete ? "Calculated from the trip start, destination order, and nights." : "Enter the trip start date and nights for this and every preceding destination to calculate dates."}</p>
+    <p className="helper">{complete ? "Calculated from the trip start, destination order, nights, and nights spent traveling." : "Enter the trip start date and nights for this and every preceding destination to calculate dates."}</p>
     {!complete && (stop.legacyArrivalDate || stop.legacyDepartureDate) && <p className="helper">Previously recorded dates: {stop.legacyArrivalDate ?? "unknown"} → {stop.legacyDepartureDate ?? "unknown"}. Check these before completing the new schedule.</p>}
   </div>;
 }

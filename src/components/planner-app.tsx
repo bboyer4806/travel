@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { FeedbackButton } from "@/components/feedback";
 import { HelpButton } from "@/components/help";
-import { churchDateEligible, formatCalendarDate } from "@/lib/trip-dates";
+import { churchDateEligible, formatCalendarDate, MAX_NIGHTS } from "@/lib/trip-dates";
 import LocationField from "@/components/location-field";
 import HomeItems from "@/components/home-items";
 import PackingList, { PackingItemFields, PackingReviewFields } from "@/components/packing-list";
@@ -54,6 +54,8 @@ import { formatSavedDestinationLabel } from "@/lib/destination-label";
 import { TransportationIcons } from "@/components/transportation-icons";
 import TripMap from "@/components/trip-map";
 import { connectionTarget, tripJourney } from "@/lib/trip-map";
+import { TripCalendarSection } from "@/components/trip-calendar";
+import { tripCalendar } from "@/lib/trip-calendar";
 import DestinationMap from "@/components/destination-map";
 import DestinationsMap from "@/components/destinations-map";
 import { destinationPlaces, type SavedPlace } from "@/lib/destination-map";
@@ -556,7 +558,8 @@ export default function PlannerApp({ initialData, initialBudgets, access = {}, d
         break;
       }
       // Airline and flight number are sent even while hidden for transportation that isn't a flight, which keeps them (TRA-147).
-      case "leg": void perform({ type: "leg.save", id: editor.item.id, method: text("method"), airline: text("airline"), flightNumber: text("flightNumber"), price: text("price"), miscAmount: text("miscAmount"), departure: text("departure"), arrival: text("arrival"), url: researchLinks[0]?.url ?? "", links: researchLinks, notes: text("notes"), itinerary }); break;
+      // Nights spent traveling left blank are none (TRA-185); the store refuses a negative or fractional number.
+      case "leg": void perform({ type: "leg.save", id: editor.item.id, method: text("method"), airline: text("airline"), flightNumber: text("flightNumber"), price: text("price"), miscAmount: text("miscAmount"), departure: text("departure"), arrival: text("arrival"), travelNights: text("travelNights").trim() === "" ? 0 : Number(text("travelNights")), url: researchLinks[0]?.url ?? "", links: researchLinks, notes: text("notes"), itinerary }); break;
       case "layover": void perform({ type: "leg.layoverPlan", id: editor.leg.id, layoverId: editor.layover.id, plan: layoverPlanFromDraft(layoverDraft) }, "Layover plan saved."); break;
       case "church": {
         void perform({ type: "church.save", ...itemToSave(editor.item), destinationId: editor.destinationId, name: text("name"), address: text("address"), denomination: text("denomination"), url: text("url"), massTimes, coordinates: coordinatesFromForm(fields, editor.item?.coordinates ?? null) }, "Church saved.", undefined, galleryForm(candidateGallery, editor.item));
@@ -822,8 +825,10 @@ export default function PlannerApp({ initialData, initialBudgets, access = {}, d
             {visits.length > 0 && <p className="helper">A destination’s ideas, research, photos, selections, and budget amounts are shared with every trip that visits it, and with Destinations. Each trip keeps its own nights, dates, stay notes, and travel connections.</p>}
           </section>
           <section className="travel-section"><div className="section-heading"><div><p className="eyebrow">GETTING THERE & BACK</p><h2>Between the places</h2></div><Plane size={25} strokeWidth={1.3} /></div>
-            {visits.length === 0 ? <p className="section-description">Your travel connections will appear once you add a destination.</p> : <div className="travel-list">{tripLegs.map((leg) => <article className="travel-card" key={leg.id} id={connectionTarget(leg.id)} tabIndex={-1}><TransportationIcons method={leg.method} /><div className="travel-content"><h3>{legName(leg.fromId, "from")} <ArrowRight size={15} aria-hidden="true" /><span className="sr-only">to</span> {legName(leg.toId, "to")}</h3><p>{leg.method || "Travel details to be decided"}{leg.departure && " · " + leg.departure}{leg.arrival && " → " + leg.arrival}</p><FlightDetails leg={leg} />{isFlight(leg.method) && renderItinerary(leg, "layovers")}{leg.notes && <p className="preserve-lines">{leg.notes}</p>}<ResearchLinks links={leg.links ?? []} />{renderItinerary(leg, groupAlongTheWay(isFlight(leg.method)))}<span className={leg.priceCents === null ? "price unknown" : "price"}>{displayPrice(leg.priceCents)}{leg.priceCents === null && " · Needs estimate"}</span>{leg.miscCents !== null && <span className="price">Miscellaneous spending: {formatCurrency(leg.miscCents, "USD")}</span>}</div><div className="travel-tools"><button className="text-button" aria-label={"Edit travel from " + legName(leg.fromId, "from") + " to " + legName(leg.toId, "to")} onClick={() => open({ kind: "leg", item: leg })}><Pencil size={14} />Edit</button>{(leg.method || leg.airline || leg.flightNumber || leg.priceCents !== null || leg.miscCents !== null || leg.notes || leg.url || leg.departure || leg.arrival || (leg.itinerary?.length ?? 0) > 0 || (leg.links?.length ?? 0) > 0) && <button className="text-button muted" onClick={() => confirmDelete({ type: "leg.clear", id: leg.id }, "Clear this travel plan?", "The connection will remain in your route, with its price, miscellaneous spending, travel details, links, itinerary, and layover plans cleared.")}>Clear</button>}</div></article>)}</div>}
+            {visits.length === 0 ? <p className="section-description">Your travel connections will appear once you add a destination.</p> : <div className="travel-list">{tripLegs.map((leg) => <article className="travel-card" key={leg.id} id={connectionTarget(leg.id)} tabIndex={-1}><TransportationIcons method={leg.method} /><div className="travel-content"><h3>{legName(leg.fromId, "from")} <ArrowRight size={15} aria-hidden="true" /><span className="sr-only">to</span> {legName(leg.toId, "to")}</h3><p>{leg.method || "Travel details to be decided"}{leg.departure && " · " + leg.departure}{leg.arrival && " → " + leg.arrival}{leg.travelNights > 0 && " · " + count(leg.travelNights, "night", "nights") + " spent traveling"}</p><FlightDetails leg={leg} />{isFlight(leg.method) && renderItinerary(leg, "layovers")}{leg.notes && <p className="preserve-lines">{leg.notes}</p>}<ResearchLinks links={leg.links ?? []} />{renderItinerary(leg, groupAlongTheWay(isFlight(leg.method)))}<span className={leg.priceCents === null ? "price unknown" : "price"}>{displayPrice(leg.priceCents)}{leg.priceCents === null && " · Needs estimate"}</span>{leg.miscCents !== null && <span className="price">Miscellaneous spending: {formatCurrency(leg.miscCents, "USD")}</span>}</div><div className="travel-tools"><button className="text-button" aria-label={"Edit travel from " + legName(leg.fromId, "from") + " to " + legName(leg.toId, "to")} onClick={() => open({ kind: "leg", item: leg })}><Pencil size={14} />Edit</button>{(leg.method || leg.airline || leg.flightNumber || leg.priceCents !== null || leg.miscCents !== null || leg.notes || leg.url || leg.departure || leg.arrival || leg.travelNights > 0 || (leg.itinerary?.length ?? 0) > 0 || (leg.links?.length ?? 0) > 0) && <button className="text-button muted" onClick={() => confirmDelete({ type: "leg.clear", id: leg.id }, "Clear this travel plan?", "The connection will remain in your route, with its price, miscellaneous spending, travel details, nights spent traveling, links, itinerary, and layover plans cleared.")}>Clear</button>}</div></article>)}</div>}
           </section>
+          {/* The trip day by day (TRA-185), from its destinations' nights and its connections' nights spent traveling. */}
+          <TripCalendarSection calendar={tripCalendar(data, trip.id)} dated={trip.startDate !== null} />
           {/* The trip's Best time to go (TRA-178): months for the whole trip, apart from each destination's typical weather. */}
           <BestTimeSection bestTime={trip.bestTime} busy={busy} onEdit={() => open({ kind: "bestTime", item: trip })} />
           <HomeItems items={data.homeItems.filter((item) => item.tripId === trip.id)} busy={busy}
@@ -904,7 +909,7 @@ export default function PlannerApp({ initialData, initialBudgets, access = {}, d
         <LocationField compactDestination label="City or destination" name="city" defaultValue={editor.item.city} required disabled={busy} placeholder="Start typing a city, e.g. Vienna" helpText="Choose a suggestion or enter any destination." hint="Changing the city changes it in every trip that visits this destination, and clears travel details for its incoming and outgoing connections." />
         <Field label="Tagline" hint="Shown in capitals above the destination’s name on its page. Leave it blank for the default." wide><input name="tagline" defaultValue={editor.item.tagline} maxLength={120} placeholder={DEFAULT_TAGLINE} /></Field>
         {trip && editor.stop && <Field label="Stay notes" hint="For this trip only." wide><input name="stay" defaultValue={editor.stop.stay} maxLength={120} placeholder="3 nights, or sometime in May" /></Field>}
-        <DestinationBudgetEditor stay={trip && editor.stop ? { trip, stops, stop: editor.stop } : undefined} destination={editor.item} selectedHotel={selectedHotel(editor.item.id)} disabled={busy} />
+        <DestinationBudgetEditor stay={trip && editor.stop ? { trip, stops, legs: tripLegs, stop: editor.stop } : undefined} destination={editor.item} selectedHotel={selectedHotel(editor.item.id)} disabled={busy} />
         <DestinationGalleryEditor destination={editor.item} draft={destinationGallery} onChange={setDestinationGallery} disabled={busy} />
         <Notes value={editor.item.notes} />
       </>}
@@ -918,9 +923,9 @@ export default function PlannerApp({ initialData, initialBudgets, access = {}, d
       {editor.kind === "weather" && <TypicalWeatherEditor weather={editor.item} disabled={busy} />}
       {editor.kind === "climate" && <MonthlyClimateEditor climate={editor.item.climate} disabled={busy} />}
       {editor.kind === "shoppingBudget" && <ShoppingBudgetEditor destination={editor.item} disabled={busy} />}
-      {editor.kind === "accommodationBudget" && <AccommodationBudgetEditor destination={editor.item} selectedHotel={selectedHotel(editor.item.id)} stay={trip && editor.stop ? { trip, stops, stop: editor.stop } : undefined} disabled={busy} />}
+      {editor.kind === "accommodationBudget" && <AccommodationBudgetEditor destination={editor.item} selectedHotel={selectedHotel(editor.item.id)} stay={trip && editor.stop ? { trip, stops, legs: tripLegs, stop: editor.stop } : undefined} disabled={busy} />}
       {editor.kind === "miscellaneousBudget" && <MiscellaneousBudgetEditor destination={editor.item} nights={editor.nights} disabled={busy} />}
-      {editor.kind === "stayNights" && trip && <StayNightsEditor stay={{ trip, stops, stop: editor.stop }} disabled={busy} />}
+      {editor.kind === "stayNights" && trip && <StayNightsEditor stay={{ trip, stops, legs: tripLegs, stop: editor.stop }} disabled={busy} />}
       {editor.kind === "foodBudget" && <FoodBudgetEditor destination={editor.item} nights={editor.nights} disabled={busy} />}
       {editor.kind === "activitiesBudget" && <ActivitiesBudgetEditor destination={editor.item} disabled={busy} />}
       {editor.kind === "leg" && <>
@@ -932,6 +937,8 @@ export default function PlannerApp({ initialData, initialBudgets, access = {}, d
         <Field label="Miscellaneous spending (USD)" wide hint="Airport meals, drinks, snacks, and layover purchases: the total for the whole party for the full connection, including layovers, apart from its price. Leave blank if not estimated."><input name="miscAmount" type="number" className="no-spin-buttons" min="0" max={MAX_AMOUNT_DOLLARS} step="0.01" defaultValue={minorAmountValue(editor.item.miscCents, "USD")} placeholder="Not estimated" /></Field>
         <Field label="Departure"><input name="departure" defaultValue={editor.item.departure} maxLength={120} placeholder="Date, time, or general plan" /></Field>
         <Field label="Arrival"><input name="arrival" defaultValue={editor.item.arrival} maxLength={120} placeholder="Date, time, or general plan" /></Field>
+        {/* Nights on the way (TRA-185), which move the trip's later days and dates, apart from every destination's nights. */}
+        <Field label="Nights spent traveling" wide hint="Nights on the way, such as 1 for an overnight flight or train. Each moves the rest of the trip a day later in its calendar and dates, without adding a destination night or any cost. Blank is 0."><input name="travelNights" type="number" inputMode="numeric" min="0" max={MAX_NIGHTS} step="1" defaultValue={editor.item.travelNights} placeholder="0" /></Field>
         <ResearchLinksEditor links={researchLinks} onChange={setResearchLinks} disabled={busy} /><Notes value={editor.item.notes} />
         <ConnectionItineraryEditor group={groupAlongTheWay(isFlight(legMethod))} stops={itinerary} onChange={setItinerary} planned={editor.item.layoverPlans.map((plan) => plan.layoverId)} disabled={busy} />
       </>}

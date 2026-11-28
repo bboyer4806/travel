@@ -66,6 +66,8 @@ const HOME = component("home-items");
 const PACKING = component("packing-list");
 // So does Best time to go (TRA-178).
 const BEST_TIME = component("trip-best-time");
+// And the Calendar, whose days are boxes of their own (TRA-185).
+const CALENDAR = component("trip-calendar");
 const MAP = component("trip-map");
 /** Phones, up to 540 pixels wide, and tablets and desktops. */
 const PHONES = [320, 360, 375, 390, 414, 448, 540];
@@ -84,6 +86,7 @@ const SPACING = [
   [PACKING, [".progress"], { padding: "12px" }],
   [PACKING, [".group"], { padding: "12px" }],
   [BEST_TIME, [".details"], { padding: "12px" }],
+  [CALENDAR, [".day"], { padding: "12px" }],
   [GLOBALS, [".budget-panel", ".trip-page .budget-panel"], { padding: "12px", "margin-top": "0" }],
   // Sections are 28px apart: the map, the destinations, the travel between them, At home and the estimate.
   [MAP, [".section"], { "margin-bottom": "28px" }],
@@ -91,6 +94,7 @@ const SPACING = [
   [HOME, [".section"], { "margin-top": "28px" }],
   [PACKING, [".section"], { "margin-top": "28px" }],
   [BEST_TIME, [".section"], { "margin-top": "28px" }],
+  [CALENDAR, [".section"], { "margin-top": "28px" }],
   [GLOBALS, [".trip-layout", ".trip-page .trip-layout"], { gap: "28px" }],
   // Headings have 16px of room: below each section's, and above each heading in a destination's card.
   [GLOBALS, [".section-heading", ".trip-page .trip-main>section>.section-heading"], { "margin-bottom": "16px" }],

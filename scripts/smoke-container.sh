@@ -102,6 +102,10 @@ db.prepare("UPDATE trips SET bestTimeMonthsJson = ?, bestTimeReasons = ?, bestTi
 // The owner's shared destination, and the trip's stop there, which shares its ID as each destination's first stop does.
 db.prepare('INSERT INTO destinations(id,ownerId,city,cityKey,notes,miscDailyMinor,miscCurrency,hotelNightlyMinor,hotelCurrency) VALUES(?,?,?,?,?,?,?,?,?)').run(destinationId, owner, 'Vienna', 'vienna', '', 3250, 'USD', 17525, 'USD');
 db.prepare('INSERT INTO trip_stops(id,tripId,destinationId,position,stay,nights,arrivalDate,departureDate) VALUES(?,?,?,?,?,?,?,?)').run(destinationId, 'container-smoke', destinationId, 0, 'Spring visit', 3, '2027-05-10', '2027-05-13');
+// Its connections, from the departing city to the stop and back, as adding the stop makes them: its days count each one (TRA-185).
+for (const [index, [fromId, toId]] of [[null, destinationId], [destinationId, null]].entries()) {
+  db.prepare('INSERT INTO legs(id,tripId,fromId,toId) VALUES(?,?,?,?)').run(`a4000000-0000-4000-8000-00000000000${index + 1}`, 'container-smoke', fromId, toId);
+}
 db.prepare("UPDATE destinations SET activitiesBudgetMode = 'general', activitiesGeneralMinor = 22550, activitiesCurrency = 'USD' WHERE id = ?").run(destinationId);
 db.prepare("UPDATE destinations SET foodBudgetMode = 'daily', foodDailyMinor = 8025, foodCurrency = 'USD' WHERE id = ?").run(destinationId);
 db.prepare("UPDATE destinations SET shoppingMinor = 12550, shoppingCurrency = 'USD' WHERE id = ?").run(destinationId);
@@ -533,6 +537,8 @@ try {
   assert.ok(ownerPage.includes(">Packing list<") && ownerPage.includes(">Rain jacket or umbrella<") && ownerPage.includes(">Recommend items<"), "The trip page shows its packing list");
   // TRA-178: the trip's best time to go, its months in calendar order.
   assert.match(ownerPage, />Best time to go<[\s\S]*?<li>April<\/li><li>May<\/li><li>September<\/li>[\s\S]*?>Mild weather and spring festivals<[\s\S]*?>August crowds</, "The trip page shows its best time to go");
+  // TRA-185: the trip's calendar, day by day, with where each night is spent.
+  assert.match(ownerPage, />Calendar<[\s\S]*?>Arrive in Vienna<[\s\S]*?>Night 1: Vienna</, "The trip page shows its calendar");
   const ownerDestinationPage = await (await get(destinationPages[0], owner)).text();
   assert.ok(ownerDestinationPage.includes(">Health and safety<"), "A destination's page has Health and safety");
   // TRA-173: each shows the verified local emergency number first, with a link that calls it.

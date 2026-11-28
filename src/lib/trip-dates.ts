@@ -1,30 +1,76 @@
 import { containsSunday, isValidDate, stayNights } from "./destination-duration.ts";
+import type { TravelLeg } from "./types";
 
 export const MAX_NIGHTS = 3652058; // Entire supported calendar, years 0001–9999.
 
 export function addNights(date: string, nights: number): string {
-  if (!isValidDate(date) || !Number.isInteger(nights) || nights < 0 || nights > MAX_NIGHTS) {
+  if (!isValidDate(date) || !Number.isInteger(nights) || nights < 0) {
     throw new Error("Enter a valid start date and a nonnegative whole number of nights.");
   }
-  const result = new Date(Date.parse(date + "T00:00:00.000Z") + nights * 86400000).toISOString().slice(0, 10);
-  if (!isValidDate(result)) throw new Error("This stay extends beyond December 31, 9999. Reduce the nights or change the trip start date.");
+  // More nights than the whole supported calendar reach past its end from any date (TRA-185).
+  const result = nights > MAX_NIGHTS ? null : new Date(Date.parse(date + "T00:00:00.000Z") + nights * 86400000).toISOString().slice(0, 10);
+  if (result === null || !isValidDate(result)) throw new Error("This stay extends beyond December 31, 9999. Reduce the nights or change the trip start date.");
   return result;
 }
 
-export function sequenceDates(startDate: string | null, stops: readonly { id: string; nights: number | null }[]) {
-  let next = startDate;
-  const destinations = stops.map((stop) => {
-    // An incomplete stay has no calculated range; all later dates also remain unknown.
-    if (!next || stop.nights === null) {
-      next = null;
-      return { id: stop.id, arrivalDate: null, departureDate: null };
-    }
-    const arrivalDate = next;
-    const departureDate = addNights(arrivalDate, stop.nights);
-    next = departureDate;
-    return { id: stop.id, arrivalDate, departureDate };
+/** A travel connection's place in its trip's route, and its nights spent traveling, which its trip's days count (TRA-185). */
+export type RouteLeg = Pick<TravelLeg, "fromId" | "toId" | "travelNights">;
+
+/**
+ * A trip's travel connections in route order (TRA-185): from the departing city to its first stay, from each stay to the
+ * next, and from its last stay to the return city, or none without a stay. Every connection in the route must be given.
+ */
+export function routeLegs<Leg extends Pick<TravelLeg, "fromId" | "toId">>(stops: readonly { id: string }[], legs: readonly Leg[]): Leg[] {
+  const route = stops.length ? [null, ...stops.map((stop) => stop.id), null] : [];
+  return route.slice(1).map((toId, index) => {
+    const leg = legs.find((item) => item.fromId === route[index] && item.toId === toId);
+    if (!leg) throw new Error("A trip's days need every travel connection in its route.");
+    return leg;
   });
-  return { destinations, endDate: stops.length ? next : null };
+}
+
+/**
+ * Where a trip's route falls among its days (TRA-185), in whole days after its first day, 0: when each connection leaves
+ * and arrives, in route order, when each stay arrives and departs, and the trip's last day, when the return connection
+ * arrives. A connection leaves the day the stay before it departs, or on the first day, and arrives its nights spent
+ * traveling later. A stay departs its nights after it arrives, so its nights are never the connections'. After a stay
+ * whose nights are unknown, nothing has a day: that stay has its arrival alone, and the trip has no last day.
+ */
+export function routeDays(stops: readonly { id: string; nights: number | null }[], legs: readonly RouteLeg[]) {
+  const route = routeLegs(stops, legs);
+  const connections: { leaves: number | null; arrives: number | null }[] = [];
+  const stays: { arrives: number | null; departs: number | null }[] = [];
+  // The day the next connection leaves.
+  let day: number | null = 0;
+  const travel = (leg: RouteLeg) => {
+    const arrives = day === null ? null : day + leg.travelNights;
+    connections.push({ leaves: day, arrives });
+    return arrives;
+  };
+  stops.forEach((stop, index) => {
+    const arrives = travel(route[index]);
+    const departs = arrives === null || stop.nights === null ? null : arrives + stop.nights;
+    stays.push({ arrives, departs });
+    day = departs;
+  });
+  return { connections, stays, end: stops.length ? travel(route[stops.length]) : null };
+}
+
+/**
+ * A trip's dates from its start date, its stays in route order with their nights, and its connections' nights spent
+ * traveling (TRA-185), which move every later date without counting as a stay's nights: each stay's arrival and
+ * departure, and the day the trip ends, when its return connection arrives.
+ */
+export function sequenceDates(startDate: string | null, stops: readonly { id: string; nights: number | null }[], legs: readonly RouteLeg[]) {
+  const days = routeDays(stops, legs);
+  const date = (day: number | null) => startDate === null || day === null ? null : addNights(startDate, day);
+  const destinations = stops.map((stop, index) => {
+    // A stay's arrival is checked even while its nights are unknown, so every day a trip's calendar lists has a date.
+    const arrivalDate = date(days.stays[index].arrives);
+    // An incomplete stay has no calculated range; all later dates also remain unknown.
+    return days.stays[index].departs === null ? { id: stop.id, arrivalDate: null, departureDate: null } : { id: stop.id, arrivalDate, departureDate: date(days.stays[index].departs) };
+  });
+  return { destinations, endDate: date(days.end) };
 }
 
 /** One-time, conservative backfill. Historical dates are retained separately by the store. */

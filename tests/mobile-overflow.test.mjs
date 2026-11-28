@@ -39,6 +39,8 @@ test("what people and assistants write wraps within the screen, a long link or w
     ["../src/components/packing-list.module.css", [".text", ".reviewItem > span"]],
     // A trip's Best time to go notes (TRA-178).
     ["../src/components/trip-best-time.module.css", [".note"]],
+    // A trip's Calendar, which names its destinations and connections as saved (TRA-185).
+    ["../src/components/trip-calendar.module.css", [".event", ".night", ".note", ".unscheduled"]],
   ]) {
     for (const selector of selectors) assert.deepEqual(values(file, selector, "overflow-wrap"), { "": "anywhere" }, selector);
   }

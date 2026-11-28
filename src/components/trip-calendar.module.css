@@ -1,0 +1,31 @@
+/* TRA-185: a trip's Calendar, its days in order, each with what happens and where its night is spent. */
+.section { margin-top: 44px; }
+.description { margin: -6px 0 18px; color: var(--muted); font-size: 12px; line-height: 1.65; }
+.days { display: grid; gap: 10px; margin: 0; padding: 0; list-style: none; }
+/* Each day's heading sits beside what happens on wider screens, and above it on phones. */
+.day { display: grid; grid-template-columns: 150px minmax(0, 1fr); gap: 8px 18px; padding: 16px 18px; border: 1px solid var(--line); border-radius: 8px; background: var(--white); }
+.heading { grid-row: span 2; font-size: 17px; line-height: 1.3; }
+.date { display: block; margin-top: 3px; color: var(--muted); font: 600 11px/1.5 Arial, Helvetica, sans-serif; }
+.events { display: grid; gap: 8px; margin: 0; padding: 0; list-style: none; }
+.event { display: flex; align-items: flex-start; gap: 10px; min-width: 0; font-size: 13px; line-height: 1.5; overflow-wrap: anywhere; }
+.event > svg { flex-shrink: 0; margin-top: 2px; color: var(--green); }
+.event > span:last-child, .night > span { min-width: 0; }
+/* A connection's transportation icons, in a row beside it. */
+.transportation { display: inline-flex; flex-shrink: 0; gap: 4px; margin-top: 2px; color: var(--green); }
+.detail { display: block; color: var(--muted); font-size: 12px; }
+/* Where the night is spent: a night at a stay on the trip's green wash, and one spent traveling apart from them, on a warm wash with an orange edge. */
+.night { display: flex; align-items: flex-start; gap: 10px; margin: 2px 0 0; padding: 8px 12px; border-radius: 6px; background: var(--wash); font-size: 13px; line-height: 1.5; overflow-wrap: anywhere; }
+.night > svg { flex-shrink: 0; margin-top: 2px; color: var(--green); }
+.traveling { border-left: 3px solid var(--orange); background: #f7efe9; }
+.traveling > svg { color: var(--orange); }
+.unknown { border: 1px dashed #c9d1c1; background: transparent; }
+.note { margin-top: 14px; color: var(--muted); font-size: 12px; line-height: 1.65; overflow-wrap: anywhere; }
+.waiting { margin-top: 4px; }
+.unscheduled { display: grid; gap: 6px; margin: 8px 0 0; padding-left: 20px; font-size: 13px; line-height: 1.5; overflow-wrap: anywhere; }
+
+@media (max-width: 540px) {
+  /* TRA-156: the trip page's spacing on phones, 28px between its sections and 12px inside its boxes. */
+  .section { margin-top: 28px; }
+  .day { grid-template-columns: minmax(0, 1fr); padding: 12px; }
+  .heading { grid-row: auto; }
+}

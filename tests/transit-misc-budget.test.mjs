@@ -215,3 +215,18 @@ test("ChatGPT and Claude propose a connection's miscellaneous spending, previewe
   assert.equal(schema.properties.miscAmount.type, "string", "assistants are told about it");
   assert.ok(!schema.required.includes("miscAmount"), "left out, it is kept");
 });
+
+test("a connection's nights spent traveling change neither its price nor its spending in transit, nor what the trip counts of them (TRA-185)", (t) => {
+  const { store, tripId } = setup(t, tripInput({ startDate: "2027-06-05" }));
+  addDestination(store, tripId, { city: "Vienna", nights: 3 });
+  const [outbound, home] = legsOf(store, tripId).map((leg) => leg.id);
+  store.applyMutation(legSave(outbound, { price: "1200.50", miscAmount: "45.25" }));
+  store.applyMutation(legSave(home, { price: "800", miscAmount: "" }));
+  const spending = () => { const all = store.getSnapshot(); const { travelCents, transitMiscCents } = calculateBudget(all, tripId); return [legsOf(store, tripId).map((leg) => [leg.priceCents, leg.miscCents]), travelCents, transitMiscCents]; };
+  const before = spending();
+  for (const travelNights of [1, 2, 0]) {
+    store.applyMutation(legSave(outbound, { price: "1200.50", miscAmount: "45.25", travelNights }));
+    assert.deepEqual(spending(), before, `${travelNights} nights spent traveling`);
+  }
+  assert.deepEqual(before, [[[120050, 4525], [80000, null]], 200050, 4525]);
+});

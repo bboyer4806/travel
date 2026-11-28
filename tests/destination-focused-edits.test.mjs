@@ -143,7 +143,9 @@ const texts = (rendered) => rendered.flatMap((node) => [node.props.children].fla
 test("each section's editor shows only its own fields, and the destination editor keeps them all", () => {
   const { AccommodationBudgetEditor, MiscellaneousBudgetEditor, StayNightsEditor, DestinationBudgetEditor } = editors;
   const stop = { id: "stop", nights: 3, legacyArrivalDate: null, legacyDepartureDate: null };
-  const stay = { trip: { startDate: "2026-11-01" }, stops: [stop], stop };
+  // The trip's connections to and from the stay, without nights spent traveling (TRA-185).
+  const legs = [{ fromId: null, toId: "stop", travelNights: 0 }, { fromId: "stop", toId: null, travelNights: 0 }];
+  const stay = { trip: { startDate: "2026-11-01" }, stops: [stop], legs, stop };
   const destination = { hotelNightlyMinor: 35000, hotelCurrency: "USD", miscDailyMinor: 2500, miscCurrency: "USD", activitiesBudgetMode: "itemized", activitiesGeneralMinor: null, activitiesCurrency: null, foodBudgetMode: "daily", foodDailyMinor: 12000, foodCurrency: "USD", shoppingMinor: null, shoppingCurrency: null };
   // Edit estimate & nights, in a trip: the stay's nights and the nightly estimate, previewed with that stay's dates.
   const accommodation = render(AccommodationBudgetEditor, { destination, stay });
@@ -156,5 +158,8 @@ test("each section's editor shows only its own fields, and the destination edito
   assert.ok(texts(miscellaneous).includes("$75"));
   // Edit destination nights, from Restaurants.
   assert.deepEqual(fieldNames(render(StayNightsEditor, { stay })), ["nights"]);
+  // A night spent traveling to the stay moves its previewed dates a day later, and its nights stay 3 (TRA-185).
+  const overnight = render(StayNightsEditor, { stay: { ...stay, legs: [{ ...legs[0], travelNights: 1 }, legs[1]] } });
+  for (const preview of ["Mon, Nov 2, 2026", "Thu, Nov 5, 2026", "3 nights"]) assert.ok(texts(overnight).includes(preview), preview);
   assert.deepEqual(fieldNames(render(DestinationBudgetEditor, { destination, stay })), ["nights", "hotelNightlyAmount", "miscDailyAmount", "activitiesBudgetMode", "activitiesGeneralAmount", "foodBudgetMode", "foodDailyAmount", "shoppingAmount"]);
 });

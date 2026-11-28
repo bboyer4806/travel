@@ -33,6 +33,7 @@ import type { HealthSafety } from "./health-safety.ts";
 import type { LayoverActivity, LayoverPlan, SavedLayoverPlan } from "./layover-plan.ts";
 import type { Month, MonthlyClimate } from "./typical-weather.ts";
 import type { BestTime } from "./trip-best-time.ts";
+import type { RouteLeg } from "./trip-dates.ts";
 import type { AiConnection, AiPhotoToAdd, AiProposal, DestinationFields, GalleryUpdate, LargePhoto, PhotoCrop, PhotoWidths, PreparedImage, StoredThumbnail, TripImage, TripImageUpdate } from "./types";
 import type { AccessEntry, AccessOverview, AuthorizedAccount, DestinationAccess, GoogleIdentity, LibraryDestination, TripAccess, TripMember, TripStop } from "./types";
 import type { Candidate, CandidateImage, Category, Church, MassTime, Destination, DestinationImage, HomeItem, PackingItem, StoredImage, ItineraryStop, Mutation, ResearchLink, RestaurantType, Snapshot, TravelLeg, Trip } from "./types";
@@ -509,7 +510,7 @@ function validate(input: unknown): Mutation {
   const value = input as Input;
   switch (value.type) {
     case "trip.save":
-      if (value.endDate !== undefined) throw new ValidationError("The trip end date is calculated from the start date and destination nights.");
+      if (value.endDate !== undefined) throw new ValidationError("The trip end date is calculated from the start date, destination nights and nights spent traveling.");
       return { type: value.type, id: saveIdField(value), create: createField(value), ...readFields(EDITABLE_FIELDS.trips, value), image: tripImageField(value) };
     case "trip.delete":
     case "stop.remove":
@@ -550,7 +551,7 @@ function validate(input: unknown): Mutation {
     case "destination.save": {
       // A trip adds a city with `stop.add` (TRA-107). Only a page opened before that adds a destination with this save.
       if (value.create !== undefined || value.tripId !== undefined) throw new ValidationError(PLANNER_UPDATED);
-      if (value.arrivalDate !== undefined || value.departureDate !== undefined) throw new ValidationError("Destination dates are calculated. Edit the trip start date or destination nights instead.");
+      if (value.arrivalDate !== undefined || value.departureDate !== undefined) throw new ValidationError("Destination dates are calculated. Edit the trip start date, destination nights or nights spent traveling instead.");
       const id = saveIdField(value);
       const fields = { ...readFields(EDITABLE_FIELDS.destinations, value), cityFromSuggestion: cityFromSuggestionField(value), ...readFields(EDITABLE_FIELDS.trip_stops, value), image: imageField(value), gallery: galleryField(value, "Destination") };
       // A destination is changed by its own ID, and only a trip's stop has stay notes and nights, so a save that
@@ -806,7 +807,7 @@ const LIVE: Make = { id: () => randomUUID(), now: () => new Date().toISOString()
  * The schema this build upgrades every database to, as SQLite's user_version. A schema change adds the next
  * upgrade in createStore and raises this to match; earlier upgrades keep their own numbers.
  */
-export const SCHEMA_VERSION = 51;
+export const SCHEMA_VERSION = 52;
 
 /** A destination as schema 20 saved it, inside one trip, with that trip's owner and name. */
 type TripDestinationRow = Omit<StoredDestination, "cityKey"> & Omit<TripStop, "destinationId"> & { tripName: string };
@@ -1160,7 +1161,10 @@ export function createStore(databasePath: string, ownerEmail: string) {
             const backfill = backfillDates(stops);
             db.prepare("UPDATE trips SET startDate = ? WHERE id = ?").run(backfill.startDate, trip.id);
             for (const stop of backfill.destinations) db.prepare("UPDATE destinations SET nights = ? WHERE id = ?").run(stop.nights, stop.id);
-            const schedule = sequenceDates(backfill.startDate, db.prepare("SELECT id, nights FROM destinations WHERE tripId = ? ORDER BY position, id").all(trip.id) as unknown as TripStop[]);
+            const scheduled = db.prepare("SELECT id, nights FROM destinations WHERE tripId = ? ORDER BY position, id").all(trip.id) as unknown as TripStop[];
+            // Until schema 52, no travel connection had nights spent traveling (TRA-185).
+            const route = [null, ...scheduled.map((stop) => stop.id), null];
+            const schedule = sequenceDates(backfill.startDate, scheduled, route.slice(1).map((toId, index) => ({ fromId: route[index], toId, travelNights: 0 })));
             for (const stop of schedule.destinations) db.prepare("UPDATE destinations SET arrivalDate = ?, departureDate = ? WHERE id = ?").run(stop.arrivalDate, stop.departureDate, stop.id);
           }
         }
@@ -1640,6 +1644,13 @@ export function createStore(databasePath: string, ownerEmail: string) {
         PRAGMA user_version = 51;
       `);
     }
+    if (version < 52) {
+      // Each travel connection's nights spent traveling (TRA-185), such as an overnight flight's one, which move its trip's
+      // later days and dates without counting as any stay's nights or adding any cost. Every saved connection starts with
+      // none, so no trip's dates, end date, calendar days or budget change. A replay keeps saved nights.
+      if (!hasColumn("legs", "travelNights")) db.exec("ALTER TABLE legs ADD COLUMN travelNights INTEGER NOT NULL DEFAULT 0 CHECK(travelNights BETWEEN 0 AND 3652058);");
+      db.exec("PRAGMA user_version = 52;");
+    }
     if (version < SCHEMA_VERSION && db.prepare("PRAGMA foreign_key_check").get()) {
       throw new Error("This upgrade would leave saved items without the trip or destination they belong to. Nothing was changed; review the database against a backup before upgrading.");
     }
@@ -1710,7 +1721,7 @@ export function createStore(databasePath: string, ownerEmail: string) {
     const images = imagesOf(ids);
     return db.prepare(`SELECT ${TRIP_COLUMNS} FROM trips${where} ORDER BY createdAt DESC, id`).all(...args).map((row) => {
       const trip = tripFromRow(row as unknown as TripRow);
-      return { ...trip, tags: tags.get(trip.id) ?? [], image: images.get(trip.id) ?? null, endDate: sequenceDates(trip.startDate, orderedStops(trip.id)).endDate };
+      return { ...trip, tags: tags.get(trip.id) ?? [], image: images.get(trip.id) ?? null, endDate: sequenceDates(trip.startDate, orderedStops(trip.id), routeLegsOf(trip.id)).endDate };
     });
   }
   /** Stops matching a WHERE clause, as plain objects a page can hand to the browser. */
@@ -1827,10 +1838,11 @@ export function createStore(databasePath: string, ownerEmail: string) {
     const tripIds = rawTrips.map((trip) => trip.id);
     const tags = tagsOf(tripIds);
     const images = imagesOf(tripIds);
-    const trips = rawTrips.map((trip) => ({ ...trip, tags: tags.get(trip.id) ?? [], image: images.get(trip.id) ?? null, endDate: sequenceDates(trip.startDate, stops.filter((stop) => stop.tripId === trip.id)).endDate }));
+    // Each trip's end follows its connections' nights spent traveling too (TRA-185).
+    const legs = db.prepare(`SELECT tripId,fromId,toId,priceCents,miscCents,travelNights FROM legs WHERE tripId IN (${VISIBLE_TRIPS})`).all(...visible) as unknown as TravelLeg[];
+    const trips = rawTrips.map((trip) => ({ ...trip, tags: tags.get(trip.id) ?? [], image: images.get(trip.id) ?? null, endDate: sequenceDates(trip.startDate, stops.filter((stop) => stop.tripId === trip.id), legs.filter((leg) => leg.tripId === trip.id)).endDate }));
     const input: Snapshot = {
-      trips, stops, destinations,
-      legs: db.prepare(`SELECT tripId,fromId,toId,priceCents,miscCents FROM legs WHERE tripId IN (${VISIBLE_TRIPS})`).all(...visible) as unknown as TravelLeg[],
+      trips, stops, destinations, legs,
       candidates: db.prepare(`SELECT destinationId,category,priceCents,included FROM candidates WHERE destinationId IN (${visited})`).all(...visible).map((row) => ({ ...row, included: row.included === 1 })) as unknown as Candidate[],
       homeItems: db.prepare(`SELECT tripId,priceCents FROM home_items WHERE tripId IN (${VISIBLE_TRIPS})`).all(...visible) as unknown as HomeItem[],
       packingItems: [], churches: [], tags: [], likes: NO_LIKES,
@@ -2195,6 +2207,10 @@ export function createStore(databasePath: string, ownerEmail: string) {
   function orderedStops(tripId: string): TripStop[] {
     return db.prepare("SELECT * FROM trip_stops WHERE tripId = ? ORDER BY position, id").all(tripId) as unknown as TripStop[];
   }
+  /** A trip's connections, each with where it leaves and arrives and its nights spent traveling, which its dates count (TRA-185). */
+  function routeLegsOf(tripId: string): RouteLeg[] {
+    return db.prepare("SELECT fromId, toId, travelNights FROM legs WHERE tripId = ?").all(tripId) as unknown as RouteLeg[];
+  }
   function reconcileRoute(tripId: string, make: Make) {
     const stops = orderedStops(tripId);
     stops.forEach((stop, position) => db.prepare("UPDATE trip_stops SET position = ? WHERE id = ?").run(position, stop.id));
@@ -2218,7 +2234,7 @@ export function createStore(databasePath: string, ownerEmail: string) {
     const trip = db.prepare("SELECT startDate FROM trips WHERE id = ?").get(tripId);
     if (!trip) return;
     try {
-      const schedule = sequenceDates(trip.startDate as string | null, orderedStops(tripId));
+      const schedule = sequenceDates(trip.startDate as string | null, orderedStops(tripId), routeLegsOf(tripId));
       for (const stop of schedule.destinations) {
         db.prepare("UPDATE trip_stops SET arrivalDate = ?, departureDate = ? WHERE id = ?").run(stop.arrivalDate, stop.departureDate, stop.id);
       }
@@ -2242,9 +2258,12 @@ export function createStore(databasePath: string, ownerEmail: string) {
     }
   }
   function clearLeg(id: string) {
-    db.prepare("UPDATE legs SET method = '', airline = '', flightNumber = '', priceCents = NULL, miscCents = NULL, departure = '', arrival = '', url = '', notes = '', itineraryJson = '[]', linksJson = '[]' WHERE id = ?").run(id);
+    const before = existing<StoredLeg>("legs", id);
+    db.prepare("UPDATE legs SET method = '', airline = '', flightNumber = '', priceCents = NULL, miscCents = NULL, departure = '', arrival = '', travelNights = 0, url = '', notes = '', itineraryJson = '[]', linksJson = '[]' WHERE id = ?").run(id);
     // Its layovers go with its itinerary, and so do their plans (TRA-45).
     db.prepare("DELETE FROM layover_plans WHERE legId = ?").run(id);
+    // Its nights spent traveling go too, which moves its trip's later dates earlier (TRA-185).
+    if (before.travelNights !== 0) refreshDates(before.tripId);
   }
   function clearHotelSelection(destinationId: string) {
     db.prepare("UPDATE candidates SET included = 0 WHERE destinationId = ? AND category = 'hotels'").run(destinationId);
@@ -2579,7 +2598,7 @@ export function createStore(databasePath: string, ownerEmail: string) {
         const itineraryJson = input.itinerary === undefined ? before.itineraryJson : JSON.stringify(input.itinerary);
         const links = savedLinks(input, before, make.id);
         const misc = input.miscAmount === undefined ? before.miscCents : miscCents(input.miscAmount);
-        db.prepare("UPDATE legs SET method = ?, airline = ?, flightNumber = ?, priceCents = ?, miscCents = ?, departure = ?, arrival = ?, url = ?, notes = ?, itineraryJson = ?, linksJson = ? WHERE id = ?").run(input.method, input.airline ?? before.airline, input.flightNumber ?? before.flightNumber, priceCents(input.price), misc, input.departure, input.arrival, links[0]?.url ?? "", input.notes, itineraryJson, JSON.stringify(links), input.id);
+        db.prepare("UPDATE legs SET method = ?, airline = ?, flightNumber = ?, priceCents = ?, miscCents = ?, departure = ?, arrival = ?, travelNights = ?, url = ?, notes = ?, itineraryJson = ?, linksJson = ? WHERE id = ?").run(input.method, input.airline ?? before.airline, input.flightNumber ?? before.flightNumber, priceCents(input.price), misc, input.departure, input.arrival, input.travelNights ?? before.travelNights, links[0]?.url ?? "", input.notes, itineraryJson, JSON.stringify(links), input.id);
         // A layover the new itinerary removes, or makes another kind of stop, takes its plan with it (TRA-45).
         if (input.itinerary !== undefined) {
           const layovers = input.itinerary.filter((stop) => stop.kind === "layover").map((stop) => stop.id);
@@ -2783,6 +2802,10 @@ export function createStore(databasePath: string, ownerEmail: string) {
       scheduleTrip = valid.tripId;
     } else if (valid.type === "stop.remove" || valid.type === "stop.move") {
       scheduleTrip = existing<TripStop>("trip_stops", valid.id).tripId;
+    } else if (valid.type === "leg.save" && valid.travelNights !== undefined) {
+      // A connection's nights spent traveling move its trip's later dates (TRA-185). Clearing one works them out itself.
+      const leg = db.prepare("SELECT tripId, travelNights FROM legs WHERE id = ?").get(valid.id);
+      if (leg && leg.travelNights !== valid.travelNights) scheduleTrip = leg.tripId as string;
     }
     const id = mutate(accountId, valid, make);
     if (scheduleTrip) refreshDates(scheduleTrip);

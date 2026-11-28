@@ -243,3 +243,15 @@ test("each kind of place has its name on the map", () => {
   assert.deepEqual([["departure", null], ["return", null], ["roundTrip", null], ["destination", 3], ["layover", null], ["stop", null]].map(([kind, number]) => placeRole(kind, number)),
     ["Departure", "Return", "Departure and return", "Destination 3", "Layover", "Stop along the way"]);
 });
+
+test("nights spent traveling change nothing the trip map shows: its places, connections and their details are as before (TRA-185)", (t) => {
+  const { store, tripId } = setup(t, tripInput({ startDate: "2027-06-05" }));
+  const paris = store.applyMutation({ type: "stop.add", tripId, city: "Paris" }).id;
+  store.applyMutation({ type: "destination.save", id: paris, stopId: paris, nights: 3 });
+  const outbound = store.getSnapshot().legs.find((leg) => leg.toId === paris).id;
+  const save = (travelNights) => store.applyMutation({ type: "leg.save", id: outbound, method: "Flight", airline: "Delta", flightNumber: "DL 264", price: "", departure: "2027-06-05T18:00-04:00", arrival: "2027-06-06T07:30+02:00", url: "", notes: "", travelNights });
+  save(0);
+  const before = tripJourney(store.getTripSnapshot(tripId).data, tripId);
+  save(1);
+  assert.deepEqual(tripJourney(store.getTripSnapshot(tripId).data, tripId), before);
+});

@@ -389,7 +389,7 @@ test("a connection with only nights spent traveling can be cleared, and its card
   const page = tripPage(store, tripId);
   assert.deepEqual(page.card(outbound), { line: "Travel details to be decided · 3 nights spent traveling", clear: true });
   page.click("Clear");
-  assert.deepEqual([page.editor().title, page.editor().description], ["Clear this travel plan?", "The connection will remain in your route, with its price, miscellaneous spending, travel details, nights spent traveling, links, itinerary, and layover plans cleared. This cannot be undone."]);
+  assert.deepEqual([page.editor().title, page.editor().description], ["Clear this travel plan?", "The connection will remain in your route, with its price, miles required, miscellaneous spending, travel details, nights spent traveling, links, itinerary, and layover plans cleared. This cannot be undone."]);
 });
 
 test("ChatGPT and Claude propose nights spent traveling, previewed with the dates they move, and approving saves them (TRA-185)", (t) => {

@@ -113,6 +113,11 @@ export const EDITABLE_FIELDS = {
     airline: { kind: "text", maxLength: 120, keep: true, label: "Airline", description: "A flight's airline, such as Delta. Empty for none. Left out keeps the saved one." },
     flightNumber: { kind: "text", maxLength: 120, keep: true, label: "Flight number", description: "A flight's flight number, such as DL 123. Empty for none. Left out keeps the saved one." },
     price: { kind: "amount", noun: "Estimated price", column: "priceCents", label: "Price", description: "What it costs for the whole party." },
+    // A flight's miles (TRA-186), apart from its price, which stays its cash price. They are never money or in any budget.
+    milesRequired: {
+      kind: "whole", min: 0, nullable: true, keep: true, invalid: "Estimated miles required must be a whole number, 0 or more, or left blank.", label: "Estimated miles required",
+      description: "A flight's estimated miles required: how many airline miles it would cost the whole party for the whole connection, a whole number from 0, such as 85000, or null when unknown. It is apart from its price, which stays the cash price: Travel never converts miles to dollars or counts them in any budget. It shows only while its method names an airplane, and stays saved when it doesn't. Left out keeps the saved number.",
+    },
     miscAmount: {
       kind: "amount", noun: "Miscellaneous spending", keep: true, column: "miscCents", label: "Miscellaneous spending",
       description: "Miscellaneous spending on the way, such as airport meals, drinks and layover purchases, for the whole party and the whole connection, apart from its price. Left out keeps the saved amount.",

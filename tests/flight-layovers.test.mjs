@@ -406,3 +406,62 @@ test("on the trip page and in its editor, a flight's layovers are with its airli
   assert.deepEqual(store.getSnapshot().legs.find((leg) => leg.id === outbound).layoverPlans.map((saved) => saved.layoverId), [frankfurt.id]);
   assert.deepEqual(journey(), [["layover", target(london)], ["stop", target(heidelberg)], ["layover", target(frankfurt)]]);
 });
+
+// TRA-186: the same trip page, for a flight's estimated miles required beside its price.
+test("a flight's miles show on its card below its price, and its editor's Estimated miles required, below Estimated price (USD), saves them, blank as unknown (TRA-186)", async (t) => {
+  const { store, tripId } = setup(t);
+  addDestination(store, tripId, { city: "London", nights: 4 });
+  const outbound = store.getSnapshot().legs.find((leg) => leg.tripId === tripId && leg.fromId === null).id;
+  const fields = { method: "Flight", airline: "Aer Lingus", flightNumber: "EI 124", price: "1250", miscAmount: "60", departure: "", arrival: "", notes: "" };
+  store.applyMutation({ type: "leg.save", id: outbound, ...fields, url: "" });
+  const estimate = budget.calculateBudget(store.getSnapshot(), tripId);
+  let page = tripPage(store, tripId);
+  const card = () => within(page.find((node) => node.type === "article" && node.props.id === tripMap.connectionTarget(outbound)));
+  /** The card's price, miles and spending, in order. */
+  const prices = () => card().filter((node) => node.type === "span" && node.props.className?.startsWith("price")).map(text);
+  const edit = () => page.click(page.find((node) => node.type === "button" && node.props["aria-label"] === "Edit travel from Boston to London"));
+  const milesPart = () => page.find((node) => node.type === "div" && "hidden" in node.props && within(node).some((child) => child.props.name === "milesRequired"));
+  const saved = () => store.getSnapshot().legs.find((leg) => leg.id === outbound);
+  assert.deepEqual(prices(), ["$1,250", "Miscellaneous spending: $60"], "a flight without miles shows none");
+
+  edit();
+  const inputs = within(page.find((node) => node.type === "dialog")).filter((node) => node.type === "input").map((node) => node.props.name);
+  assert.equal(inputs.indexOf("milesRequired"), inputs.indexOf("price") + 1, "directly below Estimated price (USD)");
+  assert.equal(milesPart().props.hidden, false, "shown for a flight");
+  await page.submit({ ...fields, milesRequired: "85000" });
+  assert.equal(page.sent.at(-1).milesRequired, 85000, "sent as a whole number");
+  assert.deepEqual(prices(), ["$1,250", "85,000 miles required", "Miscellaneous spending: $60"], "directly below the price");
+  assert.deepEqual(budget.calculateBudget(store.getSnapshot(), tripId), estimate, "the estimate is unchanged");
+
+  // Miles alone don't stand in for an unknown price, and a blank field saves unknown miles, never 0.
+  edit();
+  await page.submit({ ...fields, price: "", milesRequired: "85000" });
+  assert.deepEqual([saved().priceCents, saved().milesRequired], [null, 85000]);
+  assert.deepEqual(prices(), ["Not estimated · Needs estimate", "85,000 miles required", "Miscellaneous spending: $60"]);
+  edit();
+  await page.submit({ ...fields, milesRequired: "" });
+  assert.deepEqual([page.sent.at(-1).milesRequired, saved().milesRequired], [null, null]);
+  assert.deepEqual(prices(), ["$1,250", "Miscellaneous spending: $60"]);
+  edit();
+  await page.submit({ ...fields, milesRequired: "0" });
+  assert.deepEqual(prices(), ["$1,250", "0 miles required", "Miscellaneous spending: $60"], "0 is known");
+
+  // While Transportation names no airplane the field hides and is disabled, so the browser leaves it out of the save,
+  // which keeps the miles, and the card shows none until the connection is a flight again.
+  edit();
+  page.type(page.find((node) => node.type === "input" && node.props.name === "method"), "Train");
+  assert.deepEqual([milesPart().props.hidden, within(milesPart()).find((node) => node.props.name === "milesRequired").props.disabled], [true, true]);
+  await page.submit({ ...fields, method: "Train" });
+  assert.equal("milesRequired" in page.sent.at(-1), false, "the save leaves them out");
+  assert.equal(saved().milesRequired, 0, "which keeps them");
+  assert.deepEqual(prices(), ["$1,250", "Miscellaneous spending: $60"], "a connection that isn't a flight shows none");
+
+  // A connection with only miles can be cleared, and the confirmation names them.
+  store.applyMutation({ type: "leg.clear", id: outbound });
+  store.applyMutation({ type: "leg.save", id: outbound, method: "", price: "", departure: "", arrival: "", url: "", notes: "", milesRequired: 85000 });
+  page = tripPage(store, tripId);
+  const clear = card().find((node) => node.type === "button" && text(node) === "Clear");
+  assert.ok(clear, "Clear shows for a connection with only miles");
+  page.click(clear);
+  assert.match(text(page.find((node) => node.props.className === "delete-description wide")), /with its price, miles required, miscellaneous spending,/);
+});

@@ -72,9 +72,12 @@ export interface ItineraryStop { id: string; kind: "layover" | "stop"; place: st
  * in its itinerary, each naming its layover (TRA-45). `airline` and `flightNumber` are saved as typed, or empty, and show
  * only while its transportation names an airplane, though they stay saved when it doesn't (TRA-147). `travelNights` is how
  * many nights are spent traveling on it, from 0, such as 1 for an overnight flight, which move the trip's later days and
- * dates without counting as any stay's nights or adding any cost (TRA-185).
+ * dates without counting as any stay's nights or adding any cost (TRA-185). `milesRequired` is a flight's estimated
+ * airline miles for the whole party, a whole number from 0, or null when unknown: apart from its price, which stays its
+ * cash price, never converted to money or counted in any budget, and shown, like its airline, only while its
+ * transportation names an airplane (TRA-186).
  */
-export interface TravelLeg { id: string; tripId: string; fromId: string | null; toId: string | null; method: string; airline: string; flightNumber: string; priceCents: number | null; miscCents: number | null; departure: string; arrival: string; travelNights: number; url: string; notes: string; itinerary: ItineraryStop[]; links: ResearchLink[]; layoverPlans: SavedLayoverPlan[]; }
+export interface TravelLeg { id: string; tripId: string; fromId: string | null; toId: string | null; method: string; airline: string; flightNumber: string; priceCents: number | null; milesRequired: number | null; miscCents: number | null; departure: string; arrival: string; travelNights: number; url: string; notes: string; itinerary: ItineraryStop[]; links: ResearchLink[]; layoverPlans: SavedLayoverPlan[]; }
 /**
  * A saved photo: its ID and version, which its address names, and the widths of it and its large version, or null for a
  * photo without one, as a photo saved before TRA-154 or no larger than 1600 × 1200 is.
@@ -212,6 +215,8 @@ export type Mutation =
  // `airline` and `flightNumber` are a flight's (TRA-147). Left out, as a page opened before them does, each keeps the saved one.
  // `travelNights` are the nights spent traveling on it (TRA-185), which move its trip's later dates. Left out, as a page
  // opened before them does, they keep the saved number.
+ // `milesRequired` is a flight's estimated miles, or null when unknown (TRA-186). Left out, as a page opened before it
+ // does, it keeps the saved number.
  | ({ type: "leg.save"; id: string; itinerary?: ItineraryStop[]; links?: ResearchLink[] } & Fields<"legs">)
  | { type: "leg.clear"; id: string }
  // Saves the plan of one layover in a connection's itinerary, replacing any saved one, or removes it with null (TRA-45).

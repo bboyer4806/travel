@@ -261,6 +261,8 @@ Repeat passing checks when subsequent changes affect their coverage or required 
   visa fee (TRA-159) amounts, where it is not set and adds no cost.
   Budget math lives in `src/lib/budget.ts`. Parsing, validation messages, formatting, input values
   and the $100,000,000 limit for every amount, prices included, live in `src/lib/money.ts`.
+  A flight's `milesRequired` (TRA-186), an editable field shown by `src/components/connection-flight.tsx`, is whole
+  airline miles for the whole party, not an amount: null is unknown, and Travel never converts it or counts it in a budget.
 - Image upload types and size and gallery limits live in `src/lib/image-limits.ts`, as do the limits
   on the photos one AI proposal downloads and the sizes photos and their large versions are saved at. The photo
   editors, upload decoding, the store and the MCP tools use them, and messages state them from there.

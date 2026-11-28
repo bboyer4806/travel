@@ -281,21 +281,30 @@ function load(state) {
   return exports;
 }
 
-/** The editor's Transportation field and the flight's fields for a saved connection, rendered again after each change. */
+/**
+ * The editor's Transportation field and the flight's fields for a saved connection, rendered again after each change.
+ * The connection's editor holds what Transportation says, as it does for its layovers (TRA-184), whose editor is a
+ * stand-in here.
+ */
 function editor(leg) {
-  const state = { hooks: [], cursor: 0 };
-  const { TransportationFields } = load(state);
+  const { TransportationFields } = load({ hooks: [], cursor: 0 });
+  const layovers = element("layovers-editor", {});
+  let method = leg.method;
   let tree;
-  const render = () => { state.cursor = 0; tree = TransportationFields({ leg }); };
+  const render = () => { tree = TransportationFields({ leg, method, onMethodChange: (value) => { method = value; }, layovers }); };
   render();
   const input = (name) => nodes(tree).find((node) => node.type === "input" && node.props.name === name);
-  /** The element that hides the flight's fields, around both of them. */
+  /** The element that hides the flight's fields, around all of them. */
   const flight = () => nodes(tree).find((node) => node.type === "div" && "hidden" in node.props);
   return {
     input,
     flight,
     /** Whether Airline and Flight number show. */
     shown: () => !flight().props.hidden,
+    /** Whether the flight's layovers show, inside the flight's section, below Airline and Flight number. */
+    layovers: () => nodes(flight()).includes(layovers),
+    /** What Transportation's hint says. */
+    hint: () => text(nodes(tree).find((node) => node.type === "small")),
     /** Types into Transportation, as its change event sets it. */
     type(value) { input("method").props.onChange({ target: { value } }); render(); },
   };
@@ -313,14 +322,22 @@ test("the editor shows Airline and Flight number below Transportation only while
   }
   for (const [method, shown] of [["Train", false], ["", false], ["Delta", false], ["Train and flight", true], ["Rental car", false], ["plane", true]]) {
     form.type(method);
+    assert.equal(form.input("method").props.value, method, "Transportation shows what was typed");
     assert.equal(form.shown(), shown, `${JSON.stringify(method)} ${shown ? "shows" : "hides"} them`);
     // Hidden, they stay in the form with what they hold, so saving sends them and keeps them.
     assert.deepEqual(["airline", "flightNumber"].map((name) => form.input(name).props.defaultValue), ["Delta", "DL 413"]);
+    // The flight's layovers show with them, and not at all while they're hidden: the connection's editor then shows
+    // them under Stops along the way (TRA-184).
+    assert.equal(form.layovers(), shown, `${JSON.stringify(method)} ${shown ? "shows" : "hides"} the flight's layovers`);
   }
+  assert.deepEqual([...form.flight().props.children].map((child) => child && (child.type === "div" ? child.props.className : child.type)), ["form-grid", "layovers-editor"], "the layovers come below Airline and Flight number");
+  assert.equal(form.hint(), "Name a flight, such as Flight or Plane, to add its airline and flight number, with its layovers below them.");
   const train = editor({ method: "Train", airline: "", flightNumber: "" });
   assert.equal(train.shown(), false, "a connection that isn't a flight hides them");
+  assert.equal(train.layovers(), false);
   train.type("Flight");
   assert.equal(train.shown(), true, "naming a flight shows them, empty");
+  assert.equal(train.layovers(), true, "and the flight's layovers below them");
   assert.deepEqual(["airline", "flightNumber"].map((name) => train.input(name).props.defaultValue), ["", ""]);
 });
 

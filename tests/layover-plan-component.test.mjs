@@ -195,7 +195,8 @@ test("each layover in a connection's itinerary has its plan or Plan layover, and
     { id: "f0000000-0000-4000-8000-000000000003", kind: "layover", place: "London Heathrow (LHR)", arrival: "", departure: "", notes: "" },
   ];
   const opened = [];
-  const tree = render(ConnectionItinerary({ legId: "leg", stops, plans: [{ layoverId: stops[0].id, ...frankfurt() }], disabled: false, onPlan: (stop) => opened.push(stop.place), onRemovePlan: () => {} }));
+  // A connection that isn't a flight shows its whole itinerary in one list (TRA-184).
+  const tree = render(ConnectionItinerary({ group: "all", legId: "leg", stops, plans: [{ layoverId: stops[0].id, ...frankfurt() }], disabled: false, onPlan: (stop) => opened.push(stop.place), onRemovePlan: () => {} }));
   const items = tree.flatMap(within).filter((node) => node.type === "li" && node.props.id?.startsWith("itinerary-"));
   assert.deepEqual(items.map((item) => [within(item).some((node) => node.type === "details"), within(item).filter((node) => node.type === "button").map((node) => node.props["aria-label"])]), [
     [true, ["Edit the layover plan for Frankfurt (FRA)", "Remove the layover plan for Frankfurt (FRA)"]],
@@ -207,7 +208,7 @@ test("each layover in a connection's itinerary has its plan or Plan layover, and
 
   // The connection's editor says which layovers have a plan that removing them, or making them stops, removes.
   state.cursor = 0;
-  const notes = render(ConnectionItineraryEditor({ stops, onChange: () => {}, planned: [stops[0].id], disabled: false })).flatMap(within)
+  const notes = render(ConnectionItineraryEditor({ group: "all", stops, onChange: () => {}, planned: [stops[0].id], disabled: false })).flatMap(within)
     .filter((node) => node.type === "fieldset").map((fieldset) => within(fieldset).filter((node) => node.type === "p").map(text));
   assert.deepEqual(notes, [["This layover has a plan. Removing the layover, or changing it to another kind of stop, removes its plan when you save."], [], []]);
 });

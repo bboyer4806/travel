@@ -1998,19 +1998,18 @@ button svg,a svg {
   padding-top:20px;
   min-width:0
 }
-.connection-itinerary-heading {
-  display:flex;
-  align-items:center;
-  justify-content:space-between;
-  gap:12px
-}
-.connection-itinerary-heading h3 {
+.connection-itinerary-editor>h3 {
   font-size:22px
 }
-.connection-itinerary-heading>span {
-  font-size:10px;
-  color:var(--muted);
-  white-space:nowrap
+/* A flight's layovers, below its airline and flight number in its connection's editor (TRA-184), are part of the flight:
+   they follow its fields with the form's spacing, without the rule above Stops along the way, under a smaller heading. */
+.connection-itinerary-editor.flight-layovers {
+  border-top:0;
+  padding-top:0;
+  margin-top:18px
+}
+.connection-itinerary-editor.flight-layovers>h3 {
+  font-size:18px
 }
 .connection-itinerary-help {
   margin-top:8px;
@@ -2168,8 +2167,14 @@ button svg,a svg {
   .connection-itinerary-editor .field select {
     font-size:16px
   }
-  .connection-itinerary-heading h3 {
+  .connection-itinerary-editor>h3 {
     font-size:21px
+  }
+  .connection-itinerary-editor.flight-layovers {
+    margin-top:16px
+  }
+  .connection-itinerary-editor.flight-layovers>h3 {
+    font-size:17px
   }
   .connection-itinerary-add .button {
     flex:1;
